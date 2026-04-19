@@ -1,0 +1,325 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  X,
+  Tag,
+  Calendar,
+  FolderOpen,
+  Link,
+  ExternalLink,
+  Trash2,
+  Plus,
+} from 'lucide-react';
+import { RichTextEditor } from './RichTextEditor';
+import { AppDatePicker } from './AppDatePicker';
+import { Task, TaskStatus } from '../types';
+import { useAppStore } from '../store/appStore';
+import { fs } from '../lib/invoke';
+
+const STATUS_OPTIONS: { value: TaskStatus; label: string; color: string }[] = [
+  { value: 'todo', label: 'Por hacer', color: 'text-zinc-400 bg-zinc-400/10' },
+  { value: 'in-progress', label: 'En progreso', color: 'text-amber-400 bg-amber-400/10' },
+  { value: 'done', label: 'Hecho', color: 'text-green-400 bg-green-400/10' },
+];
+
+export function TaskEditor() {
+  const { activeTask, updateTask, deleteTask, setActiveTask, projects, addLinkedPath, removeLinkedPath } =
+    useAppStore();
+
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [status, setStatus] = useState<TaskStatus>('todo');
+  const [due, setDue] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
+  const [project, setProject] = useState('inbox');
+  const [newTag, setNewTag] = useState('');
+  const [showTagInput, setShowTagInput] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+
+  const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tagInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync state when active task changes
+  useEffect(() => {
+    if (!activeTask) return;
+    setTitle(activeTask.title);
+    setContent(activeTask.content);
+    setStatus(activeTask.status);
+    setDue(activeTask.due || '');
+    setTags([...activeTask.tags]);
+    setProject(activeTask.project);
+    setIsDirty(false);
+  }, [activeTask?.id]);
+
+  useEffect(() => {
+    if (showTagInput) tagInputRef.current?.focus();
+  }, [showTagInput]);
+
+  // Auto-save debounced
+  const save = useCallback(
+    async (patch: Partial<Task>) => {
+      if (!activeTask) return;
+      const updated: Task = { ...activeTask, ...patch };
+      await updateTask(updated);
+      setIsDirty(false);
+    },
+    [activeTask, updateTask]
+  );
+
+  const scheduleSave = (patch: Partial<Task>) => {
+    clearTimeout(saveTimeout.current ?? undefined);
+    saveTimeout.current = setTimeout(() => save(patch), 800);
+    setIsDirty(true);
+  };
+
+  const handleTitleChange = (v: string) => {
+    setTitle(v);
+    scheduleSave({ title: v });
+  };
+
+  const handleContentChange = (v: string) => {
+    setContent(v);
+    scheduleSave({ content: v });
+  };
+
+  const handleStatusChange = (v: TaskStatus) => {
+    setStatus(v);
+    save({ status: v });
+  };
+
+  const handleDueChange = (v: string) => {
+    setDue(v);
+    save({ due: v || undefined });
+  };
+
+  const handleProjectChange = (v: string) => {
+    setProject(v);
+    save({ project: v });
+  };
+
+  const handleAddTag = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && newTag.trim()) {
+      const updated = [...new Set([...tags, newTag.trim()])];
+      setTags(updated);
+      save({ tags: updated });
+      setNewTag('');
+      setShowTagInput(false);
+    }
+    if (e.key === 'Escape') {
+      setNewTag('');
+      setShowTagInput(false);
+    }
+  };
+
+  const handleRemoveTag = (tag: string) => {
+    const updated = tags.filter((t) => t !== tag);
+    setTags(updated);
+    save({ tags: updated });
+  };
+
+  const handleDelete = async () => {
+    if (!activeTask) return;
+    if (!confirm(`¿Eliminar "${activeTask.title}"?`)) return;
+    await deleteTask(activeTask);
+  };
+
+  const handleOpenLinkedPath = (path: string) => {
+    fs.openInSystem(path);
+  };
+
+  if (!activeTask) return null;
+
+  const currentStatus = STATUS_OPTIONS.find((s) => s.value === status)!;
+
+  return (
+    <div key={activeTask.id} className="animate-fade-in flex h-full w-[420px] shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-input)]">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
+        <div className="flex items-center gap-2">
+          {/* Status badge */}
+          <button
+            onClick={() => {
+              const idx = STATUS_OPTIONS.findIndex((s) => s.value === status);
+              const next = STATUS_OPTIONS[(idx + 1) % STATUS_OPTIONS.length];
+              handleStatusChange(next.value);
+            }}
+            className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition ${currentStatus.color}`}
+          >
+            {currentStatus.label}
+          </button>
+          {isDirty && <span className="text-[10px] text-[var(--text-hint)]">Guardando…</span>}
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleDelete}
+            className="rounded-lg p-1.5 text-[var(--text-hint)] transition hover:text-red-400 hover:bg-red-400/10"
+            title="Eliminar tarea"
+          >
+            <Trash2 size={14} />
+          </button>
+          <button
+            onClick={() => setActiveTask(null)}
+            className="rounded-lg p-1.5 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {/* Title */}
+        <div className="px-5 pt-5 pb-3">
+          <textarea
+            value={title}
+            onChange={(e) => handleTitleChange(e.target.value)}
+            placeholder="Título de la tarea"
+            rows={1}
+            className="w-full resize-none bg-transparent text-xl font-semibold text-[var(--text-primary)] outline-none placeholder-[var(--text-faint)] leading-tight"
+            style={{ overflow: 'hidden' }}
+            onInput={(e) => {
+              const el = e.currentTarget;
+              el.style.height = 'auto';
+              el.style.height = el.scrollHeight + 'px';
+            }}
+          />
+        </div>
+
+        {/* Metadata */}
+        <div className="px-5 pb-4 space-y-2 text-sm">
+          {/* Project */}
+          <div className="flex items-center gap-3">
+            <span className="w-24 shrink-0 text-xs text-[var(--text-hint)]">
+              <FolderOpen size={12} className="inline mr-1" />
+              Proyecto
+            </span>
+            <select
+              value={project}
+              onChange={(e) => handleProjectChange(e.target.value)}
+              className="flex-1 bg-transparent text-[var(--text-tertiary)] outline-none text-xs cursor-pointer"
+            >
+              {projects.map((p) => (
+                <option key={p} value={p} className="bg-[var(--bg-surface)]">{p}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Due date */}
+          <div className="flex items-center gap-3">
+            <span className="w-24 shrink-0 text-xs text-[var(--text-hint)]">
+              <Calendar size={12} className="inline mr-1" />
+              Vence
+            </span>
+            <div className="flex-1">
+              <AppDatePicker value={due} onChange={handleDueChange} />
+            </div>
+          </div>
+
+          {/* Tags */}
+          <div className="flex items-start gap-3">
+            <span className="w-24 shrink-0 text-xs text-[var(--text-hint)] mt-1">
+              <Tag size={12} className="inline mr-1" />
+              Tags
+            </span>
+            <div className="flex flex-wrap gap-1.5 flex-1">
+              {tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="flex items-center gap-1 rounded-full bg-indigo-500/15 px-2 py-0.5 text-[10px] text-indigo-300"
+                >
+                  {tag}
+                  <button
+                    onClick={() => handleRemoveTag(tag)}
+                    className="opacity-60 hover:opacity-100"
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              ))}
+              {showTagInput ? (
+                <input
+                  ref={tagInputRef}
+                  value={newTag}
+                  onChange={(e) => setNewTag(e.target.value)}
+                  onKeyDown={handleAddTag}
+                  onBlur={() => { setShowTagInput(false); setNewTag(''); }}
+                  placeholder="nuevo tag…"
+                  className="rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-300 outline-none w-24"
+                />
+              ) : (
+                <button
+                  onClick={() => setShowTagInput(true)}
+                  className="rounded-full border border-[var(--border-card)] px-2 py-0.5 text-[10px] text-[var(--text-hint)] transition hover:text-[var(--text-tertiary)] hover:border-[var(--border-high)]"
+                >
+                  <Plus size={10} className="inline" /> tag
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Created */}
+          <div className="flex items-center gap-3">
+            <span className="w-24 shrink-0 text-xs text-[var(--text-hint)]">Creada</span>
+            <span className="text-xs text-[var(--text-hint)]">{activeTask.created}</span>
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div className="mx-5 mb-3 h-px bg-[var(--border)]" />
+
+        {/* Editor con barra de herramientas */}
+        <div className="px-5 pb-4">
+          <RichTextEditor
+            value={content}
+            onChange={handleContentChange}
+            placeholder="Escribe la descripción de la tarea…"
+            minHeight="220px"
+          />
+        </div>
+
+        {/* Linked paths */}
+        <div className="px-5 pb-6">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-[var(--text-hint)] font-medium">
+              <Link size={12} className="inline mr-1" />
+              Rutas vinculadas
+            </span>
+            <button
+              onClick={addLinkedPath}
+              className="rounded-lg px-2 py-1 text-[10px] text-[var(--text-hint)] transition hover:text-indigo-400 hover:bg-indigo-500/10"
+            >
+              <Plus size={10} className="inline" /> Vincular archivo
+            </button>
+          </div>
+          {activeTask.linked_paths.length === 0 ? (
+            <p className="text-[10px] text-[var(--text-faint)] italic">
+              Sin archivos vinculados. Puedes vincular cualquier archivo o carpeta de tu equipo.
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {activeTask.linked_paths.map((p) => (
+                <li
+                  key={p}
+                  className="flex items-center gap-1.5 rounded-lg bg-[var(--bg-surface)] px-2.5 py-1.5 group"
+                >
+                  <button
+                    onClick={() => handleOpenLinkedPath(p)}
+                    className="flex-1 truncate text-left text-[10px] text-[var(--text-muted)] transition hover:text-indigo-300 flex items-center gap-1"
+                    title={p}
+                  >
+                    <ExternalLink size={10} className="shrink-0" />
+                    <span className="truncate">{p}</span>
+                  </button>
+                  <button
+                    onClick={() => removeLinkedPath(activeTask, p)}
+                    className="opacity-0 group-hover:opacity-100 text-[var(--text-hint)] hover:text-red-400 transition"
+                  >
+                    <X size={10} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

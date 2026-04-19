@@ -1,0 +1,212 @@
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Circle, Clock, CheckCircle2, Copy, Check, Trash2, Pencil, Plus } from 'lucide-react';
+import { Task, TaskStatus } from '../types';
+import { useAppStore } from '../store/appStore';
+
+interface Props {
+  task: Task;
+  x: number;
+  y: number;
+  onClose: () => void;
+  onBeforeDelete?: () => void;
+}
+
+export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) {
+  const { updateTask, deleteTask, setActiveTask } = useAppStore();
+  const ref = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  // Adjust position after mount to avoid overflow
+  const [pos, setPos] = useState({ x, y });
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    let nx = x;
+    let ny = y;
+    if (x + rect.width > window.innerWidth - 8) nx = x - rect.width;
+    if (y + rect.height > window.innerHeight - 8) ny = y - rect.height;
+    setPos({ x: nx, y: ny });
+  }, [x, y]);
+
+  const handleStatusChange = async (status: TaskStatus) => {
+    await updateTask({ ...task, status });
+    onClose();
+  };
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(task.title);
+    setCopied(true);
+    setTimeout(() => { setCopied(false); onClose(); }, 1200);
+  };
+
+  const handleDelete = async () => {
+    if (onBeforeDelete) {
+      onBeforeDelete();
+      onClose();
+    } else {
+      await deleteTask(task);
+      onClose();
+    }
+  };
+
+  const statuses: { status: TaskStatus; label: string; Icon: React.ElementType; color: string }[] = [
+    { status: 'todo',        label: 'Por hacer',   Icon: Circle,       color: 'text-zinc-400'  },
+    { status: 'in-progress', label: 'En progreso', Icon: Clock,        color: 'text-amber-400' },
+    { status: 'done',        label: 'Hecho',       Icon: CheckCircle2, color: 'text-green-400' },
+  ];
+
+  if (confirmDelete) {
+    return createPortal(
+      <div
+        ref={ref}
+        style={{ position: 'fixed', top: pos.y, left: pos.x, zIndex: 9999 }}
+        className="w-64 rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-4 shadow-2xl"
+      >
+        <div className="mb-3 flex items-center gap-2 text-red-400">
+          <Trash2 size={14} />
+          <p className="text-xs font-semibold">Eliminar tarea</p>
+        </div>
+        <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-3">
+          Se eliminará{' '}
+          <span className="font-medium text-[var(--text-primary)]">"{task.title}"</span>.
+          Esta acción no se puede deshacer.
+        </p>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => setConfirmDelete(false)}
+            className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleDelete}
+            className="rounded-lg bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition hover:bg-red-500/20"
+          >
+            Eliminar
+          </button>
+        </div>
+      </div>,
+      document.body
+    );
+  }
+
+  return createPortal(
+    <div
+      ref={ref}
+      style={{ position: 'fixed', top: pos.y, left: pos.x, zIndex: 9999 }}
+      className="min-w-[200px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-2xl"
+    >
+      {/* Preview del título */}
+      <div className="border-b border-[var(--border)] px-3 py-2">
+        <p className="max-w-[180px] truncate text-xs font-medium text-[var(--text-primary)]">
+          {task.title}
+        </p>
+        {task.project && task.project !== 'inbox' && (
+          <p className="text-[10px] text-[var(--text-hint)]">{task.project}</p>
+        )}
+      </div>
+
+      {/* Abrir */}
+      <button
+        onClick={() => { setActiveTask(task); onClose(); }}
+        className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+      >
+        <Pencil size={12} />
+        Abrir / Editar
+      </button>
+
+      {/* Estado */}
+      <div className="mx-2 my-1 border-t border-[var(--border)]" />
+      <p className="px-3 py-1 text-[10px] uppercase tracking-widest text-[var(--text-hint)]">Estado</p>
+      {statuses.map(({ status, label, Icon, color }) => (
+        <button
+          key={status}
+          onClick={() => handleStatusChange(status)}
+          className={`flex w-full items-center gap-2.5 px-3 py-2 text-xs transition hover:bg-[var(--bg-hover)] ${
+            task.status === status ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'
+          }`}
+        >
+          <Icon size={12} className={color} />
+          {label}
+          {task.status === status && (
+            <span className="ml-auto h-1.5 w-1.5 rounded-full bg-indigo-400" />
+          )}
+        </button>
+      ))}
+
+      {/* Copiar */}
+      <div className="mx-2 my-1 border-t border-[var(--border)]" />
+      <button
+        onClick={handleCopy}
+        className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+      >
+        {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+        {copied ? 'Copiado' : 'Copiar título'}
+      </button>
+
+      {/* Eliminar */}
+      <div className="mx-2 my-1 border-t border-[var(--border)]" />
+      <button
+        onClick={() => setConfirmDelete(true)}
+        className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-red-400 transition hover:bg-red-500/10"
+      >
+        <Trash2 size={12} />
+        Eliminar tarea
+      </button>
+    </div>,
+    document.body
+  );
+}
+
+// ── Menú contextual para espacio vacío (crear nueva tarea) ─────────────────
+export function NewTaskContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ x, y });
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    let nx = x, ny = y;
+    if (x + rect.width > window.innerWidth - 8) nx = x - rect.width;
+    if (y + rect.height > window.innerHeight - 8) ny = y - rect.height;
+    setPos({ x: nx, y: ny });
+  }, [x, y]);
+
+  return createPortal(
+    <div
+      ref={ref}
+      style={{ position: 'fixed', top: pos.y, left: pos.x, zIndex: 9999 }}
+      className="min-w-[180px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-2xl"
+    >
+      <button
+        onClick={() => {
+          window.dispatchEvent(new CustomEvent('logday:new-task'));
+          onClose();
+        }}
+        className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+      >
+        <Plus size={12} className="text-indigo-400" />
+        Nueva tarea
+      </button>
+    </div>,
+    document.body
+  );
+}

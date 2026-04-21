@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { FolderOpen, CheckSquare, Tag, Search, Layout, Calendar, AlertTriangle } from 'lucide-react';
+import { FolderOpen, Tag, Search, Layout, Calendar, AlertTriangle, BookOpen, ClipboardList, Clock, GitCommit } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
+import logo from '../assets/logo.png';
 
 function isICloudPath(path: string): boolean {
   return (
@@ -28,11 +29,14 @@ export function Onboarding() {
   };
 
   const features = [
-    { icon: CheckSquare, label: 'Tareas en archivos .md legibles en cualquier editor' },
-    { icon: Tag, label: 'Tags, proyectos y fechas de vencimiento' },
-    { icon: Search, label: 'Búsqueda global en todos tus archivos' },
-    { icon: Layout, label: 'Vista Lista, Kanban y Calendario' },
-    { icon: Calendar, label: 'Vincula archivos y carpetas de tu equipo' },
+    { icon: Layout,       label: 'Tareas con vistas Lista, Kanban y Calendario' },
+    { icon: Tag,          label: 'Tags, proyectos y fechas de vencimiento' },
+    { icon: BookOpen,     label: 'Notas en Markdown con editor enriquecido' },
+    { icon: ClipboardList,label: 'Diario para registrar el trabajo del día' },
+    { icon: Clock,        label: 'Cálculo de horas extra con exportación a Excel' },
+    { icon: Search,       label: 'Búsqueda global en todos tus archivos' },
+    { icon: Calendar,     label: 'Todo guardado en archivos .md en tu carpeta' },
+    { icon: GitCommit,    label: 'Sincronización con Git (commits y push automáticos)' },
   ];
 
   return (
@@ -40,8 +44,8 @@ export function Onboarding() {
       <div className="w-full max-w-md px-8">
         {/* Logo */}
         <div className="mb-10 text-center">
-          <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-600 text-white mb-4">
-            <CheckSquare size={32} />
+          <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl overflow-hidden mb-4">
+            <img src={logo} alt="Logday" className="h-full w-full object-cover" />
           </div>
           <h1 className="text-3xl font-bold text-[var(--text-primary)] tracking-tight">Logday</h1>
           <p className="mt-2 text-[var(--text-muted)] text-sm">Tu gestor de tareas local, en archivos markdown.</p>

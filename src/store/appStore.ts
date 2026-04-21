@@ -1222,7 +1222,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!basePath) return;
     await get().gitCommit();
     try {
-      await invoke('git_run', { cwd: basePath, args: ['push'] });
+      await invoke('git_run', { cwd: basePath, args: ['push', '--set-upstream', 'origin', 'main'] });
       set({ gitStatus: 'synced', gitRemoteStatus: 'synced' });
     } catch (e) {
       set({ gitStatus: 'error' });
@@ -1270,7 +1270,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       // Primero commitear local para no perder cambios
       await get().gitCommit();
-      await invoke('git_run', { cwd: basePath, args: ['pull'] });
+      await invoke('git_run', { cwd: basePath, args: ['pull', 'origin', 'main'] });
       set({ gitStatus: 'synced', gitRemoteStatus: 'synced' });
       // Recargar todos los datos desde disco
       await Promise.all([

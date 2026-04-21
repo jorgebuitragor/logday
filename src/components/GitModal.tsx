@@ -360,7 +360,14 @@ export function GitModal() {
           {errorMsg && (
             <div className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2">
               <AlertCircle size={13} className="mt-0.5 shrink-0 text-red-400" />
-              <p className="text-[11px] text-red-400 break-all">{errorMsg}</p>
+              <p className="flex-1 text-[11px] text-red-400 break-all">{errorMsg}</p>
+              <button
+                onClick={() => navigator.clipboard.writeText(errorMsg)}
+                className="shrink-0 rounded p-0.5 text-red-400/60 transition hover:text-red-400 hover:bg-red-500/20"
+                title="Copiar error"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+              </button>
             </div>
           )}
 

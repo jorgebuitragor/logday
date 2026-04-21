@@ -1,4 +1,4 @@
-import { useState, useEffect, useReducer } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Eye,
   FileText,
@@ -72,7 +72,6 @@ export function RichTextEditor({ value, onChange, placeholder = 'Escribe aqu√≠‚Ä
   const [showTableMenu, setShowTableMenu] = useState(false);
   const [urlInputMode, setUrlInputMode] = useState<'link' | 'image' | null>(null);
   const [urlInputValue, setUrlInputValue] = useState('');
-  const [, forceUpdate] = useReducer((x: number) => x + 1, 0);
 
   const applyCase = (mode: 'upper' | 'lower' | 'sentence' | 'title') => {
     if (!editor) return;
@@ -127,8 +126,6 @@ export function RichTextEditor({ value, onChange, placeholder = 'Escribe aqu√≠‚Ä
       setMdContent(md);
       onChange(md);
     },
-    onSelectionUpdate() { forceUpdate(); },
-    onTransaction() { forceUpdate(); },
   });
 
   // Sync content when value changes externally (e.g. task switch)

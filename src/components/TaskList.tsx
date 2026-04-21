@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, memo } from 'react';
 import { Plus, Circle, Clock, CheckCircle2, Calendar } from 'lucide-react';
 import { Task, TaskStatus } from '../types';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
 import { TaskContextMenu, NewTaskContextMenu } from './TaskContextMenu';
 
@@ -10,7 +11,7 @@ const STATUS_ICONS: Record<TaskStatus, React.ReactNode> = {
   done: <CheckCircle2 size={14} className="text-green-400" />,
 };
 
-function TaskRow({
+const TaskRow = memo(function TaskRow({
   task,
   isNew,
   isRemoving,
@@ -21,7 +22,9 @@ function TaskRow({
   isRemoving?: boolean;
   onBeforeDelete?: () => void;
 }) {
-  const { setActiveTask, activeTask, updateTask } = useAppStore();
+  const { setActiveTask, activeTask, updateTask } = useAppStore(
+    useShallow((s) => ({ setActiveTask: s.setActiveTask, activeTask: s.activeTask, updateTask: s.updateTask }))
+  );
   const isActive = activeTask?.id === task.id;
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   // Animación de entrada
@@ -113,10 +116,19 @@ function TaskRow({
     </div>
     </>
   );
-}
+});
 
 export function TaskList() {
-  const { tasks, activeProject, currentView, createTask, deleteTask, isLoading } = useAppStore();
+  const { tasks, activeProject, currentView, createTask, deleteTask, isLoading } = useAppStore(
+    useShallow((s) => ({
+      tasks: s.tasks,
+      activeProject: s.activeProject,
+      currentView: s.currentView,
+      createTask: s.createTask,
+      deleteTask: s.deleteTask,
+      isLoading: s.isLoading,
+    }))
+  );
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [filter, setFilter] = useState<TaskStatus | 'all'>('all');
@@ -162,10 +174,12 @@ export function TaskList() {
     return () => window.removeEventListener('logday:new-task', handler);
   }, []);
 
-  if (currentView !== 'list') return null;
+  const filtered = useMemo(
+    () => filter === 'all' ? tasks : tasks.filter((t) => t.status === filter),
+    [tasks, filter]
+  );
 
-  const filtered =
-    filter === 'all' ? tasks : tasks.filter((t) => t.status === filter);
+  if (currentView !== 'list') return null;
 
   const handleCreateTask = async () => {
     if (newTaskTitle.trim()) {

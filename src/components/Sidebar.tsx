@@ -28,6 +28,7 @@ import {
   GripVertical,
   Scissors,
   FolderUp,
+  GitCommit,
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { ViewMode } from '../types';
@@ -302,6 +303,10 @@ export function Sidebar() {
     toggleSearch,
     toggleSidebar,
     toggleSettings,
+    toggleGit,
+    gitConfig,
+    gitStatus,
+    gitRemoteStatus,
     setSection,
     selectNoteFolder,
     createNoteFolder,
@@ -610,6 +615,22 @@ export function Sidebar() {
           title="Búsqueda global (⌘F)"
         >
           <Search size={18} />
+        </button>
+        <button
+          onClick={toggleGit}
+          className="relative rounded-lg p-2 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+          title="Git"
+        >
+          <GitCommit size={18} />
+          {gitConfig.enabled && (
+            <span className={`absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full ${
+              gitStatus === 'error'           ? 'bg-red-400'    :
+              gitRemoteStatus === 'behind'    ? 'bg-blue-400'   :
+              gitRemoteStatus === 'diverged'  ? 'bg-purple-400' :
+              gitRemoteStatus === 'offline'   ? 'bg-zinc-500'   :
+              gitStatus === 'synced'          ? 'bg-green-400'  : 'bg-amber-400'
+            }`} />
+          )}
         </button>
         <button
           onClick={toggleSettings}
@@ -1179,6 +1200,22 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="border-t border-[var(--border)] px-2 py-2 space-y-0.5">
+        <button
+          onClick={toggleGit}
+          className="relative flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+        >
+          <GitCommit size={14} />
+          <span>Git</span>
+          {gitConfig.enabled && (
+            <span className={`ml-auto h-1.5 w-1.5 rounded-full ${
+              gitStatus === 'error'           ? 'bg-red-400'    :
+              gitRemoteStatus === 'behind'    ? 'bg-blue-400'   :
+              gitRemoteStatus === 'diverged'  ? 'bg-purple-400' :
+              gitRemoteStatus === 'offline'   ? 'bg-zinc-500'   :
+              gitStatus === 'synced'          ? 'bg-green-400'  : 'bg-amber-400'
+            }`} />
+          )}
+        </button>
         <button
           onClick={toggleSettings}
           className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"

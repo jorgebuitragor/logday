@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Plus, Pin, Search, Copy, CopyPlus, Trash2, FolderInput, ChevronRight, Share2, Download, Pencil, Tag, X, ArrowUpDown } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
 import { Note } from '../types';
 import { ExportModal } from './ExportModal';
@@ -22,7 +23,23 @@ export function NoteList() {
     moveNote,
     renameNote,
     updateNote,
-  } = useAppStore();
+  } = useAppStore(
+    useShallow((s) => ({
+      notes: s.notes,
+      activeNote: s.activeNote,
+      noteFolders: s.noteFolders,
+      activeSection: s.activeSection,
+      basePath: s.basePath,
+      setActiveNote: s.setActiveNote,
+      createNote: s.createNote,
+      deleteNote: s.deleteNote,
+      duplicateNote: s.duplicateNote,
+      toggleNotePin: s.toggleNotePin,
+      moveNote: s.moveNote,
+      renameNote: s.renameNote,
+      updateNote: s.updateNote,
+    }))
+  );
 
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'updated' | 'created' | 'title'>('updated');
@@ -236,21 +253,26 @@ export function NoteList() {
     title: 'Título',
   };
 
-  const filtered = search.trim()
-    ? notes.filter(
-        (n) =>
-          n.title.toLowerCase().includes(search.toLowerCase()) ||
-          n.content.toLowerCase().includes(search.toLowerCase())
-      )
-    : notes;
+  const filtered = useMemo(
+    () => search.trim()
+      ? notes.filter(
+          (n) =>
+            n.title.toLowerCase().includes(search.toLowerCase()) ||
+            n.content.toLowerCase().includes(search.toLowerCase())
+        )
+      : notes,
+    [notes, search]
+  );
 
-  const sorted = [...filtered].sort((a, b) => {
-    // Pinned siempre primero
-    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-    if (sortBy === 'title') return a.title.localeCompare(b.title, 'es', { sensitivity: 'base' });
-    if (sortBy === 'created') return b.created.localeCompare(a.created);
-    return b.updated.localeCompare(a.updated); // 'updated'
-  });
+  const sorted = useMemo(
+    () => [...filtered].sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+      if (sortBy === 'title') return a.title.localeCompare(b.title, 'es', { sensitivity: 'base' });
+      if (sortBy === 'created') return b.created.localeCompare(a.created);
+      return b.updated.localeCompare(a.updated);
+    }),
+    [filtered, sortBy]
+  );
 
   // Carpetas destino (excluir la carpeta actual de la nota del menú)
   const moveFolders = ctxMenu

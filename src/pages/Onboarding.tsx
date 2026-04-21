@@ -1,15 +1,27 @@
 import { useState } from 'react';
-import { FolderOpen, CheckSquare, Tag, Search, Layout, Calendar } from 'lucide-react';
+import { FolderOpen, CheckSquare, Tag, Search, Layout, Calendar, AlertTriangle } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
+
+function isICloudPath(path: string): boolean {
+  return (
+    path.includes('/Library/Mobile Documents') ||
+    path.includes('com~apple~CloudDocs') ||
+    path.includes('/iCloud Drive/')
+  );
+}
 
 export function Onboarding() {
   const [loading, setLoading] = useState(false);
+  const [pickedPath, setPickedPath] = useState<string | null>(null);
   const setupBasePath = useAppStore((s) => s.setupBasePath);
 
   const handlePick = async () => {
     setLoading(true);
+    setPickedPath(null);
     try {
       await setupBasePath();
+      // Leer el path elegido para detectar iCloud
+      setPickedPath(useAppStore.getState().basePath);
     } finally {
       setLoading(false);
     }
@@ -57,6 +69,27 @@ export function Onboarding() {
         <p className="mt-3 text-center text-xs text-[var(--text-hint)]">
           Tus tareas se guardarán en la carpeta que elijas, como archivos .md.
         </p>
+
+        {pickedPath && isICloudPath(pickedPath) && (
+          <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 space-y-2">
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-400" />
+              <div>
+                <p className="text-xs font-semibold text-amber-400">Carpeta dentro de iCloud Drive</p>
+                <p className="mt-0.5 text-[11px] text-amber-300/80">
+                  La app puede congelarse mientras iCloud sincroniza archivos.<br />
+                  Recomendamos una carpeta local, por ejemplo <span className="font-mono">~/Documents/Logday</span>.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handlePick}
+              className="text-[11px] text-amber-400 underline underline-offset-2 hover:text-amber-300"
+            >
+              Cambiar a otra carpeta
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Download, Trash2, X, User, Pencil } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
 import { OvertimeEntry } from '../types';
 
@@ -34,7 +35,17 @@ export function OvertimeList({ onEdit }: Props) {
     overtimeEntries, overtimeMonth, loadOvertimeMonth,
     deleteOvertimeEntry, exportOvertimeExcel,
     overtimeMeta, setOvertimeMeta,
-  } = useAppStore();
+  } = useAppStore(
+    useShallow((s) => ({
+      overtimeEntries: s.overtimeEntries,
+      overtimeMonth: s.overtimeMonth,
+      loadOvertimeMonth: s.loadOvertimeMonth,
+      deleteOvertimeEntry: s.deleteOvertimeEntry,
+      exportOvertimeExcel: s.exportOvertimeExcel,
+      overtimeMeta: s.overtimeMeta,
+      setOvertimeMeta: s.setOvertimeMeta,
+    }))
+  );
   const [showConfig, setShowConfig] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<OvertimeEntry | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);

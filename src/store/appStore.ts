@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { Task, Note, AppConfig, ViewMode, Theme, ActiveSection, Shortcuts, DEFAULT_SHORTCUTS, OvertimeEntry, OvertimeMonthMeta } from '../types';
+import { invoke } from '@tauri-apps/api/core';
+import { Task, Note, AppConfig, ViewMode, Theme, ActiveSection, Shortcuts, DEFAULT_SHORTCUTS, OvertimeEntry, OvertimeMonthMeta, GitConfig, GitStatus, GitRemoteStatus } from '../types';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
 import { generateOvertimeXlsx } from '../lib/overtimeExcel';
 import { fs, pickFolder, pickFile, saveDialog, SearchResult } from '../lib/invoke';
@@ -60,6 +61,13 @@ interface AppState {
   fontSize: number;
   isSettingsOpen: boolean;
   shortcuts: Shortcuts;
+
+  // Git
+  gitConfig: GitConfig;
+  gitStatus: GitStatus;
+  gitRemoteStatus: GitRemoteStatus;
+  lastCommitTime: string | null;
+  isGitOpen: boolean;
 
   // ── Actions ──────────────────────────────────────────────────
 
@@ -129,6 +137,15 @@ interface AppState {
   setFontSize: (size: number) => void;
   setShortcut: (action: keyof Shortcuts, key: string) => void;
   toggleSettings: () => void;
+
+  // Git
+  saveGitConfig: (cfg: GitConfig) => void;
+  gitInit: (remote: string) => Promise<void>;
+  gitCommit: () => Promise<void>;
+  gitPush: () => Promise<void>;
+  gitPull: () => Promise<void>;
+  gitFetch: () => Promise<void>;
+  toggleGit: () => void;
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -158,6 +175,10 @@ const overtimeMonthDir = (base: string, year: string, month: string) =>
   `${base}/overtime/${year}/${month}`;
 const overtimeMonthFilePath = (base: string, year: string, month: string) =>
   `${base}/overtime/${year}/${month}/${year}-${month}.md`;
+
+// Guard para evitar cargas concurrentes del mismo mes
+const loadingDailyMonths = new Set<string>();
+const loadingOvertimeMonths = new Set<string>();
 
 function parseDailyFile(content: string): Record<string, string> {
   const entries: Record<string, string> = {};
@@ -267,6 +288,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     try { return JSON.parse(localStorage.getItem('folderTags') || '{}'); }
     catch { return {}; }
   })(),
+  gitConfig: (() => {
+    try {
+      return {
+        enabled: false, remote: '', autoCommitHourly: false, autoPushDaily: false,
+        ...JSON.parse(localStorage.getItem('gitConfig') || '{}'),
+      };
+    } catch { return { enabled: false, remote: '', autoCommitHourly: false, autoPushDaily: false, userName: '', userEmail: '' }; }
+  })(),
+  gitStatus: 'idle' as GitStatus,
+  gitRemoteStatus: 'unknown' as GitRemoteStatus,
+  lastCommitTime: null,
+  isGitOpen: false,
   overtimeEntries: [],
   overtimeMonth: new Date().toISOString().slice(0, 7),
   overtimeMonths: [],
@@ -288,16 +321,29 @@ export const useAppStore = create<AppState>((set, get) => ({
         const exists = await fs.exists(cfg.basePath);
         if (exists) {
           set({ basePath: cfg.basePath, isConfigured: true });
-          await get().loadProjects();
-          await get().loadNoteFolders();
+
           const lastProject = cfg.lastOpenedProject || null;
-          await get().loadTasks(lastProject);
-          if (lastProject) set({ activeProject: lastProject });
           const lastNoteFolder = cfg.lastOpenedNoteFolder ?? null;
-          await get().loadNotes(lastNoteFolder);
+
+          // Cargar proyectos y carpetas de notas primero (loadTasks/loadNotes dependen de ellos)
+          await Promise.all([get().loadProjects(), get().loadNoteFolders()]);
+
+          // Luego cargar tareas, notas, dailys y overtime en paralelo
+          await Promise.all([
+            get().loadTasks(lastProject),
+            get().loadNotes(lastNoteFolder),
+            get().loadDailyMonths(),
+            get().loadOvertimeMonths(),
+          ]);
+
+          if (lastProject) set({ activeProject: lastProject });
           if (lastNoteFolder !== undefined) set({ activeNoteFolder: lastNoteFolder });
-          await get().loadDailyMonths();
-          await get().loadOvertimeMonths();
+
+          // Fetch remoto en background para detectar cambios pendientes
+          const { gitConfig } = get();
+          if (gitConfig.enabled && gitConfig.remote.trim()) {
+            get().gitFetch().catch(() => {});
+          }
         }
       }
     } catch (e) {
@@ -374,28 +420,25 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadTasks: async (project = null) => {
     const { basePath } = get();
     if (!basePath) return;
-    set({ isLoading: true });
     try {
       const { projects } = get();
       const targetProjects = project ? [project] : projects;
-      const allTasks: Task[] = [];
-      for (const p of targetProjects) {
-        const dir = projectDir(basePath, p);
-        try {
-          const entries = await fs.listDir(dir);
-          const mdFiles = entries.filter((e) => !e.is_dir && e.name.endsWith('.md'));
-          for (const f of mdFiles) {
-            const task = await readTaskFromPath(f.path);
-            if (task) allTasks.push(task);
-          }
-        } catch { /* dir not exists yet */ }
-      }
+      const tasksByProject = await Promise.all(
+        targetProjects.map(async (p) => {
+          const dir = projectDir(basePath, p);
+          try {
+            const entries = await fs.listDir(dir);
+            const mdFiles = entries.filter((e) => !e.is_dir && e.name.endsWith('.md'));
+            const tasks = await Promise.all(mdFiles.map((f) => readTaskFromPath(f.path)));
+            return tasks.filter((t): t is Task => t !== null);
+          } catch { return []; }
+        })
+      );
+      const allTasks = tasksByProject.flat();
       allTasks.sort((a, b) => b.created.localeCompare(a.created));
       set({ tasks: allTasks });
     } catch (e) {
       console.error('loadTasks error:', e);
-    } finally {
-      set({ isLoading: false });
     }
   },
 
@@ -506,41 +549,41 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       if (folder === null) {
         // All notes: root + all subfolders
-        const rootEntries = await fs.listDir(nDir).catch(() => [] as typeof allNotes);
-        for (const f of (rootEntries as { name: string; path: string; is_dir: boolean }[]).filter(
+        const rootEntries = await fs.listDir(nDir).catch(() => [] as { name: string; path: string; is_dir: boolean }[]);
+        const rootFiles = (rootEntries as { name: string; path: string; is_dir: boolean }[]).filter(
           (e) => !e.is_dir && e.name.endsWith('.md')
-        )) {
-          const n = await readNoteFromPath(f.path);
-          if (n) allNotes.push(n);
-        }
+        );
+        const rootNotes = await Promise.all(rootFiles.map((f) => readNoteFromPath(f.path)));
+        allNotes.push(...rootNotes.filter((n): n is Note => n !== null));
+
         const { noteFolders } = get();
-        for (const nf of noteFolders) {
-          const folderEntries = await fs.listDir(noteFolderDir(basePath, nf)).catch(() => []);
-          for (const f of (folderEntries as { name: string; path: string; is_dir: boolean }[]).filter(
-            (e) => !e.is_dir && e.name.endsWith('.md')
-          )) {
-            const n = await readNoteFromPath(f.path);
-            if (n) allNotes.push(n);
-          }
-        }
+        const folderNotes = await Promise.all(
+          noteFolders.map(async (nf) => {
+            const folderEntries = await fs.listDir(noteFolderDir(basePath, nf)).catch(() => []);
+            const mdFiles = (folderEntries as { name: string; path: string; is_dir: boolean }[]).filter(
+              (e) => !e.is_dir && e.name.endsWith('.md')
+            );
+            const notes = await Promise.all(mdFiles.map((f) => readNoteFromPath(f.path)));
+            return notes.filter((n): n is Note => n !== null);
+          })
+        );
+        allNotes.push(...folderNotes.flat());
       } else if (folder === '') {
         // Unfiled notes (root only)
         const rootEntries = await fs.listDir(nDir).catch(() => []);
-        for (const f of (rootEntries as { name: string; path: string; is_dir: boolean }[]).filter(
+        const rootFiles = (rootEntries as { name: string; path: string; is_dir: boolean }[]).filter(
           (e) => !e.is_dir && e.name.endsWith('.md')
-        )) {
-          const n = await readNoteFromPath(f.path);
-          if (n) allNotes.push(n);
-        }
+        );
+        const notes = await Promise.all(rootFiles.map((f) => readNoteFromPath(f.path)));
+        allNotes.push(...notes.filter((n): n is Note => n !== null));
       } else {
         // Specific folder
         const folderEntries = await fs.listDir(noteFolderDir(basePath, folder)).catch(() => []);
-        for (const f of (folderEntries as { name: string; path: string; is_dir: boolean }[]).filter(
+        const mdFiles = (folderEntries as { name: string; path: string; is_dir: boolean }[]).filter(
           (e) => !e.is_dir && e.name.endsWith('.md')
-        )) {
-          const n = await readNoteFromPath(f.path);
-          if (n) allNotes.push(n);
-        }
+        );
+        const notes = await Promise.all(mdFiles.map((f) => readNoteFromPath(f.path)));
+        allNotes.push(...notes.filter((n): n is Note => n !== null));
       }
 
       // Pinned first, then by updated desc
@@ -827,8 +870,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   loadDailyMonth: async (yearMonth) => {
+    if (loadingDailyMonths.has(yearMonth)) return;
     const { basePath } = get();
     if (!basePath) return;
+    loadingDailyMonths.add(yearMonth);
     const [year, month] = yearMonth.split('-');
     const fp = dailyMonthFilePath(basePath, year, month);
     try {
@@ -836,6 +881,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const entries = parseDailyFile(raw);
       set((s) => ({ dailyEntries: { ...s.dailyEntries, ...entries } }));
     } catch { /* archivo no existe aún */ }
+    finally { loadingDailyMonths.delete(yearMonth); }
   },
 
   saveDailyEntry: async (date, activities) => {
@@ -1013,18 +1059,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   loadOvertimeMonth: async (yearMonth) => {
+    if (loadingOvertimeMonths.has(yearMonth)) return;
     const base = get().basePath;
     if (!base) return;
+    loadingOvertimeMonths.add(yearMonth);
     set({ overtimeMonth: yearMonth });
     const [year, month] = yearMonth.split('-');
-    await fs.createDir(overtimeMonthDir(base, year, month)).catch(() => {});
-    const path = overtimeMonthFilePath(base, year, month);
-    if (!(await fs.exists(path))) { set({ overtimeEntries: [] }); return; }
-    const raw = await fs.readFile(path);
     try {
-      const match = raw.match(/^---\n([\s\S]*?)\n---/);
-      set({ overtimeEntries: match ? (JSON.parse(match[1]).entries ?? []) : [] });
-    } catch { set({ overtimeEntries: [] }); }
+      await fs.createDir(overtimeMonthDir(base, year, month)).catch(() => {});
+      const path = overtimeMonthFilePath(base, year, month);
+      if (!(await fs.exists(path))) { set({ overtimeEntries: [] }); return; }
+      const raw = await fs.readFile(path);
+      try {
+        const match = raw.match(/^---\n([\s\S]*?)\n---/);
+        set({ overtimeEntries: match ? (JSON.parse(match[1]).entries ?? []) : [] });
+      } catch { set({ overtimeEntries: [] }); }
+    } finally { loadingOvertimeMonths.delete(yearMonth); }
   },
 
   saveOvertimeEntry: async (input) => {
@@ -1118,4 +1168,127 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   toggleSettings: () => set((s) => ({ isSettingsOpen: !s.isSettingsOpen })),
+
+  // ── Git ────────────────────────────────────────────────────────
+
+  saveGitConfig: (cfg: GitConfig) => {
+    localStorage.setItem('gitConfig', JSON.stringify(cfg));
+    set({ gitConfig: cfg });
+  },
+
+  gitInit: async (remote: string) => {
+    const { basePath, gitConfig } = get();
+    if (!basePath) return;
+    await invoke('git_run', { cwd: basePath, args: ['init'] });
+    if (gitConfig.userName.trim()) {
+      await invoke('git_run', { cwd: basePath, args: ['config', '--local', 'user.name', gitConfig.userName.trim()] });
+    }
+    if (gitConfig.userEmail.trim()) {
+      await invoke('git_run', { cwd: basePath, args: ['config', '--local', 'user.email', gitConfig.userEmail.trim()] });
+    }
+    await invoke('git_run', { cwd: basePath, args: ['add', '-A'] });
+    try {
+      await invoke('git_run', { cwd: basePath, args: ['commit', '-m', 'init: logday'] });
+    } catch {
+      // No hay nada que commitear — está bien
+    }
+    if (remote.trim()) {
+      try {
+        await invoke('git_run', { cwd: basePath, args: ['remote', 'add', 'origin', remote.trim()] });
+      } catch {
+        // El remote ya existía — actualizar
+        await invoke('git_run', { cwd: basePath, args: ['remote', 'set-url', 'origin', remote.trim()] });
+      }
+    }
+    set({ gitStatus: 'synced', lastCommitTime: new Date().toISOString() });
+  },
+
+  gitCommit: async () => {
+    const { basePath } = get();
+    if (!basePath) return;
+    try {
+      await invoke('git_run', { cwd: basePath, args: ['add', '-A'] });
+      const msg = `auto: ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
+      await invoke('git_run', { cwd: basePath, args: ['commit', '-m', msg] });
+      set({ gitStatus: 'synced', lastCommitTime: new Date().toISOString() });
+    } catch {
+      // Puede fallar si no hay cambios — no es un error real
+      set({ gitStatus: 'synced' });
+    }
+  },
+
+  gitPush: async () => {
+    const { basePath } = get();
+    if (!basePath) return;
+    await get().gitCommit();
+    try {
+      await invoke('git_run', { cwd: basePath, args: ['push'] });
+      set({ gitStatus: 'synced', gitRemoteStatus: 'synced' });
+    } catch (e) {
+      set({ gitStatus: 'error' });
+      throw e;
+    }
+  },
+
+  gitFetch: async () => {
+    const { basePath, gitConfig } = get();
+    if (!basePath || !gitConfig.remote.trim()) return;
+    try {
+      await invoke('git_run', { cwd: basePath, args: ['fetch', 'origin'] });
+      // Contar commits que el remoto tiene y nosotros no
+      let behind = 0;
+      let ahead = 0;
+      try {
+        const behindStr = await invoke<string>('git_run', {
+          cwd: basePath,
+          args: ['rev-list', 'HEAD..origin/HEAD', '--count'],
+        });
+        behind = parseInt(String(behindStr).trim(), 10) || 0;
+      } catch { /* rama remota no existe aún */ }
+      try {
+        const aheadStr = await invoke<string>('git_run', {
+          cwd: basePath,
+          args: ['rev-list', 'origin/HEAD..HEAD', '--count'],
+        });
+        ahead = parseInt(String(aheadStr).trim(), 10) || 0;
+      } catch { /* ok */ }
+
+      const remoteStatus: GitRemoteStatus =
+        behind > 0 && ahead > 0 ? 'diverged' :
+        behind > 0 ? 'behind' :
+        ahead  > 0 ? 'ahead'  : 'synced';
+      set({ gitRemoteStatus: remoteStatus });
+    } catch {
+      set({ gitRemoteStatus: 'offline' });
+    }
+  },
+
+  gitPull: async () => {
+    const { basePath } = get();
+    if (!basePath) return;
+    set({ gitStatus: 'pending' });
+    try {
+      // Primero commitear local para no perder cambios
+      await get().gitCommit();
+      await invoke('git_run', { cwd: basePath, args: ['pull'] });
+      set({ gitStatus: 'synced', gitRemoteStatus: 'synced' });
+      // Recargar todos los datos desde disco
+      await Promise.all([
+        get().loadProjects(),
+        get().loadNoteFolders(),
+      ]);
+      const { activeProject, activeNoteFolder } = get();
+      await Promise.all([
+        get().loadTasks(activeProject),
+        get().loadNotes(activeNoteFolder),
+        get().loadDailyMonths(),
+        get().loadOvertimeMonths(),
+      ]);
+    } catch (e) {
+      set({ gitStatus: 'error' });
+      throw e;
+    }
+  },
+
+  toggleGit: () => set((s) => ({ isGitOpen: !s.isGitOpen })),
 }));

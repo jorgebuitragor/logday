@@ -1,11 +1,19 @@
 import { useEffect, useState } from 'react';
-import { X, Monitor, Sun, Moon, FolderOpen, Minus, Plus, Download, Upload, Type, Keyboard } from 'lucide-react';
+import { X, Monitor, Sun, Moon, FolderOpen, Minus, Plus, Download, Upload, Type, Keyboard, AlertTriangle } from 'lucide-react';
 import { Theme, Shortcuts } from '../types';
 import { useAppStore } from '../store/appStore';
 import { fs } from '../lib/invoke';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import JSZip from 'jszip';
+
+function isICloudPath(path: string): boolean {
+  return (
+    path.includes('/Library/Mobile Documents') ||
+    path.includes('com~apple~CloudDocs') ||
+    path.includes('/iCloud Drive/')
+  );
+}
 
 const THEME_OPTIONS: { value: Theme; label: string; Icon: React.ElementType; desc: string }[] = [
   { value: 'system', label: 'Sistema', Icon: Monitor, desc: 'Sigue la preferencia del SO' },
@@ -212,6 +220,17 @@ export function SettingsModal() {
             <p className="mt-1.5 text-[10px] text-[var(--text-hint)] text-center">
               Los archivos existentes no se mueven automáticamente
             </p>
+            {basePath && isICloudPath(basePath) && (
+              <div className="mt-2 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
+                <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-400" />
+                <div>
+                  <p className="text-[11px] font-semibold text-amber-400">Carpeta en iCloud Drive</p>
+                  <p className="mt-0.5 text-[10px] text-amber-300/80">
+                    La app puede congelarse mientras iCloud sincroniza. Recomendamos usar una carpeta local.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Theme section */}

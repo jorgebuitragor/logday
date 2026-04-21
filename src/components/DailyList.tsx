@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Plus, ChevronLeft, ChevronRight, CalendarPlus, Trash2, Copy, Check } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
 import { toISO } from '../lib/colombianHolidays';
 import { AppCalendarGrid } from './AppDatePicker';
@@ -28,7 +29,20 @@ export function DailyList() {
     loadDailyMonth,
     setActiveDailyDate,
     setActiveDailyMonth,
-  } = useAppStore();
+  } = useAppStore(
+    useShallow((s) => ({
+      activeSection: s.activeSection,
+      dailyEntries: s.dailyEntries,
+      activeDailyDate: s.activeDailyDate,
+      activeDailyMonth: s.activeDailyMonth,
+      createTodayDaily: s.createTodayDaily,
+      createDailyForDate: s.createDailyForDate,
+      deleteDailyEntry: s.deleteDailyEntry,
+      loadDailyMonth: s.loadDailyMonth,
+      setActiveDailyDate: s.setActiveDailyDate,
+      setActiveDailyMonth: s.setActiveDailyMonth,
+    }))
+  );
 
   // ── Estado del picker de fecha ────────────────────────────────────────────
   const [showDatePicker, setShowDatePicker] = useState(false);

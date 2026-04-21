@@ -1,24 +1,38 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import './App.css';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from './store/appStore';
 import { Onboarding } from './pages/Onboarding';
 import { Sidebar } from './components/Sidebar';
 import { TaskList } from './components/TaskList';
-import { KanbanBoard } from './components/KanbanBoard';
-import { CalendarView } from './components/CalendarView';
-import { TaskEditor } from './components/TaskEditor';
-import { NoteList } from './components/NoteList';
-import { NoteEditor } from './components/NoteEditor';
-import { DailyList } from './components/DailyList';
-import { DailyEditor } from './components/DailyEditor';
-import { OvertimeList } from './components/OvertimeList';
-import { OvertimeEditor } from './components/OvertimeEditor';
 import { SearchModal } from './components/SearchModal';
 import { SettingsModal } from './components/SettingsModal';
+import { GitModal } from './components/GitModal';
 import { OvertimeEntry } from './types';
 
+const KanbanBoard   = lazy(() => import('./components/KanbanBoard').then(m => ({ default: m.KanbanBoard })));
+const CalendarView  = lazy(() => import('./components/CalendarView').then(m => ({ default: m.CalendarView })));
+const TaskEditor    = lazy(() => import('./components/TaskEditor').then(m => ({ default: m.TaskEditor })));
+const NoteList      = lazy(() => import('./components/NoteList').then(m => ({ default: m.NoteList })));
+const NoteEditor    = lazy(() => import('./components/NoteEditor').then(m => ({ default: m.NoteEditor })));
+const DailyList     = lazy(() => import('./components/DailyList').then(m => ({ default: m.DailyList })));
+const DailyEditor   = lazy(() => import('./components/DailyEditor').then(m => ({ default: m.DailyEditor })));
+const OvertimeList  = lazy(() => import('./components/OvertimeList').then(m => ({ default: m.OvertimeList })));
+const OvertimeEditor = lazy(() => import('./components/OvertimeEditor').then(m => ({ default: m.OvertimeEditor })));
+
 export default function App() {
-  const { init, isLoading, isConfigured, activeTask, activeSection, createNote, setSection, shortcuts } = useAppStore();
+  const { init, isLoading, isConfigured, activeTask, activeSection, createNote, setSection, shortcuts } = useAppStore(
+    useShallow((s) => ({
+      init: s.init,
+      isLoading: s.isLoading,
+      isConfigured: s.isConfigured,
+      activeTask: s.activeTask,
+      activeSection: s.activeSection,
+      createNote: s.createNote,
+      setSection: s.setSection,
+      shortcuts: s.shortcuts,
+    }))
+  );
   const [editingEntry, setEditingEntry] = useState<OvertimeEntry | null | undefined>(undefined);
 
   useEffect(() => {
@@ -72,6 +86,7 @@ export default function App() {
 
       {/* Main content area */}
       <div className="flex flex-1 overflow-hidden">
+        <Suspense fallback={null}>
         {activeSection === 'tasks' ? (
           <>
             <TaskList />
@@ -97,11 +112,13 @@ export default function App() {
             <DailyEditor />
           </>
         )}
+        </Suspense>
       </div>
 
       {/* Global search overlay */}
       <SearchModal />
       <SettingsModal />
+      <GitModal />
     </div>
   );
 }

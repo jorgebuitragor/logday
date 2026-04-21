@@ -223,6 +223,22 @@ fn write_file_binary(path: String, data: String) -> Result<(), String> {
     fs::write(&path, bytes).map_err(|e| format!("Failed to write {path}: {e}"))
 }
 
+/// Runs a git subcommand in the given working directory.
+/// Only invokes the `git` binary — never executes arbitrary shell strings.
+#[tauri::command]
+fn git_run(cwd: String, args: Vec<String>) -> Result<String, String> {
+    let output = std::process::Command::new("git")
+        .current_dir(&cwd)
+        .args(&args)
+        .output()
+        .map_err(|e| format!("git not found or failed to start: {e}"))?;
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+
 /// Opens a file or folder in the system's default file manager
 #[tauri::command]
 fn open_in_system(path: String) -> Result<(), String> {
@@ -272,6 +288,7 @@ pub fn run() {
             read_file_binary,
             write_file_binary,
             fetch_image_base64,
+            git_run,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

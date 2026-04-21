@@ -151,16 +151,11 @@ export function NoteEditor() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const md = (ed.storage as any).markdown.getMarkdown() as string;
       setMdContent(md);
-    },
-    onSelectionUpdate() {
-      forceUpdate();
-    },
-    onTransaction() {
       forceUpdate();
     },
   });
 
-  const saveTimeoutRef = { current: null as ReturnType<typeof setTimeout> | null };
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const schedulesSave = useCallback(
     (patch: Partial<Note>) => {

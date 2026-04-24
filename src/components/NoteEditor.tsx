@@ -26,11 +26,19 @@ import {
   AlignCenter,
   AlignRight,
   Image as ImageIcon,
-  Check,
   Quote,
   Braces,
   CaseSensitive,
   Table as TableIcon,
+  Columns3,
+  Rows3,
+  BetweenHorizontalStart,
+  BetweenHorizontalEnd,
+  BetweenVerticalEnd,
+  PanelRightClose,
+  PanelBottomClose,
+  TableProperties,
+  Share2,
 } from 'lucide-react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -46,11 +54,17 @@ import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { TableCell } from '@tiptap/extension-table-cell';
+import Dropcursor from '@tiptap/extension-dropcursor';
 import { Markdown } from 'tiptap-markdown';
 import Paragraph from '@tiptap/extension-paragraph';
 import { useAppStore } from '../store/appStore';
 import { Note } from '../types';
 import { ExportModal } from './ExportModal';
+import { MarkdownPreview } from './MarkdownPreview';
+import { MermaidEditorModal } from './MermaidEditorModal';
+import { MermaidBlock } from './MermaidBlock';
+import { formatMermaidFence, parseMermaidBlocks } from '../lib/mermaid';
+import { ImageLinkModal } from './ImageLinkModal';
 
 // Paragraph personalizado: serializa como \n simple en lugar de \n\n
 // tiptap-markdown lee extension.storage.markdown para sobrescribir el serializer
@@ -67,6 +81,35 @@ const CompactParagraph = Paragraph.extend({
     };
   },
 });
+
+function normalizeEditorMarkdown(raw: string): string {
+  if (!raw) return raw;
+
+  const lines = raw.split('\n');
+  let inFence = false;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (/^```/.test(line.trim())) {
+      inFence = !inFence;
+      continue;
+    }
+
+    if (inFence || i === lines.length - 1) continue;
+
+    const match = line.match(/(\\+)$/);
+    if (!match) continue;
+
+    // tiptap-markdown serializa hard breaks como "\\\n".
+    // Si hay un numero impar de barras al final de la linea, quitamos una.
+    const trailing = match[1];
+    if (trailing.length % 2 === 1) {
+      lines[i] = line.slice(0, -1);
+    }
+  }
+
+  return lines.join('\n');
+}
 
 export function NoteEditor() {
   const {
@@ -90,10 +133,35 @@ export function NoteEditor() {
   const [showBlockMenu, setShowBlockMenu] = useState(false);
   const [showCaseMenu, setShowCaseMenu] = useState(false);
   const [showTableMenu, setShowTableMenu] = useState(false);
-  const [urlInputMode, setUrlInputMode] = useState<'link' | 'image' | null>(null);
-  const [urlInputValue, setUrlInputValue] = useState('');
+  const [showDiagramMenu, setShowDiagramMenu] = useState(false);
+  const [showDiagramEditor, setShowDiagramEditor] = useState(false);
+  const [diagramEditorMode, setDiagramEditorMode] = useState<'create' | 'edit'>('create');
+  const [diagramDraft, setDiagramDraft] = useState('');
+  const [editingDiagramIndex, setEditingDiagramIndex] = useState<number | null>(null);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [isDroppingFile, setIsDroppingFile] = useState(false);
+  const [blockDropLineY, setBlockDropLineY] = useState<number | null>(null);
+  const [blockDropFlashY, setBlockDropFlashY] = useState<number | null>(null);
+  const [dragHandlePos, setDragHandlePos] = useState<{ top: number; left: number; visible: boolean }>({
+    top: 0,
+    left: 0,
+    visible: false,
+  });
   const savedRangeRef = useRef<{ from: number; to: number } | null>(null);
+  const hoverBlockIndexRef = useRef<number | null>(null);
+  const isBlockDraggingRef = useRef(false);
+  const suppressNextEditorMarkdownSyncRef = useRef(false);
+  const sourceTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const titleRef = useRef<HTMLTextAreaElement>(null);
+  const editorPaneRef = useRef<HTMLDivElement>(null);
+  const blockMenuRef = useRef<HTMLDivElement>(null);
+  const caseMenuRef = useRef<HTMLDivElement>(null);
+  const tableMenuRef = useRef<HTMLDivElement>(null);
+  const diagramMenuRef = useRef<HTMLDivElement>(null);
   const [, forceUpdate] = useReducer((x: number) => x + 1, 0);
+
+  const mermaidBlocks = parseMermaidBlocks(mdContent);
 
   const applyCase = (mode: 'upper' | 'lower' | 'sentence' | 'title') => {
     if (!editor) return;
@@ -134,8 +202,14 @@ export function NoteEditor() {
       TableRow,
       TableHeader,
       TableCell,
+      Dropcursor.configure({
+        color: 'rgba(129, 140, 248, 0.55)',
+        width: 2,
+        class: 'tiptap-drag-drop-indicator',
+      }),
       Markdown.configure({
         html: true,
+        breaks: true,
         transformPastedText: true,
         transformCopiedText: false,
       }),
@@ -149,11 +223,157 @@ export function NoteEditor() {
     },
     onUpdate({ editor: ed }) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const md = (ed.storage as any).markdown.getMarkdown() as string;
+      const md = normalizeEditorMarkdown((ed.storage as any).markdown.getMarkdown() as string);
+      if (suppressNextEditorMarkdownSyncRef.current) {
+        suppressNextEditorMarkdownSyncRef.current = false;
+        return;
+      }
       setMdContent(md);
-      forceUpdate();
+      // Cierra menús desplegables al escribir
+      setShowBlockMenu(false);
+      setShowCaseMenu(false);
+      setShowTableMenu(false);
+      setShowDiagramMenu(false);
     },
   });
+
+  const topLevelPosAtIndex = useCallback((doc: { child: (i: number) => { nodeSize: number } }, index: number) => {
+    let pos = 0;
+    for (let i = 0; i < index; i += 1) pos += doc.child(i).nodeSize;
+    return pos;
+  }, []);
+
+  const getBlockAtCoords = useCallback((clientX: number, clientY: number, probeOffsetX = 0) => {
+    if (!editor) return null;
+    const root = editor.view.dom as HTMLElement;
+    let blockEl: HTMLElement | null = null;
+    const els = document.elementsFromPoint(clientX + probeOffsetX, clientY);
+    for (const el of els) {
+      let node = el as HTMLElement | null;
+      while (node) {
+        if (node.parentElement === root) {
+          blockEl = node;
+          break;
+        }
+        node = node.parentElement;
+      }
+      if (blockEl) break;
+    }
+    if (!blockEl) return null;
+
+    const rawPos = editor.view.posAtDOM(blockEl, 0);
+    const resolved = editor.state.doc.resolve(Math.max(0, Math.min(rawPos, editor.state.doc.content.size)));
+    const blockIndex = resolved.index(0);
+    return { blockEl, blockIndex };
+  }, [editor]);
+
+  const startBlockPointerDrag = useCallback((event: React.PointerEvent) => {
+    if (!editor) return;
+    const sourceIndexValue = hoverBlockIndexRef.current;
+    if (sourceIndexValue == null) return;
+    const sourceIndex = sourceIndexValue;
+    if (sourceIndex < 0 || sourceIndex >= editor.state.doc.childCount) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    isBlockDraggingRef.current = true;
+    setDragHandlePos((prev) => ({ ...prev, visible: false }));
+    document.body.style.cursor = 'grabbing';
+
+    const computeTarget = (clientX: number, clientY: number) => {
+      const pane = editorPaneRef.current;
+      if (!pane) return null;
+      const target = getBlockAtCoords(clientX, clientY, 40);
+      if (!target) return null;
+
+      const { blockEl, blockIndex } = target;
+      const rect = blockEl.getBoundingClientRect();
+      const before = clientY < rect.top + rect.height / 2;
+      const targetIndex = before ? blockIndex : blockIndex + 1;
+
+      const paneRect = pane.getBoundingClientRect();
+      const lineY = (before ? rect.top : rect.bottom) - paneRect.top + pane.scrollTop;
+
+      return { targetIndex, lineY };
+    };
+
+    const onMove = (e: PointerEvent) => {
+      const target = computeTarget(e.clientX, e.clientY);
+      if (!target) {
+        setBlockDropLineY(null);
+        return;
+      }
+      setBlockDropLineY(target.lineY);
+    };
+
+    const onUp = (e: PointerEvent) => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      isBlockDraggingRef.current = false;
+      document.body.style.cursor = '';
+
+      const target = computeTarget(e.clientX, e.clientY);
+      if (!target) {
+        setBlockDropLineY(null);
+        return;
+      }
+
+      setBlockDropLineY(null);
+      setBlockDropFlashY(target.lineY);
+      window.setTimeout(() => setBlockDropFlashY(null), 220);
+
+      let insertionIndex = target.targetIndex;
+      if (insertionIndex > sourceIndex) insertionIndex -= 1;
+      if (insertionIndex === sourceIndex) return;
+
+      const doc = editor.state.doc;
+      const sourceNode = doc.child(sourceIndex);
+      const from = topLevelPosAtIndex(doc, sourceIndex);
+      const to = from + sourceNode.nodeSize;
+
+      let tr = editor.state.tr.delete(from, to);
+      const clampedInsertionIndex = Math.max(0, Math.min(insertionIndex, tr.doc.childCount));
+      const insertPos = topLevelPosAtIndex(tr.doc, clampedInsertionIndex);
+      tr = tr.insert(insertPos, sourceNode);
+      editor.view.dispatch(tr.scrollIntoView());
+
+      requestAnimationFrame(() => {
+        const pane = editorPaneRef.current;
+        if (!pane) return;
+        setDragHandlePos((prev) => ({ ...prev, visible: false }));
+      });
+    };
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  }, [editor, getBlockAtCoords, topLevelPosAtIndex]);
+
+  const handleEditorPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!editor || isBlockDraggingRef.current) return;
+    const pane = editorPaneRef.current;
+    if (!pane) return;
+
+    const target = getBlockAtCoords(event.clientX, event.clientY, 40);
+    if (!target) {
+      // Mantener el handle visible en el gutter para permitir click/drag sin parpadeo.
+      return;
+    }
+
+    const { blockEl, blockIndex } = target;
+    hoverBlockIndexRef.current = blockIndex;
+
+    const rect = blockEl.getBoundingClientRect();
+    const paneRect = pane.getBoundingClientRect();
+    const top = rect.top - paneRect.top + pane.scrollTop + Math.max(0, (rect.height - 18) / 2);
+    const left = 6;
+    setDragHandlePos({ top, left, visible: true });
+  }, [editor, getBlockAtCoords]);
+
+  const handleEditorPointerLeave = useCallback(() => {
+    if (isBlockDraggingRef.current) return;
+    setDragHandlePos((prev) => ({ ...prev, visible: false }));
+    hoverBlockIndexRef.current = null;
+  }, []);
 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -171,16 +391,161 @@ export function NoteEditor() {
 
   useEffect(() => {
     if (!activeNote || !editor) return;
+    const normalizedContent = normalizeEditorMarkdown(activeNote.content || '');
     setTitle(activeNote.title);
     setViewMode('wysiwyg');
-    editor.commands.setContent(activeNote.content || '');
-    setMdContent(activeNote.content || '');
+    suppressNextEditorMarkdownSyncRef.current = true;
+    editor.commands.setContent(normalizedContent);
+    setMdContent(normalizedContent);
+    // Auto-focus el título cuando la nota está vacía (recién creada)
+    if (!activeNote.title && !activeNote.content) {
+      setTimeout(() => titleRef.current?.focus(), 50);
+    }
+    setShowDiagramEditor(false);
+    setShowDiagramMenu(false);
+    setEditingDiagramIndex(null);
   }, [activeNote?.id, editor]);
 
   useEffect(() => {
     schedulesSave({ content: mdContent });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mdContent]);
+
+  // Suscripción directa al evento transaction del editor para refrescar el toolbar
+  // de forma fiable (evita closures estales de useEditor config en TipTap 3)
+  useEffect(() => {
+    if (!editor) return;
+    const handler = () => forceUpdate();
+    editor.on('transaction', handler);
+    return () => { editor.off('transaction', handler); };
+  }, [editor]);
+
+  // Cierra dropdowns al hacer click fuera de ellos
+  useEffect(() => {
+    if (!showBlockMenu && !showCaseMenu && !showTableMenu && !showDiagramMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (showBlockMenu && !blockMenuRef.current?.contains(e.target as Node)) setShowBlockMenu(false);
+      if (showCaseMenu && !caseMenuRef.current?.contains(e.target as Node)) setShowCaseMenu(false);
+      if (showTableMenu && !tableMenuRef.current?.contains(e.target as Node)) setShowTableMenu(false);
+      if (showDiagramMenu && !diagramMenuRef.current?.contains(e.target as Node)) setShowDiagramMenu(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showBlockMenu, showCaseMenu, showTableMenu, showDiagramMenu]);
+
+  const syncMarkdownToEditor = useCallback((nextMarkdown: string) => {
+    setMdContent(nextMarkdown);
+    if (viewMode !== 'source') {
+      suppressNextEditorMarkdownSyncRef.current = true;
+      editor?.commands.setContent(nextMarkdown || '');
+    }
+  }, [editor, viewMode]);
+
+  const openDiagramEditor = useCallback((mode: 'create' | 'edit', code: string, index: number | null) => {
+    setDiagramEditorMode(mode);
+    setDiagramDraft(code);
+    setEditingDiagramIndex(index);
+    setShowDiagramMenu(false);
+    setShowDiagramEditor(true);
+  }, []);
+
+  const insertBlockAtSelection = useCallback((markdown: string, block: string) => {
+    const textarea = sourceTextareaRef.current;
+    if (viewMode !== 'source' || !textarea) {
+      const trimmed = markdown.trimEnd();
+      return trimmed ? `${trimmed}\n\n${block}` : block;
+    }
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const before = markdown.slice(0, start);
+    const after = markdown.slice(end);
+    const leading = before.length === 0 ? '' : before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n';
+    const trailing = after.length === 0 ? '' : after.startsWith('\n\n') ? '' : after.startsWith('\n') ? '\n' : '\n\n';
+    return `${before}${leading}${block}${trailing}${after}`;
+  }, [viewMode]);
+
+  const handleSaveDiagram = useCallback((code: string) => {
+    const block = formatMermaidFence(code);
+    let nextMarkdown = mdContent;
+
+    if (editingDiagramIndex !== null) {
+      const currentBlock = mermaidBlocks[editingDiagramIndex];
+      if (currentBlock) {
+        nextMarkdown = `${mdContent.slice(0, currentBlock.start)}${block}${mdContent.slice(currentBlock.end)}`;
+      }
+    } else {
+      nextMarkdown = insertBlockAtSelection(mdContent, block);
+    }
+
+    syncMarkdownToEditor(nextMarkdown);
+    setShowDiagramEditor(false);
+    setEditingDiagramIndex(null);
+
+    if (viewMode === 'source') {
+      requestAnimationFrame(() => {
+        sourceTextareaRef.current?.focus();
+      });
+    }
+  }, [editingDiagramIndex, insertBlockAtSelection, mdContent, mermaidBlocks, syncMarkdownToEditor, viewMode]);
+
+  const handleDeleteDiagram = useCallback((index: number) => {
+    const currentBlock = mermaidBlocks[index];
+    if (!currentBlock) return;
+
+    const before = mdContent.slice(0, currentBlock.start).replace(/\s*$/, '');
+    const after = mdContent.slice(currentBlock.end).replace(/^\s*/, '');
+    const nextMarkdown = [before, after].filter(Boolean).join('\n\n');
+
+    syncMarkdownToEditor(nextMarkdown);
+    setShowDiagramEditor(false);
+    setEditingDiagramIndex(null);
+  }, [mdContent, mermaidBlocks, syncMarkdownToEditor]);
+
+  const handleDuplicateDiagram = useCallback((index: number) => {
+    const currentBlock = mermaidBlocks[index];
+    if (!currentBlock) return;
+
+    const block = formatMermaidFence(currentBlock.code);
+    const nextMarkdown = `${mdContent.slice(0, currentBlock.end)}\n\n${block}${mdContent.slice(currentBlock.end)}`;
+
+    syncMarkdownToEditor(nextMarkdown);
+  }, [mdContent, mermaidBlocks, syncMarkdownToEditor]);
+
+  const handleMoveDiagram = useCallback((index: number, direction: 'up' | 'down') => {
+    const blocks = parseMermaidBlocks(mdContent);
+    const current = blocks[index];
+    if (!current) return;
+
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    const target = blocks[targetIndex];
+    if (!target) return;
+
+    let nextMarkdown = mdContent;
+    if (direction === 'up') {
+      const before = mdContent.slice(0, target.start);
+      const targetText = mdContent.slice(target.start, target.end);
+      const between = mdContent.slice(target.end, current.start);
+      const currentText = mdContent.slice(current.start, current.end);
+      const after = mdContent.slice(current.end);
+      nextMarkdown = `${before}${currentText}${between}${targetText}${after}`;
+    } else {
+      const before = mdContent.slice(0, current.start);
+      const currentText = mdContent.slice(current.start, current.end);
+      const between = mdContent.slice(current.end, target.start);
+      const targetText = mdContent.slice(target.start, target.end);
+      const after = mdContent.slice(target.end);
+      nextMarkdown = `${before}${targetText}${between}${currentText}${after}`;
+    }
+
+    syncMarkdownToEditor(nextMarkdown);
+  }, [mdContent, syncMarkdownToEditor]);
+
+
+  const getDiagramLabel = (code: string, index: number) => {
+    const firstLine = code.split('\n').map((line) => line.trim()).find(Boolean);
+    return firstLine ? `Diagrama ${index + 1}: ${firstLine}` : `Diagrama ${index + 1}`;
+  };
 
   const handleTitleChange = (val: string) => {
     setTitle(val);
@@ -234,13 +599,24 @@ export function NoteEditor() {
   const switchToWysiwyg = () => {
     // Sincronizar markdown crudo → TipTap al salir del modo source
     if (viewMode === 'source' && editor) {
+      suppressNextEditorMarkdownSyncRef.current = true;
       editor.commands.setContent(mdContent || '');
     }
     setViewMode('wysiwyg');
   };
 
+  const switchToSource = () => {
+    if (editor) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const md = normalizeEditorMarkdown((editor.storage as any).markdown.getMarkdown() as string);
+      setMdContent(md);
+    }
+    setViewMode('source');
+  };
+
   const switchToSplit = () => {
     if (viewMode === 'source' && editor) {
+      suppressNextEditorMarkdownSyncRef.current = true;
       editor.commands.setContent(mdContent || '');
     }
     setViewMode('split');
@@ -304,7 +680,7 @@ export function NoteEditor() {
               <Eye size={12} />
             </button>
             <button
-              onClick={() => setViewMode('source')}
+              onClick={switchToSource}
               className={`rounded px-1.5 py-1 text-[11px] transition ${
                 viewMode === 'source'
                   ? 'text-[var(--text-primary)] bg-[var(--bg-tertiary)] shadow-sm'
@@ -386,92 +762,6 @@ export function NoteEditor() {
       {/* Formatting toolbar — siempre en DOM para no desplazar contenido al cambiar a source */}
       <div className={`relative flex flex-wrap items-center gap-0.5 border-b border-[var(--border)] px-3 py-1 ${viewMode === 'source' ? 'invisible pointer-events-none' : ''}`}>
 
-        {urlInputMode ? (
-          /* Barra de URL inline (no usa window.prompt) */
-          <>
-            <span className="text-[11px] text-[var(--text-hint)] mr-1">
-              {urlInputMode === 'link' ? 'URL enlace:' : 'URL imagen:'}
-            </span>
-            <input
-              autoFocus
-              type="text"
-              value={urlInputValue}
-              onChange={(e) => setUrlInputValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  if (urlInputValue.trim()) {
-                    if (urlInputMode === 'link') {
-                      const href = urlInputValue.trim();
-                      const range = savedRangeRef.current;
-                      if (range && range.from !== range.to) {
-                        // Text was selected: apply link mark to selection
-                        editor?.chain().focus().setTextSelection(range).setLink({ href }).run();
-                      } else if (editor?.isActive('link')) {
-                        // Cursor inside existing link: update it
-                        editor?.chain().focus().extendMarkRange('link').setLink({ href }).run();
-                      } else {
-                        // No selection: insert the URL as link text
-                        editor?.chain().focus().insertContent({
-                          type: 'text',
-                          text: href,
-                          marks: [{ type: 'link', attrs: { href } }],
-                        }).run();
-                      }
-                    } else {
-                      editor?.chain().focus().setImage({ src: urlInputValue.trim() }).run();
-                    }
-                  }
-                  savedRangeRef.current = null;
-                  setUrlInputMode(null);
-                  setUrlInputValue('');
-                }
-                if (e.key === 'Escape') {
-                  setUrlInputMode(null);
-                  setUrlInputValue('');
-                }
-              }}
-              placeholder={urlInputMode === 'link' ? 'https://...' : 'https://...'}
-              className="flex-1 bg-transparent text-[11px] text-[var(--text-primary)] outline-none placeholder-[var(--text-faint)] border-b border-[var(--border)] pb-0.5 min-w-0"
-            />
-            <button
-              onMouseDown={(e) => {
-                e.preventDefault();
-                if (urlInputValue.trim()) {
-                  if (urlInputMode === 'link') {
-                    const href = urlInputValue.trim();
-                    const range = savedRangeRef.current;
-                    if (range && range.from !== range.to) {
-                      editor?.chain().focus().setTextSelection(range).setLink({ href }).run();
-                    } else if (editor?.isActive('link')) {
-                      editor?.chain().focus().extendMarkRange('link').setLink({ href }).run();
-                    } else {
-                      editor?.chain().focus().insertContent({
-                        type: 'text',
-                        text: href,
-                        marks: [{ type: 'link', attrs: { href } }],
-                      }).run();
-                    }
-                  } else {
-                    editor?.chain().focus().setImage({ src: urlInputValue.trim() }).run();
-                  }
-                }
-                savedRangeRef.current = null;
-                setUrlInputMode(null);
-                setUrlInputValue('');
-              }}
-              className="ml-1 rounded p-1.5 text-indigo-300 hover:bg-indigo-500/20 transition"
-              title="Confirmar"
-            ><Check size={12} /></button>
-            <button
-              onMouseDown={(e) => { e.preventDefault(); setUrlInputMode(null); setUrlInputValue(''); }}
-              className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition"
-              title="Cancelar"
-            ><X size={12} /></button>
-          </>
-        ) : (
-          /* Botones normales */
-          <>
             {/* Selector de bloque/título — dropdown personalizado */}
             {(() => {
               const bv = editor?.isActive('heading', { level: 1 }) ? '1'
@@ -486,7 +776,7 @@ export function NoteEditor() {
                 { v: '3', label: 'Título 3' }, { v: '4', label: 'Título 4' }, { v: '5', label: 'Título 5' },
               ];
               return (
-                <div className="relative mr-1">
+                <div className="relative mr-1" ref={blockMenuRef}>
                   <button
                     onMouseDown={(e) => { e.preventDefault(); setShowBlockMenu(v => !v); }}
                     className="flex items-center gap-1 h-6 rounded px-2 text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition border border-transparent hover:border-[var(--border)]"
@@ -554,7 +844,7 @@ export function NoteEditor() {
             <div className="mx-1 h-4 w-px bg-[var(--border)]" />
 
             {/* Cambio de capitalización */}
-            <div className="relative">
+            <div className="relative" ref={caseMenuRef}>
               <button
                 onMouseDown={(e) => { e.preventDefault(); setShowCaseMenu(v => !v); }}
                 className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition"
@@ -589,21 +879,20 @@ export function NoteEditor() {
                 e.preventDefault();
                 const sel = editor?.state.selection;
                 savedRangeRef.current = sel ? { from: sel.from, to: sel.to } : null;
-                setUrlInputMode('link');
-                setUrlInputValue(editor?.isActive('link') ? (editor.getAttributes('link').href ?? '') : '');
+                setShowLinkModal(true);
               }}
               className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('link') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`}
               title="Enlace"
             ><Link size={13} /></button>
             <button
-              onMouseDown={(e) => { e.preventDefault(); setUrlInputMode('image'); setUrlInputValue(''); }}
+              onMouseDown={(e) => { e.preventDefault(); setShowImageModal(true); }}
               className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition"
               title="Imagen"
             ><ImageIcon size={13} /></button>
             <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().setHorizontalRule().run(); }} className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition" title="Separador"><Minus size={13} /></button>
 
             {/* Tabla */}
-            <div className="relative">
+            <div className="relative" ref={tableMenuRef}>
               <button
                 onMouseDown={(e) => { e.preventDefault(); setShowTableMenu(v => !v); }}
                 className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${
@@ -631,20 +920,95 @@ export function NoteEditor() {
                 </div>
               )}
             </div>
-          </>
-        )}
+
+            <div className="relative" ref={diagramMenuRef}>
+              <button
+                onMouseDown={(e) => { e.preventDefault(); setShowDiagramMenu(v => !v); }}
+                className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${
+                  mermaidBlocks.length > 0 ? 'text-indigo-300 bg-indigo-500/14' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'
+                }`}
+                title="Diagramas Mermaid"
+              >
+                <Share2 size={13} />
+              </button>
+              {showDiagramMenu && (
+                <div
+                  className="absolute top-full right-0 mt-1 z-50 min-w-[250px] rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] py-1 shadow-lg"
+                  onMouseDown={(e) => e.preventDefault()}
+                >
+                  <button
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      openDiagramEditor('create', 'flowchart TD\n  A[Inicio] --> B[Fin]', null);
+                    }}
+                    className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                  >
+                    Nuevo diagrama Mermaid
+                  </button>
+                  {mermaidBlocks.length > 0 && <div className="my-1 border-t border-[var(--border)]" />}
+                  {mermaidBlocks.map((block, index) => (
+                    <button
+                      key={`${block.start}-${index}`}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        openDiagramEditor('edit', block.code, index);
+                      }}
+                      className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                      title={block.code}
+                    >
+                      {getDiagramLabel(block.code, index)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
         </div>
+
+      {/* Barra contextual de tabla — espacio siempre reservado, visible sólo con cursor en tabla */}
+      <div className={`flex items-center gap-0.5 border-b border-[var(--border)] bg-[var(--bg-secondary)] px-3 py-1 ${
+        editor?.isActive('table') && viewMode !== 'source' ? '' : 'invisible pointer-events-none'
+      }`}>
+        {/* Columnas */}
+        <span className="text-[10px] text-[var(--text-faint)] mr-0.5 select-none"><Columns3 size={11} /></span>
+        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addColumnBefore().run(); }} className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition" title="Añadir columna a la izquierda"><BetweenHorizontalStart size={13} /></button>
+        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addColumnAfter().run(); }} className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition" title="Añadir columna a la derecha"><BetweenHorizontalEnd size={13} /></button>
+        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteColumn().run(); }} className="rounded p-1.5 text-red-400/60 hover:bg-red-500/10 hover:text-red-400 transition" title="Eliminar columna"><PanelRightClose size={13} /></button>
+        <div className="mx-1.5 h-3.5 w-px bg-[var(--border)]" />
+        {/* Filas */}
+        <span className="text-[10px] text-[var(--text-faint)] mr-0.5 select-none"><Rows3 size={11} /></span>
+        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addRowAfter().run(); }} className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition" title="Añadir fila abajo"><BetweenVerticalEnd size={13} /></button>
+        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteRow().run(); }} className="rounded p-1.5 text-red-400/60 hover:bg-red-500/10 hover:text-red-400 transition" title="Eliminar fila"><PanelBottomClose size={13} /></button>
+        <div className="mx-1.5 h-3.5 w-px bg-[var(--border)]" />
+        {/* Cabecera */}
+        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleHeaderRow().run(); }} className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition" title="Alternar fila de cabecera"><TableProperties size={13} /></button>
+        <div className="mx-1.5 h-3.5 w-px bg-[var(--border)]" />
+        {/* Eliminar tabla */}
+        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteTable().run(); }} className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-red-400/70 hover:bg-red-500/10 hover:text-red-400 transition" title="Eliminar tabla"><Trash2 size={11} /> Tabla</button>
+      </div>
 
       {/* Content area */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Title */}
         <div className="px-8 pt-7 pb-2">
           <textarea
+            ref={titleRef}
             value={title}
             onChange={(e) => handleTitleChange(e.target.value)}
             rows={1}
             className="w-full resize-none bg-transparent text-2xl font-bold text-[var(--text-primary)] outline-none placeholder-[var(--text-faint)] leading-tight"
             placeholder="Sin título"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                // Enfocar editor (wysiwyg/split) o textarea source
+                if (editor) {
+                  editor.commands.focus('start');
+                } else {
+                  const ta = document.querySelector<HTMLTextAreaElement>('.note-source-textarea');
+                  ta?.focus();
+                }
+              }
+            }}
             onInput={(e) => {
               const el = e.currentTarget;
               el.style.height = 'auto';
@@ -693,22 +1057,99 @@ export function NoteEditor() {
         <div className="flex flex-1 overflow-hidden">
           {/* WYSIWYG — TipTap (visualizar con estilos en tiempo real) */}
           {(viewMode === 'wysiwyg' || viewMode === 'split') && (
-            <div className={`overflow-y-auto px-8 pb-8 ${
-              viewMode === 'split' ? 'flex-1 border-r border-[var(--border)]' : 'flex-1'
-            }`}>
+            <div
+              ref={editorPaneRef}
+              className={`relative overflow-y-auto px-8 pb-8 ${
+                viewMode === 'split' ? 'flex-1 border-r border-[var(--border)]' : 'flex-1'
+              }`}
+              onPointerMove={handleEditorPointerMove}
+              onPointerLeave={handleEditorPointerLeave}
+              onDragOver={(e) => {
+                if (e.dataTransfer.types.includes('Files')) {
+                  e.preventDefault();
+                  setIsDroppingFile(true);
+                }
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  setIsDroppingFile(false);
+                }
+              }}
+              onDrop={async (e) => {
+                setIsDroppingFile(false);
+                const file = e.dataTransfer.files[0];
+                if (!file || !file.type.startsWith('image/')) return;
+                e.preventDefault();
+                e.stopPropagation();
+                try {
+                  const reader = new FileReader();
+                  reader.onload = (ev) => {
+                    const src = ev.target?.result as string;
+                    editor?.chain().focus().setImage({ src }).run();
+                  };
+                  reader.readAsDataURL(file);
+                } catch (err) {
+                  console.error('Error loading dropped image:', err);
+                }
+              }}
+            >
+              {/* Drag-and-drop overlay */}
+              {isDroppingFile && (
+                <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-indigo-400 bg-indigo-500/10 backdrop-blur-[2px]">
+                  <ImageIcon size={36} className="text-indigo-400" />
+                  <p className="text-sm font-semibold text-indigo-300">Suelta la imagen aquí</p>
+                  <p className="text-xs text-indigo-400/70">Se insertará en la posición actual del cursor</p>
+                </div>
+              )}
+              {blockDropLineY !== null && (
+                <div
+                  className="pointer-events-none absolute left-6 right-6 z-20 h-px bg-indigo-400/60"
+                  style={{ top: blockDropLineY }}
+                />
+              )}
+              {blockDropFlashY !== null && (
+                <div
+                  className="pointer-events-none absolute left-6 right-6 z-20 h-px block-drop-flash"
+                  style={{ top: blockDropFlashY }}
+                />
+              )}
+              <button
+                type="button"
+                aria-label="Mover bloque"
+                onPointerDown={startBlockPointerDrag}
+                className={`absolute z-30 rounded border border-transparent p-0 transition ${
+                  dragHandlePos.visible ? 'opacity-100' : 'pointer-events-none opacity-0'
+                } drag-handle`}
+                style={{ top: dragHandlePos.top, left: dragHandlePos.left }}
+              >
+                <span className="drag-handle-grip" aria-hidden="true" />
+              </button>
+              {mermaidBlocks.map((block, index) => (
+                <MermaidBlock
+                  key={`${block.start}-${index}`}
+                  diagramIndex={index}
+                  code={block.code}
+                  compact
+                  onEdit={() => openDiagramEditor('edit', block.code, index)}
+                  onMoveUp={index > 0 ? () => handleMoveDiagram(index, 'up') : undefined}
+                  onMoveDown={index < mermaidBlocks.length - 1 ? () => handleMoveDiagram(index, 'down') : undefined}
+                  onDuplicate={() => handleDuplicateDiagram(index)}
+                  onDelete={() => handleDeleteDiagram(index)}
+                />
+              ))}
               <EditorContent editor={editor} />
             </div>
           )}
-
           {/* Source — textarea con Markdown crudo */}
           {viewMode === 'source' && (
             <div className="flex-1 overflow-y-auto px-8 pb-8">
               <textarea
+                ref={sourceTextareaRef}
                 value={mdContent}
                 onChange={(e) => {
                   setMdContent(e.target.value);
                 }}
-                className="w-full h-full min-h-[400px] resize-none bg-transparent font-mono text-sm text-[var(--text-secondary)] outline-none leading-relaxed placeholder-[var(--text-faint)]"
+                className="note-source-textarea w-full h-full min-h-[400px] resize-none bg-transparent font-mono text-sm text-[var(--text-secondary)] outline-none leading-relaxed placeholder-[var(--text-faint)]"
                 placeholder="# Tu nota en Markdown…"
                 spellCheck={false}
               />
@@ -718,8 +1159,19 @@ export function NoteEditor() {
           {/* Split — WYSIWYG izquierda, Markdown fuente derecha */}
           {viewMode === 'split' && (
             <div className="flex-1 overflow-y-auto px-8 pb-8">
-              <div className="mb-2 text-[10px] text-[var(--text-faint)] uppercase tracking-wider">Markdown fuente</div>
-              <pre className="whitespace-pre-wrap font-mono text-sm text-[var(--text-secondary)] leading-relaxed">{mdContent || <span className="italic text-[var(--text-faint)]">Sin contenido.</span>}</pre>
+              <div className="mb-2 text-[10px] text-[var(--text-faint)] uppercase tracking-wider">Vista previa Markdown</div>
+              {mdContent.trim() ? (
+                <MarkdownPreview
+                  markdown={mdContent}
+                  onEditMermaid={(index, code) => openDiagramEditor('edit', code, index)}
+                  onMoveMermaidUp={(index) => handleMoveDiagram(index, 'up')}
+                  onMoveMermaidDown={(index) => handleMoveDiagram(index, 'down')}
+                  onDuplicateMermaid={handleDuplicateDiagram}
+                  onDeleteMermaid={handleDeleteDiagram}
+                />
+              ) : (
+                <div className="italic text-sm text-[var(--text-faint)]">Sin contenido.</div>
+              )}
             </div>
           )}
         </div>
@@ -731,6 +1183,64 @@ export function NoteEditor() {
 
       {showExportModal && (
         <ExportModal note={{ ...activeNote, content: mdContent }} onClose={() => setShowExportModal(false)} />
+      )}
+
+      {showDiagramEditor && (
+        <MermaidEditorModal
+          initialCode={diagramDraft}
+          mode={diagramEditorMode}
+          onClose={() => {
+            setShowDiagramEditor(false);
+            setEditingDiagramIndex(null);
+          }}
+          onSave={handleSaveDiagram}
+        />
+      )}
+
+      {showImageModal && (
+        <ImageLinkModal
+          mode="image"
+          onInsert={(src, alt) => {
+            editor?.chain().focus().setImage({ src, alt: alt ?? '' }).run();
+            setShowImageModal(false);
+          }}
+          onClose={() => setShowImageModal(false)}
+        />
+      )}
+
+      {showLinkModal && (
+        <ImageLinkModal
+          mode="link"
+          selectedText={(() => {
+            const range = savedRangeRef.current;
+            if (range && range.from !== range.to && editor) {
+              return editor.state.doc.textBetween(range.from, range.to, ' ');
+            }
+            return undefined;
+          })()}
+          currentHref={editor?.isActive('link') ? (editor.getAttributes('link').href ?? undefined) : undefined}
+          onInsert={(href, text) => {
+            if (!href) {
+              editor?.chain().focus().extendMarkRange('link').unsetLink().run();
+            } else {
+              const range = savedRangeRef.current;
+              if (range && range.from !== range.to) {
+                editor?.chain().focus().setTextSelection(range).setLink({ href }).run();
+              } else if (editor?.isActive('link')) {
+                editor?.chain().focus().extendMarkRange('link').setLink({ href }).run();
+              } else {
+                editor?.chain().focus().insertContent({
+                  type: 'text',
+                  text: text || href,
+                  marks: [{ type: 'link', attrs: { href } }],
+                }).run();
+              }
+            }
+            savedRangeRef.current = null;
+            setShowLinkModal(false);
+          }}
+          onClose={() => { savedRangeRef.current = null; setShowLinkModal(false); }}
+        />
       )}
     </div>
   );

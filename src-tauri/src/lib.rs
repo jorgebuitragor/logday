@@ -157,12 +157,20 @@ fn write_clipboard(text: String) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
         let mut child = Command::new("clip")
             .stdin(Stdio::piped())
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .spawn()
             .map_err(|e| e.to_string())?;
         if let Some(stdin) = child.stdin.as_mut() {
-            stdin.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+            // Convertir a UTF-16LE
+            use std::os::windows::prelude::*;
+            let utf16: Vec<u16> = text.encode_utf16().collect();
+            let bytes: &[u8] = unsafe {
+                std::slice::from_raw_parts(utf16.as_ptr() as *const u8, utf16.len() * 2)
+            };
+            stdin.write_all(bytes).map_err(|e| e.to_string())?;
         }
         child.wait().map_err(|e| e.to_string())?;
         return Ok(());
@@ -227,11 +235,17 @@ fn write_file_binary(path: String, data: String) -> Result<(), String> {
 /// Only invokes the `git` binary — never executes arbitrary shell strings.
 #[tauri::command]
 fn git_run(cwd: String, args: Vec<String>) -> Result<String, String> {
-    let output = std::process::Command::new("git")
-        .current_dir(&cwd)
-        .args(&args)
-        .output()
-        .map_err(|e| format!("git not found or failed to start: {e}"))?;
+    #[cfg(target_os = "windows")]
+    use std::os::windows::process::CommandExt;
+
+    let mut cmd = std::process::Command::new("git");
+    cmd.current_dir(&cwd).args(&args);
+    #[cfg(target_os = "windows")]
+    {
+        // 0x08000000 = CREATE_NO_WINDOW
+        cmd.creation_flags(0x08000000);
+    }
+    let output = cmd.output().map_err(|e| format!("git not found or failed to start: {e}"))?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {

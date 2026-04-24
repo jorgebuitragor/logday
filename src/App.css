@@ -125,10 +125,13 @@
 .md-preview hr { border: none; border-top: 1px solid var(--border-card); margin: 1rem 0; }
 .md-preview strong { color: var(--text-primary); font-weight: 600; }
 .md-preview em { color: #c4b5fd; }
+.md-preview s, .md-preview del { color: var(--text-muted); text-decoration: line-through; }
+.md-preview mark { background-color: rgba(251, 191, 36, 0.28); border-radius: 3px; padding: 0 2px; color: inherit; }
 .md-preview table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; }
 .md-preview th, .md-preview td { border: 1px solid var(--border-card); padding: 0.5rem 0.75rem; text-align: left; }
 .md-preview th { background: var(--bg-hover); font-weight: 600; }
 .md-preview img { max-width: 100%; border-radius: 8px; }
+.mermaid-host svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 
 /* ── TipTap WYSIWYG editor ─────────────────────────────────────────────── */
 .prose-editor {
@@ -160,13 +163,14 @@
 .prose-editor h5 { font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin: 0.5rem 0 0.2rem; }
 
 /* Paragraphs */
-.prose-editor p { margin: 0; line-height: 1.6; }
+.prose-editor p { margin: 0; line-height: 1.6; white-space: pre-wrap; }
 
 /* Inline */
 .prose-editor strong { color: var(--text-primary); font-weight: 600; }
 .prose-editor em { color: #c4b5fd; }
 .prose-editor u { text-decoration: underline; text-decoration-color: var(--text-hint); }
-.prose-editor s { color: var(--text-muted); text-decoration: line-through; }
+.prose-editor s, .prose-editor del { color: var(--text-muted); text-decoration: line-through; }
+.prose-editor mark { background-color: rgba(251, 191, 36, 0.28); border-radius: 3px; padding: 0 2px; color: inherit; }
 
 /* Code */
 .prose-editor code {
@@ -184,6 +188,25 @@
   padding: 1rem;
   overflow-x: auto;
   margin: 0.5rem 0;
+}
+/* Oculta bloques mermaid crudos en el editor WYSIWYG; solo visibles en modo fuente */
+.prose-editor pre:has(> code.language-mermaid) { display: none; }
+
+/* ==================== React Flow theme overrides ==================== */
+.react-flow {
+  --xy-background-color: var(--bg-base);
+  --xy-background-pattern-color: var(--border);
+  --xy-edge-stroke: #6366f1;
+  --xy-edge-stroke-selected: #818cf8;
+  --xy-handle-background-color: #6366f1;
+  --xy-handle-border-color: #818cf8;
+  --xy-node-color: var(--text-primary);
+  --xy-controls-button-background-color: var(--bg-elevated);
+  --xy-controls-button-color: var(--text-primary);
+  --xy-controls-button-border-color: var(--border);
+  --xy-controls-button-background-color-hover: var(--bg-hover);
+  --xy-minimap-background-color: var(--bg-panel);
+  --xy-minimap-mask-background-color: var(--bg-base);
 }
 .prose-editor pre code { background: none; padding: 0; color: #c4b5fd; }
 
@@ -252,3 +275,92 @@
 
 /* Selection */
 .prose-editor ::selection { background: #818cf830; }
+
+/* ── Drag Handle (TipTap official) ─────────────────────────────────────── */
+.drag-handle {
+  opacity: 1;
+  transition: opacity 0.15s, background-color 0.15s, border-color 0.15s;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  width: 14px;
+  height: 18px;
+  cursor: grab;
+  z-index: 60;
+}
+
+.drag-handle-grip {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 16'%3E%3Ccircle cx='2' cy='2' r='1.4' fill='%2364748b'/%3E%3Ccircle cx='8' cy='2' r='1.4' fill='%2364748b'/%3E%3Ccircle cx='2' cy='8' r='1.4' fill='%2364748b'/%3E%3Ccircle cx='8' cy='8' r='1.4' fill='%2364748b'/%3E%3Ccircle cx='2' cy='14' r='1.4' fill='%2364748b'/%3E%3Ccircle cx='8' cy='14' r='1.4' fill='%2364748b'/%3E%3C/svg%3E");
+  background-size: 72%;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.drag-handle:hover {
+  background-color: rgba(129, 140, 248, 0.10);
+  border-color: rgba(129, 140, 248, 0.25);
+}
+
+.drag-handle:active,
+.drag-handle[data-dragging='true'] {
+  cursor: grabbing;
+  background-color: rgba(129, 140, 248, 0.16);
+  border-color: rgba(129, 140, 248, 0.32);
+}
+
+.ProseMirror.dragging > * {
+  outline: 1px solid rgba(129, 140, 248, 0.10);
+  border-radius: 4px;
+}
+
+/* Bloque resaltado mientras se arrastra (la extensión añade esta clase) */
+.ProseMirror [data-drag-handle-selected],
+.ProseMirror .drag-handle-active-node {
+  outline: 1px solid rgba(129, 140, 248, 0.3);
+  border-radius: 4px;
+}
+
+/* Drop indicator line — clase usada por la extensión */
+.drag-drop-indicator,
+.tiptap-drag-drop-indicator {
+  height: 1.5px;
+  background: linear-gradient(90deg, transparent 0%, rgba(129, 140, 248, 0.7) 8%, rgba(129, 140, 248, 0.7) 92%, transparent 100%);
+  border-radius: 1px;
+  margin: 1px 0;
+  pointer-events: none;
+  position: relative;
+}
+
+.drag-drop-indicator::before,
+.tiptap-drag-drop-indicator::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(129, 140, 248, 0.8);
+}
+
+.block-drop-flash {
+  background: rgba(129, 140, 248, 0.85);
+  animation: block-drop-flash 220ms ease-out;
+}
+
+@keyframes block-drop-flash {
+  0% {
+    opacity: 0;
+    transform: scaleX(0.95);
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(1.02);
+  }
+}

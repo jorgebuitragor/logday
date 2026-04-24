@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
 import { toISO } from '../lib/colombianHolidays';
 import { AppCalendarGrid } from './AppDatePicker';
+import { placeMenuAtPointer } from '../lib/menuPosition';
 
 const MONTHS_ES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -11,6 +12,9 @@ const MONTHS_ES = [
 ];
 const DAYS_SHORT = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const DAYS_FULL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+
+const ESTIMATED_DAILY_ENTRY_MENU = { width: 190, height: 96 };
+const ESTIMATED_DAILY_EMPTY_MENU = { width: 200, height: 130 };
 
 function formatDayLabel(iso: string) {
   const d = new Date(iso + 'T12:00:00');
@@ -55,11 +59,15 @@ export function DailyList() {
 
   // ── Estado del menú contextual (sobre una entrada) ────────────────────────
   const [contextMenu, setContextMenu] = useState<{ date: string; x: number; y: number } | null>(null);
+  const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const [contextMenuReady, setContextMenuReady] = useState(false);
   const [copied, setCopied] = useState(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // ── Estado del menú contextual (espacio vacío) ───────────────────────────
   const [emptyCtx, setEmptyCtx] = useState<{ x: number; y: number } | null>(null);
+  const [emptyCtxPos, setEmptyCtxPos] = useState<{ x: number; y: number } | null>(null);
+  const [emptyCtxReady, setEmptyCtxReady] = useState(false);
   const emptyCtxRef = useRef<HTMLDivElement>(null);
 
   // Cierra el menú contextual al hacer clic fuera
@@ -68,6 +76,8 @@ export function DailyList() {
     const handler = (e: MouseEvent) => {
       if (!contextMenuRef.current?.contains(e.target as Node)) {
         setContextMenu(null);
+        setContextMenuPos(null);
+        setContextMenuReady(false);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -78,10 +88,56 @@ export function DailyList() {
   useEffect(() => {
     if (!emptyCtx) return;
     const handler = (e: MouseEvent) => {
-      if (!emptyCtxRef.current?.contains(e.target as Node)) setEmptyCtx(null);
+      if (!emptyCtxRef.current?.contains(e.target as Node)) {
+        setEmptyCtx(null);
+        setEmptyCtxPos(null);
+        setEmptyCtxReady(false);
+      }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
+  }, [emptyCtx]);
+
+  useEffect(() => {
+    if (!contextMenu || !contextMenuRef.current) return;
+
+    const recalc = () => {
+      if (!contextMenu || !contextMenuRef.current) return;
+      const rect = contextMenuRef.current.getBoundingClientRect();
+      setContextMenuPos(
+        placeMenuAtPointer(
+          { x: contextMenu.x, y: contextMenu.y },
+          { width: rect.width, height: rect.height },
+          { padding: 8 },
+        ),
+      );
+      setContextMenuReady(true);
+    };
+
+    recalc();
+    window.addEventListener('resize', recalc);
+    return () => window.removeEventListener('resize', recalc);
+  }, [contextMenu]);
+
+  useEffect(() => {
+    if (!emptyCtx || !emptyCtxRef.current) return;
+
+    const recalc = () => {
+      if (!emptyCtx || !emptyCtxRef.current) return;
+      const rect = emptyCtxRef.current.getBoundingClientRect();
+      setEmptyCtxPos(
+        placeMenuAtPointer(
+          { x: emptyCtx.x, y: emptyCtx.y },
+          { width: rect.width, height: rect.height },
+          { padding: 8 },
+        ),
+      );
+      setEmptyCtxReady(true);
+    };
+
+    recalc();
+    window.addEventListener('resize', recalc);
+    return () => window.removeEventListener('resize', recalc);
   }, [emptyCtx]);
 
   // Cierra el picker al hacer clic fuera
@@ -119,6 +175,14 @@ export function DailyList() {
   const handleContextMenu = (e: React.MouseEvent, date: string) => {
     e.preventDefault();
     e.stopPropagation();
+    setContextMenuReady(false);
+    setContextMenuPos(
+      placeMenuAtPointer(
+        { x: e.clientX, y: e.clientY },
+        ESTIMATED_DAILY_ENTRY_MENU,
+        { padding: 8 },
+      ),
+    );
     setContextMenu({ date, x: e.clientX, y: e.clientY });
   };
 
@@ -131,6 +195,8 @@ export function DailyList() {
     setTimeout(() => {
       setCopied(false);
       setContextMenu(null);
+      setContextMenuPos(null);
+      setContextMenuReady(false);
     }, 1200);
   };
 
@@ -138,6 +204,8 @@ export function DailyList() {
     if (!contextMenu) return;
     setDeleteConfirmDate(contextMenu.date);
     setContextMenu(null);
+    setContextMenuPos(null);
+    setContextMenuReady(false);
   };
 
   const todayISO = toISO(new Date());
@@ -259,7 +327,18 @@ export function DailyList() {
       {/* Lista de entradas */}
       <div
         className="flex-1 overflow-y-auto p-3"
-        onContextMenu={(e) => { e.preventDefault(); setEmptyCtx({ x: e.clientX, y: e.clientY }); }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setEmptyCtxReady(false);
+          setEmptyCtxPos(
+            placeMenuAtPointer(
+              { x: e.clientX, y: e.clientY },
+              ESTIMATED_DAILY_EMPTY_MENU,
+              { padding: 8 },
+            ),
+          );
+          setEmptyCtx({ x: e.clientX, y: e.clientY });
+        }}
       >
         {monthDates.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
@@ -350,18 +429,28 @@ export function DailyList() {
     {emptyCtx && (
       <div
         ref={emptyCtxRef}
-        style={{ position: 'fixed', top: emptyCtx.y, left: emptyCtx.x, zIndex: 9999 }}
+        style={{ position: 'fixed', top: emptyCtxPos?.y ?? 8, left: emptyCtxPos?.x ?? 8, zIndex: 9999, visibility: emptyCtxReady ? 'visible' : 'hidden' }}
         className="min-w-[190px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-2xl"
       >
         <button
-          onClick={() => { createTodayDaily(); setEmptyCtx(null); }}
+          onClick={() => {
+            createTodayDaily();
+            setEmptyCtx(null);
+            setEmptyCtxPos(null);
+            setEmptyCtxReady(false);
+          }}
           className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
         >
           <Plus size={13} />
           <span>Añadir daily de hoy</span>
         </button>
         <button
-          onClick={() => { setShowDatePicker(true); setEmptyCtx(null); }}
+          onClick={() => {
+            setShowDatePicker(true);
+            setEmptyCtx(null);
+            setEmptyCtxPos(null);
+            setEmptyCtxReady(false);
+          }}
           className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
         >
           <CalendarPlus size={13} />
@@ -373,6 +462,8 @@ export function DailyList() {
             setActiveDailyMonth(todayYM);
             setActiveDailyDate(todayISO);
             setEmptyCtx(null);
+            setEmptyCtxPos(null);
+            setEmptyCtxReady(false);
           }}
           className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
         >
@@ -386,7 +477,7 @@ export function DailyList() {
     {contextMenu && (
       <div
         ref={contextMenuRef}
-        style={{ position: 'fixed', top: contextMenu.y, left: contextMenu.x, zIndex: 9999 }}
+        style={{ position: 'fixed', top: contextMenuPos?.y ?? 8, left: contextMenuPos?.x ?? 8, zIndex: 9999, visibility: contextMenuReady ? 'visible' : 'hidden' }}
         className="min-w-[180px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-2xl"
       >
         <button

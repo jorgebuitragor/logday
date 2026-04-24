@@ -4,9 +4,15 @@ import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
 import { Note } from '../types';
 import { ExportModal } from './ExportModal';
+import { placeMenuAtPointer, placeMenuNearAnchor } from '../lib/menuPosition';
 
 type CtxMenu = { note: Note; x: number; y: number } | null;
 type SubMenuPos = { x: number; y: number } | null;
+type SubMenuAnchor = { left: number; top: number; right: number; bottom: number } | null;
+
+const ESTIMATED_MAIN_MENU = { width: 210, height: 380 };
+const ESTIMATED_SUB_MENU = { width: 170, height: 220 };
+const ESTIMATED_EMPTY_MENU = { width: 170, height: 60 };
 
 export function NoteList() {
   const {
@@ -43,11 +49,20 @@ export function NoteList() {
 
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'updated' | 'created' | 'title'>('updated');
+  const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
+  const [filterTag, setFilterTag] = useState<string | null>(null);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const sortMenuRef = useRef<HTMLDivElement>(null);
   const [ctxMenu, setCtxMenu] = useState<CtxMenu>(null);
+  const [ctxMenuPos, setCtxMenuPos] = useState<SubMenuPos>(null);
+  const [ctxMenuReady, setCtxMenuReady] = useState(false);
   const [subMenuPos, setSubMenuPos] = useState<SubMenuPos>(null);
+  const [subMenuAnchor, setSubMenuAnchor] = useState<SubMenuAnchor>(null);
+  const [subMenuReady, setSubMenuReady] = useState(false);
   const [exportModalNote, setExportModalNote] = useState<Note | null>(null);
+  const [emptyCtxMenu, setEmptyCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [emptyCtxMenuPos, setEmptyCtxMenuPos] = useState<SubMenuPos>(null);
+  const [emptyCtxMenuReady, setEmptyCtxMenuReady] = useState(false);
 
   // Renombrar nota
   const [renamingNote, setRenamingNote] = useState<Note | null>(null);
@@ -64,6 +79,7 @@ export function NoteList() {
 
   const menuRef = useRef<HTMLDivElement>(null);
   const subMenuRef = useRef<HTMLDivElement>(null);
+  const emptyMenuRef = useRef<HTMLDivElement>(null);
   const moveButtonRef = useRef<HTMLButtonElement>(null);
 
   // Nota vacía recién creada (sin título ni contenido)
@@ -123,38 +139,143 @@ export function NoteList() {
       const inSub = subMenuRef.current?.contains(e.target as Node);
       if (!inMain && !inSub) {
         setCtxMenu(null);
+        setCtxMenuPos(null);
+        setCtxMenuReady(false);
         setSubMenuPos(null);
+        setSubMenuAnchor(null);
+        setSubMenuReady(false);
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [ctxMenu]);
 
+  useEffect(() => {
+    if (!ctxMenu || !menuRef.current) return;
+
+    const recalc = () => {
+      if (!ctxMenu || !menuRef.current) return;
+      const rect = menuRef.current.getBoundingClientRect();
+      setCtxMenuPos(
+        placeMenuAtPointer(
+          { x: ctxMenu.x, y: ctxMenu.y },
+          { width: rect.width, height: rect.height },
+          { padding: 8 },
+        ),
+      );
+      setCtxMenuReady(true);
+    };
+
+    recalc();
+    window.addEventListener('resize', recalc);
+    return () => window.removeEventListener('resize', recalc);
+  }, [ctxMenu]);
+
+  useEffect(() => {
+    if (!subMenuAnchor || !subMenuRef.current) return;
+
+    const recalc = () => {
+      if (!subMenuAnchor || !subMenuRef.current) return;
+      const rect = subMenuRef.current.getBoundingClientRect();
+      setSubMenuPos(
+        placeMenuNearAnchor(
+          subMenuAnchor,
+          { width: rect.width, height: rect.height },
+          { sideX: 'right', alignY: 'start', gap: 4, padding: 8, flip: true },
+        ),
+      );
+      setSubMenuReady(true);
+    };
+
+    recalc();
+    window.addEventListener('resize', recalc);
+    return () => window.removeEventListener('resize', recalc);
+  }, [subMenuAnchor]);
+
+  useEffect(() => {
+    if (!emptyCtxMenu || !emptyMenuRef.current) return;
+
+    const recalc = () => {
+      if (!emptyCtxMenu || !emptyMenuRef.current) return;
+      const rect = emptyMenuRef.current.getBoundingClientRect();
+      setEmptyCtxMenuPos(
+        placeMenuAtPointer(
+          { x: emptyCtxMenu.x, y: emptyCtxMenu.y },
+          { width: rect.width, height: rect.height },
+          { padding: 8 },
+        ),
+      );
+      setEmptyCtxMenuReady(true);
+    };
+
+    recalc();
+    window.addEventListener('resize', recalc);
+    return () => window.removeEventListener('resize', recalc);
+  }, [emptyCtxMenu]);
+
   // Cerrar menú con Escape
   useEffect(() => {
     if (!ctxMenu) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setCtxMenu(null); setSubMenuPos(null); }
+      if (e.key === 'Escape') {
+        setCtxMenu(null);
+        setCtxMenuPos(null);
+        setCtxMenuReady(false);
+        setSubMenuPos(null);
+        setSubMenuAnchor(null);
+        setSubMenuReady(false);
+      }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [ctxMenu]);
 
-  const closeMenu = () => { setCtxMenu(null); setSubMenuPos(null); };
+  const closeMenu = () => {
+    setCtxMenu(null);
+    setCtxMenuPos(null);
+    setCtxMenuReady(false);
+    setSubMenuPos(null);
+    setSubMenuAnchor(null);
+    setSubMenuReady(false);
+  };
 
   const handleContextMenu = (e: React.MouseEvent, note: Note) => {
     e.preventDefault();
     e.stopPropagation();
+    setSubMenuAnchor(null);
     setSubMenuPos(null);
+    setSubMenuReady(false);
+    setCtxMenuReady(false);
+    setCtxMenuPos(
+      placeMenuAtPointer(
+        { x: e.clientX, y: e.clientY },
+        ESTIMATED_MAIN_MENU,
+        { padding: 8 },
+      ),
+    );
     setCtxMenu({ note, x: e.clientX, y: e.clientY });
   };
 
   const handleToggleMoveSubmenu = () => {
-    if (subMenuPos) { setSubMenuPos(null); return; }
+    if (subMenuAnchor) {
+      setSubMenuAnchor(null);
+      setSubMenuPos(null);
+      setSubMenuReady(false);
+      return;
+    }
     const btn = moveButtonRef.current;
     if (!btn) return;
     const rect = btn.getBoundingClientRect();
-    setSubMenuPos({ x: rect.right + 4, y: rect.top });
+    const anchor = { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+    setSubMenuAnchor(anchor);
+    setSubMenuReady(false);
+    setSubMenuPos(
+      placeMenuNearAnchor(
+        anchor,
+        ESTIMATED_SUB_MENU,
+        { sideX: 'right', alignY: 'start', gap: 4, padding: 8, flip: true },
+      ),
+    );
   };
 
   const handleCopy = () => {
@@ -253,25 +374,38 @@ export function NoteList() {
     title: 'Título',
   };
 
+  // Todos los tags disponibles
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    notes.forEach(n => n.tags.forEach(t => set.add(t)));
+    return [...set].sort();
+  }, [notes]);
+
   const filtered = useMemo(
-    () => search.trim()
-      ? notes.filter(
-          (n) =>
-            n.title.toLowerCase().includes(search.toLowerCase()) ||
-            n.content.toLowerCase().includes(search.toLowerCase())
-        )
-      : notes,
-    [notes, search]
+    () => {
+      let result = search.trim()
+        ? notes.filter(
+            (n) =>
+              n.title.toLowerCase().includes(search.toLowerCase()) ||
+              n.content.toLowerCase().includes(search.toLowerCase())
+          )
+        : notes;
+      if (filterTag) result = result.filter(n => n.tags.includes(filterTag));
+      return result;
+    },
+    [notes, search, filterTag]
   );
 
   const sorted = useMemo(
     () => [...filtered].sort((a, b) => {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-      if (sortBy === 'title') return a.title.localeCompare(b.title, 'es', { sensitivity: 'base' });
-      if (sortBy === 'created') return b.created.localeCompare(a.created);
-      return b.updated.localeCompare(a.updated);
+      let cmp = 0;
+      if (sortBy === 'title') cmp = a.title.localeCompare(b.title, 'es', { sensitivity: 'base' });
+      else if (sortBy === 'created') cmp = a.created.localeCompare(b.created);
+      else cmp = a.updated.localeCompare(b.updated);
+      return sortDir === 'desc' ? -cmp : cmp;
     }),
-    [filtered, sortBy]
+    [filtered, sortBy, sortDir]
   );
 
   // Carpetas destino (excluir la carpeta actual de la nota del menú)
@@ -306,36 +440,114 @@ export function NoteList() {
             className="flex-1 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder-[var(--text-hint)]"
           />
         </div>
-        <div className="relative flex justify-end" ref={sortMenuRef}>
-          <button
-            onClick={() => setShowSortMenu(v => !v)}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-surface)] transition"
-          >
-            <ArrowUpDown size={10} />
-            {sortLabels[sortBy]}
-          </button>
-          {showSortMenu && (
-            <div className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl py-1">
-              {(['updated', 'created', 'title'] as const).map(opt => (
-                <button
-                  key={opt}
-                  onClick={() => { setSortBy(opt); setShowSortMenu(false); }}
-                  className={`flex w-full items-center gap-2 px-3 py-2 text-xs transition ${
-                    sortBy === opt
-                      ? 'text-indigo-400 bg-indigo-500/10'
-                      : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-                  }`}
-                >
-                  {sortLabels[opt]}
-                </button>
-              ))}
-            </div>
-          )}
+        <div className="flex items-center justify-between gap-1">
+          {/* Tag activo */}
+          {filterTag ? (
+            <button
+              onClick={() => setFilterTag(null)}
+              className="flex items-center gap-1 rounded-full bg-indigo-500/15 px-2 py-0.5 text-[10px] text-indigo-400 hover:bg-indigo-500/25 transition"
+            >
+              #{filterTag} <X size={9} />
+            </button>
+          ) : <span />}
+          <div className="relative flex justify-end" ref={sortMenuRef}>
+            <button
+              onClick={() => setShowSortMenu(v => !v)}
+              className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] transition ${
+                showSortMenu ? 'bg-[var(--bg-surface)] text-[var(--text-primary)]' : 'text-[var(--text-muted)] hover:bg-[var(--bg-surface)]'
+              }`}
+            >
+              <ArrowUpDown size={10} />
+              {sortLabels[sortBy]}
+            </button>
+            {showSortMenu && (
+              <div className="absolute right-0 top-full mt-1 z-50 min-w-[170px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl py-1">
+                {/* Ordenar por */}
+                <p className="px-3 pt-1.5 pb-1 text-[9px] font-bold uppercase tracking-widest text-[var(--text-faint)]">Ordenar por</p>
+                {(['updated', 'created', 'title'] as const).map(opt => (
+                  <button
+                    key={opt}
+                    onClick={() => { setSortBy(opt); setShowSortMenu(false); }}
+                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs transition ${
+                      sortBy === opt
+                        ? 'text-indigo-400 bg-indigo-500/10'
+                        : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                    }`}
+                  >
+                    {sortLabels[opt]}
+                  </button>
+                ))}
+
+                <div className="my-1 h-px bg-[var(--border)]" />
+
+                {/* Dirección */}
+                <p className="px-3 pt-1.5 pb-1 text-[9px] font-bold uppercase tracking-widest text-[var(--text-faint)]">Dirección</p>
+                {(['desc', 'asc'] as const).map(dir => (
+                  <button
+                    key={dir}
+                    onClick={() => { setSortDir(dir); setShowSortMenu(false); }}
+                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs transition ${
+                      sortDir === dir
+                        ? 'text-indigo-400 bg-indigo-500/10'
+                        : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                    }`}
+                  >
+                    {dir === 'desc' ? '↓ Descendente' : '↑ Ascendente'}
+                  </button>
+                ))}
+
+                {allTags.length > 0 && (
+                  <>
+                    <div className="my-1 h-px bg-[var(--border)]" />
+                    <p className="px-3 pt-1.5 pb-1 text-[9px] font-bold uppercase tracking-widest text-[var(--text-faint)]">Filtrar por tag</p>
+                    {filterTag && (
+                      <button
+                        onClick={() => { setFilterTag(null); setShowSortMenu(false); }}
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
+                      >
+                        <X size={11} /> Quitar filtro
+                      </button>
+                    )}
+                    {allTags.map(tag => (
+                      <button
+                        key={tag}
+                        onClick={() => { setFilterTag(tag === filterTag ? null : tag); setShowSortMenu(false); }}
+                        className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs transition ${
+                          filterTag === tag
+                            ? 'text-indigo-400 bg-indigo-500/10'
+                            : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                        }`}
+                      >
+                        #{tag}
+                      </button>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto py-1">
+      <div
+        className="flex-1 overflow-y-auto py-1"
+        onContextMenu={(e) => {
+          // Solo si el click es en el contenedor (espacio vacío), no en un item
+          if (e.target === e.currentTarget || (e.target as HTMLElement).closest('[data-note-item]') === null) {
+            e.preventDefault();
+            setEmptyCtxMenuReady(false);
+            setEmptyCtxMenu({ x: e.clientX, y: e.clientY });
+            setEmptyCtxMenuPos(
+              placeMenuAtPointer(
+                { x: e.clientX, y: e.clientY },
+                ESTIMATED_EMPTY_MENU,
+                { padding: 8 },
+              ),
+            );
+          }
+        }}
+      >
         {sorted.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
             <p className="text-sm text-[var(--text-hint)]">Sin notas</p>
@@ -352,6 +564,7 @@ export function NoteList() {
             return (
               <div
                 key={note.id}
+                data-note-item
                 onContextMenu={(e) => handleContextMenu(e, note)}
                 className={`animate-in w-full border-b border-[var(--border)] last:border-0 ${
                   discardingNoteId === note.id ? 'animate-discard' :
@@ -422,7 +635,7 @@ export function NoteList() {
           <div
             ref={menuRef}
             className="fixed z-50 min-w-[180px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl py-1"
-            style={{ left: ctxMenu.x, top: ctxMenu.y }}
+            style={{ left: ctxMenuPos?.x ?? 8, top: ctxMenuPos?.y ?? 8, visibility: ctxMenuReady ? 'visible' : 'hidden' }}
             onMouseDown={(e) => e.stopPropagation()}
           >
             <button
@@ -471,7 +684,7 @@ export function NoteList() {
               <button
                 ref={moveButtonRef}
                 onClick={handleToggleMoveSubmenu}
-                className={`flex w-full items-center justify-between px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition ${subMenuPos ? 'bg-[var(--bg-hover)]' : ''}`}
+                className={`flex w-full items-center justify-between px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition ${subMenuAnchor ? 'bg-[var(--bg-hover)]' : ''}`}
               >
                 <span className="flex items-center gap-2.5">
                   <FolderInput size={13} />
@@ -514,11 +727,11 @@ export function NoteList() {
           </div>
 
           {/* Submenú Mover a */}
-          {subMenuPos && moveFolders.length > 0 && (
+          {subMenuAnchor && moveFolders.length > 0 && (
             <div
               ref={subMenuRef}
               className="fixed z-50 min-w-[150px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl py-1"
-              style={{ left: subMenuPos.x, top: subMenuPos.y }}
+              style={{ left: subMenuPos?.x ?? 8, top: subMenuPos?.y ?? 8, visibility: subMenuReady ? 'visible' : 'hidden' }}
               onMouseDown={(e) => e.stopPropagation()}
             >
               {moveFolders.map((f) => (
@@ -617,6 +830,44 @@ export function NoteList() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Menú contextual espacio vacío */}
+      {emptyCtxMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onMouseDown={() => {
+              setEmptyCtxMenu(null);
+              setEmptyCtxMenuPos(null);
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setEmptyCtxMenu(null);
+              setEmptyCtxMenuPos(null);
+            }}
+          />
+          <div
+            ref={emptyMenuRef}
+            className="fixed z-50 min-w-[160px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl py-1"
+            style={{ left: emptyCtxMenuPos?.x ?? 8, top: emptyCtxMenuPos?.y ?? 8, visibility: emptyCtxMenuReady ? 'visible' : 'hidden' }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => {
+                setEmptyCtxMenu(null);
+                setEmptyCtxMenuPos(null);
+                setEmptyCtxMenuReady(false);
+                createNote();
+              }}
+              disabled={isNewEmptyNote}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Plus size={13} />
+              Nueva nota
+            </button>
+          </div>
+        </>
       )}
 
       {/* Modal de exportar */}

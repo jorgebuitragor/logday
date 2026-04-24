@@ -103,7 +103,7 @@ export default function App() {
           <>
             <OvertimeList onEdit={(e) => setEditingEntry(e ?? null)} />
             {editingEntry !== undefined && (
-              <OvertimeEditor entry={editingEntry} onClose={() => setEditingEntry(undefined)} />
+              <OvertimeEditor key={editingEntry?.id ?? 'new'} entry={editingEntry} onClose={() => setEditingEntry(undefined)} />
             )}
           </>
         ) : (

@@ -2,6 +2,7 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { fs } from './invoke';
 import { Note } from '../types';
 import jsPDF from 'jspdf';
+import { renderMermaidPngDataUrl } from './mermaid';
 
 export async function exportNote(note: Note, format: 'md' | 'txt' | 'pdf'): Promise<void> {
   const safeName = (note.title || 'nota').replace(/[/\\?%*:|"<>]/g, '-');
@@ -130,6 +131,7 @@ type Block =
   | { type: 'blockquote'; spans: InlineSpan[] }
   | { type: 'table'; headers: string[]; rows: string[][] }
   | { type: 'image'; src: string; alt: string }
+  | { type: 'diagram'; code: string }
   | { type: 'code'; lines: string[] }
   | { type: 'rule' };
 
@@ -164,7 +166,9 @@ function parseBlocks(rawContent: string): Block[] {
     const line = lines[i].trimEnd();
 
     // Fenced code block  ```lang or ```
-    if (/^```/.test(line)) {
+    const fenceMatch = line.match(/^```(\w+)?/);
+    if (fenceMatch) {
+      const language = (fenceMatch[1] || '').toLowerCase();
       const codeLines: string[] = [];
       i++;
       while (i < lines.length && !/^```/.test(lines[i])) {
@@ -172,7 +176,11 @@ function parseBlocks(rawContent: string): Block[] {
         i++;
       }
       i++; // skip closing ```
-      blocks.push({ type: 'code', lines: codeLines });
+      if (language === 'mermaid') {
+        blocks.push({ type: 'diagram', code: codeLines.join('\n') });
+      } else {
+        blocks.push({ type: 'code', lines: codeLines });
+      }
       continue;
     }
 
@@ -480,6 +488,46 @@ async function buildPdf(note: Note): Promise<jsPDF> {
       doc.setTextColor(30, 30, 30);
       y += 4;
 
+    } else if (block.type === 'diagram') {
+      const pngDataUrl = await renderMermaidPngDataUrl(block.code);
+      if (!pngDataUrl) {
+        const codeLineH = 5;
+        const fallbackLines = block.code.split('\n');
+        const codeH = fallbackLines.length * codeLineH + 10;
+        checkPage(codeH);
+        doc.setFillColor(245, 245, 245);
+        doc.rect(margin, y - 4, maxW, codeH, 'F');
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(9);
+        doc.setTextColor(120, 120, 120);
+        doc.text('[Diagrama Mermaid no disponible, exportado como código]', margin + 2, y);
+        y += 5;
+        doc.setFont('courier', 'normal');
+        doc.setTextColor(40, 40, 40);
+        for (const diagramLine of fallbackLines) {
+          doc.text(diagramLine || ' ', margin + 2, y);
+          y += codeLineH;
+        }
+        doc.setTextColor(30, 30, 30);
+        y += 4;
+      } else {
+        const dims = await getImageDimensions(pngDataUrl);
+        const maxDiagramH = 120;
+        const scale = Math.min(maxW / dims.w, maxDiagramH / dims.h);
+        const imgW = Math.max(40, dims.w * scale);
+        const imgH = Math.max(20, dims.h * scale);
+        checkPage(imgH + 6);
+
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(margin, y - 2, maxW, imgH + 4, 2, 2, 'F');
+        doc.setDrawColor(220, 220, 225);
+        doc.roundedRect(margin, y - 2, maxW, imgH + 4, 2, 2);
+
+        const base64 = pngDataUrl.split(',')[1];
+        doc.addImage(base64, 'PNG', margin + (maxW - imgW) / 2, y, imgW, imgH);
+        y += imgH + 6;
+      }
+
     } else if (block.type === 'table') {
       const allRows = [block.headers, ...block.rows];
       const cols = block.headers.length;
@@ -541,8 +589,15 @@ async function buildPdf(note: Note): Promise<jsPDF> {
         if (src.startsWith('data:image/')) {
           const match = src.match(/^data:image\/(\w+);base64,(.+)$/);
           if (match) { imgFmt = match[1].toUpperCase(); imgData = match[2]; }
+        } else if (src.startsWith('file://') || src.match(/^\//)) {
+          try {
+            const cleanPath = src.replace(/^file:\/\/?/, '/');
+            imgData = await fs.readBinary(cleanPath);
+            imgFmt = 'PNG';
+          } catch (error) {
+            console.warn('Failed to load local image:', error);
+          }
         } else {
-          // URL externa: intentar descargar
           const fetched = await fetchImageAsBase64(src);
           if (fetched) { imgData = fetched.data; imgFmt = fetched.format; }
         }

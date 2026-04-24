@@ -3,6 +3,7 @@ import { Copy, Check, X, Plus, GripVertical, Trash2, ListTodo } from 'lucide-rea
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../store/appStore';
 import { Task } from '../types';
+import { placeMenuAtPointer } from '../lib/menuPosition';
 import {
   toISO,
   dateFromISO,
@@ -16,6 +17,8 @@ const MESES = [
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ];
 
+const ESTIMATED_PREVIEW_CTX_MENU = { width: 160, height: 46 };
+
 function formatShortDate(iso: string): string {
   const d = new Date(iso + 'T12:00:00');
   return `${DIAS[d.getDay()]}, ${d.getDate()} de ${MESES[d.getMonth()]}`;
@@ -27,14 +30,14 @@ function formatLongDate(iso: string): string {
 }
 
 async function writeToClipboard(text: string): Promise<void> {
-  // 1) Comando Rust via pbcopy/clip (más fiable en Tauri)
-  try {
-    await invoke('write_clipboard', { text });
-    return;
-  } catch { /* continúa */ }
-  // 2) navigator.clipboard
+  // 1) navigator.clipboard — funciona con UTF-8 nativo en el WebView de Tauri
   try {
     await navigator.clipboard.writeText(text);
+    return;
+  } catch { /* continúa */ }
+  // 2) Comando Rust via pbcopy/clip (fallback)
+  try {
+    await invoke('write_clipboard', { text });
     return;
   } catch { /* continúa */ }
   // 3) execCommand fallback
@@ -383,9 +386,34 @@ export function DailyEditor() {
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [previewCtxMenu, setPreviewCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [previewCtxMenuPos, setPreviewCtxMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const [previewCtxMenuReady, setPreviewCtxMenuReady] = useState(false);
+  const previewCtxMenuRef = useRef<HTMLDivElement>(null);
 
   const todaySave = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevSave = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!previewCtxMenu || !previewCtxMenuRef.current) return;
+
+    const recalc = () => {
+      if (!previewCtxMenu || !previewCtxMenuRef.current) return;
+      const rect = previewCtxMenuRef.current.getBoundingClientRect();
+      setPreviewCtxMenuPos(
+        placeMenuAtPointer(
+          { x: previewCtxMenu.x, y: previewCtxMenu.y },
+          { width: rect.width, height: rect.height },
+          { padding: 8 },
+        ),
+      );
+      setPreviewCtxMenuReady(true);
+    };
+
+    recalc();
+    window.addEventListener('resize', recalc);
+    return () => window.removeEventListener('resize', recalc);
+  }, [previewCtxMenu]);
 
   const prevDate = useMemo(() => {
     if (!activeDailyDate) return null;
@@ -584,14 +612,66 @@ export function DailyEditor() {
         </div>
 
         {/* Vista previa */}
-        <div className="rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3">
+        <div
+          className="rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3"
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setPreviewCtxMenuReady(false);
+            setPreviewCtxMenuPos(
+              placeMenuAtPointer(
+                { x: e.clientX, y: e.clientY },
+                ESTIMATED_PREVIEW_CTX_MENU,
+                { padding: 8 },
+              ),
+            );
+            setPreviewCtxMenu({ x: e.clientX, y: e.clientY });
+          }}
+        >
           <p className="mb-2 text-[9px] font-bold uppercase tracking-widest text-[var(--text-faint)]">
             Vista previa · Copiar formato
           </p>
-          <p className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-[var(--text-tertiary)]">
+          <p className="select-text whitespace-pre-wrap font-mono text-xs leading-relaxed text-[var(--text-tertiary)]">
             {previewText || '(escribe tus actividades arriba)'}
           </p>
         </div>
+
+        {/* Menú contextual vista previa */}
+        {previewCtxMenu && (
+          <>
+            <div
+              className="fixed inset-0 z-[400]"
+              onClick={() => {
+                setPreviewCtxMenu(null);
+                setPreviewCtxMenuPos(null);
+                setPreviewCtxMenuReady(false);
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setPreviewCtxMenu(null);
+                setPreviewCtxMenuPos(null);
+                setPreviewCtxMenuReady(false);
+              }}
+            />
+            <div
+              ref={previewCtxMenuRef}
+              className="fixed z-[401] min-w-[140px] rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] py-1 shadow-xl"
+              style={{ left: previewCtxMenuPos?.x ?? 8, top: previewCtxMenuPos?.y ?? 8, visibility: previewCtxMenuReady ? 'visible' : 'hidden' }}
+            >
+              <button
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-[var(--text-body)] hover:bg-[var(--bg-hover)]"
+                onClick={async () => {
+                  setPreviewCtxMenu(null);
+                  setPreviewCtxMenuPos(null);
+                  setPreviewCtxMenuReady(false);
+                  await handleCopy();
+                }}
+              >
+                <Copy size={12} />
+                Copiar formato
+              </button>
+            </div>
+          </>
+        )}
 
         <p className="pb-2 text-center text-[10px] text-[var(--text-faint)]">
           Guardado automático · Festivos CO omitidos

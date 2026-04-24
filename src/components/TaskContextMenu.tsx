@@ -3,6 +3,11 @@ import { createPortal } from 'react-dom';
 import { Circle, Clock, CheckCircle2, Copy, Check, Trash2, Pencil, Plus } from 'lucide-react';
 import { Task, TaskStatus } from '../types';
 import { useAppStore } from '../store/appStore';
+import { placeMenuAtPointer } from '../lib/menuPosition';
+
+const ESTIMATED_TASK_MENU = { width: 220, height: 330 };
+const ESTIMATED_TASK_CONFIRM = { width: 260, height: 170 };
+const ESTIMATED_NEW_TASK_MENU = { width: 190, height: 56 };
 
 interface Props {
   task: Task;
@@ -18,7 +23,13 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
   const [copied, setCopied] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // Adjust position after mount to avoid overflow
-  const [pos, setPos] = useState({ x, y });
+  const [pos, setPos] = useState(() => placeMenuAtPointer({ x, y }, ESTIMATED_TASK_MENU, { padding: 8 }));
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    setReady(false);
+    setPos(placeMenuAtPointer({ x, y }, confirmDelete ? ESTIMATED_TASK_CONFIRM : ESTIMATED_TASK_MENU, { padding: 8 }));
+  }, [x, y, confirmDelete]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -30,13 +41,18 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
 
   useEffect(() => {
     if (!ref.current) return;
-    const rect = ref.current.getBoundingClientRect();
-    let nx = x;
-    let ny = y;
-    if (x + rect.width > window.innerWidth - 8) nx = x - rect.width;
-    if (y + rect.height > window.innerHeight - 8) ny = y - rect.height;
-    setPos({ x: nx, y: ny });
-  }, [x, y]);
+
+    const recalc = () => {
+      if (!ref.current) return;
+      const rect = ref.current.getBoundingClientRect();
+      setPos(placeMenuAtPointer({ x, y }, { width: rect.width, height: rect.height }, { padding: 8 }));
+      setReady(true);
+    };
+
+    recalc();
+    window.addEventListener('resize', recalc);
+    return () => window.removeEventListener('resize', recalc);
+  }, [x, y, confirmDelete]);
 
   const handleStatusChange = async (status: TaskStatus) => {
     await updateTask({ ...task, status });
@@ -69,7 +85,7 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
     return createPortal(
       <div
         ref={ref}
-        style={{ position: 'fixed', top: pos.y, left: pos.x, zIndex: 9999 }}
+        style={{ position: 'fixed', top: pos.y, left: pos.x, zIndex: 9999, visibility: ready ? 'visible' : 'hidden' }}
         className="w-64 rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-4 shadow-2xl"
       >
         <div className="mb-3 flex items-center gap-2 text-red-400">
@@ -103,7 +119,7 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
   return createPortal(
     <div
       ref={ref}
-      style={{ position: 'fixed', top: pos.y, left: pos.x, zIndex: 9999 }}
+      style={{ position: 'fixed', top: pos.y, left: pos.x, zIndex: 9999, visibility: ready ? 'visible' : 'hidden' }}
       className="min-w-[200px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-2xl"
     >
       {/* Preview del título */}
@@ -171,7 +187,13 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
 // ── Menú contextual para espacio vacío (crear nueva tarea) ─────────────────
 export function NewTaskContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ x, y });
+  const [pos, setPos] = useState(() => placeMenuAtPointer({ x, y }, ESTIMATED_NEW_TASK_MENU, { padding: 8 }));
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    setReady(false);
+    setPos(placeMenuAtPointer({ x, y }, ESTIMATED_NEW_TASK_MENU, { padding: 8 }));
+  }, [x, y]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -183,17 +205,23 @@ export function NewTaskContextMenu({ x, y, onClose }: { x: number; y: number; on
 
   useEffect(() => {
     if (!ref.current) return;
-    const rect = ref.current.getBoundingClientRect();
-    let nx = x, ny = y;
-    if (x + rect.width > window.innerWidth - 8) nx = x - rect.width;
-    if (y + rect.height > window.innerHeight - 8) ny = y - rect.height;
-    setPos({ x: nx, y: ny });
+
+    const recalc = () => {
+      if (!ref.current) return;
+      const rect = ref.current.getBoundingClientRect();
+      setPos(placeMenuAtPointer({ x, y }, { width: rect.width, height: rect.height }, { padding: 8 }));
+      setReady(true);
+    };
+
+    recalc();
+    window.addEventListener('resize', recalc);
+    return () => window.removeEventListener('resize', recalc);
   }, [x, y]);
 
   return createPortal(
     <div
       ref={ref}
-      style={{ position: 'fixed', top: pos.y, left: pos.x, zIndex: 9999 }}
+      style={{ position: 'fixed', top: pos.y, left: pos.x, zIndex: 9999, visibility: ready ? 'visible' : 'hidden' }}
       className="min-w-[180px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-2xl"
     >
       <button

@@ -90,7 +90,7 @@ interface AppState {
   folderTags: Record<string, string[]>;
   loadNoteFolders: () => Promise<void>;
   loadNotes: (folder?: string | null) => Promise<void>;
-  selectNoteFolder: (folder: string | null) => void;
+  selectNoteFolder: (folder: string | null) => Promise<void>;
   createNoteFolder: (name: string, parent?: string) => Promise<void>;
   renameNoteFolder: (folder: string, newName: string) => Promise<void>;
   deleteNoteFolder: (folder: string) => Promise<void>;
@@ -122,11 +122,12 @@ interface AppState {
   loadOvertimeMonth: (yearMonth: string) => Promise<void>;
   saveOvertimeEntry: (entry: Omit<OvertimeEntry, 'id' | 'totalHoras' | 'extrasDiurnas' | 'extrasNocturnas' | 'extrasDiurnasFestivas' | 'extrasNocturnasFestivas'> & { id?: string }) => Promise<void>;
   deleteOvertimeEntry: (id: string) => Promise<void>;
+  deleteOvertimeMonth: (yearMonth: string) => Promise<void>;
   setOvertimeMeta: (meta: Partial<OvertimeMonthMeta>) => void;
   exportOvertimeExcel: (yearMonth: string) => Promise<void>;
 
   // UI
-  setSection: (section: ActiveSection) => void;
+  setSection: (section: ActiveSection) => Promise<void>;
   setView: (view: ViewMode) => void;
   toggleSearch: () => void;
   runSearch: (query: string) => Promise<void>;
@@ -478,6 +479,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
     await fs.writeFile(task.filePath, serializeTask(task));
     set((state) => ({ tasks: [task, ...state.tasks], activeTask: task }));
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
     return task;
   },
 
@@ -487,6 +489,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       tasks: state.tasks.map((t) => (t.id === task.id ? task : t)),
       activeTask: state.activeTask?.id === task.id ? task : state.activeTask,
     }));
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
   deleteTask: async (task) => {
@@ -495,6 +498,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       tasks: state.tasks.filter((t) => t.id !== task.id),
       activeTask: state.activeTask?.id === task.id ? null : state.activeTask,
     }));
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
   setActiveTask: (task) => set({ activeTask: task }),
@@ -510,6 +514,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       tasks: state.tasks.map((t) => (t.id === task.id ? updatedTask : t)),
       activeTask: state.activeTask?.id === task.id ? updatedTask : state.activeTask,
     }));
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
   // ── Notes ──────────────────────────────────────────────────
@@ -597,7 +602,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  selectNoteFolder: (folder) => {
+  selectNoteFolder: async (folder) => {
+    // Si hay una nota vacía activa, descartarla antes de cambiar carpeta
+    const { activeNote } = get();
+    if (activeNote && !activeNote.title.trim() && !activeNote.content.trim()) {
+      await get().deleteNote(activeNote);
+    }
     set({ activeNoteFolder: folder, activeNote: null });
     get().loadNotes(folder);
     const { configDir, basePath } = get();
@@ -696,6 +706,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (folder) await fs.createDir(noteFolderDir(basePath, folder)).catch(() => {});
     await fs.writeFile(note.filePath, serializeNote(note));
     set((state) => ({ notes: [note, ...state.notes], activeNote: note }));
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
     return note;
   },
 
@@ -706,6 +717,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       notes: state.notes.map((n) => (n.id === updated.id ? updated : n)),
       activeNote: state.activeNote?.id === updated.id ? updated : state.activeNote,
     }));
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
   deleteNote: async (note) => {
@@ -714,6 +726,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       notes: state.notes.filter((n) => n.id !== note.id),
       activeNote: state.activeNote?.id === note.id ? null : state.activeNote,
     }));
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
   duplicateNote: async (note) => {
@@ -732,6 +745,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
     await fs.writeFile(copy.filePath, serializeNote(copy));
     set((state) => ({ notes: [copy, ...state.notes], activeNote: copy }));
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
   setActiveNote: (note) => set({ activeNote: note }),
@@ -827,6 +841,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     localStorage.setItem('folderTags', JSON.stringify(updatedFolderTags));
     set(state => ({ notes: [...state.notes, ...newNotes], folderTags: updatedFolderTags }));
     await get().loadNoteFolders();
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
   moveNote: async (note, toFolder) => {
@@ -841,6 +856,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       notes: state.notes.map((n) => (n.id === note.id ? updatedNote : n)),
       activeNote: state.activeNote?.id === note.id ? updatedNote : state.activeNote,
     }));
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
   toggleNotePin: async (note) => {
@@ -909,6 +925,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? s.dailyMonths
         : [yearMonth, ...s.dailyMonths].sort().reverse(),
     }));
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
   setActiveDailyDate: (date) => set({ activeDailyDate: date }),
@@ -993,11 +1010,19 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeDailyDate: s.activeDailyDate === date ? null : s.activeDailyDate,
       };
     });
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
   // ── UI ──────────────────────────────────────────────────────
 
-  setSection: (section) => set({ activeSection: section }),
+  setSection: async (section) => {
+    // Si hay una nota vacía activa y salimos de notas, descartarla
+    const { activeNote, activeSection } = get();
+    if (activeSection === 'notes' && activeNote && !activeNote.title.trim() && !activeNote.content.trim()) {
+      await get().deleteNote(activeNote);
+    }
+    set({ activeSection: section });
+  },
 
   setView: (view) => set({ currentView: view }),
 
@@ -1105,6 +1130,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!overtimeMonths.includes(ym)) {
       set({ overtimeMonths: [ym, ...overtimeMonths].sort().reverse() });
     }
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
   deleteOvertimeEntry: async (id) => {
@@ -1116,6 +1142,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     const [year, month] = ym.split('-');
     const path = overtimeMonthFilePath(base, year, month);
     await fs.writeFile(path, `---\n${JSON.stringify({ entries }, null, 2)}\n---\n`);
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+  },
+
+  deleteOvertimeMonth: async (yearMonth) => {
+    const base = get().basePath;
+    if (!base) return;
+    const [year, month] = yearMonth.split('-');
+    const dir = overtimeMonthDir(base, year, month);
+    try { await fs.deleteDir(dir); } catch { /* ya no existe */ }
+    const newMonths = get().overtimeMonths.filter((m) => m !== yearMonth);
+    set({ overtimeMonths: newMonths });
+    // Si el mes eliminado era el activo, ir al primero disponible o quedarse vacío
+    if (get().overtimeMonth === yearMonth) {
+      const next = newMonths[0] ?? yearMonth;
+      await get().loadOvertimeMonth(next);
+    }
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
   setOvertimeMeta: (meta) => {

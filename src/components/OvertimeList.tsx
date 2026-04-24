@@ -91,6 +91,18 @@ export function OvertimeList({ onEdit }: Props) {
 
   return (<>
     <div className="flex h-full w-72 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
+        <h2 className="text-sm font-semibold text-[var(--text-primary)]">Extras</h2>
+        <button
+          onClick={() => onEdit(null)}
+          className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-indigo-400 transition hover:bg-indigo-500/10"
+          title="Nueva hora extra"
+        >
+          <Plus size={14} />
+          Nueva
+        </button>
+      </div>
       {/* Navegación año / mes */}
       <div className="flex items-center gap-1 border-b border-[var(--border)] px-2 py-2">
         <button

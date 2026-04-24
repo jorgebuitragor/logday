@@ -52,6 +52,9 @@ export const fs = {
   writeBinary: (path: string, data: string): Promise<void> =>
     invoke('write_file_binary', { path, data }),
 
+  readBinary: (path: string): Promise<string> =>
+    invoke('read_file_binary', { path }),
+
   fetchImageBase64: (url: string): Promise<string> =>
     invoke('fetch_image_base64', { url }),
 };

@@ -32,6 +32,11 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { ViewMode } from '../types';
+import { placeMenuAtPointer } from '../lib/menuPosition';
+
+const ESTIMATED_AREA_MENU = { width: 180, height: 110 };
+const ESTIMATED_FOLDER_MENU = { width: 220, height: 360 };
+const ESTIMATED_OVERTIME_MENU = { width: 200, height: 110 };
 
 type FolderCtxMenu = { folder: string; x: number; y: number } | null;
 
@@ -320,6 +325,7 @@ export function Sidebar() {
     overtimeMonths,
     overtimeMonth,
     loadOvertimeMonth,
+    deleteOvertimeMonth,
   } = useAppStore();
 
   const [isProjectsOpen, setIsProjectsOpen] = useState(true);
@@ -345,6 +351,8 @@ export function Sidebar() {
 
   // Menú contextual en carpetas
   const [folderCtx, setFolderCtx] = useState<FolderCtxMenu>(null);
+  const [folderCtxPos, setFolderCtxPos] = useState<{ x: number; y: number } | null>(null);
+  const [folderCtxReady, setFolderCtxReady] = useState(false);
   const folderCtxRef = useRef<HTMLDivElement>(null);
 
   // Modal nueva subcarpeta
@@ -365,7 +373,92 @@ export function Sidebar() {
   // Ctx menú de área libre de carpetas
   type AreaCtxMenu = { x: number; y: number } | null;
   const [areaCtx, setAreaCtx] = useState<AreaCtxMenu>(null);
+  const [areaCtxPos, setAreaCtxPos] = useState<{ x: number; y: number } | null>(null);
+  const [areaCtxReady, setAreaCtxReady] = useState(false);
   const areaCtxRef = useRef<HTMLDivElement>(null);
+
+  // Menú contextual de mes en Extras
+  const [overtimeMonthCtx, setOvertimeMonthCtx] = useState<{ ym: string; x: number; y: number } | null>(null);
+  const [overtimeMonthCtxPos, setOvertimeMonthCtxPos] = useState<{ x: number; y: number } | null>(null);
+  const [overtimeMonthCtxReady, setOvertimeMonthCtxReady] = useState(false);
+  const overtimeMonthCtxRef = useRef<HTMLDivElement>(null);
+  const [confirmDeleteOvertimeMonth, setConfirmDeleteOvertimeMonth] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!overtimeMonthCtx) return;
+    const handler = (e: MouseEvent) => {
+      if (!overtimeMonthCtxRef.current?.contains(e.target as Node)) {
+        setOvertimeMonthCtx(null);
+        setOvertimeMonthCtxPos(null);
+        setOvertimeMonthCtxReady(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [overtimeMonthCtx]);
+
+  useEffect(() => {
+    if (!folderCtx || !folderCtxRef.current) return;
+
+    const recalc = () => {
+      if (!folderCtx || !folderCtxRef.current) return;
+      const rect = folderCtxRef.current.getBoundingClientRect();
+      setFolderCtxPos(
+        placeMenuAtPointer(
+          { x: folderCtx.x, y: folderCtx.y },
+          { width: rect.width, height: rect.height },
+          { padding: 8 },
+        ),
+      );
+      setFolderCtxReady(true);
+    };
+
+    recalc();
+    window.addEventListener('resize', recalc);
+    return () => window.removeEventListener('resize', recalc);
+  }, [folderCtx]);
+
+  useEffect(() => {
+    if (!areaCtx || !areaCtxRef.current) return;
+
+    const recalc = () => {
+      if (!areaCtx || !areaCtxRef.current) return;
+      const rect = areaCtxRef.current.getBoundingClientRect();
+      setAreaCtxPos(
+        placeMenuAtPointer(
+          { x: areaCtx.x, y: areaCtx.y },
+          { width: rect.width, height: rect.height },
+          { padding: 8 },
+        ),
+      );
+      setAreaCtxReady(true);
+    };
+
+    recalc();
+    window.addEventListener('resize', recalc);
+    return () => window.removeEventListener('resize', recalc);
+  }, [areaCtx]);
+
+  useEffect(() => {
+    if (!overtimeMonthCtx || !overtimeMonthCtxRef.current) return;
+
+    const recalc = () => {
+      if (!overtimeMonthCtx || !overtimeMonthCtxRef.current) return;
+      const rect = overtimeMonthCtxRef.current.getBoundingClientRect();
+      setOvertimeMonthCtxPos(
+        placeMenuAtPointer(
+          { x: overtimeMonthCtx.x, y: overtimeMonthCtx.y },
+          { width: rect.width, height: rect.height },
+          { padding: 8 },
+        ),
+      );
+      setOvertimeMonthCtxReady(true);
+    };
+
+    recalc();
+    window.addEventListener('resize', recalc);
+    return () => window.removeEventListener('resize', recalc);
+  }, [overtimeMonthCtx]);
 
   useEffect(() => {
     if (showCreateFolderModal) setTimeout(() => createFolderInputRef.current?.focus(), 50);
@@ -389,6 +482,7 @@ export function Sidebar() {
     const handler = (e: MouseEvent) => {
       if (folderCtxRef.current && !folderCtxRef.current.contains(e.target as Node)) {
         setFolderCtx(null);
+        setFolderCtxPos(null);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -434,6 +528,14 @@ export function Sidebar() {
   const handleFolderContextMenu = (e: React.MouseEvent, folder: string) => {
     e.preventDefault();
     e.stopPropagation();
+    setFolderCtxReady(false);
+    setFolderCtxPos(
+      placeMenuAtPointer(
+        { x: e.clientX, y: e.clientY },
+        ESTIMATED_FOLDER_MENU,
+        { padding: 8 },
+      ),
+    );
     setFolderCtx({ folder, x: e.clientX, y: e.clientY });
   };
 
@@ -506,7 +608,11 @@ export function Sidebar() {
 
   const handlePasteFolder = async (targetParent: string | null) => {
     setAreaCtx(null);
+    setAreaCtxPos(null);
+    setAreaCtxReady(false);
     setFolderCtx(null);
+    setFolderCtxPos(null);
+    setFolderCtxReady(false);
     if (cuttedFolder) {
       const folder = cuttedFolder;
       setCuttedFolder(null);
@@ -786,7 +892,15 @@ export function Sidebar() {
           onContextMenu={(e) => {
             if ((e.target as HTMLElement).closest('[data-folder-item]')) return;
             e.preventDefault();
+            setAreaCtxReady(false);
             setAreaCtx({ x: e.clientX, y: e.clientY });
+            setAreaCtxPos(
+              placeMenuAtPointer(
+                { x: e.clientX, y: e.clientY },
+                ESTIMATED_AREA_MENU,
+                { padding: 8 },
+              ),
+            );
           }}
         >
           <div className="flex items-center justify-between px-2 py-1">
@@ -868,15 +982,15 @@ export function Sidebar() {
       {/* Ctx menú de área libre de carpetas */}
       {areaCtx && (
         <>
-          <div className="fixed inset-0 z-40" onMouseDown={() => setAreaCtx(null)} />
+          <div className="fixed inset-0 z-40" onMouseDown={() => { setAreaCtx(null); setAreaCtxPos(null); setAreaCtxReady(false); }} />
           <div
             ref={areaCtxRef}
             className="fixed z-50 min-w-[160px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl py-1"
-            style={{ left: areaCtx.x, top: areaCtx.y }}
+            style={{ left: areaCtxPos?.x ?? 8, top: areaCtxPos?.y ?? 8, visibility: areaCtxReady ? 'visible' : 'hidden' }}
             onMouseDown={(e) => e.stopPropagation()}
           >
             <button
-              onClick={() => { setAreaCtx(null); setShowCreateFolderModal(true); }}
+              onClick={() => { setAreaCtx(null); setAreaCtxPos(null); setAreaCtxReady(false); setShowCreateFolderModal(true); }}
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
             >
               <FolderPlus size={13} />
@@ -933,11 +1047,11 @@ export function Sidebar() {
       {/* Ctx menú de carpeta */}
       {folderCtx && (
         <>
-          <div className="fixed inset-0 z-40" onMouseDown={() => setFolderCtx(null)} />
+          <div className="fixed inset-0 z-40" onMouseDown={() => { setFolderCtx(null); setFolderCtxPos(null); setFolderCtxReady(false); }} />
           <div
             ref={folderCtxRef}
             className="fixed z-50 min-w-[160px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl py-1"
-            style={{ left: folderCtx.x, top: folderCtx.y }}
+            style={{ left: folderCtxPos?.x ?? 8, top: folderCtxPos?.y ?? 8, visibility: folderCtxReady ? 'visible' : 'hidden' }}
             onMouseDown={(e) => e.stopPropagation()}
           >
             <button
@@ -1182,6 +1296,19 @@ export function Sidebar() {
                   <button
                     key={ym}
                     onClick={() => loadOvertimeMonth(ym)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setOvertimeMonthCtxReady(false);
+                      setOvertimeMonthCtxPos(
+                        placeMenuAtPointer(
+                          { x: e.clientX, y: e.clientY },
+                          ESTIMATED_OVERTIME_MENU,
+                          { padding: 8 },
+                        ),
+                      );
+                      setOvertimeMonthCtx({ ym, x: e.clientX, y: e.clientY });
+                    }}
                     className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 transition ${
                       overtimeMonth === ym
                         ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]'
@@ -1280,6 +1407,78 @@ export function Sidebar() {
           </div>
         </div>
       )}
+
+      {/* Menú contextual mes de Extras */}
+      {overtimeMonthCtx && (() => {
+        const [y, m] = overtimeMonthCtx.ym.split('-');
+        const MESES_S = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+          'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+        const label = `${MESES_S[parseInt(m) - 1]} ${y}`;
+        return (
+          <div
+            ref={overtimeMonthCtxRef}
+            style={{
+              position: 'fixed',
+              top: overtimeMonthCtxPos?.y ?? 8,
+              left: overtimeMonthCtxPos?.x ?? 8,
+              zIndex: 9999,
+              visibility: overtimeMonthCtxReady ? 'visible' : 'hidden',
+            }}
+            className="min-w-[180px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-2xl"
+          >
+            <button
+              onClick={() => { loadOvertimeMonth(overtimeMonthCtx.ym); setOvertimeMonthCtx(null); setOvertimeMonthCtxPos(null); setOvertimeMonthCtxReady(false); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
+            >
+              <Timer size={13} />
+              Ir a {label}
+            </button>
+            <div className="mx-2 my-1 border-t border-[var(--border)]" />
+            <button
+              onClick={() => { setConfirmDeleteOvertimeMonth(overtimeMonthCtx.ym); setOvertimeMonthCtx(null); setOvertimeMonthCtxPos(null); setOvertimeMonthCtxReady(false); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 transition"
+            >
+              <Trash2 size={13} />
+              Eliminar extras de {label}
+            </button>
+          </div>
+        );
+      })()}
+
+      {/* Confirmación eliminar mes de Extras */}
+      {confirmDeleteOvertimeMonth && (() => {
+        const [y, m] = confirmDeleteOvertimeMonth.split('-');
+        const MESES_L = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+          'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+        const label = `${MESES_L[parseInt(m) - 1]} ${y}`;
+        return (
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
+            <div className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
+              <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
+                <Trash2 size={15} className="text-red-400" />
+                Eliminar extras de {label}
+              </div>
+              <p className="mb-4 text-xs text-[var(--text-secondary)]">
+                Se eliminarán <span className="font-medium text-[var(--text-primary)]">todas las entradas</span> del mes de <span className="font-medium text-[var(--text-primary)]">{label}</span>. Esta acción no se puede deshacer.
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setConfirmDeleteOvertimeMonth(null)}
+                  className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={async () => { await deleteOvertimeMonth(confirmDeleteOvertimeMonth); setConfirmDeleteOvertimeMonth(null); }}
+                  className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600"
+                >
+                  Eliminar todo
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

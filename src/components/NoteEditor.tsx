@@ -141,6 +141,7 @@ export function NoteEditor() {
   const [showImageModal, setShowImageModal] = useState(false);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [isDroppingFile, setIsDroppingFile] = useState(false);
+  const [mermaidPreviewAnchors, setMermaidPreviewAnchors] = useState<Array<{ top: number; height: number }>>([]);
   const [blockDropLineY, setBlockDropLineY] = useState<number | null>(null);
   const [blockDropFlashY, setBlockDropFlashY] = useState<number | null>(null);
   const [dragHandlePos, setDragHandlePos] = useState<{ top: number; left: number; visible: boolean }>({
@@ -236,6 +237,47 @@ export function NoteEditor() {
       setShowDiagramMenu(false);
     },
   });
+
+  const recalcMermaidPreviewAnchors = useCallback(() => {
+    if (viewMode === 'source') {
+      setMermaidPreviewAnchors([]);
+      return;
+    }
+
+    const pane = editorPaneRef.current;
+    let root: HTMLElement | null = null;
+    try {
+      root = editor ? (editor.view.dom as HTMLElement) : null;
+    } catch {
+      // TipTap puede no tener la view montada aun al entrar a la pestaña.
+      root = null;
+    }
+    if (!pane || !root) {
+      setMermaidPreviewAnchors([]);
+      return;
+    }
+
+    const paneRect = pane.getBoundingClientRect();
+    const anchors = Array.from(root.querySelectorAll('pre'))
+      .filter((pre) => pre.querySelector('code.language-mermaid'))
+      .map((pre) => {
+        const rect = pre.getBoundingClientRect();
+        return {
+          top: rect.top - paneRect.top + pane.scrollTop,
+          height: Math.max(rect.height, 220),
+        };
+      });
+
+    setMermaidPreviewAnchors((prev) => {
+      if (
+        prev.length === anchors.length &&
+        prev.every((a, i) => Math.abs(a.top - anchors[i].top) < 0.5 && Math.abs(a.height - anchors[i].height) < 0.5)
+      ) {
+        return prev;
+      }
+      return anchors;
+    });
+  }, [editor, viewMode]);
 
   const topLevelPosAtIndex = useCallback((doc: { child: (i: number) => { nodeSize: number } }, index: number) => {
     let pos = 0;
@@ -415,10 +457,33 @@ export function NoteEditor() {
   // de forma fiable (evita closures estales de useEditor config en TipTap 3)
   useEffect(() => {
     if (!editor) return;
-    const handler = () => forceUpdate();
+    const handler = () => {
+      forceUpdate();
+      recalcMermaidPreviewAnchors();
+    };
     editor.on('transaction', handler);
     return () => { editor.off('transaction', handler); };
-  }, [editor]);
+  }, [editor, recalcMermaidPreviewAnchors]);
+
+  useEffect(() => {
+    recalcMermaidPreviewAnchors();
+  }, [mermaidBlocks, recalcMermaidPreviewAnchors]);
+
+  useEffect(() => {
+    if (viewMode === 'source') return;
+    const pane = editorPaneRef.current;
+    if (!pane) return;
+
+    const onRelayout = () => recalcMermaidPreviewAnchors();
+    pane.addEventListener('scroll', onRelayout);
+    window.addEventListener('resize', onRelayout);
+    requestAnimationFrame(onRelayout);
+
+    return () => {
+      pane.removeEventListener('scroll', onRelayout);
+      window.removeEventListener('resize', onRelayout);
+    };
+  }, [viewMode, recalcMermaidPreviewAnchors]);
 
   // Cierra dropdowns al hacer click fuera de ellos
   useEffect(() => {
@@ -599,25 +664,37 @@ export function NoteEditor() {
   const switchToWysiwyg = () => {
     // Sincronizar markdown crudo → TipTap al salir del modo source
     if (viewMode === 'source' && editor) {
-      suppressNextEditorMarkdownSyncRef.current = true;
-      editor.commands.setContent(mdContent || '');
+      try {
+        suppressNextEditorMarkdownSyncRef.current = true;
+        editor.commands.setContent(mdContent || '');
+      } catch {
+        suppressNextEditorMarkdownSyncRef.current = false;
+      }
     }
     setViewMode('wysiwyg');
   };
 
   const switchToSource = () => {
     if (editor) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const md = normalizeEditorMarkdown((editor.storage as any).markdown.getMarkdown() as string);
-      setMdContent(md);
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const md = normalizeEditorMarkdown((editor.storage as any).markdown.getMarkdown() as string);
+        setMdContent(md);
+      } catch {
+        // Si TipTap no esta montado aun, mantenemos mdContent actual y permitimos cambiar de vista.
+      }
     }
     setViewMode('source');
   };
 
   const switchToSplit = () => {
     if (viewMode === 'source' && editor) {
-      suppressNextEditorMarkdownSyncRef.current = true;
-      editor.commands.setContent(mdContent || '');
+      try {
+        suppressNextEditorMarkdownSyncRef.current = true;
+        editor.commands.setContent(mdContent || '');
+      } catch {
+        suppressNextEditorMarkdownSyncRef.current = false;
+      }
     }
     setViewMode('split');
   };
@@ -1124,20 +1201,31 @@ export function NoteEditor() {
               >
                 <span className="drag-handle-grip" aria-hidden="true" />
               </button>
-              {mermaidBlocks.map((block, index) => (
-                <MermaidBlock
-                  key={`${block.start}-${index}`}
-                  diagramIndex={index}
-                  code={block.code}
-                  compact
-                  onEdit={() => openDiagramEditor('edit', block.code, index)}
-                  onMoveUp={index > 0 ? () => handleMoveDiagram(index, 'up') : undefined}
-                  onMoveDown={index < mermaidBlocks.length - 1 ? () => handleMoveDiagram(index, 'down') : undefined}
-                  onDuplicate={() => handleDuplicateDiagram(index)}
-                  onDelete={() => handleDeleteDiagram(index)}
-                />
-              ))}
               <EditorContent editor={editor} />
+              <div className="pointer-events-none absolute inset-0 z-10">
+                {mermaidBlocks.map((block, index) => {
+                  const anchor = mermaidPreviewAnchors[index];
+                  if (!anchor) return null;
+                  return (
+                    <div
+                      key={`${block.start}-${index}`}
+                      className="pointer-events-auto absolute left-0 right-0"
+                      style={{ top: anchor.top }}
+                    >
+                      <MermaidBlock
+                        diagramIndex={index}
+                        code={block.code}
+                        compact
+                        onEdit={() => openDiagramEditor('edit', block.code, index)}
+                        onMoveUp={index > 0 ? () => handleMoveDiagram(index, 'up') : undefined}
+                        onMoveDown={index < mermaidBlocks.length - 1 ? () => handleMoveDiagram(index, 'down') : undefined}
+                        onDuplicate={() => handleDuplicateDiagram(index)}
+                        onDelete={() => handleDeleteDiagram(index)}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
           {/* Source — textarea con Markdown crudo */}

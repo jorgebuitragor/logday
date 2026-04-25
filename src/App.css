@@ -189,8 +189,16 @@
   overflow-x: auto;
   margin: 0.5rem 0;
 }
-/* Oculta bloques mermaid crudos en el editor WYSIWYG; solo visibles en modo fuente */
-.prose-editor pre:has(> code.language-mermaid) { display: none; }
+/* Mantiene el bloque Mermaid en flujo para anclar la vista previa en su posicion real */
+.prose-editor pre:has(> code.language-mermaid) {
+  position: relative;
+  min-height: 220px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+.prose-editor pre:has(> code.language-mermaid) > code { display: none; }
 
 /* ==================== React Flow theme overrides ==================== */
 .react-flow {

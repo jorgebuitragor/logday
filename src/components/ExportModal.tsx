@@ -116,7 +116,9 @@ export function ExportModal({ note, onClose }: Props) {
             className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs text-white transition hover:bg-indigo-500 disabled:opacity-60"
           >
             <Download size={13} />
-            {saving ? 'Guardando…' : 'Guardar archivo'}
+            <span className="inline-block min-w-[72px] text-center">
+              {saving ? 'Guardando…' : 'Guardar archivo'}
+            </span>
           </button>
         </div>
       </div>

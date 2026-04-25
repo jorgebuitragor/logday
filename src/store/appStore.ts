@@ -1182,8 +1182,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     const monthNames = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
     const mesLabel = `${monthNames[parseInt(month) - 1]} ${year}`;
     const bytes = await generateOvertimeXlsx(entries, meta, mesLabel);
+    const colaborador = meta.colaborador || 'Colaborador';
     const dest = await saveDialog({
-      defaultPath: `horas-extras-${yearMonth}.xlsx`,
+      defaultPath: `Reporte Extras ${colaborador} - ${mesLabel}.xlsx`,
       filters: [{ name: 'Excel', extensions: ['xlsx'] }],
     });
     if (dest) {

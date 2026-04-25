@@ -33,12 +33,13 @@ export function parseFrontmatter(raw: string, filePath: string): Task | null {
   const tags = Array.isArray(data.tags) ? data.tags : [];
   const project = (data.project as string) || 'inbox';
   const created = (data.created as string) || new Date().toISOString().slice(0, 10);
+  const completedAt = (data.completed_at as string) || undefined;
   const due = (data.due as string) || undefined;
   const linked_paths = Array.isArray(data.linked_paths) ? data.linked_paths : [];
 
   if (!id) return null;
 
-  return { id, title, status, tags, project, created, due, linked_paths, content, filePath };
+  return { id, title, status, tags, project, created, completedAt, due, linked_paths, content, filePath };
 }
 
 /**
@@ -59,6 +60,10 @@ export function serializeTask(task: Task): string {
 
   lines.push(`project: ${task.project}`);
   lines.push(`created: ${task.created}`);
+
+  if (task.completedAt) {
+    lines.push(`completed_at: ${task.completedAt}`);
+  }
 
   if (task.due) {
     lines.push(`due: ${task.due}`);

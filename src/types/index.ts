@@ -1,7 +1,7 @@
 export type TaskStatus = 'todo' | 'in-progress' | 'done';
 export type ViewMode = 'list' | 'kanban' | 'calendar';
 export type Theme = 'dark' | 'light' | 'system';
-export type ActiveSection = 'tasks' | 'notes' | 'dailys' | 'overtime';
+export type ActiveSection = 'dashboard' | 'tasks' | 'notes' | 'dailys' | 'overtime';
 
 export interface Shortcuts {
   newNote: string;
@@ -23,6 +23,7 @@ export interface Task {
   tags: string[];
   project: string;
   created: string;   // YYYY-MM-DD
+  completedAt?: string; // YYYY-MM-DD
   due?: string;      // YYYY-MM-DD
   linked_paths: string[];
   content: string;   // markdown body

@@ -33,6 +33,8 @@ import {
 import { useAppStore } from '../store/appStore';
 import { ViewMode } from '../types';
 import { placeMenuAtPointer } from '../lib/menuPosition';
+import logoImg from '../assets/logo.png';
+import iconSquareNoBg from '../../icon_square_wiout_background.png';
 
 const ESTIMATED_AREA_MENU = { width: 180, height: 110 };
 const ESTIMATED_FOLDER_MENU = { width: 220, height: 360 };
@@ -655,6 +657,29 @@ export function Sidebar() {
         </button>
         <div className="my-1 h-px w-6 bg-[var(--border)]" />
         <button
+          onClick={() => setSection('dashboard')}
+          className={`rounded-lg p-2 transition ${
+            activeSection === 'dashboard'
+              ? 'text-indigo-400 bg-indigo-500/10'
+              : 'text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+          }`}
+          title="Inicio"
+        >
+          <img src={logoImg} alt="Logday" className="h-[18px] w-[18px] rounded-sm object-cover" />
+        </button>
+        <div className="my-1 h-px w-6 bg-[var(--border)]" />
+        <button
+          onClick={() => setSection('dailys')}
+          className={`rounded-lg p-2 transition ${
+            activeSection === 'dailys'
+              ? 'text-indigo-400 bg-indigo-500/10'
+              : 'text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+          }`}
+          title="Dailys"
+        >
+          <CalendarDays size={18} />
+        </button>
+        <button
           onClick={() => setSection('tasks')}
           className={`rounded-lg p-2 transition ${
             activeSection === 'tasks'
@@ -675,17 +700,6 @@ export function Sidebar() {
           title="Notas"
         >
           <Notebook size={18} />
-        </button>
-        <button
-          onClick={() => setSection('dailys')}
-          className={`rounded-lg p-2 transition ${
-            activeSection === 'dailys'
-              ? 'text-indigo-400 bg-indigo-500/10'
-              : 'text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
-          }`}
-          title="Dailys"
-        >
-          <CalendarDays size={18} />
         </button>
         <button
           onClick={() => setSection('overtime')}
@@ -753,12 +767,16 @@ export function Sidebar() {
     <div className="flex h-full w-56 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)] text-xs">
       {/* App header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-3">
-        <div className="flex items-center gap-2">
+        <button
+          onClick={() => setSection('dashboard')}
+          className="flex items-center gap-2"
+          title="Inicio"
+        >
           <div className="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-600">
-            <CheckSquare size={12} className="text-white" />
+            <img src={iconSquareNoBg} alt="Logday" className="h-4 w-4 rounded-sm object-contain" />
           </div>
           <span className="font-semibold text-[var(--text-primary)] text-sm">Logday</span>
-        </div>
+        </button>
         <div className="flex items-center gap-0.5">
           <button
             onClick={toggleSearch}
@@ -780,9 +798,9 @@ export function Sidebar() {
       <div className="grid grid-cols-4 border-b border-[var(--border)] px-2 py-2 gap-1">
         {(
           [
+            { id: 'dailys',   Icon: CalendarDays, label: 'Dailys'  },
             { id: 'tasks',    Icon: CheckSquare,  label: 'Tareas'  },
             { id: 'notes',    Icon: Notebook,     label: 'Notas'   },
-            { id: 'dailys',   Icon: CalendarDays, label: 'Dailys'  },
             { id: 'overtime', Icon: Timer,        label: 'Extras'  },
           ] as const
         ).map(({ id, Icon, label }) => {
@@ -1326,7 +1344,7 @@ export function Sidebar() {
       )}
 
       {/* Footer */}
-      <div className="border-t border-[var(--border)] px-2 py-2 space-y-0.5">
+      <div className="mt-auto border-t border-[var(--border)] px-2 py-2 space-y-0.5">
         <button
           onClick={toggleGit}
           className="relative flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"

@@ -1,9 +1,10 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import './App.css';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from './store/appStore';
 import { Onboarding } from './pages/Onboarding';
 import { Sidebar } from './components/Sidebar';
+import { DashboardView } from './components/DashboardView';
 import { TaskList } from './components/TaskList';
 import { SearchModal } from './components/SearchModal';
 import { SettingsModal } from './components/SettingsModal';
@@ -21,7 +22,7 @@ const OvertimeList  = lazy(() => import('./components/OvertimeList').then(m => (
 const OvertimeEditor = lazy(() => import('./components/OvertimeEditor').then(m => ({ default: m.OvertimeEditor })));
 
 export default function App() {
-  const { init, isLoading, isConfigured, activeTask, activeSection, createNote, setSection, shortcuts } = useAppStore(
+  const { init, isLoading, isConfigured, activeTask, activeSection, createNote, setSection, shortcuts, dailyMonths } = useAppStore(
     useShallow((s) => ({
       init: s.init,
       isLoading: s.isLoading,
@@ -31,9 +32,11 @@ export default function App() {
       createNote: s.createNote,
       setSection: s.setSection,
       shortcuts: s.shortcuts,
+      dailyMonths: s.dailyMonths,
     }))
   );
   const [editingEntry, setEditingEntry] = useState<OvertimeEntry | null | undefined>(undefined);
+  const resolvedStartupRef = useRef(false);
 
   useEffect(() => {
     init();
@@ -64,6 +67,16 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler);
   }, [createNote, setSection, shortcuts]);
 
+  useEffect(() => {
+    if (isLoading || !isConfigured || resolvedStartupRef.current) return;
+    resolvedStartupRef.current = true;
+    if (dailyMonths.length === 0) {
+      setSection('dailys');
+      return;
+    }
+    setSection('dashboard');
+  }, [isLoading, isConfigured, dailyMonths.length, setSection]);
+
   if (isLoading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-[var(--bg-base)]">
@@ -87,7 +100,9 @@ export default function App() {
       {/* Main content area */}
       <div className="flex flex-1 overflow-hidden">
         <Suspense fallback={null}>
-        {activeSection === 'tasks' ? (
+        {activeSection === 'dashboard' ? (
+          <DashboardView />
+        ) : activeSection === 'tasks' ? (
           <>
             <TaskList />
             <KanbanBoard />

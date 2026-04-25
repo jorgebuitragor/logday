@@ -260,7 +260,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   configDir: null,
   isConfigured: false,
   isLoading: true,
-  activeSection: 'tasks',
+  activeSection: 'dashboard',
   projects: [],
   activeProject: null,
   tasks: [],
@@ -484,10 +484,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   updateTask: async (task) => {
-    await fs.writeFile(task.filePath, serializeTask(task));
+    const prev = get().tasks.find((t) => t.id === task.id);
+    const today = formatDate(new Date());
+    const normalizedTask: Task = { ...task };
+
+    if (normalizedTask.status === 'done') {
+      // Sella fecha de completado al primer cambio a done.
+      if (!normalizedTask.completedAt) {
+        normalizedTask.completedAt = prev?.completedAt ?? today;
+      }
+    } else if (normalizedTask.completedAt) {
+      // Si vuelve a no-done, elimina la marca de completado.
+      delete normalizedTask.completedAt;
+    }
+
+    await fs.writeFile(normalizedTask.filePath, serializeTask(normalizedTask));
     set((state) => ({
-      tasks: state.tasks.map((t) => (t.id === task.id ? task : t)),
-      activeTask: state.activeTask?.id === task.id ? task : state.activeTask,
+      tasks: state.tasks.map((t) => (t.id === normalizedTask.id ? normalizedTask : t)),
+      activeTask: state.activeTask?.id === normalizedTask.id ? normalizedTask : state.activeTask,
     }));
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },

@@ -19,7 +19,7 @@ function buildText(note: Note, format: Format): string {
 }
 
 export function ExportModal({ note, onClose }: Props) {
-  const { language } = useAppStore();
+  const { language, showToast } = useAppStore();
   const [format, setFormat] = useState<Format>('md');
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -40,6 +40,19 @@ export function ExportModal({ note, onClose }: Props) {
     flushSync(() => setSaving(true));
     try {
       await exportNote(note, format);
+      showToast({
+        kind: 'success',
+        title: t(language, 'toast', 'noteExported'),
+        description: note.title || t(language, 'extras', 'untitled'),
+      });
+    } catch (error) {
+      showToast({
+        kind: 'error',
+        title: t(language, 'toast', 'exportFailed'),
+        description: String(error),
+        durationMs: 4200,
+      });
+      throw error;
     } finally {
       setSaving(false);
       onClose();

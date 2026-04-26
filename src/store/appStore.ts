@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { invoke } from '@tauri-apps/api/core';
-import { Task, Note, AppConfig, ViewMode, Theme, ActiveSection, StartupScreen, Language, Shortcuts, DEFAULT_SHORTCUTS, OvertimeEntry, OvertimeMonthMeta, GitConfig, GitStatus, GitRemoteStatus } from '../types';
+import { Task, Note, AppConfig, ViewMode, Theme, ActiveSection, StartupScreen, Language, Shortcuts, DEFAULT_SHORTCUTS, OvertimeEntry, OvertimeMonthMeta, GitConfig, GitStatus, GitRemoteStatus, AppToast, ToastKind } from '../types';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
 import { generateOvertimeXlsx } from '../lib/overtimeExcel';
 import { fs, pickFolder, pickFile, saveDialog, SearchResult } from '../lib/invoke';
 import { parseFrontmatter, serializeTask, parseNote, serializeNote, formatDate } from '../lib/markdown';
+import { t } from '../lib/i18n';
 import {
   toISO,
   getPreviousWorkingDay,
@@ -55,6 +56,7 @@ interface AppState {
   searchQuery: string;
   searchResults: Task[];
   isSidebarCollapsed: boolean;
+  toasts: AppToast[];
 
   // Theme + Settings
   theme: Theme;
@@ -139,6 +141,8 @@ interface AppState {
   addLinkedPath: () => Promise<void>;
   removeLinkedPath: (task: Task, path: string) => Promise<void>;
   toggleSidebar: () => void;
+  showToast: (toast: { kind: ToastKind; title: string; description?: string; durationMs?: number }) => string;
+  dismissToast: (id: string) => void;
   setTheme: (theme: Theme) => void;
   setStartupScreen: (screen: StartupScreen) => Promise<void>;
   setLanguage: (lang: Language) => Promise<void>;
@@ -293,6 +297,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   searchQuery: '',
   searchResults: [],
   isSidebarCollapsed: false,
+  toasts: [],
   theme: (localStorage.getItem('theme') as Theme) || 'system',
   startupScreen: 'dashboard',
   language: (localStorage.getItem('language') as Language) || 'es',
@@ -325,6 +330,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     try { return { colaborador: '', cedula: '', ...JSON.parse(localStorage.getItem('overtimeMeta') || '{}') }; }
     catch { return { colaborador: '', cedula: '' }; }
   })(),
+
+  showToast: ({ kind, title, description, durationMs = 3200 }) => {
+    const id = uuidv4();
+    set((state) => ({
+      toasts: [...state.toasts, { id, kind, title, description }],
+    }));
+    if (durationMs > 0) {
+      window.setTimeout(() => {
+        get().dismissToast(id);
+      }, durationMs);
+    }
+    return id;
+  },
+
+  dismissToast: (id) => set((state) => ({
+    toasts: state.toasts.filter((toast) => toast.id !== id),
+  })),
 
   init: async () => {
     set({ isLoading: true });
@@ -645,10 +667,16 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   deleteTask: async (task) => {
     await fs.deleteFile(task.filePath);
+    const language = get().language;
     set((state) => ({
       tasks: state.tasks.filter((t) => t.id !== task.id),
       activeTask: state.activeTask?.id === task.id ? null : state.activeTask,
     }));
+    get().showToast({
+      kind: 'success',
+      title: t(language, 'toast', 'taskDeleted'),
+      description: task.title,
+    });
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
@@ -879,10 +907,16 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   deleteNote: async (note) => {
     await fs.deleteFile(note.filePath);
+    const language = get().language;
     set((state) => ({
       notes: state.notes.filter((n) => n.id !== note.id),
       activeNote: state.activeNote?.id === note.id ? null : state.activeNote,
     }));
+    get().showToast({
+      kind: 'success',
+      title: t(language, 'toast', 'noteDeleted'),
+      description: note.title || t(language, 'notes', 'untitled'),
+    });
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
@@ -1148,6 +1182,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   deleteDailyEntry: async (date) => {
     const { basePath } = get();
     if (!basePath) return;
+    const language = get().language;
     const year = date.slice(0, 4);
     const month = date.slice(5, 7);
     const yearMonth = `${year}-${month}`;
@@ -1166,6 +1201,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         dailyEntries: rest,
         activeDailyDate: s.activeDailyDate === date ? null : s.activeDailyDate,
       };
+    });
+    get().showToast({
+      kind: 'success',
+      title: t(language, 'toast', 'dailyDeleted'),
+      description: date,
     });
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
@@ -1293,18 +1333,26 @@ export const useAppStore = create<AppState>((set, get) => ({
   deleteOvertimeEntry: async (id) => {
     const base = get().basePath;
     if (!base) return;
+    const language = get().language;
+    const deletedEntry = get().overtimeEntries.find((entry) => entry.id === id);
     const entries = get().overtimeEntries.filter(e => e.id !== id);
     set({ overtimeEntries: entries });
     const ym = get().overtimeMonth;
     const [year, month] = ym.split('-');
     const path = overtimeMonthFilePath(base, year, month);
     await fs.writeFile(path, `---\n${JSON.stringify({ entries }, null, 2)}\n---\n`);
+    get().showToast({
+      kind: 'success',
+      title: t(language, 'toast', 'overtimeDeleted'),
+      description: deletedEntry?.fecha,
+    });
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
   deleteOvertimeMonth: async (yearMonth) => {
     const base = get().basePath;
     if (!base) return;
+    const language = get().language;
     const [year, month] = yearMonth.split('-');
     const dir = overtimeMonthDir(base, year, month);
     try { await fs.deleteDir(dir); } catch { /* ya no existe */ }
@@ -1315,6 +1363,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       const next = newMonths[0] ?? yearMonth;
       await get().loadOvertimeMonth(next);
     }
+    get().showToast({
+      kind: 'success',
+      title: t(language, 'toast', 'overtimeMonthDeleted'),
+      description: yearMonth,
+    });
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
@@ -1327,6 +1380,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   exportOvertimeExcel: async (yearMonth) => {
     const base = get().basePath;
     if (!base) return;
+    const language = get().language;
     const [year, month] = yearMonth.split('-');
     const path = overtimeMonthFilePath(base, year, month);
     let entries: OvertimeEntry[] = [];
@@ -1347,6 +1401,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (dest) {
       const b64 = btoa(String.fromCharCode(...bytes));
       await fs.writeBinary(dest, b64);
+      get().showToast({
+        kind: 'success',
+        title: t(language, 'toast', 'overtimeExported'),
+        description: dest.split('/').pop() ?? dest,
+      });
     }
   },
 

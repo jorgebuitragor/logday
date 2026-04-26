@@ -84,6 +84,15 @@ export interface GitConfig {
 export type GitStatus = 'idle' | 'synced' | 'pending' | 'error';
 export type GitRemoteStatus = 'unknown' | 'synced' | 'behind' | 'ahead' | 'diverged' | 'offline';
 
+export type ToastKind = 'success' | 'error' | 'info';
+
+export interface AppToast {
+  id: string;
+  kind: ToastKind;
+  title: string;
+  description?: string;
+}
+
 export interface SearchResult {
   path: string;
   content: string;

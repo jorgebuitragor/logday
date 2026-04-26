@@ -69,6 +69,7 @@ export function SettingsModal() {
     fontSize, setFontSize,
     basePath, changeBasePath,
     shortcuts, setShortcut,
+    showToast,
   } = useAppStore();
 
   const [backupStatus, setBackupStatus] = useState<'idle' | 'exporting' | 'importing' | 'done' | 'error'>('idle');
@@ -158,6 +159,11 @@ export function SettingsModal() {
         await invoke('write_file_binary', { path: dest, data: b64 });
         setBackupStatus('done');
         setBackupMsg(t(language, 'settings', 'backupSaved'));
+        showToast({
+          kind: 'success',
+          title: t(language, 'toast', 'backupExported'),
+          description: dest.split('/').pop() ?? dest,
+        });
       } else {
         setBackupStatus('idle');
         setBackupMsg('');
@@ -165,6 +171,12 @@ export function SettingsModal() {
     } catch (err) {
       setBackupStatus('error');
       setBackupMsg(`${t(language, 'settings', 'backupExportError')} ${String(err)}`);
+      showToast({
+        kind: 'error',
+        title: t(language, 'toast', 'exportFailed'),
+        description: String(err),
+        durationMs: 4200,
+      });
     }
   }
 
@@ -206,9 +218,20 @@ export function SettingsModal() {
       await Promise.all(tasks);
       setBackupStatus('done');
       setBackupMsg(t(language, 'settings', 'backupRestored'));
+      showToast({
+        kind: 'success',
+        title: t(language, 'toast', 'backupImported'),
+        description: filePath.split('/').pop() ?? filePath,
+      });
     } catch (err) {
       setBackupStatus('error');
       setBackupMsg(`${t(language, 'settings', 'backupImportError')} ${String(err)}`);
+      showToast({
+        kind: 'error',
+        title: t(language, 'toast', 'importFailed'),
+        description: String(err),
+        durationMs: 4200,
+      });
     }
   }
 

@@ -10,6 +10,7 @@ import { TaskList } from './components/TaskList';
 import { SearchModal } from './components/SearchModal';
 import { SettingsModal } from './components/SettingsModal';
 import { GitModal } from './components/GitModal';
+import { ToastViewport } from './components/ToastViewport';
 import { OvertimeEntry } from './types';
 
 const KanbanBoard   = lazy(() => import('./components/KanbanBoard').then(m => ({ default: m.KanbanBoard })));
@@ -123,6 +124,7 @@ export default function App() {
       <SearchModal />
       <SettingsModal />
       <GitModal />
+      <ToastViewport />
     </div>
   );
 }

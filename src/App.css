@@ -207,6 +207,10 @@ html.theme-animating body * {
   pointer-events: none;
 }
 
+.toast-card {
+  animation: fade-in-up 180ms ease-out both;
+}
+
 @keyframes discard-note {
   0%   { opacity: 1; transform: translateX(0) scale(1); background-color: transparent; }
   20%  { background-color: rgba(239, 68, 68, 0.18); transform: translateX(2px) scale(1); }

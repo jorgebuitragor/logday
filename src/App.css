@@ -378,7 +378,7 @@ html.theme-animating body * {
 /* Mantiene el bloque Mermaid en flujo para anclar la vista previa en su posicion real */
 .prose-editor pre:has(> code.language-mermaid) {
   position: relative;
-  min-height: 220px;
+  min-height: 320px;
   padding: 0;
   border: 0;
   background: transparent;

@@ -107,11 +107,17 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onHe
       requestAnimationFrame(reportHeight);
     });
 
+    // Mermaid can change final size after async SVG layout/font resolution.
+    // ResizeObserver keeps placeholder height in sync to prevent overlap.
+    const observer = new ResizeObserver(() => reportHeight());
+    observer.observe(element);
+
     const onResize = () => reportHeight();
     window.addEventListener('resize', onResize);
 
     return () => {
       cancelAnimationFrame(raf1);
+      observer.disconnect();
       window.removeEventListener('resize', onResize);
     };
   }, [onHeightChange, svg, error, compact]);

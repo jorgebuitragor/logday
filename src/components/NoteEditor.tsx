@@ -483,10 +483,15 @@ export function NoteEditor() {
     const anchors = Array.from(root.querySelectorAll('pre'))
       .filter((pre) => pre.querySelector('code.language-mermaid'))
       .map((pre, index) => {
-        // Keep extra breathing room so the following blocks never overlap
-        // while Mermaid finishes layouting fonts/SVG internals.
-        const renderedHeight = (mermaidRenderedHeights[index] ?? 220) + 32;
-        const placeholderHeight = Math.max(240, renderedHeight);
+        const renderedCard = pane.querySelector<HTMLElement>(`[data-mermaid-card][data-mermaid-index="${index}"]`);
+        const measuredCardHeight = renderedCard ? Math.ceil(renderedCard.getBoundingClientRect().height) : 0;
+        const renderedHeight = Math.max((mermaidRenderedHeights[index] ?? 320) + 64, measuredCardHeight + 48);
+        const placeholderHeight = Math.max(380, renderedHeight);
+        const currentHeight = parseFloat(pre.style.height || '0');
+        if (Math.abs(currentHeight - placeholderHeight) > 0.5) {
+          pre.style.height = `${placeholderHeight}px`;
+          pre.style.minHeight = `${placeholderHeight}px`;
+        }
         const rect = pre.getBoundingClientRect();
         return {
           top: rect.top - paneRect.top + pane.scrollTop,
@@ -513,36 +518,23 @@ export function NoteEditor() {
     });
   }, [editor, mermaidRenderedHeights, viewMode]);
 
-  useEffect(() => {
-    if (viewMode === 'source' || !editor) return;
+  const applyMermaidPlaceholderHeight = useCallback((index: number, height: number) => {
     let root: HTMLElement | null = null;
     try {
-      root = editor.view.dom as HTMLElement;
+      root = editor ? (editor.view.dom as HTMLElement) : null;
     } catch {
       root = null;
     }
     if (!root) return;
 
-    const applyPlaceholderHeights = () => {
-      const mermaidPres = Array.from(root.querySelectorAll('pre')).filter((pre) => pre.querySelector('code.language-mermaid'));
-      mermaidPres.forEach((pre, index) => {
-        // Add a fixed safety buffer to avoid visual overlap with subsequent blocks.
-        const renderedHeight = (mermaidRenderedHeights[index] ?? 220) + 32;
-        const placeholderHeight = Math.max(240, renderedHeight);
-        const currentHeight = parseFloat(pre.style.height || '0');
-        if (Math.abs(currentHeight - placeholderHeight) > 0.5) {
-          // Explicit height keeps document flow aligned with overlayed Mermaid card.
-          pre.style.height = `${placeholderHeight}px`;
-          pre.style.minHeight = `${placeholderHeight}px`;
-        }
-      });
-      recalcMermaidPreviewAnchors();
-    };
+    const mermaidPres = Array.from(root.querySelectorAll('pre')).filter((pre) => pre.querySelector('code.language-mermaid'));
+    const target = mermaidPres[index] as HTMLElement | undefined;
+    if (!target) return;
 
-    applyPlaceholderHeights();
-    const raf = requestAnimationFrame(applyPlaceholderHeights);
-    return () => cancelAnimationFrame(raf);
-  }, [editor, mermaidRenderedHeights, mermaidBlocks.length, recalcMermaidPreviewAnchors, viewMode]);
+    const placeholderHeight = Math.max(380, Math.ceil(height) + 48);
+    target.style.height = `${placeholderHeight}px`;
+    target.style.minHeight = `${placeholderHeight}px`;
+  }, [editor]);
 
   useEffect(() => {
     setMermaidRenderedHeights((prev) => {
@@ -596,6 +588,15 @@ export function NoteEditor() {
       return anchors;
     });
   }, [editor, viewMode]);
+
+  useEffect(() => {
+    if (viewMode === 'source') return;
+    const raf = requestAnimationFrame(() => {
+      recalcMermaidPreviewAnchors();
+      recalcCodeBlockAnchors();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [mermaidRenderedHeights, mermaidBlocks.length, recalcMermaidPreviewAnchors, recalcCodeBlockAnchors, viewMode]);
 
   const topLevelPosAtIndex = useCallback((doc: { child: (i: number) => { nodeSize: number } }, index: number) => {
     let pos = 0;
@@ -686,6 +687,37 @@ export function NoteEditor() {
     const tr = editor.state.tr.delete(from, to);
     editor.view.dispatch(tr.scrollIntoView());
     editor.view.focus();
+    closeBlockContextMenu();
+  }, [blockContextMenu, closeBlockContextMenu, editor, topLevelPosAtIndex]);
+
+  const copyBlockFromContextMenu = useCallback(() => {
+    if (!editor || !blockContextMenu) return;
+    const { blockIndex } = blockContextMenu;
+    if (blockIndex < 0 || blockIndex >= editor.state.doc.childCount) return;
+
+    const doc = editor.state.doc;
+    const node = doc.child(blockIndex);
+    const from = topLevelPosAtIndex(doc, blockIndex);
+    const to = from + node.nodeSize;
+    const typeName = node.type.name;
+    let textToCopy = doc.textBetween(from, to, '\n\n').trim();
+
+    if (typeName === 'heading') {
+      const level = Number((node.attrs as { level?: number })?.level || 1);
+      textToCopy = `${'#'.repeat(Math.min(6, Math.max(1, level)))} ${node.textContent}`.trim();
+    } else if (typeName === 'codeBlock') {
+      const lang = String((node.attrs as { language?: string })?.language || '').trim();
+      const body = node.textContent || '';
+      textToCopy = `\`\`\`${lang}\n${body}\n\`\`\``;
+    } else if (typeName === 'blockquote') {
+      const body = (node.textContent || '').split('\n').map((line) => `> ${line}`).join('\n').trim();
+      textToCopy = body;
+    } else if (typeName === 'horizontalRule') {
+      textToCopy = '---';
+    }
+
+    if (!textToCopy) return;
+    navigator.clipboard.writeText(textToCopy).catch(() => {});
     closeBlockContextMenu();
   }, [blockContextMenu, closeBlockContextMenu, editor, topLevelPosAtIndex]);
 
@@ -2021,6 +2053,14 @@ export function NoteEditor() {
                   <div className="my-1 h-px bg-[var(--border)]" />
                   <button
                     type="button"
+                    onClick={copyBlockFromContextMenu}
+                    className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                  >
+                    {tFn(language, 'notes', 'copy')}
+                  </button>
+                  <div className="my-1 h-px bg-[var(--border)]" />
+                  <button
+                    type="button"
                     onClick={deleteBlockFromContextMenu}
                     className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-xs text-red-300 transition hover:bg-red-500/10 hover:text-red-200"
                   >
@@ -2119,7 +2159,7 @@ export function NoteEditor() {
                   return (
                     <div
                       key={`${block.start}-${index}`}
-                      className="pointer-events-auto absolute"
+                      className="pointer-events-auto absolute z-[25]"
                       style={{ top: anchor.top, left: anchor.left, width: anchor.width }}
                     >
                       <MermaidBlock
@@ -2127,11 +2167,16 @@ export function NoteEditor() {
                         code={block.code}
                         compact
                         onHeightChange={(height) => {
+                          applyMermaidPlaceholderHeight(index, height);
                           setMermaidRenderedHeights((prev) => {
                             if (prev[index] && Math.abs(prev[index] - height) < 1) return prev;
                             const next = [...prev];
                             next[index] = height;
                             return next;
+                          });
+                          requestAnimationFrame(() => {
+                            recalcMermaidPreviewAnchors();
+                            recalcCodeBlockAnchors();
                           });
                         }}
                         onEdit={() => openDiagramEditor('edit', block.code, index)}

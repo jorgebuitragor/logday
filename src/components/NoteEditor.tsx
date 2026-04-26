@@ -281,6 +281,7 @@ export function NoteEditor() {
     activeSection,
     noteFolders,
     language,
+    confirmDestructiveActions,
     updateNote,
     deleteNote,
     setActiveNote,
@@ -1374,7 +1375,7 @@ export function NoteEditor() {
   return (
     <div key={activeNote.id} className="animate-fade-in flex flex-1 flex-col overflow-hidden bg-[var(--bg-base)]">
       {/* Modal confirmación eliminar */}
-      {showDeleteConfirm && (
+      {showDeleteConfirm && confirmDestructiveActions && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
           <div className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
             <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
@@ -1492,7 +1493,10 @@ export function NoteEditor() {
             <Download size={13} />
           </button>
           <button
-            onClick={() => setShowDeleteConfirm(true)}
+            onClick={() => {
+              if (confirmDestructiveActions) setShowDeleteConfirm(true);
+              else void handleDelete();
+            }}
             className="rounded-lg p-1.5 text-[var(--text-hint)] transition hover:text-red-400 hover:bg-red-400/10"
             title={tFn(language, 'notes', 'deleteNote')}
           >

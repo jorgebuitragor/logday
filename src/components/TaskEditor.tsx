@@ -23,7 +23,7 @@ const STATUS_OPTIONS: { value: TaskStatus; color: string }[] = [
 ];
 
 export function TaskEditor() {
-  const { activeTask, updateTask, deleteTask, setActiveTask, projects, addLinkedPath, removeLinkedPath, language } =
+  const { activeTask, updateTask, deleteTask, setActiveTask, projects, addLinkedPath, removeLinkedPath, language, confirmDestructiveActions } =
     useAppStore();
 
   const [title, setTitle] = useState('');
@@ -119,7 +119,7 @@ export function TaskEditor() {
 
   const handleDelete = async () => {
     if (!activeTask) return;
-    if (!confirm(t(language, 'tasks', 'confirmDeleteMsg') + ` "${activeTask.title}"`)) return;
+    if (confirmDestructiveActions && !confirm(t(language, 'tasks', 'confirmDeleteMsg') + ` "${activeTask.title}"`)) return;
     await deleteTask(activeTask);
   };
 

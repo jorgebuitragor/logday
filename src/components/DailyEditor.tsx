@@ -384,6 +384,7 @@ export function DailyEditor() {
     createTask,
     updateTask,
     language,
+    confirmDestructiveActions,
   } = useAppStore();
 
   const [todayActs, setTodayActs] = useState('');
@@ -553,7 +554,10 @@ export function DailyEditor() {
             {copied ? t(language, 'dailys', 'copiedLong') : t(language, 'dailys', 'copyFormat')}
           </button>
           <button
-            onClick={() => setShowDeleteConfirm(true)}
+            onClick={() => {
+              if (confirmDestructiveActions) setShowDeleteConfirm(true);
+              else void handleDelete();
+            }}
             className="rounded-lg p-1.5 text-[var(--text-hint)] transition hover:bg-red-500/10 hover:text-red-400"
             title={t(language, 'dailys', 'deleteThisDailyTitle')}
           >
@@ -687,7 +691,7 @@ export function DailyEditor() {
     </div>
 
     {/* Modal de confirmación de borrado */}
-    {showDeleteConfirm && activeDailyDate && (
+    {showDeleteConfirm && confirmDestructiveActions && activeDailyDate && (
       <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/50">
         <div className="w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
           <div className="mb-3 flex items-center gap-2 text-red-400">

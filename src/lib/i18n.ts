@@ -11,6 +11,7 @@ const dict = {
       theme: 'Tema',
       startupScreen: 'Pantalla de inicio',
       fontSize: 'Tipografía',
+      behavior: 'Comportamiento',
       shortcuts: 'Atajos de teclado',
       backup: 'Respaldo de datos',
       startupOptionsAria: 'Opciones de pantalla de inicio',
@@ -48,6 +49,10 @@ const dict = {
       startupDescOvertime: 'Control y reporte de horas extra',
       // Font size
       fontSizeLabel: 'Tamaño de fuente',
+      confirmDeleteTitle: 'Confirmar eliminaciones',
+      confirmDeleteDesc: 'Muestra un diálogo antes de borrar notas, tareas, dailys y registros de extras.',
+      confirmDeleteEnabled: 'Activado',
+      confirmDeleteDisabled: 'Desactivado',
       // Shortcuts
       shortcutNewNote: 'Nueva nota',
       shortcutNewTask: 'Nueva tarea',
@@ -595,6 +600,7 @@ const dict = {
       theme: 'Theme',
       startupScreen: 'Startup screen',
       fontSize: 'Typography',
+      behavior: 'Behavior',
       shortcuts: 'Keyboard shortcuts',
       backup: 'Data backup',
       startupOptionsAria: 'Startup screen options',
@@ -632,6 +638,10 @@ const dict = {
       startupDescOvertime: 'Overtime tracking and reports',
       // Font size
       fontSizeLabel: 'Font size',
+      confirmDeleteTitle: 'Confirm deletions',
+      confirmDeleteDesc: 'Show a dialog before deleting notes, tasks, dailys, and overtime entries.',
+      confirmDeleteEnabled: 'Enabled',
+      confirmDeleteDisabled: 'Disabled',
       // Shortcuts
       shortcutNewNote: 'New note',
       shortcutNewTask: 'New task',

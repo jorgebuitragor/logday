@@ -67,6 +67,7 @@ export function SettingsModal() {
     startupScreen, setStartupScreen,
     language, setLanguage,
     fontSize, setFontSize,
+    confirmDestructiveActions, setConfirmDestructiveActions,
     basePath, changeBasePath,
     shortcuts, setShortcut,
     showToast,
@@ -475,6 +476,33 @@ export function SettingsModal() {
                 </button>
               </div>
             </div>
+          </div>
+
+          <div>
+            <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
+              {t(language, 'settings', 'behavior')}
+            </p>
+            <button
+              onClick={() => void setConfirmDestructiveActions(!confirmDestructiveActions)}
+              className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 text-left transition hover:bg-[var(--bg-hover)]"
+            >
+              <div>
+                <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'confirmDeleteTitle')}</p>
+                <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'confirmDeleteDesc')}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] font-semibold uppercase tracking-wider ${confirmDestructiveActions ? 'text-[var(--accent)]' : 'text-[var(--text-hint)]'}`}>
+                  {confirmDestructiveActions ? t(language, 'settings', 'confirmDeleteEnabled') : t(language, 'settings', 'confirmDeleteDisabled')}
+                </span>
+                <span
+                  className={`relative h-6 w-11 rounded-full transition ${confirmDestructiveActions ? 'bg-[var(--accent)]' : 'bg-[var(--border-card)]'}`}
+                >
+                  <span
+                    className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${confirmDestructiveActions ? 'left-[22px]' : 'left-0.5'}`}
+                  />
+                </span>
+              </div>
+            </button>
           </div>
 
           {/* Atajos de teclado */}

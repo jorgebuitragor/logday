@@ -31,7 +31,7 @@ export function OvertimeList({ onEdit }: Props) {
     overtimeEntries, overtimeMonth, loadOvertimeMonth,
     deleteOvertimeEntry, exportOvertimeExcel,
     overtimeMeta, setOvertimeMeta,
-    language,
+    language, confirmDestructiveActions,
   } = useAppStore(
     useShallow((s) => ({
       overtimeEntries: s.overtimeEntries,
@@ -42,6 +42,7 @@ export function OvertimeList({ onEdit }: Props) {
       overtimeMeta: s.overtimeMeta,
       setOvertimeMeta: s.setOvertimeMeta,
       language: s.language,
+      confirmDestructiveActions: s.confirmDestructiveActions,
     }))
   );
   const [showConfig, setShowConfig] = useState(false);
@@ -163,7 +164,11 @@ export function OvertimeList({ onEdit }: Props) {
                   )}
                 </div>
                 <button
-                  onClick={(e) => { e.stopPropagation(); setConfirmDelete(entry); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirmDestructiveActions) setConfirmDelete(entry);
+                    else void deleteOvertimeEntry(entry.id);
+                  }}
                   className="mt-0.5 hidden shrink-0 rounded p-1 text-[var(--text-hint)] hover:text-red-400 hover:bg-red-500/10 group-hover:flex"
                   title={t(language, 'overtime', 'deleteTitle')}
                 >
@@ -282,7 +287,11 @@ export function OvertimeList({ onEdit }: Props) {
         </button>
         <div className="mx-2 my-1 border-t border-[var(--border)]" />
         <button
-          onClick={() => { setConfirmDelete(entryCtx.entry); setEntryCtx(null); }}
+          onClick={() => {
+            if (confirmDestructiveActions) setConfirmDelete(entryCtx.entry);
+            else void deleteOvertimeEntry(entryCtx.entry.id);
+            setEntryCtx(null);
+          }}
           className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-red-400 transition hover:bg-red-500/10"
         >
           <Trash2 size={13} />
@@ -290,7 +299,7 @@ export function OvertimeList({ onEdit }: Props) {
         </button>
       </div>
     )}
-    {confirmDelete && (
+    {confirmDelete && confirmDestructiveActions && (
       <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
         <div className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
           <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">

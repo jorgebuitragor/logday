@@ -57,6 +57,7 @@ interface AppState {
   searchResults: Task[];
   isSidebarCollapsed: boolean;
   toasts: AppToast[];
+  confirmDestructiveActions: boolean;
 
   // Theme + Settings
   theme: Theme;
@@ -143,6 +144,7 @@ interface AppState {
   toggleSidebar: () => void;
   showToast: (toast: { kind: ToastKind; title: string; description?: string; durationMs?: number }) => string;
   dismissToast: (id: string) => void;
+  setConfirmDestructiveActions: (enabled: boolean) => Promise<void>;
   setTheme: (theme: Theme) => void;
   setStartupScreen: (screen: StartupScreen) => Promise<void>;
   setLanguage: (lang: Language) => Promise<void>;
@@ -298,6 +300,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   searchResults: [],
   isSidebarCollapsed: false,
   toasts: [],
+  confirmDestructiveActions: true,
   theme: (localStorage.getItem('theme') as Theme) || 'system',
   startupScreen: 'dashboard',
   language: (localStorage.getItem('language') as Language) || 'es',
@@ -368,6 +371,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             startupScreen,
             activeSection: startupScreen,
             language,
+            confirmDestructiveActions: cfg.confirmDestructiveActions ?? true,
           });
 
           const lastProject = cfg.lastOpenedProject || null;
@@ -405,7 +409,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const picked = await pickFolder();
     if (!picked) return;
 
-    const { configDir, startupScreen } = get();
+    const { configDir, startupScreen, confirmDestructiveActions } = get();
     const basePath = picked;
 
     await fs.createDir(`${basePath}/projects/inbox`);
@@ -413,7 +417,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await fs.createDir(`${basePath}/dailys`);
 
     if (configDir) {
-      await saveConfig(configDir, { basePath, startupScreen, language: get().language });
+      await saveConfig(configDir, { basePath, startupScreen, language: get().language, confirmDestructiveActions });
     }
 
     set({ basePath, isConfigured: true });
@@ -427,7 +431,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const picked = await pickFolder();
     if (!picked) return;
 
-    const { configDir, startupScreen } = get();
+    const { configDir, startupScreen, confirmDestructiveActions } = get();
     const basePath = picked;
 
     await fs.createDir(`${basePath}/projects/inbox`);
@@ -435,7 +439,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await fs.createDir(`${basePath}/dailys`);
 
     if (configDir) {
-      await saveConfig(configDir, { basePath, startupScreen, language: get().language });
+      await saveConfig(configDir, { basePath, startupScreen, language: get().language, confirmDestructiveActions });
     }
 
     set({ basePath, activeProject: null, activeNote: null, activeNoteFolder: null, tasks: [], notes: [] });
@@ -514,6 +518,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         basePath,
         startupScreen,
         language: get().language,
+        confirmDestructiveActions: get().confirmDestructiveActions,
         lastOpenedProject: project ?? undefined,
         lastOpenedNoteFolder: activeNoteFolder ?? undefined,
       }).catch(() => {});
@@ -795,6 +800,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         basePath,
         startupScreen,
         language: get().language,
+        confirmDestructiveActions: get().confirmDestructiveActions,
         lastOpenedProject: activeProject ?? undefined,
         lastOpenedNoteFolder: folder ?? undefined,
       }).catch(() => {});
@@ -1415,6 +1421,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ theme });
   },
 
+  setConfirmDestructiveActions: async (enabled) => {
+    set({ confirmDestructiveActions: enabled });
+    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
+    if (configDir && basePath) {
+      await saveConfig(configDir, {
+        basePath,
+        startupScreen,
+        language,
+        confirmDestructiveActions: enabled,
+        lastOpenedProject: activeProject ?? undefined,
+        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
+      });
+    }
+  },
+
   setStartupScreen: async (screen) => {
     set({ startupScreen: screen, activeSection: screen });
     const { configDir, basePath, activeProject, activeNoteFolder } = get();
@@ -1423,6 +1444,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         basePath,
         startupScreen: screen,
         language: get().language,
+        confirmDestructiveActions: get().confirmDestructiveActions,
         lastOpenedProject: activeProject ?? undefined,
         lastOpenedNoteFolder: activeNoteFolder ?? undefined,
       });
@@ -1438,6 +1460,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         basePath,
         startupScreen,
         language: lang,
+        confirmDestructiveActions: get().confirmDestructiveActions,
         lastOpenedProject: activeProject ?? undefined,
         lastOpenedNoteFolder: activeNoteFolder ?? undefined,
       });

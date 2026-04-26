@@ -70,6 +70,7 @@ export interface AppConfig {
   lastOpenedNoteFolder?: string;
   startupScreen?: StartupScreen;
   language?: Language;
+  confirmDestructiveActions?: boolean;
 }
 
 export interface GitConfig {

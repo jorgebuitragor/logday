@@ -40,6 +40,7 @@ export function DailyList() {
     setActiveDailyDate,
     setActiveDailyMonth,
     language,
+    confirmDestructiveActions,
   } = useAppStore(
     useShallow((s) => ({
       activeSection: s.activeSection,
@@ -53,6 +54,7 @@ export function DailyList() {
       setActiveDailyDate: s.setActiveDailyDate,
       setActiveDailyMonth: s.setActiveDailyMonth,
       language: s.language,
+      confirmDestructiveActions: s.confirmDestructiveActions,
     }))
   );
 
@@ -210,7 +212,8 @@ export function DailyList() {
 
   const handleDeleteFromMenu = () => {
     if (!contextMenu) return;
-    setDeleteConfirmDate(contextMenu.date);
+    if (confirmDestructiveActions) setDeleteConfirmDate(contextMenu.date);
+    else void deleteDailyEntry(contextMenu.date);
     setContextMenu(null);
     setContextMenuPos(null);
     setContextMenuReady(false);
@@ -419,7 +422,11 @@ export function DailyList() {
 
                 {/* Botón borrar – visible al hover */}
                 <button
-                  onClick={(e) => { e.stopPropagation(); setDeleteConfirmDate(date); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirmDestructiveActions) setDeleteConfirmDate(date);
+                    else void deleteDailyEntry(date);
+                  }}
                   className="absolute right-2 top-2 rounded-md p-1 text-[var(--text-faint)] opacity-0 transition group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-400"
                   title={t(language, 'dailys', 'deleteDailyTitle')}
                 >
@@ -507,7 +514,7 @@ export function DailyList() {
     )}
 
     {/* Modal de confirmación de borrado */}
-    {deleteConfirmDate && (
+    {deleteConfirmDate && confirmDestructiveActions && (
       <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/50">
         <div className="w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
           <div className="mb-3 flex items-center gap-2 text-red-400">

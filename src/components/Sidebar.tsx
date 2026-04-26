@@ -486,6 +486,7 @@ export function Sidebar() {
     loadOvertimeMonth,
     deleteOvertimeMonth,
     language,
+    confirmDestructiveActions,
   } = useAppStore();
 
   const [isProjectsOpen, setIsProjectsOpen] = useState(true);
@@ -1965,7 +1966,13 @@ export function Sidebar() {
             </button>
             <div className="mx-2 my-1 border-t border-[var(--border)]" />
             <button
-              onClick={() => { setConfirmDeleteOvertimeMonth(overtimeMonthCtx.ym); setOvertimeMonthCtx(null); setOvertimeMonthCtxPos(null); setOvertimeMonthCtxReady(false); }}
+              onClick={async () => {
+                if (confirmDestructiveActions) setConfirmDeleteOvertimeMonth(overtimeMonthCtx.ym);
+                else await deleteOvertimeMonth(overtimeMonthCtx.ym);
+                setOvertimeMonthCtx(null);
+                setOvertimeMonthCtxPos(null);
+                setOvertimeMonthCtxReady(false);
+              }}
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 transition"
             >
               <Trash2 size={13} />
@@ -1976,7 +1983,7 @@ export function Sidebar() {
       })()}
 
       {/* Confirmación eliminar mes de Extras */}
-      {confirmDeleteOvertimeMonth && (() => {
+      {confirmDeleteOvertimeMonth && confirmDestructiveActions && (() => {
         const label = formatYearMonthLabel(confirmDeleteOvertimeMonth, language, 'long');
         return (
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">

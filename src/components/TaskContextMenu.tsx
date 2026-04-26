@@ -19,7 +19,7 @@ interface Props {
 }
 
 export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) {
-  const { updateTask, deleteTask, setActiveTask, language } = useAppStore();
+  const { updateTask, deleteTask, setActiveTask, language, confirmDestructiveActions } = useAppStore();
   const ref = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -82,7 +82,7 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
     { status: 'done',        label: t(language, 'tasks', 'statusDone'),        Icon: CheckCircle2, color: 'text-green-400' },
   ];
 
-  if (confirmDelete) {
+  if (confirmDelete && confirmDestructiveActions) {
     return createPortal(
       <div
         ref={ref}
@@ -174,7 +174,10 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
       {/* Eliminar */}
       <div className="mx-2 my-1 border-t border-[var(--border)]" />
       <button
-        onClick={() => setConfirmDelete(true)}
+        onClick={() => {
+          if (confirmDestructiveActions) setConfirmDelete(true);
+          else void handleDelete();
+        }}
         className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-red-400 transition hover:bg-red-500/10"
       >
         <Trash2 size={12} />

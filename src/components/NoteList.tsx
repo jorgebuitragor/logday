@@ -23,6 +23,7 @@ export function NoteList() {
     activeSection,
     basePath,
     language,
+    confirmDestructiveActions,
     setActiveNote,
     createNote,
     deleteNote,
@@ -39,6 +40,7 @@ export function NoteList() {
       activeSection: s.activeSection,
       basePath: s.basePath,
       language: s.language,
+      confirmDestructiveActions: s.confirmDestructiveActions,
       setActiveNote: s.setActiveNote,
       createNote: s.createNote,
       deleteNote: s.deleteNote,
@@ -299,7 +301,8 @@ export function NoteList() {
     if (!ctxMenu) return;
     const note = ctxMenu.note;
     closeMenu();
-    setConfirmDeleteNote(note);
+    if (confirmDestructiveActions) setConfirmDeleteNote(note);
+    else void doDeleteNote(note);
   };
 
   const handlePin = async () => {
@@ -807,7 +810,7 @@ export function NoteList() {
       )}
 
       {/* Modal confirmación eliminar */}
-      {confirmDeleteNote && (
+      {confirmDeleteNote && confirmDestructiveActions && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
           <div className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
             <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">

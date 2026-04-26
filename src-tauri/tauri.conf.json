@@ -12,7 +12,9 @@
   "app": {
     "windows": [
       {
-        "title": "Logday",
+        "title": "",
+        "decorations": true,
+        "hiddenTitle": true,
         "width": 1280,
         "height": 800,
         "minWidth": 800,

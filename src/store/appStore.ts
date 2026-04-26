@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Task, Note, AppConfig, ViewMode, Theme, ActiveSection, StartupScreen, Language, Shortcuts, DEFAULT_SHORTCUTS, OvertimeEntry, OvertimeMonthMeta, GitConfig, GitStatus, GitRemoteStatus, AppToast, ToastKind } from '../types';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
 import { generateOvertimeXlsx } from '../lib/overtimeExcel';
@@ -274,6 +275,13 @@ export function applyThemeToDOM(theme: Theme, animate = false) {
   }
 
   document.documentElement.dataset.theme = resolved;
+
+  try {
+    const nativeTheme = theme === 'system' ? null : (resolved === 'dark' ? 'dark' : 'light');
+    void getCurrentWindow().setTheme(nativeTheme).catch(() => {});
+  } catch {
+    // Puede ejecutarse fuera del contexto Tauri (tests o navegador)
+  }
 }
 
 // ── Store ──────────────────────────────────────────────────────

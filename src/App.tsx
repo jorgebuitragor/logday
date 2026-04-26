@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import './App.css';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from './store/appStore';
@@ -66,6 +67,21 @@ export default function App() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [createNote, setSection, shortcuts]);
+
+  useEffect(() => {
+    const unNote = listen('tray:new-note', async () => {
+      setSection('notes');
+      await createNote();
+    });
+    const unTask = listen('tray:new-task', () => {
+      setSection('tasks');
+      setTimeout(() => window.dispatchEvent(new CustomEvent('logday:new-task')), 50);
+    });
+    return () => {
+      unNote.then(fn => fn());
+      unTask.then(fn => fn());
+    };
+  }, [createNote, setSection]);
 
   if (isLoading) {
     return (

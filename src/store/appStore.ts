@@ -106,7 +106,7 @@ interface AppState {
   updateNote: (note: Note) => Promise<void>;
   renameNote: (note: Note, newTitle: string) => Promise<void>;
   duplicateNote: (note: Note) => Promise<void>;
-  deleteNote: (note: Note) => Promise<void>;
+  deleteNote: (note: Note, options?: { showToast?: boolean }) => Promise<void>;
   setActiveNote: (note: Note | null) => void;
   moveNote: (note: Note, toFolder: string) => Promise<void>;
   toggleNotePin: (note: Note) => Promise<void>;
@@ -792,7 +792,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Si hay una nota vacía activa, descartarla antes de cambiar carpeta
     const { activeNote } = get();
     if (activeNote && !activeNote.title.trim() && !activeNote.content.trim()) {
-      await get().deleteNote(activeNote);
+      await get().deleteNote(activeNote, { showToast: false });
     }
     set({ activeNoteFolder: folder, activeNote: null });
     get().loadNotes(folder);
@@ -913,18 +913,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
-  deleteNote: async (note) => {
+  deleteNote: async (note, options) => {
+    const showToast = options?.showToast ?? true;
     await fs.deleteFile(note.filePath);
     const language = get().language;
     set((state) => ({
       notes: state.notes.filter((n) => n.id !== note.id),
       activeNote: state.activeNote?.id === note.id ? null : state.activeNote,
     }));
-    get().showToast({
-      kind: 'success',
-      title: t(language, 'toast', 'noteDeleted'),
-      description: note.title || t(language, 'notes', 'untitled'),
-    });
+    if (showToast) {
+      get().showToast({
+        kind: 'success',
+        title: t(language, 'toast', 'noteDeleted'),
+        description: note.title || t(language, 'notes', 'untitled'),
+      });
+    }
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
@@ -1229,7 +1232,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Si hay una nota vacía activa y salimos de notas, descartarla
     const { activeNote, activeSection } = get();
     if (activeSection === 'notes' && activeNote && !activeNote.title.trim() && !activeNote.content.trim()) {
-      await get().deleteNote(activeNote);
+      await get().deleteNote(activeNote, { showToast: false });
     }
     set({ activeSection: section });
   },

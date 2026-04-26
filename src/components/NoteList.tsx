@@ -109,7 +109,7 @@ export function NoteList() {
       setDiscardingNoteId(toDiscard.id);
       setActiveNote(note);
       setTimeout(async () => {
-        await deleteNote(toDiscard);
+        await deleteNote(toDiscard, { showToast: false });
         setDiscardingNoteId(null);
       }, 300);
       return;

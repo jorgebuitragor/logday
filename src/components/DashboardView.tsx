@@ -5,6 +5,7 @@ import { useAppStore } from '../store/appStore';
 import { fs } from '../lib/invoke';
 import { parseFrontmatter, parseNote } from '../lib/markdown';
 import { Note, Task } from '../types';
+import { t as tFn, MONTHS_LONG } from '../lib/i18n';
 
 type DashboardData = {
   todayDaily?: { date: string; content: string };
@@ -19,10 +20,7 @@ type DashboardData = {
 const DASHBOARD_CACHE_TTL_MS = 45_000;
 const dashboardCache = new Map<string, { at: number; data: DashboardData }>();
 
-const MONTHS_ES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-];
+
 
 function toISODate(d: Date): string {
   const y = d.getFullYear();
@@ -129,9 +127,10 @@ async function buildDashboardData(basePath: string): Promise<DashboardData> {
   };
 }
 
-function formatMonthYear(ymd: string): string {
+function formatMonthYear(ymd: string, lang: 'es' | 'en'): string {
   const [y, m] = ymd.split('-');
-  return `${MONTHS_ES[Number(m) - 1]} ${y}`;
+  const month = MONTHS_LONG[lang][Number(m) - 1];
+  return lang === 'es' ? `${month} ${y}` : `${month} ${y}`;
 }
 
 export function DashboardView() {
@@ -144,6 +143,7 @@ export function DashboardView() {
     createTodayDaily,
     setActiveDailyDate,
     setActiveDailyMonth,
+    language,
   } = useAppStore(
     useShallow((s) => ({
       basePath: s.basePath,
@@ -154,6 +154,7 @@ export function DashboardView() {
       createTodayDaily: s.createTodayDaily,
       setActiveDailyDate: s.setActiveDailyDate,
       setActiveDailyMonth: s.setActiveDailyMonth,
+      language: s.language,
     }))
   );
 
@@ -180,7 +181,7 @@ export function DashboardView() {
       const snapshot = await buildDashboardData(basePath).catch(() => null);
       if (!alive) return;
       if (!snapshot) {
-        setError('No se pudo cargar el dashboard.');
+        setError(tFn(language, 'dashboard', 'errorLoad'));
         setLoading(false);
         return;
       }
@@ -235,15 +236,15 @@ export function DashboardView() {
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2 text-[var(--text-primary)]">
               <CalendarCheck2 size={18} />
-              <h2 className="text-base font-semibold">Hoy</h2>
+              <h2 className="text-base font-semibold">{tFn(language, 'dashboard', 'today')}</h2>
             </div>
             <button
               onClick={retryLoad}
               className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] px-2.5 py-1.5 text-xs text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
-              title="Actualizar dashboard"
+              title={tFn(language, 'dashboard', 'refreshTitle')}
             >
               <RefreshCw size={12} />
-              Actualizar
+              {tFn(language, 'dashboard', 'refresh')}
             </button>
           </div>
 
@@ -254,37 +255,37 @@ export function DashboardView() {
                 onClick={retryLoad}
                 className="mt-2 rounded-md border border-red-400/40 px-3 py-1.5 text-xs font-medium text-red-200 transition hover:bg-red-500/20"
               >
-                Reintentar
+                {tFn(language, 'dashboard', 'retry')}
               </button>
             </div>
           )}
 
           {loading ? (
-            <p className="text-sm text-[var(--text-hint)]">Cargando resumen…</p>
+            <p className="text-sm text-[var(--text-hint)]">{tFn(language, 'dashboard', 'loading')}</p>
           ) : data?.todayDaily ? (
             <div className="space-y-4">
               <p className="text-xs uppercase tracking-widest text-[var(--text-hint)]">
-                Daily del {new Date(`${data.todayDaily.date}T12:00:00`).toLocaleDateString('es-CO')}
+                {tFn(language, 'dashboard', 'dailyOf')} {new Date(`${data.todayDaily.date}T12:00:00`).toLocaleDateString(language === 'es' ? 'es-CO' : 'en-US')}
               </p>
               <p className="rounded-xl border border-[var(--border)] bg-[var(--bg-base)] p-3 text-sm text-[var(--text-secondary)]">
-                {todayPreview || 'Sin contenido.'}
+                {todayPreview || tFn(language, 'dashboard', 'noContent')}
               </p>
               <button
                 onClick={openTodayDaily}
                 className="inline-flex items-center gap-2 rounded-lg bg-indigo-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-400"
               >
-                Continuar
+                {tFn(language, 'dashboard', 'continueTxt')}
                 <ArrowRight size={14} />
               </button>
             </div>
           ) : (
             <div className="space-y-3">
-              <p className="text-sm text-[var(--text-hint)]">Aun no existe el daily de hoy.</p>
+              <p className="text-sm text-[var(--text-hint)]">{tFn(language, 'dashboard', 'noDailyToday')}</p>
               <button
                 onClick={createToday}
                 className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500"
               >
-                Crear daily de hoy
+                {tFn(language, 'dashboard', 'createToday')}
                 <ArrowRight size={14} />
               </button>
             </div>
@@ -295,7 +296,7 @@ export function DashboardView() {
           <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-4">
             <div className="mb-3 flex items-center gap-2 text-[var(--text-primary)]">
               <TriangleAlert size={16} className="text-amber-400" />
-              <h3 className="text-sm font-semibold">Tareas vencidas o para hoy</h3>
+              <h3 className="text-sm font-semibold">{tFn(language, 'dashboard', 'overdueTitle')}</h3>
             </div>
             <div className="space-y-2">
               {(data?.overdueOrToday || []).slice(0, 8).map((t) => (
@@ -305,11 +306,11 @@ export function DashboardView() {
                   className="block w-full rounded-lg border border-[var(--border)] px-3 py-2 text-left text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
                 >
                   <div className="truncate font-medium text-[var(--text-primary)]">{t.title}</div>
-                  <div className="mt-1 text-[var(--text-hint)]">Vence: {t.due}</div>
+                  <div className="mt-1 text-[var(--text-hint)]">{tFn(language, 'dashboard', 'dueLabel')} {t.due}</div>
                 </button>
               ))}
               {(!data || data.overdueOrToday.length === 0) && (
-                <p className="text-xs text-[var(--text-hint)]">No hay tareas vencidas ni para hoy.</p>
+                <p className="text-xs text-[var(--text-hint)]">{tFn(language, 'dashboard', 'noOverdue')}</p>
               )}
             </div>
           </section>
@@ -317,7 +318,7 @@ export function DashboardView() {
           <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-4">
             <div className="mb-3 flex items-center gap-2 text-[var(--text-primary)]">
               <CalendarClock size={16} className="text-sky-400" />
-              <h3 className="text-sm font-semibold">En progreso sin fecha</h3>
+              <h3 className="text-sm font-semibold">{tFn(language, 'dashboard', 'inProgressTitle')}</h3>
             </div>
             <div className="space-y-2">
               {(data?.inProgressNoDue || []).slice(0, 8).map((t) => (
@@ -327,11 +328,11 @@ export function DashboardView() {
                   className="block w-full rounded-lg border border-[var(--border)] px-3 py-2 text-left text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
                 >
                   <div className="truncate font-medium text-[var(--text-primary)]">{t.title}</div>
-                  <div className="mt-1 text-[var(--text-hint)]">Proyecto: {t.project}</div>
+                  <div className="mt-1 text-[var(--text-hint)]">{tFn(language, 'dashboard', 'projectLabel')} {t.project}</div>
                 </button>
               ))}
               {(!data || data.inProgressNoDue.length === 0) && (
-                <p className="text-xs text-[var(--text-hint)]">No hay tareas en progreso sin fecha.</p>
+                <p className="text-xs text-[var(--text-hint)]">{tFn(language, 'dashboard', 'noInProgress')}</p>
               )}
             </div>
           </section>
@@ -339,7 +340,7 @@ export function DashboardView() {
           <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-4">
             <div className="mb-3 flex items-center gap-2 text-[var(--text-primary)]">
               <NotebookText size={16} className="text-emerald-400" />
-              <h3 className="text-sm font-semibold">Ultimas 3 notas</h3>
+              <h3 className="text-sm font-semibold">{tFn(language, 'dashboard', 'latestNotesTitle')}</h3>
             </div>
             <div className="space-y-2">
               {(data?.latestNotes || []).map((n) => (
@@ -348,12 +349,12 @@ export function DashboardView() {
                   onClick={() => openNote(n)}
                   className="block w-full rounded-lg border border-[var(--border)] px-3 py-2 text-left text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
                 >
-                  <div className="truncate font-medium text-[var(--text-primary)]">{n.title || 'Sin titulo'}</div>
-                  <div className="mt-1 text-[var(--text-hint)]">Actualizada: {n.updated}</div>
+                  <div className="truncate font-medium text-[var(--text-primary)]">{n.title || tFn(language, 'dashboard', 'noTitle')}</div>
+                  <div className="mt-1 text-[var(--text-hint)]">{tFn(language, 'dashboard', 'updatedLabel')} {n.updated}</div>
                 </button>
               ))}
               {(!data || data.latestNotes.length === 0) && (
-                <p className="text-xs text-[var(--text-hint)]">Aun no hay notas.</p>
+                <p className="text-xs text-[var(--text-hint)]">{tFn(language, 'dashboard', 'noNotes')}</p>
               )}
             </div>
           </section>
@@ -362,24 +363,24 @@ export function DashboardView() {
         <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-4">
           <div className="mb-3 flex items-center gap-2 text-[var(--text-primary)]">
             <CheckCircle2 size={16} className="text-indigo-400" />
-            <h3 className="text-sm font-semibold">Metricas</h3>
+              <h3 className="text-sm font-semibold">{tFn(language, 'dashboard', 'metricsTitle')}</h3>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-base)] px-4 py-3">
-              <p className="text-[10px] uppercase tracking-widest text-[var(--text-hint)]">Racha de dailys</p>
+              <p className="text-[10px] uppercase tracking-widest text-[var(--text-hint)]">{tFn(language, 'dashboard', 'streak')}</p>
               <p className="mt-1 text-2xl font-semibold text-[var(--text-primary)]">{data?.streak ?? 0}</p>
             </div>
             <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-base)] px-4 py-3">
-              <p className="text-[10px] uppercase tracking-widest text-[var(--text-hint)]">Completadas esta semana</p>
+              <p className="text-[10px] uppercase tracking-widest text-[var(--text-hint)]">{tFn(language, 'dashboard', 'doneWeek')}</p>
               <p className="mt-1 text-2xl font-semibold text-[var(--text-primary)]">{data?.doneThisWeek ?? 0}</p>
             </div>
             <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-base)] px-4 py-3">
-              <p className="text-[10px] uppercase tracking-widest text-[var(--text-hint)]">Total notas</p>
+              <p className="text-[10px] uppercase tracking-widest text-[var(--text-hint)]">{tFn(language, 'dashboard', 'totalNotes')}</p>
               <p className="mt-1 text-2xl font-semibold text-[var(--text-primary)]">{data?.totalNotes ?? 0}</p>
             </div>
           </div>
           <p className="mt-3 text-[11px] text-[var(--text-hint)]">
-            Contexto actual: {formatMonthYear(toISODate(new Date()))}
+            {tFn(language, 'dashboard', 'contextLabel')} {formatMonthYear(toISODate(new Date()), language)}
           </p>
         </section>
       </div>

@@ -4,6 +4,7 @@ import { useAppStore } from '../store/appStore';
 import { OvertimeEntry } from '../types';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
 import { AppDatePicker } from './AppDatePicker';
+import { t } from '../lib/i18n';
 
 function toMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number);
@@ -33,19 +34,19 @@ interface Props {
   onClose: () => void;
 }
 
-const COMP_OPTIONS = ['Compensatorio', 'Pago', 'Otro'] as const;
+const COMP_OPTIONS = ['comp', 'pay', 'other'] as const;
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
 export function OvertimeEditor({ entry, onClose }: Props) {
-  const { saveOvertimeEntry, overtimeMonth, overtimeEntries } = useAppStore();
+  const { saveOvertimeEntry, overtimeMonth, overtimeEntries, language } = useAppStore();
 
   const [fecha, setFecha] = useState(entry?.fecha ?? today());
   const [solicitadaPor, setSolicitadaPor] = useState(entry?.solicitadaPor ?? '');
   const [actividad, setActividad] = useState(entry?.actividad ?? '');
-  const [observaciones, setObservaciones] = useState<string>(entry?.observaciones ?? 'Compensatorio');
+  const [observaciones, setObservaciones] = useState<string>(entry?.observaciones ?? t(language, 'overtime', 'comp'));
   const [horaInicio, setHoraInicio] = useState(entry?.horaInicio ?? '18:00');
   const [horaFinal, setHoraFinal] = useState(entry?.horaFinal ?? '20:00');
   const [saving, setSaving] = useState(false);
@@ -103,36 +104,36 @@ export function OvertimeEditor({ entry, onClose }: Props) {
           <div className="w-96 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
             <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-400">
               <AlertTriangle size={15} />
-              Conflicto de horario
+              {t(language, 'overtime', 'conflictTitle')}
             </div>
             <p className="mb-3 text-xs text-[var(--text-secondary)]">
-              El horario <span className="font-medium text-[var(--text-primary)]">{horaInicio}–{horaFinal}</span> se
-              cruza con {conflicts.length === 1 ? 'esta entrada' : 'estas entradas'} del mismo día:
+              {t(language, 'overtime', 'conflictLineA')} <span className="font-medium text-[var(--text-primary)]">{horaInicio}–{horaFinal}</span>{' '}
+              {conflicts.length === 1 ? t(language, 'overtime', 'conflictLineBOne') : t(language, 'overtime', 'conflictLineBMany')}
             </p>
             <ul className="mb-4 space-y-1.5 rounded-lg border border-[var(--border)] bg-[var(--bg-base)] p-2.5">
               {conflicts.map((c) => (
                 <li key={c.id} className="flex items-center justify-between text-xs">
                   <span className="font-medium text-[var(--text-primary)]">{c.horaInicio}–{c.horaFinal}</span>
-                  <span className="text-[var(--text-secondary)] truncate ml-3">{c.actividad || c.solicitadaPor || '—'}</span>
+                  <span className="text-[var(--text-secondary)] truncate ml-3">{c.actividad || c.solicitadaPor || t(language, 'overtime', 'dash')}</span>
                 </li>
               ))}
             </ul>
             <p className="mb-4 text-xs text-[var(--text-hint)]">
-              Revisa las horas o guarda de todas formas si el cruce es intencional.
+              {t(language, 'overtime', 'conflictReview')}
             </p>
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setConflicts([])}
                 className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
               >
-                Revisar horas
+                {t(language, 'overtime', 'reviewHours')}
               </button>
               <button
                 onClick={doSave}
                 disabled={saving}
                 className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-amber-400 disabled:opacity-50"
               >
-                {saving ? 'Guardando…' : 'Guardar de todas formas'}
+                {saving ? t(language, 'overtime', 'saving') : t(language, 'overtime', 'saveAnyway')}
               </button>
             </div>
           </div>
@@ -141,7 +142,7 @@ export function OvertimeEditor({ entry, onClose }: Props) {
       {/* Barra superior */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-2.5">
         <h2 className="text-sm font-semibold text-[var(--text-primary)]">
-          {entry ? 'Editar entrada' : 'Nueva hora extra'}
+          {entry ? t(language, 'overtime', 'editEntry') : t(language, 'overtime', 'newOvertime')}
         </h2>
         <div className="flex items-center gap-2">
           <button
@@ -150,7 +151,7 @@ export function OvertimeEditor({ entry, onClose }: Props) {
             className="flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
           >
             <Save size={13} />
-            {saving ? 'Guardando…' : 'Guardar'}
+            {saving ? t(language, 'overtime', 'saving') : t(language, 'overtime', 'save')}
           </button>
           <button
             onClick={onClose}
@@ -164,52 +165,52 @@ export function OvertimeEditor({ entry, onClose }: Props) {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {/* Detalle de la entrada */}
         <section className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-hint)]">Detalle de la hora extra</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-hint)]">{t(language, 'overtime', 'detailSection')}</p>
 
           {/* Fecha */}
           <div className="space-y-1">
-            <label className={labelCls}>Fecha</label>
+            <label className={labelCls}>{t(language, 'overtime', 'date')}</label>
             <AppDatePicker value={fecha} onChange={setFecha} />
           </div>
 
           {/* Horas */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className={labelCls}>Hora inicio</label>
+              <label className={labelCls}>{t(language, 'overtime', 'startTime')}</label>
               <input type="time" className={inputCls} value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} />
             </div>
             <div className="space-y-1">
-              <label className={labelCls}>Hora final</label>
+              <label className={labelCls}>{t(language, 'overtime', 'endTime')}</label>
               <input type="time" className={inputCls} value={horaFinal} onChange={(e) => setHoraFinal(e.target.value)} />
             </div>
           </div>
 
           {/* Solicitada por */}
           <div className="space-y-1">
-            <label className={labelCls}>Solicitada por</label>
+            <label className={labelCls}>{t(language, 'overtime', 'requestedBy')}</label>
             <input
               className={inputCls}
               value={solicitadaPor}
               onChange={(e) => setSolicitadaPor(e.target.value)}
-              placeholder="Nombre del solicitante"
+              placeholder={t(language, 'overtime', 'requesterPlaceholder')}
             />
           </div>
 
           {/* Actividad */}
           <div className="space-y-1">
-            <label className={labelCls}>Actividad realizada</label>
+            <label className={labelCls}>{t(language, 'overtime', 'activityDone')}</label>
             <textarea
               className={`${inputCls} resize-none`}
               rows={3}
               value={actividad}
               onChange={(e) => setActividad(e.target.value)}
-              placeholder="Describe la actividad realizada…"
+              placeholder={t(language, 'overtime', 'activityPlaceholder')}
             />
           </div>
 
           {/* Compensatorio/Pago — botones */}
           <div className="space-y-1.5">
-            <label className={labelCls}>Compensatorio / Pago</label>
+            <label className={labelCls}>{t(language, 'overtime', 'compPay')}</label>
             <div className="flex gap-2">
               {COMP_OPTIONS.map((opt) => (
                 <button
@@ -222,7 +223,7 @@ export function OvertimeEditor({ entry, onClose }: Props) {
                       : 'border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-hint)] hover:border-[var(--text-hint)] hover:text-[var(--text-secondary)]'
                   }`}
                 >
-                  {opt}
+                  {t(language, 'overtime', opt)}
                 </button>
               ))}
             </div>
@@ -232,20 +233,20 @@ export function OvertimeEditor({ entry, onClose }: Props) {
         {/* Preview del cálculo */}
         {preview && (
           <section className="rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-3 space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-indigo-400">Desglose automático</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-indigo-400">{t(language, 'overtime', 'breakdown')}</p>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-              <span className="text-[var(--text-hint)]">Total horas:</span>
+              <span className="text-[var(--text-hint)]">{t(language, 'overtime', 'totalHours')}</span>
               <span className="font-semibold text-[var(--text-primary)]">{fmt(preview.totalHoras)}h</span>
-              <span className="text-[var(--text-hint)]">Extras diurnas:</span>
+              <span className="text-[var(--text-hint)]">{t(language, 'overtime', 'extraDay')}</span>
               <span className="text-[var(--text-primary)]">{fmt(preview.extrasDiurnas)}h</span>
-              <span className="text-[var(--text-hint)]">Extras nocturnas:</span>
+              <span className="text-[var(--text-hint)]">{t(language, 'overtime', 'extraNight')}</span>
               <span className="text-[var(--text-primary)]">{fmt(preview.extrasNocturnas)}h</span>
-              <span className="text-[var(--text-hint)]">Diurnas festivas:</span>
+              <span className="text-[var(--text-hint)]">{t(language, 'overtime', 'holidayDay')}</span>
               <span className="text-[var(--text-primary)]">{fmt(preview.extrasDiurnasFestivas)}h</span>
-              <span className="text-[var(--text-hint)]">Nocturnas festivas:</span>
+              <span className="text-[var(--text-hint)]">{t(language, 'overtime', 'holidayNight')}</span>
               <span className="text-[var(--text-primary)]">{fmt(preview.extrasNocturnasFestivas)}h</span>
             </div>
-            <p className="text-xs text-[var(--text-hint)]">Diurno: 06:00–19:00 · Nocturno: 19:00–06:00</p>
+            <p className="text-xs text-[var(--text-hint)]">{t(language, 'overtime', 'rangesHint')}</p>
           </section>
         )}
       </div>

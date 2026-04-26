@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useReducer } from 'react';
 import {
   Eye,
   FileText,
@@ -41,6 +41,9 @@ import { TableHeader } from '@tiptap/extension-table-header';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { Markdown } from 'tiptap-markdown';
 import Paragraph from '@tiptap/extension-paragraph';
+import { ImageLinkModal } from './ImageLinkModal';
+import { useAppStore } from '../store/appStore';
+import { t } from '../lib/i18n';
 
 // Párrafo compacto: serializa con \n simple en lugar de \n\n
 const CompactParagraph = Paragraph.extend({
@@ -64,7 +67,36 @@ interface Props {
   minHeight?: string;
 }
 
-export function RichTextEditor({ value, onChange, placeholder = 'Escribe aquí…', minHeight = '200px' }: Props) {
+function normalizeEditorMarkdown(raw: string): string {
+  if (!raw) return raw;
+
+  const lines = raw.split('\n');
+  let inFence = false;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (/^```/.test(line.trim())) {
+      inFence = !inFence;
+      continue;
+    }
+
+    if (inFence || i === lines.length - 1) continue;
+
+    const match = line.match(/(\\+)$/);
+    if (!match) continue;
+    const trailing = match[1];
+    if (trailing.length % 2 === 1) {
+      lines[i] = line.slice(0, -1);
+    }
+  }
+
+  const normalized = lines.join('\n');
+  return normalized.replace(/<((?:https?:\/\/)[^\s<>]+)>/g, '[$1]($1)');
+}
+
+export function RichTextEditor({ value, onChange, placeholder, minHeight = '200px' }: Props) {
+  const language = useAppStore((s) => s.language);
+  const resolvedPlaceholder = placeholder ?? t(language, 'notes', 'richTextPlaceholder');
   const [viewMode, setViewMode] = useState<'wysiwyg' | 'source'>('wysiwyg');
   const [mdContent, setMdContent] = useState(value);
   const [showBlockMenu, setShowBlockMenu] = useState(false);
@@ -72,6 +104,9 @@ export function RichTextEditor({ value, onChange, placeholder = 'Escribe aquí�
   const [showTableMenu, setShowTableMenu] = useState(false);
   const [urlInputMode, setUrlInputMode] = useState<'link' | 'image' | null>(null);
   const [urlInputValue, setUrlInputValue] = useState('');
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [, forceUpdate] = useReducer((x: number) => x + 1, 0);
 
   const applyCase = (mode: 'upper' | 'lower' | 'sentence' | 'title') => {
     if (!editor) return;
@@ -98,7 +133,7 @@ export function RichTextEditor({ value, onChange, placeholder = 'Escribe aquí�
       UnderlineExt,
       TaskList,
       TaskItem.configure({ nested: true }),
-      Placeholder.configure({ placeholder }),
+      Placeholder.configure({ placeholder: resolvedPlaceholder }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Highlight.configure({ multicolor: false }),
       ImageExt.configure({ inline: false, allowBase64: true }),
@@ -111,6 +146,7 @@ export function RichTextEditor({ value, onChange, placeholder = 'Escribe aquí�
         html: true,
         transformPastedText: true,
         transformCopiedText: false,
+        breaks: true,
       }),
     ],
     content: value,
@@ -122,11 +158,23 @@ export function RichTextEditor({ value, onChange, placeholder = 'Escribe aquí�
     },
     onUpdate({ editor: ed }) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const md = (ed.storage as any).markdown.getMarkdown() as string;
+      const md = normalizeEditorMarkdown((ed.storage as any).markdown.getMarkdown() as string);
       setMdContent(md);
       onChange(md);
     },
   });
+
+  useEffect(() => {
+    if (!editor) return;
+    const handler = () => {
+      // Fuerza refresco del toolbar para que estados activos sigan la seleccion/cursor.
+      forceUpdate();
+    };
+    editor.on('transaction', handler);
+    return () => {
+      editor.off('transaction', handler);
+    };
+  }, [editor]);
 
   // Sync content when value changes externally (e.g. task switch)
   useEffect(() => {
@@ -147,6 +195,19 @@ export function RichTextEditor({ value, onChange, placeholder = 'Escribe aquí�
     setViewMode('wysiwyg');
   };
 
+  const switchToSource = () => {
+    if (editor) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const md = normalizeEditorMarkdown((editor.storage as any).markdown.getMarkdown() as string);
+        setMdContent(md);
+      } catch {
+        // Si el editor aun no esta listo, mantenemos el markdown actual.
+      }
+    }
+    setViewMode('source');
+  };
+
   return (
     <div className="flex flex-col rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] overflow-hidden">
       {/* Toolbar */}
@@ -155,7 +216,7 @@ export function RichTextEditor({ value, onChange, placeholder = 'Escribe aquí�
         {urlInputMode ? (
           <>
             <span className="text-[11px] text-[var(--text-hint)] mr-1">
-              {urlInputMode === 'link' ? 'URL enlace:' : 'URL imagen:'}
+              {urlInputMode === 'link' ? `${t(language, 'extras', 'linkUrlLabel')}:` : `${t(language, 'extras', 'imageUrlLabel')}:`}
             </span>
             <input
               autoFocus
@@ -173,7 +234,7 @@ export function RichTextEditor({ value, onChange, placeholder = 'Escribe aquí�
                 }
                 if (e.key === 'Escape') { setUrlInputMode(null); setUrlInputValue(''); }
               }}
-              placeholder="https://..."
+              placeholder={t(language, 'extras', 'linkUrlPlaceholder')}
               className="flex-1 bg-transparent text-[11px] text-[var(--text-primary)] outline-none placeholder-[var(--text-faint)] border-b border-[var(--border)] pb-0.5 min-w-0"
             />
             <button
@@ -201,10 +262,10 @@ export function RichTextEditor({ value, onChange, placeholder = 'Escribe aquí�
                 : editor?.isActive('heading', { level: 3 }) ? '3'
                 : editor?.isActive('heading', { level: 4 }) ? '4'
                 : editor?.isActive('heading', { level: 5 }) ? '5' : '0';
-              const labels: Record<string, string> = { '0': 'Párrafo', '1': 'T1', '2': 'T2', '3': 'T3', '4': 'T4', '5': 'T5' };
+              const labels: Record<string, string> = { '0': t(language, 'notes', 'blockParagraph'), '1': 'T1', '2': 'T2', '3': 'T3', '4': 'T4', '5': 'T5' };
               const options = [
-                { v: '0', label: 'Párrafo' }, { v: '1', label: 'Título 1' }, { v: '2', label: 'Título 2' },
-                { v: '3', label: 'Título 3' }, { v: '4', label: 'Título 4' }, { v: '5', label: 'Título 5' },
+                { v: '0', label: t(language, 'notes', 'blockParagraph') }, { v: '1', label: t(language, 'notes', 'blockH1') }, { v: '2', label: t(language, 'notes', 'blockH2') },
+                { v: '3', label: t(language, 'notes', 'blockH3') }, { v: '4', label: t(language, 'notes', 'blockH4') }, { v: '5', label: t(language, 'notes', 'blockH5') },
               ];
               return (
                 <div className="relative mr-1">
@@ -236,29 +297,29 @@ export function RichTextEditor({ value, onChange, placeholder = 'Escribe aquí�
 
             <div className="mx-1 h-4 w-px bg-[var(--border)]" />
 
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleBlockquote().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('blockquote') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Cita"><Quote size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleCodeBlock().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('codeBlock') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Bloque código"><Braces size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleBlockquote().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('blockquote') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={t(language, 'notes', 'tipQuote')}><Quote size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleCodeBlock().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('codeBlock') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={t(language, 'notes', 'tipCodeBlock')}><Braces size={13} /></button>
 
             <div className="mx-1 h-4 w-px bg-[var(--border)]" />
 
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleBold().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('bold') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Negrita"><Bold size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleItalic().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('italic') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Cursiva"><Italic size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleUnderline().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('underline') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Subrayado"><Underline size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleStrike().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('strike') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Tachado"><Strikethrough size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleCode().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('code') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Código inline"><Code size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleHighlight().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('highlight') ? 'text-amber-400 bg-amber-400/10' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Resaltado"><Highlighter size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleBold().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('bold') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={t(language, 'notes', 'tipBold')}><Bold size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleItalic().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('italic') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={t(language, 'notes', 'tipItalic')}><Italic size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleUnderline().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('underline') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={t(language, 'notes', 'tipUnderline')}><Underline size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleStrike().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('strike') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={t(language, 'notes', 'tipStrike')}><Strikethrough size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleCode().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('code') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={t(language, 'notes', 'tipCode')}><Code size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleHighlight().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('highlight') ? 'text-amber-400 bg-amber-400/10' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={t(language, 'notes', 'tipHighlight')}><Highlighter size={13} /></button>
 
             <div className="mx-1 h-4 w-px bg-[var(--border)]" />
 
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleBulletList().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('bulletList') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Lista"><List size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleOrderedList().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('orderedList') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Lista numerada"><ListOrdered size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleTaskList().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('taskList') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Lista de tareas"><CheckSquare size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleBulletList().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('bulletList') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={t(language, 'notes', 'tipBulletList')}><List size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleOrderedList().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('orderedList') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={t(language, 'notes', 'tipOrderedList')}><ListOrdered size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleTaskList().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('taskList') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={t(language, 'notes', 'tipTaskList')}><CheckSquare size={13} /></button>
 
             <div className="mx-1 h-4 w-px bg-[var(--border)]" />
 
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().setTextAlign('left').run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive({ textAlign: 'left' }) ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Izquierda"><AlignLeft size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().setTextAlign('center').run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive({ textAlign: 'center' }) ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Centro"><AlignCenter size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().setTextAlign('right').run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive({ textAlign: 'right' }) ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Derecha"><AlignRight size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().setTextAlign('left').run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive({ textAlign: 'left' }) ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={t(language, 'notes', 'tipAlignLeft')}><AlignLeft size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().setTextAlign('center').run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive({ textAlign: 'center' }) ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={t(language, 'notes', 'tipAlignCenter')}><AlignCenter size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().setTextAlign('right').run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive({ textAlign: 'right' }) ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={t(language, 'notes', 'tipAlignRight')}><AlignRight size={13} /></button>
 
             <div className="mx-1 h-4 w-px bg-[var(--border)]" />
 
@@ -267,15 +328,15 @@ export function RichTextEditor({ value, onChange, placeholder = 'Escribe aquí�
               <button
                 onMouseDown={(e) => { e.preventDefault(); setShowCaseMenu(v => !v); }}
                 className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition"
-                title="Capitalización"
+                title={t(language, 'notes', 'tipCase')}
               ><CaseSensitive size={14} /></button>
               {showCaseMenu && (
                 <div className="absolute top-full right-0 mt-1 z-50 min-w-[180px] rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] py-1 shadow-lg" onMouseDown={(e) => e.preventDefault()}>
                   {([
-                    { mode: 'upper', label: 'TODO EN MAYÚSCULAS' },
-                    { mode: 'lower', label: 'todo en minúsculas' },
-                    { mode: 'sentence', label: 'Tipo oración' },
-                    { mode: 'title', label: 'Cada Palabra En Mayúscula' },
+                    { mode: 'upper', label: t(language, 'notes', 'caseUpper') },
+                    { mode: 'lower', label: t(language, 'notes', 'caseLower') },
+                    { mode: 'sentence', label: t(language, 'notes', 'caseSentence') },
+                    { mode: 'title', label: t(language, 'notes', 'caseTitle') },
                   ] as const).map(({ mode, label }) => (
                     <button key={mode} onMouseDown={(e) => { e.preventDefault(); applyCase(mode); setShowCaseMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]">{label}</button>
                   ))}
@@ -283,31 +344,49 @@ export function RichTextEditor({ value, onChange, placeholder = 'Escribe aquí�
               )}
             </div>
 
-            <button onMouseDown={(e) => { e.preventDefault(); setUrlInputMode('link'); setUrlInputValue(''); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('link') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Enlace"><Link size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); setUrlInputMode('image'); setUrlInputValue(''); }} className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition" title="Imagen"><ImageIcon size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().setHorizontalRule().run(); }} className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition" title="Separador"><Minus size={13} /></button>
+            <button
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setUrlInputMode(null);
+                setUrlInputValue('');
+                setShowLinkModal(true);
+              }}
+              className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('link') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`}
+              title={t(language, 'notes', 'tipLink')}
+            ><Link size={13} /></button>
+            <button
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setUrlInputMode(null);
+                setUrlInputValue('');
+                setShowImageModal(true);
+              }}
+              className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition"
+              title={t(language, 'notes', 'tipImage')}
+            ><ImageIcon size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().setHorizontalRule().run(); }} className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition" title={t(language, 'notes', 'tipSeparator')}><Minus size={13} /></button>
 
             {/* Tabla */}
             <div className="relative">
               <button
                 onMouseDown={(e) => { e.preventDefault(); setShowTableMenu(v => !v); }}
                 className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('table') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`}
-                title="Tabla"
+                title={t(language, 'notes', 'tipTable')}
               ><TableIcon size={13} /></button>
               {showTableMenu && (
                 <div className="absolute top-full right-0 mt-1 z-50 min-w-[200px] rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] py-1 shadow-lg" onMouseDown={(e) => e.preventDefault()}>
-                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">Insertar tabla (3×3)</button>
+                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">{t(language, 'notes', 'tableInsert')}</button>
                   <div className="my-1 border-t border-[var(--border)]" />
-                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addColumnBefore().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">Añadir columna antes</button>
-                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addColumnAfter().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">Añadir columna después</button>
-                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteColumn().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">Eliminar columna</button>
+                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addColumnBefore().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">{t(language, 'notes', 'tableAddColBefore')}</button>
+                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addColumnAfter().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">{t(language, 'notes', 'tableAddColAfter')}</button>
+                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteColumn().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">{t(language, 'notes', 'tableDeleteCol')}</button>
                   <div className="my-1 border-t border-[var(--border)]" />
-                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addRowBefore().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">Añadir fila antes</button>
-                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addRowAfter().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">Añadir fila después</button>
-                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteRow().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">Eliminar fila</button>
+                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addRowBefore().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">{t(language, 'notes', 'tableAddRowBefore')}</button>
+                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addRowAfter().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">{t(language, 'notes', 'tableAddRowAfter')}</button>
+                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteRow().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">{t(language, 'notes', 'tableDeleteRow')}</button>
                   <div className="my-1 border-t border-[var(--border)]" />
-                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleHeaderRow().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">Alternar cabecera</button>
-                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteTable().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-red-400 hover:bg-[var(--bg-hover)] transition">Eliminar tabla</button>
+                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleHeaderRow().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">{t(language, 'notes', 'tableToggleHeader')}</button>
+                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteTable().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-red-400 hover:bg-[var(--bg-hover)] transition">{t(language, 'notes', 'tableDelete')}</button>
                 </div>
               )}
             </div>
@@ -319,12 +398,12 @@ export function RichTextEditor({ value, onChange, placeholder = 'Escribe aquí�
           <button
             onMouseDown={(e) => { e.preventDefault(); switchToWysiwyg(); }}
             className={`rounded px-1.5 py-1 text-[11px] transition ${viewMode === 'wysiwyg' ? 'text-[var(--text-primary)] bg-[var(--bg-tertiary)] shadow-sm' : 'text-[var(--text-faint)] hover:text-[var(--text-secondary)]'}`}
-            title="Visual"
+            title={t(language, 'notes', 'viewWysiwyg')}
           ><Eye size={12} /></button>
           <button
-            onMouseDown={(e) => { e.preventDefault(); setViewMode('source'); }}
+            onMouseDown={(e) => { e.preventDefault(); switchToSource(); }}
             className={`rounded px-1.5 py-1 text-[11px] transition ${viewMode === 'source' ? 'text-[var(--text-primary)] bg-[var(--bg-tertiary)] shadow-sm' : 'text-[var(--text-faint)] hover:text-[var(--text-secondary)]'}`}
-            title="Markdown fuente"
+            title={t(language, 'notes', 'viewSource')}
           ><FileText size={12} /></button>
         </div>
       </div>
@@ -342,7 +421,7 @@ export function RichTextEditor({ value, onChange, placeholder = 'Escribe aquí�
               setMdContent(e.target.value);
               onChange(e.target.value);
             }}
-            placeholder={placeholder}
+            placeholder={resolvedPlaceholder}
             style={{ minHeight }}
             className="w-full resize-none bg-transparent px-4 py-3 font-mono text-sm text-[var(--text-secondary)] outline-none leading-relaxed placeholder-[var(--text-faint)]"
             spellCheck={false}
@@ -351,8 +430,53 @@ export function RichTextEditor({ value, onChange, placeholder = 'Escribe aquí�
       </div>
 
       {/* Close dropdowns on outside click */}
-      {(showBlockMenu || showCaseMenu || showTableMenu) && (
-        <div className="fixed inset-0 z-40" onMouseDown={() => { setShowBlockMenu(false); setShowCaseMenu(false); setShowTableMenu(false); }} />
+      {(showBlockMenu || showCaseMenu || showTableMenu || urlInputMode) && (
+        <div
+          className="fixed inset-0 z-40"
+          onMouseDown={() => {
+            setShowBlockMenu(false);
+            setShowCaseMenu(false);
+            setShowTableMenu(false);
+            setUrlInputMode(null);
+            setUrlInputValue('');
+          }}
+        />
+      )}
+
+      {showImageModal && (
+        <ImageLinkModal
+          mode="image"
+          onInsert={(src, alt) => {
+            editor?.chain().focus().setImage({ src, alt: alt ?? '' }).run();
+            setShowImageModal(false);
+          }}
+          onClose={() => setShowImageModal(false)}
+        />
+      )}
+
+      {showLinkModal && (
+        <ImageLinkModal
+          mode="link"
+          selectedText={(() => {
+            if (!editor) return '';
+            const { from, to } = editor.state.selection;
+            if (from === to) return '';
+            return editor.state.doc.textBetween(from, to, ' ');
+          })()}
+          currentHref={String(editor?.getAttributes('link').href || '') || undefined}
+          onInsert={(href, text) => {
+            if (!editor) return;
+            const { from, to } = editor.state.selection;
+            if (from === to) {
+              const visibleText = (text || href).trim();
+              editor.chain().focus().setLink({ href }).insertContent(visibleText).unsetLink().run();
+            } else {
+              editor.chain().focus().extendMarkRange('link').setLink({ href }).run();
+            }
+            setShowLinkModal(false);
+          }}
+          onClose={() => setShowLinkModal(false)}
+        />
       )}
     </div>
   );

@@ -1,7 +1,8 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import './App.css';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from './store/appStore';
+import { t } from './lib/i18n';
 import { Onboarding } from './pages/Onboarding';
 import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
@@ -22,7 +23,7 @@ const OvertimeList  = lazy(() => import('./components/OvertimeList').then(m => (
 const OvertimeEditor = lazy(() => import('./components/OvertimeEditor').then(m => ({ default: m.OvertimeEditor })));
 
 export default function App() {
-  const { init, isLoading, isConfigured, activeTask, activeSection, createNote, setSection, shortcuts, dailyMonths } = useAppStore(
+  const { init, isLoading, isConfigured, activeTask, activeSection, createNote, setSection, shortcuts } = useAppStore(
     useShallow((s) => ({
       init: s.init,
       isLoading: s.isLoading,
@@ -32,11 +33,9 @@ export default function App() {
       createNote: s.createNote,
       setSection: s.setSection,
       shortcuts: s.shortcuts,
-      dailyMonths: s.dailyMonths,
     }))
   );
   const [editingEntry, setEditingEntry] = useState<OvertimeEntry | null | undefined>(undefined);
-  const resolvedStartupRef = useRef(false);
 
   useEffect(() => {
     init();
@@ -67,22 +66,12 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler);
   }, [createNote, setSection, shortcuts]);
 
-  useEffect(() => {
-    if (isLoading || !isConfigured || resolvedStartupRef.current) return;
-    resolvedStartupRef.current = true;
-    if (dailyMonths.length === 0) {
-      setSection('dailys');
-      return;
-    }
-    setSection('dashboard');
-  }, [isLoading, isConfigured, dailyMonths.length, setSection]);
-
   if (isLoading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-[var(--bg-base)]">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
-          <p className="text-sm text-[var(--text-hint)]">Cargando Logday…</p>
+          <p className="text-sm text-[var(--text-hint)]">{t((localStorage.getItem('language') as 'es' | 'en') || 'es', 'loading')}</p>
         </div>
       </div>
     );

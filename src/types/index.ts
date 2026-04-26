@@ -1,7 +1,9 @@
 export type TaskStatus = 'todo' | 'in-progress' | 'done';
 export type ViewMode = 'list' | 'kanban' | 'calendar';
-export type Theme = 'dark' | 'light' | 'system';
+export type Theme = 'dark' | 'light' | 'system' | 'high-contrast' | 'visual-rest';
 export type ActiveSection = 'dashboard' | 'tasks' | 'notes' | 'dailys' | 'overtime';
+export type StartupScreen = 'dashboard' | 'dailys' | 'tasks' | 'notes' | 'overtime';
+export type Language = 'es' | 'en';
 
 export interface Shortcuts {
   newNote: string;
@@ -66,6 +68,8 @@ export interface AppConfig {
   basePath: string;
   lastOpenedProject?: string;
   lastOpenedNoteFolder?: string;
+  startupScreen?: StartupScreen;
+  language?: Language;
 }
 
 export interface GitConfig {

@@ -1,20 +1,34 @@
 import { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useAppStore } from '../store/appStore';
 
-const MONTH_NAMES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-];
-const DAY_NAMES = ['Do', 'Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá'];
+function getLocale(language: 'es' | 'en'): string {
+  return language === 'es' ? 'es-CO' : 'en-US';
+}
+
+function getDayNames(language: 'es' | 'en'): string[] {
+  const fmt = new Intl.DateTimeFormat(getLocale(language), { weekday: 'short' });
+  const baseSunday = new Date(2024, 0, 7);
+  return Array.from({ length: 7 }, (_, idx) => {
+    const d = new Date(baseSunday);
+    d.setDate(baseSunday.getDate() + idx);
+    return fmt.format(d).replace('.', '');
+  });
+}
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function formatDateDisplay(iso: string): string {
-  if (!iso) return 'Seleccionar fecha';
+function formatDateDisplay(iso: string, language: 'es' | 'en'): string {
+  if (!iso) return language === 'es' ? 'Seleccionar fecha' : 'Select date';
   const [y, m, d] = iso.split('-').map(Number);
-  return `${d} de ${MONTH_NAMES[m - 1]} de ${y}`;
+  const date = new Date(y, m - 1, d);
+  return new Intl.DateTimeFormat(getLocale(language), {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(date);
 }
 
 interface CalendarGridProps {
@@ -25,6 +39,7 @@ interface CalendarGridProps {
 
 /** Grilla de calendario reutilizable (sin trigger propio). */
 export function AppCalendarGrid({ value, max, onChange }: CalendarGridProps) {
+  const language = useAppStore((s) => s.language);
   const [viewYear, setViewYear] = useState(() =>
     value ? parseInt(value.split('-')[0]) : new Date().getFullYear()
   );
@@ -44,6 +59,8 @@ export function AppCalendarGrid({ value, max, onChange }: CalendarGridProps) {
   const firstDay = new Date(viewYear, viewMonth, 1).getDay();
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const today = todayISO();
+  const dayNames = getDayNames(language);
+  const monthLabel = new Intl.DateTimeFormat(getLocale(language), { month: 'long' }).format(new Date(viewYear, viewMonth, 1));
 
   const cells: (number | null)[] = [
     ...Array(firstDay).fill(null),
@@ -62,7 +79,7 @@ export function AppCalendarGrid({ value, max, onChange }: CalendarGridProps) {
           <ChevronLeft size={14} />
         </button>
         <span className="text-xs font-semibold text-[var(--text-primary)]">
-          {MONTH_NAMES[viewMonth]} {viewYear}
+          {monthLabel} {viewYear}
         </span>
         <button
           type="button"
@@ -75,7 +92,7 @@ export function AppCalendarGrid({ value, max, onChange }: CalendarGridProps) {
 
       {/* Días de la semana */}
       <div className="mb-1 grid grid-cols-7 text-center">
-        {DAY_NAMES.map((d) => (
+        {dayNames.map((d) => (
           <span key={d} className="text-[10px] font-medium text-[var(--text-hint)]">{d}</span>
         ))}
       </div>
@@ -119,6 +136,7 @@ interface PickerProps {
 
 /** Componente completo: botón que muestra la fecha + dropdown con calendar. */
 export function AppDatePicker({ value, max, onChange }: PickerProps) {
+  const language = useAppStore((s) => s.language);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -138,7 +156,7 @@ export function AppDatePicker({ value, max, onChange }: PickerProps) {
         onClick={() => setOpen((v) => !v)}
         className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-base)] px-2.5 py-1.5 text-left text-sm text-[var(--text-primary)] hover:border-indigo-500/50 focus:border-indigo-500 focus:outline-none transition-colors"
       >
-        {formatDateDisplay(value)}
+        {formatDateDisplay(value, language)}
       </button>
       {open && (
         <div className="absolute left-0 top-full z-50 mt-1 w-64 rounded-xl border border-[var(--border)] bg-[var(--bg-panel)] p-3 shadow-2xl animate-in">

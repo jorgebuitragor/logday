@@ -3,9 +3,16 @@ import { X, GitCommit, RefreshCw, CheckCircle2, AlertCircle, Clock, Upload, Down
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
 import { GitConfig } from '../types';
+import { t } from '../lib/i18n';
 
-function timeAgo(iso: string): string {
+function timeAgo(iso: string, lang: 'es' | 'en'): string {
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (lang === 'en') {
+    if (diff < 60) return 'less than 1 min ago';
+    if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} h ago`;
+    return `${Math.floor(diff / 86400)} days ago`;
+  }
   if (diff < 60) return 'hace menos de 1 min';
   if (diff < 3600) return `hace ${Math.floor(diff / 60)} min`;
   if (diff < 86400) return `hace ${Math.floor(diff / 3600)} h`;
@@ -18,7 +25,7 @@ export function GitModal() {
     gitConfig, saveGitConfig,
     gitStatus, gitRemoteStatus, lastCommitTime,
     gitInit, gitCommit, gitPush, gitPull, gitFetch,
-    basePath,
+    basePath, language,
   } = useAppStore(
     useShallow((s) => ({
       isGitOpen: s.isGitOpen,
@@ -34,6 +41,7 @@ export function GitModal() {
       gitPull: s.gitPull,
       gitFetch: s.gitFetch,
       basePath: s.basePath,
+      language: s.language,
     }))
   );
 
@@ -180,12 +188,12 @@ export function GitModal() {
   }[gitStatus];
 
   const remoteStatusInfo: Record<string, { label: string; cls: string; icon: React.ReactNode }> = {
-    synced:   { label: 'Sincronizado con el remoto',        cls: 'text-green-400',  icon: <CheckCircle2 size={12} className="text-green-400" /> },
-    behind:   { label: 'Hay cambios por bajar (Pull)',      cls: 'text-blue-400',   icon: <ArrowDown size={12} className="text-blue-400" /> },
-    ahead:    { label: 'Tienes cambios sin subir (Push)',   cls: 'text-amber-400',  icon: <Upload size={12} className="text-amber-400" /> },
-    diverged: { label: 'Divergencia local/remoto',          cls: 'text-purple-400', icon: <AlertCircle size={12} className="text-purple-400" /> },
-    offline:  { label: 'Sin conexión al remoto',            cls: 'text-zinc-400',   icon: <CloudOff size={12} className="text-zinc-400" /> },
-    unknown:  { label: 'Estado remoto desconocido',         cls: 'text-zinc-400',   icon: <Clock size={12} className="text-zinc-400" /> },
+    synced:   { label: t(language, 'extras', 'remoteSynced'),   cls: 'text-green-400',  icon: <CheckCircle2 size={12} className="text-green-400" /> },
+    behind:   { label: t(language, 'extras', 'remoteBehind'),   cls: 'text-blue-400',   icon: <ArrowDown size={12} className="text-blue-400" /> },
+    ahead:    { label: t(language, 'extras', 'remoteAhead'),    cls: 'text-amber-400',  icon: <Upload size={12} className="text-amber-400" /> },
+    diverged: { label: t(language, 'extras', 'remoteDiverged'), cls: 'text-purple-400', icon: <AlertCircle size={12} className="text-purple-400" /> },
+    offline:  { label: t(language, 'extras', 'remoteOffline'),  cls: 'text-zinc-400',   icon: <CloudOff size={12} className="text-zinc-400" /> },
+    unknown:  { label: t(language, 'extras', 'remoteUnknown'),  cls: 'text-zinc-400',   icon: <Clock size={12} className="text-zinc-400" /> },
   };
 
   const toggleCls = (on: boolean) =>
@@ -207,7 +215,7 @@ export function GitModal() {
         <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
           <div className="flex items-center gap-2">
             <GitCommit size={15} className="text-indigo-400" />
-            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Git</h2>
+            <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'extras', 'gitTitle')}</h2>
           </div>
           <button
             onClick={toggleGit}
@@ -221,8 +229,8 @@ export function GitModal() {
           {/* Activar/desactivar */}
           <label className="flex items-center justify-between cursor-pointer">
             <div>
-              <p className="text-sm text-[var(--text-primary)]">Activar Git</p>
-              <p className="text-[10px] text-[var(--text-hint)]">Requiere git instalado en el sistema</p>
+              <p className="text-sm text-[var(--text-primary)]">{t(language, 'extras', 'enableGit')}</p>
+              <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'extras', 'gitRequired')}</p>
             </div>
             <button
               onClick={() => setEnabled((v) => !v)}
@@ -237,18 +245,18 @@ export function GitModal() {
           {/* Remote URL */}
           <div>
             <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-widest text-[var(--text-hint)]">
-              Remote URL (opcional)
+              {t(language, 'extras', 'remoteUrl')}
             </label>
             <input
               type="text"
               value={remote}
               onChange={(e) => setRemote(e.target.value)}
               disabled={!enabled}
-              placeholder="https://github.com/usuario/repo.git"
+              placeholder={t(language, 'extras', 'remotePlaceholder')}
               className="w-full rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-primary)] placeholder-[var(--text-hint)] focus:border-indigo-500 focus:outline-none disabled:opacity-40"
             />
             <p className="mt-1 text-[10px] text-[var(--text-hint)]">
-              Deja vacío para solo commits locales
+              {t(language, 'extras', 'localOnlyHint')}
             </p>
           </div>
 
@@ -256,31 +264,31 @@ export function GitModal() {
           <div className="space-y-3">
             <div>
               <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-widest text-[var(--text-hint)]">
-                Nombre de usuario (opcional)
+                {t(language, 'extras', 'userName')}
               </label>
               <input
                 type="text"
                 value={userName}
                 onChange={(e) => setUserName(e.target.value)}
                 disabled={!enabled}
-                placeholder="Tu Nombre"
+                placeholder={t(language, 'extras', 'userNamePlaceholder')}
                 className="w-full rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-primary)] placeholder-[var(--text-hint)] focus:border-indigo-500 focus:outline-none disabled:opacity-40"
               />
             </div>
             <div>
               <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-widest text-[var(--text-hint)]">
-                Email (opcional)
+                {t(language, 'extras', 'userEmail')}
               </label>
               <input
                 type="email"
                 value={userEmail}
                 onChange={(e) => setUserEmail(e.target.value)}
                 disabled={!enabled}
-                placeholder="tu@email.com"
+                placeholder={t(language, 'extras', 'userEmailPlaceholder')}
                 className="w-full rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-primary)] placeholder-[var(--text-hint)] focus:border-indigo-500 focus:outline-none disabled:opacity-40"
               />
               <p className="mt-1 text-[10px] text-[var(--text-hint)]">
-                Sobreescribe la identidad global de Git solo para este repo
+                {t(language, 'extras', 'identityOverrideHint')}
               </p>
             </div>
           </div>
@@ -289,8 +297,8 @@ export function GitModal() {
           <div className="space-y-3">
             <label className="flex items-center justify-between cursor-pointer">
               <div>
-                <p className="text-xs text-[var(--text-secondary)]">Auto-commit cada hora</p>
-                <p className="text-[10px] text-[var(--text-hint)]">Mientras la app esté abierta</p>
+                <p className="text-xs text-[var(--text-secondary)]">{t(language, 'extras', 'autoCommitHourly')}</p>
+                <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'extras', 'whileOpen')}</p>
               </div>
               <button
                 onClick={() => setAutoCommit((v) => !v)}
@@ -305,8 +313,8 @@ export function GitModal() {
 
             <label className="flex items-center justify-between cursor-pointer">
               <div>
-                <p className="text-xs text-[var(--text-secondary)]">Push al sincronizar</p>
-                <p className="text-[10px] text-[var(--text-hint)]">Requiere remote configurado</p>
+                <p className="text-xs text-[var(--text-secondary)]">{t(language, 'extras', 'pushOnSync')}</p>
+                <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'extras', 'remoteRequired')}</p>
               </div>
               <button
                 onClick={() => setAutoPush((v) => !v)}
@@ -328,8 +336,8 @@ export function GitModal() {
                 {statusIcon}
                 <span className="text-[11px] text-[var(--text-secondary)]">
                   {lastCommitTime
-                    ? `Último commit ${timeAgo(lastCommitTime)}`
-                    : 'Sin commits aún'}
+                    ? `${t(language, 'extras', 'lastCommitPrefix')} ${timeAgo(lastCommitTime, language)}`
+                    : t(language, 'extras', 'noCommitsYet')}
                 </span>
               </div>
               {/* Estado remoto */}
@@ -340,14 +348,14 @@ export function GitModal() {
                       ? <RefreshCw size={12} className="text-[var(--text-hint)] animate-spin" />
                       : remoteStatusInfo[gitRemoteStatus]?.icon}
                     <span className={`text-[11px] ${fetchBusy ? 'text-[var(--text-hint)]' : (remoteStatusInfo[gitRemoteStatus]?.cls ?? 'text-[var(--text-hint)]')}`}>
-                      {fetchBusy ? 'Comprobando remoto…' : (remoteStatusInfo[gitRemoteStatus]?.label ?? '')}
+                      {fetchBusy ? t(language, 'extras', 'checkingRemote') : (remoteStatusInfo[gitRemoteStatus]?.label ?? '')}
                     </span>
                   </div>
                   <button
                     onClick={handleFetch}
                     disabled={fetchBusy || busy}
                     className="rounded-lg p-1 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-40"
-                    title="Actualizar estado remoto"
+                    title={t(language, 'extras', 'refreshRemote')}
                   >
                     <RefreshCw size={11} className={fetchBusy ? 'animate-spin' : ''} />
                   </button>
@@ -364,7 +372,7 @@ export function GitModal() {
               <button
                 onClick={() => navigator.clipboard.writeText(errorMsg)}
                 className="shrink-0 rounded p-0.5 text-red-400/60 transition hover:text-red-400 hover:bg-red-500/20"
-                title="Copiar error"
+                title={t(language, 'extras', 'copyError')}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
               </button>
@@ -378,17 +386,17 @@ export function GitModal() {
               disabled={busy}
               className="flex-1 rounded-xl bg-indigo-600 py-2 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-60"
             >
-              {busy ? 'Guardando…' : 'Guardar'}
+              {busy ? t(language, 'extras', 'saving') : t(language, 'extras', 'save')}
             </button>
             {gitConfig.enabled && (
               <button
                 onClick={handleSync}
                 disabled={busy}
                 className="flex items-center gap-1.5 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] disabled:opacity-60"
-                title={remote.trim() ? 'Commit + Push' : 'Commit local'}
+                title={remote.trim() ? t(language, 'extras', 'commitPushTitle') : t(language, 'extras', 'commitLocalTitle')}
               >
                 {remote.trim() ? <Upload size={13} /> : <RefreshCw size={13} />}
-                {remote.trim() ? 'Push' : 'Commit'}
+                {remote.trim() ? t(language, 'extras', 'push') : t(language, 'extras', 'commit')}
               </button>
             )}
             {gitConfig.enabled && gitConfig.remote.trim() && (
@@ -396,10 +404,10 @@ export function GitModal() {
                 onClick={handlePull}
                 disabled={busy}
                 className="flex items-center gap-1.5 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] disabled:opacity-60"
-                title="Commit local + Pull desde remoto"
+                title={t(language, 'extras', 'pullTitle')}
               >
                 <Download size={13} />
-                Pull
+                {t(language, 'extras', 'pull')}
               </button>
             )}
           </div>

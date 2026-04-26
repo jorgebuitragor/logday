@@ -14,15 +14,16 @@ import { AppDatePicker } from './AppDatePicker';
 import { Task, TaskStatus } from '../types';
 import { useAppStore } from '../store/appStore';
 import { fs } from '../lib/invoke';
+import { t } from '../lib/i18n';
 
-const STATUS_OPTIONS: { value: TaskStatus; label: string; color: string }[] = [
-  { value: 'todo', label: 'Por hacer', color: 'text-zinc-400 bg-zinc-400/10' },
-  { value: 'in-progress', label: 'En progreso', color: 'text-amber-400 bg-amber-400/10' },
-  { value: 'done', label: 'Hecho', color: 'text-green-400 bg-green-400/10' },
+const STATUS_OPTIONS: { value: TaskStatus; color: string }[] = [
+  { value: 'todo', color: 'text-zinc-400 bg-zinc-400/10' },
+  { value: 'in-progress', color: 'text-amber-400 bg-amber-400/10' },
+  { value: 'done', color: 'text-green-400 bg-green-400/10' },
 ];
 
 export function TaskEditor() {
-  const { activeTask, updateTask, deleteTask, setActiveTask, projects, addLinkedPath, removeLinkedPath } =
+  const { activeTask, updateTask, deleteTask, setActiveTask, projects, addLinkedPath, removeLinkedPath, language } =
     useAppStore();
 
   const [title, setTitle] = useState('');
@@ -118,7 +119,7 @@ export function TaskEditor() {
 
   const handleDelete = async () => {
     if (!activeTask) return;
-    if (!confirm(`¿Eliminar "${activeTask.title}"?`)) return;
+    if (!confirm(t(language, 'tasks', 'confirmDeleteMsg') + ` "${activeTask.title}"`)) return;
     await deleteTask(activeTask);
   };
 
@@ -129,6 +130,7 @@ export function TaskEditor() {
   if (!activeTask) return null;
 
   const currentStatus = STATUS_OPTIONS.find((s) => s.value === status)!;
+  const localizedStatusLabel = t(language, 'tasks', status === 'todo' ? 'statusTodo' : status === 'in-progress' ? 'statusInProgress' : 'statusDone');
 
   return (
     <div key={activeTask.id} className="animate-fade-in flex h-full w-[420px] shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-input)]">
@@ -144,21 +146,22 @@ export function TaskEditor() {
             }}
             className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition ${currentStatus.color}`}
           >
-            {currentStatus.label}
+            {localizedStatusLabel}
           </button>
-          {isDirty && <span className="text-[10px] text-[var(--text-hint)]">Guardando…</span>}
+          {isDirty && <span className="text-[10px] text-[var(--text-hint)]">{t(language, 'tasks', 'saving')}</span>}
         </div>
         <div className="flex items-center gap-1">
           <button
             onClick={handleDelete}
             className="rounded-lg p-1.5 text-[var(--text-hint)] transition hover:text-red-400 hover:bg-red-400/10"
-            title="Eliminar tarea"
+            title={t(language, 'tasks', 'deleteTitleTooltip')}
           >
             <Trash2 size={14} />
           </button>
           <button
             onClick={() => setActiveTask(null)}
             className="rounded-lg p-1.5 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+            title={t(language, 'tasks', 'closeEditor')}
           >
             <X size={14} />
           </button>
@@ -171,7 +174,7 @@ export function TaskEditor() {
           <textarea
             value={title}
             onChange={(e) => handleTitleChange(e.target.value)}
-            placeholder="Título de la tarea"
+            placeholder={t(language, 'tasks', 'titlePlaceholder')}
             rows={1}
             className="w-full resize-none bg-transparent text-xl font-semibold text-[var(--text-primary)] outline-none placeholder-[var(--text-faint)] leading-tight"
             style={{ overflow: 'hidden' }}
@@ -189,7 +192,7 @@ export function TaskEditor() {
           <div className="flex items-center gap-3">
             <span className="w-24 shrink-0 text-xs text-[var(--text-hint)]">
               <FolderOpen size={12} className="inline mr-1" />
-              Proyecto
+              {t(language, 'tasks', 'projectField')}
             </span>
             <select
               value={project}
@@ -206,7 +209,7 @@ export function TaskEditor() {
           <div className="flex items-center gap-3">
             <span className="w-24 shrink-0 text-xs text-[var(--text-hint)]">
               <Calendar size={12} className="inline mr-1" />
-              Vence
+              {t(language, 'tasks', 'dueDate')}
             </span>
             <div className="flex-1">
               <AppDatePicker value={due} onChange={handleDueChange} />
@@ -217,7 +220,7 @@ export function TaskEditor() {
           <div className="flex items-start gap-3">
             <span className="w-24 shrink-0 text-xs text-[var(--text-hint)] mt-1">
               <Tag size={12} className="inline mr-1" />
-              Tags
+              {t(language, 'tasks', 'tagsLabel')}
             </span>
             <div className="flex flex-wrap gap-1.5 flex-1">
               {tags.map((tag) => (
@@ -229,6 +232,7 @@ export function TaskEditor() {
                   <button
                     onClick={() => handleRemoveTag(tag)}
                     className="opacity-60 hover:opacity-100"
+                    title={t(language, 'tasks', 'removeTag')}
                   >
                     <X size={10} />
                   </button>
@@ -241,7 +245,7 @@ export function TaskEditor() {
                   onChange={(e) => setNewTag(e.target.value)}
                   onKeyDown={handleAddTag}
                   onBlur={() => { setShowTagInput(false); setNewTag(''); }}
-                  placeholder="nuevo tag…"
+                  placeholder={t(language, 'tasks', 'tagPlaceholder')}
                   className="rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-300 outline-none w-24"
                 />
               ) : (
@@ -249,7 +253,7 @@ export function TaskEditor() {
                   onClick={() => setShowTagInput(true)}
                   className="rounded-full border border-[var(--border-card)] px-2 py-0.5 text-[10px] text-[var(--text-hint)] transition hover:text-[var(--text-tertiary)] hover:border-[var(--border-high)]"
                 >
-                  <Plus size={10} className="inline" /> tag
+                  <Plus size={10} className="inline" /> {t(language, 'tasks', 'addTag')}
                 </button>
               )}
             </div>
@@ -257,7 +261,7 @@ export function TaskEditor() {
 
           {/* Created */}
           <div className="flex items-center gap-3">
-            <span className="w-24 shrink-0 text-xs text-[var(--text-hint)]">Creada</span>
+            <span className="w-24 shrink-0 text-xs text-[var(--text-hint)]">{t(language, 'tasks', 'created')}</span>
             <span className="text-xs text-[var(--text-hint)]">{activeTask.created}</span>
           </div>
         </div>
@@ -270,7 +274,7 @@ export function TaskEditor() {
           <RichTextEditor
             value={content}
             onChange={handleContentChange}
-            placeholder="Escribe la descripción de la tarea…"
+            placeholder={t(language, 'tasks', 'descriptionPlaceholder')}
             minHeight="220px"
           />
         </div>
@@ -280,18 +284,18 @@ export function TaskEditor() {
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs text-[var(--text-hint)] font-medium">
               <Link size={12} className="inline mr-1" />
-              Rutas vinculadas
+              {t(language, 'tasks', 'linkedPaths')}
             </span>
             <button
               onClick={addLinkedPath}
               className="rounded-lg px-2 py-1 text-[10px] text-[var(--text-hint)] transition hover:text-indigo-400 hover:bg-indigo-500/10"
             >
-              <Plus size={10} className="inline" /> Vincular archivo
+              <Plus size={10} className="inline" /> {t(language, 'tasks', 'linkFile')}
             </button>
           </div>
           {activeTask.linked_paths.length === 0 ? (
             <p className="text-[10px] text-[var(--text-faint)] italic">
-              Sin archivos vinculados. Puedes vincular cualquier archivo o carpeta de tu equipo.
+              {t(language, 'tasks', 'noLinkedFiles')}
             </p>
           ) : (
             <ul className="space-y-1">
@@ -311,6 +315,7 @@ export function TaskEditor() {
                   <button
                     onClick={() => removeLinkedPath(activeTask, p)}
                     className="opacity-0 group-hover:opacity-100 text-[var(--text-hint)] hover:text-red-400 transition"
+                    title={t(language, 'tasks', 'removeLinkedPath')}
                   >
                     <X size={10} />
                   </button>

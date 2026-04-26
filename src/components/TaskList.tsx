@@ -4,6 +4,8 @@ import { Task, TaskStatus } from '../types';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
 import { TaskContextMenu, NewTaskContextMenu } from './TaskContextMenu';
+import { RichTextEditor } from './RichTextEditor';
+import { t } from '../lib/i18n';
 
 const STATUS_ICONS: Record<TaskStatus, React.ReactNode> = {
   todo: <Circle size={14} className="text-zinc-500" />,
@@ -119,7 +121,7 @@ const TaskRow = memo(function TaskRow({
 });
 
 export function TaskList() {
-  const { tasks, activeProject, currentView, createTask, deleteTask, isLoading } = useAppStore(
+  const { tasks, activeProject, currentView, createTask, deleteTask, isLoading, language } = useAppStore(
     useShallow((s) => ({
       tasks: s.tasks,
       activeProject: s.activeProject,
@@ -127,10 +129,12 @@ export function TaskList() {
       createTask: s.createTask,
       deleteTask: s.deleteTask,
       isLoading: s.isLoading,
+      language: s.language,
     }))
   );
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskContent, setNewTaskContent] = useState('');
   const [filter, setFilter] = useState<TaskStatus | 'all'>('all');
   const [emptyCtxMenu, setEmptyCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [newTaskIds, setNewTaskIds] = useState<Set<string>>(new Set());
@@ -183,18 +187,19 @@ export function TaskList() {
 
   const handleCreateTask = async () => {
     if (newTaskTitle.trim()) {
-      await createTask(newTaskTitle.trim());
+      await createTask(newTaskTitle.trim(), undefined, newTaskContent);
     }
     setNewTaskTitle('');
+    setNewTaskContent('');
     setShowNewTaskModal(false);
   };
 
   const handleCreateTaskKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleCreateTask();
-    if (e.key === 'Escape') { setNewTaskTitle(''); setShowNewTaskModal(false); }
+    if (e.key === 'Escape') { setNewTaskTitle(''); setNewTaskContent(''); setShowNewTaskModal(false); }
   };
 
-  const title = activeProject ? activeProject : 'Tareas';
+  const title = activeProject ? activeProject : t(language, 'tasks', 'title');
   const counts = {
     all: tasks.length,
     todo: tasks.filter((t) => t.status === 'todo').length,
@@ -216,7 +221,7 @@ export function TaskList() {
             className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white transition hover:bg-indigo-500"
           >
             <Plus size={14} />
-            Nueva tarea
+            {t(language, 'tasks', 'newTask')}
           </button>
         </div>
 
@@ -232,7 +237,7 @@ export function TaskList() {
                   : 'text-[var(--text-hint)] hover:text-[var(--text-tertiary)]'
               }`}
             >
-              {f === 'all' ? 'Todas' : f === 'todo' ? 'Por hacer' : f === 'in-progress' ? 'En progreso' : 'Hecho'}
+              {f === 'all' ? t(language, 'tasks', 'filterAll') : f === 'todo' ? t(language, 'tasks', 'filterTodo') : f === 'in-progress' ? t(language, 'tasks', 'filterInProgress') : t(language, 'tasks', 'filterDone')}
               <span className="ml-1.5 text-[10px] text-[var(--text-hint)]">{counts[f]}</span>
             </button>
           ))}
@@ -242,32 +247,41 @@ export function TaskList() {
       {/* Modal nueva tarea */}
       {showNewTaskModal && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
-          <div className="w-96 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
+          <div className="w-[680px] max-w-[92vw] rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
               <Plus size={15} className="text-indigo-400" />
-              Nueva tarea
+              {t(language, 'tasks', 'modalTitle')}
             </div>
             <input
               autoFocus
               value={newTaskTitle}
               onChange={(e) => setNewTaskTitle(e.target.value)}
               onKeyDown={handleCreateTaskKey}
-              placeholder="Nombre de la tarea…"
+              placeholder={t(language, 'tasks', 'taskNamePlaceholder')}
               className="mb-4 w-full rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-2.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500/60 placeholder-[var(--text-hint)]"
             />
+            <div className="mb-4">
+              <div className="mb-2 text-[10px] uppercase tracking-wider text-[var(--text-hint)]">{t(language, 'tasks', 'descriptionLabel')}</div>
+              <RichTextEditor
+                value={newTaskContent}
+                onChange={setNewTaskContent}
+                placeholder={t(language, 'tasks', 'descriptionPlaceholder')}
+                minHeight="220px"
+              />
+            </div>
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => { setNewTaskTitle(''); setShowNewTaskModal(false); }}
+                onClick={() => { setNewTaskTitle(''); setNewTaskContent(''); setShowNewTaskModal(false); }}
                 className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
               >
-                Cancelar
+                {t(language, 'tasks', 'cancel')}
               </button>
               <button
                 onClick={handleCreateTask}
                 disabled={!newTaskTitle.trim()}
                 className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                Crear tarea
+                {t(language, 'tasks', 'createTask')}
               </button>
             </div>
           </div>
@@ -278,13 +292,13 @@ export function TaskList() {
       <div className="flex-1 overflow-y-auto px-4 py-3">
         {isLoading ? (
           <div className="flex h-full items-center justify-center">
-            <span className="text-sm text-[var(--text-hint)]">Cargando…</span>
+            <span className="text-sm text-[var(--text-hint)]">{t(language, 'tasks', 'loading')}</span>
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
             <div className="text-4xl">📭</div>
             <p className="text-sm text-[var(--text-hint)]">
-              {filter === 'all' ? 'Sin tareas. ¡Crea la primera!' : `Sin tareas en estado "${filter}".`}
+              {filter === 'all' ? t(language, 'tasks', 'emptyAll') : `${t(language, 'tasks', 'emptyFilter')} "${filter}".`}
             </p>
             {filter === 'all' && (
               <button
@@ -292,7 +306,7 @@ export function TaskList() {
                 className="mt-1 flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white transition hover:bg-indigo-500"
               >
                 <Plus size={14} />
-                Nueva tarea
+                {t(language, 'tasks', 'newTask')}
               </button>
             )}
           </div>

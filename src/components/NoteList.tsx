@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Plus, Pin, Search, Copy, CopyPlus, Trash2, FolderInput, ChevronRight, Share2, Download, Pencil, Tag, X, ArrowUpDown } from 'lucide-react';
+import { Plus, Pin, Search, Copy, CopyPlus, Trash2, FolderInput, FolderOpen, ChevronRight, Download, Pencil, Tag, X, ArrowUpDown } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
 import { Note } from '../types';
 import { ExportModal } from './ExportModal';
 import { placeMenuAtPointer, placeMenuNearAnchor } from '../lib/menuPosition';
+import { t as tFn } from '../lib/i18n';
 
 type CtxMenu = { note: Note; x: number; y: number } | null;
 type SubMenuPos = { x: number; y: number } | null;
@@ -21,6 +22,7 @@ export function NoteList() {
     noteFolders,
     activeSection,
     basePath,
+    language,
     setActiveNote,
     createNote,
     deleteNote,
@@ -36,6 +38,7 @@ export function NoteList() {
       noteFolders: s.noteFolders,
       activeSection: s.activeSection,
       basePath: s.basePath,
+      language: s.language,
       setActiveNote: s.setActiveNote,
       createNote: s.createNote,
       deleteNote: s.deleteNote,
@@ -369,9 +372,9 @@ export function NoteList() {
   if (activeSection !== 'notes') return null;
 
   const sortLabels: Record<typeof sortBy, string> = {
-    updated: 'Modificación',
-    created: 'Creación',
-    title: 'Título',
+    updated: tFn(language, 'notes', 'sortUpdated'),
+    created: tFn(language, 'notes', 'sortCreated'),
+    title: tFn(language, 'notes', 'sortTitle'),
   };
 
   // Todos los tags disponibles
@@ -417,15 +420,15 @@ export function NoteList() {
     <div className="flex h-full w-72 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
-        <h2 className="text-sm font-semibold text-[var(--text-primary)]">Notas</h2>
+        <h2 className="text-sm font-semibold text-[var(--text-primary)]">{tFn(language, 'notes', 'title')}</h2>
         <button
           onClick={() => createNote()}
           disabled={isNewEmptyNote}
           className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-indigo-400 transition hover:bg-indigo-500/10 disabled:opacity-40 disabled:cursor-not-allowed"
-          title="Nueva nota"
+          title={tFn(language, 'notes', 'newNote')}
         >
           <Plus size={14} />
-          Nueva
+          {tFn(language, 'notes', 'newBtn')}
         </button>
       </div>
 
@@ -436,7 +439,7 @@ export function NoteList() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar notas…"
+            placeholder={tFn(language, 'notes', 'searchPlaceholder')}
             className="flex-1 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder-[var(--text-hint)]"
           />
         </div>
@@ -463,7 +466,7 @@ export function NoteList() {
             {showSortMenu && (
               <div className="absolute right-0 top-full mt-1 z-50 min-w-[170px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl py-1">
                 {/* Ordenar por */}
-                <p className="px-3 pt-1.5 pb-1 text-[9px] font-bold uppercase tracking-widest text-[var(--text-faint)]">Ordenar por</p>
+                <p className="px-3 pt-1.5 pb-1 text-[9px] font-bold uppercase tracking-widest text-[var(--text-faint)]">{tFn(language, 'notes', 'sortLabel')}</p>
                 {(['updated', 'created', 'title'] as const).map(opt => (
                   <button
                     key={opt}
@@ -481,7 +484,7 @@ export function NoteList() {
                 <div className="my-1 h-px bg-[var(--border)]" />
 
                 {/* Dirección */}
-                <p className="px-3 pt-1.5 pb-1 text-[9px] font-bold uppercase tracking-widest text-[var(--text-faint)]">Dirección</p>
+                <p className="px-3 pt-1.5 pb-1 text-[9px] font-bold uppercase tracking-widest text-[var(--text-faint)]">{tFn(language, 'notes', 'sortDir')}</p>
                 {(['desc', 'asc'] as const).map(dir => (
                   <button
                     key={dir}
@@ -492,20 +495,20 @@ export function NoteList() {
                         : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
                     }`}
                   >
-                    {dir === 'desc' ? '↓ Descendente' : '↑ Ascendente'}
+                    {dir === 'desc' ? tFn(language, 'notes', 'sortDesc') : tFn(language, 'notes', 'sortAsc')}
                   </button>
                 ))}
 
                 {allTags.length > 0 && (
                   <>
                     <div className="my-1 h-px bg-[var(--border)]" />
-                    <p className="px-3 pt-1.5 pb-1 text-[9px] font-bold uppercase tracking-widest text-[var(--text-faint)]">Filtrar por tag</p>
+                    <p className="px-3 pt-1.5 pb-1 text-[9px] font-bold uppercase tracking-widest text-[var(--text-faint)]">{tFn(language, 'notes', 'filterByTag')}</p>
                     {filterTag && (
                       <button
                         onClick={() => { setFilterTag(null); setShowSortMenu(false); }}
                         className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
                       >
-                        <X size={11} /> Quitar filtro
+                        <X size={11} /> {tFn(language, 'notes', 'removeFilter')}
                       </button>
                     )}
                     {allTags.map(tag => (
@@ -550,9 +553,9 @@ export function NoteList() {
       >
         {sorted.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
-            <p className="text-sm text-[var(--text-hint)]">Sin notas</p>
+            <p className="text-sm text-[var(--text-hint)]">{tFn(language, 'notes', 'emptyNotes')}</p>
             <p className="mt-1 text-xs text-[var(--text-faint)]">
-              Pulsa "Nueva" para crear tu primera nota
+              {tFn(language, 'notes', 'emptyHint')}
             </p>
           </div>
         ) : (
@@ -594,7 +597,7 @@ export function NoteList() {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <p className={`text-sm font-medium leading-snug truncate ${isActive ? 'text-indigo-400' : 'text-[var(--text-primary)]'}`}>
-                        {note.title || 'Sin título'}
+                        {note.title || tFn(language, 'notes', 'untitled')}
                       </p>
                       {note.pinned && (
                         <Pin size={10} className="mt-0.5 shrink-0 text-amber-400" />
@@ -643,14 +646,14 @@ export function NoteList() {
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
             >
               <Pencil size={13} />
-              Renombrar
+              {tFn(language, 'notes', 'rename')}
             </button>
             <button
               onClick={handleStartEditTags}
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
             >
               <Tag size={13} />
-              Editar tags
+              {tFn(language, 'notes', 'editTags')}
             </button>
 
             <div className="my-1 h-px bg-[var(--border)]" />
@@ -660,14 +663,14 @@ export function NoteList() {
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
             >
               <Copy size={13} />
-              Copiar
+              {tFn(language, 'notes', 'copy')}
             </button>
             <button
               onClick={handleDuplicate}
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
             >
               <CopyPlus size={13} />
-              Duplicar
+              {tFn(language, 'notes', 'duplicate')}
             </button>
 
             <div className="my-1 h-px bg-[var(--border)]" />
@@ -677,7 +680,7 @@ export function NoteList() {
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
             >
               <Pin size={13} className={ctxMenu.note.pinned ? 'text-amber-400' : ''} />
-              {ctxMenu.note.pinned ? 'Quitar destacado' : 'Destacar'}
+              {ctxMenu.note.pinned ? tFn(language, 'notes', 'unpin') : tFn(language, 'notes', 'pin')}
             </button>
 
             {moveFolders.length > 0 && (
@@ -688,7 +691,7 @@ export function NoteList() {
               >
                 <span className="flex items-center gap-2.5">
                   <FolderInput size={13} />
-                  Mover a…
+                  {tFn(language, 'notes', 'moveTo')}
                 </span>
                 <ChevronRight size={11} />
               </button>
@@ -698,8 +701,8 @@ export function NoteList() {
               onClick={handleOpenInSystem}
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
             >
-              <Share2 size={13} />
-              {navigator.userAgent.includes('Windows') ? 'Mostrar en Explorador' : 'Mostrar en Finder'}
+              <FolderOpen size={13} />
+              {navigator.userAgent.includes('Windows') ? tFn(language, 'notes', 'showInExplorer') : tFn(language, 'notes', 'showInFinder')}
             </button>
 
             <button
@@ -712,7 +715,7 @@ export function NoteList() {
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
             >
               <Download size={13} />
-              Exportar
+              {tFn(language, 'notes', 'export')}
             </button>
 
             <div className="my-1 h-px bg-[var(--border)]" />
@@ -722,7 +725,7 @@ export function NoteList() {
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-red-400 hover:bg-red-400/10 transition"
             >
               <Trash2 size={13} />
-              Eliminar
+              {tFn(language, 'notes', 'delete')}
             </button>
           </div>
 
@@ -740,7 +743,7 @@ export function NoteList() {
                   onClick={() => handleMove(f)}
                   className="flex w-full items-center gap-2 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
                 >
-                  {f || 'Sin carpeta'}
+                  {f || tFn(language, 'notes', 'noFolder')}
                 </button>
               ))}
             </div>
@@ -759,7 +762,7 @@ export function NoteList() {
             onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Tags de la nota</h3>
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">{tFn(language, 'notes', 'tagsModalTitle')}</h3>
               <button onClick={() => setEditingTagsNote(null)} className="text-[var(--text-hint)] hover:text-[var(--text-muted)]">
                 <X size={14} />
               </button>
@@ -767,7 +770,7 @@ export function NoteList() {
             {/* Tags actuales */}
             <div className="mb-3 flex flex-wrap gap-1.5 min-h-[24px]">
               {editingTagsNote.tags.length === 0 && (
-                <span className="text-xs text-[var(--text-faint)] italic">Sin tags</span>
+                <span className="text-xs text-[var(--text-faint)] italic">{tFn(language, 'notes', 'noTags')}</span>
               )}
               {editingTagsNote.tags.map(tag => (
                 <span key={tag} className="flex items-center gap-1 rounded-full bg-indigo-500/15 px-2 py-0.5 text-xs text-indigo-400">
@@ -788,7 +791,7 @@ export function NoteList() {
                   if (e.key === 'Enter') handleAddTag();
                   if (e.key === 'Escape') setEditingTagsNote(null);
                 }}
-                placeholder="Nuevo tag…"
+                placeholder={tFn(language, 'notes', 'newTagPlaceholder')}
                 className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs text-[var(--text-primary)] outline-none focus:border-indigo-500/60 placeholder-[var(--text-hint)]"
               />
               <button
@@ -796,7 +799,7 @@ export function NoteList() {
                 disabled={!tagInput.trim()}
                 className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs text-white transition hover:bg-indigo-500 disabled:opacity-40"
               >
-                Añadir
+                {tFn(language, 'notes', 'addTag')}
               </button>
             </div>
           </div>
@@ -809,23 +812,23 @@ export function NoteList() {
           <div className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
             <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
               <Trash2 size={15} className="text-red-400" />
-              Eliminar nota
+              {tFn(language, 'notes', 'confirmDeleteTitle')}
             </div>
             <p className="mb-4 text-xs text-[var(--text-secondary)]">
-              ¿Eliminar <span className="font-medium text-[var(--text-primary)]">"{confirmDeleteNote.title || 'Sin título'}"</span>? Esta acción no se puede deshacer.
+              {tFn(language, 'notes', 'confirmDeleteMsg')} <span className="font-medium text-[var(--text-primary)]">"{confirmDeleteNote.title || tFn(language, 'notes', 'untitled')}"</span>? {tFn(language, 'notes', 'confirmDeleteDesc')}
             </p>
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setConfirmDeleteNote(null)}
                 className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
               >
-                Cancelar
+                {tFn(language, 'notes', 'cancel')}
               </button>
               <button
                 onClick={() => { doDeleteNote(confirmDeleteNote); setConfirmDeleteNote(null); }}
                 className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600"
               >
-                Eliminar
+                {tFn(language, 'notes', 'delete')}
               </button>
             </div>
           </div>
@@ -864,7 +867,7 @@ export function NoteList() {
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Plus size={13} />
-              Nueva nota
+              {tFn(language, 'notes', 'newNote')}
             </button>
           </div>
         </>

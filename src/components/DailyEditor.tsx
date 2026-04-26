@@ -10,23 +10,26 @@ import {
   getPreviousWorkingDay,
   buildDailyCopyText,
 } from '../lib/colombianHolidays';
-
-const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-const MESES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-];
+import { t } from '../lib/i18n';
 
 const ESTIMATED_PREVIEW_CTX_MENU = { width: 160, height: 46 };
 
-function formatShortDate(iso: string): string {
+function formatShortDate(iso: string, language: 'es' | 'en'): string {
+  const locale = language === 'es' ? 'es-CO' : 'en-US';
   const d = new Date(iso + 'T12:00:00');
-  return `${DIAS[d.getDay()]}, ${d.getDate()} de ${MESES[d.getMonth()]}`;
+  const weekday = new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(d);
+  const month = new Intl.DateTimeFormat(locale, { month: 'long' }).format(d);
+  if (language === 'es') return `${weekday}, ${d.getDate()} de ${month}`;
+  return `${weekday}, ${month} ${d.getDate()}`;
 }
 
-function formatLongDate(iso: string): string {
+function formatLongDate(iso: string, language: 'es' | 'en'): string {
+  const locale = language === 'es' ? 'es-CO' : 'en-US';
   const d = new Date(iso + 'T12:00:00');
-  return `${DIAS[d.getDay()]}, ${d.getDate()} de ${MESES[d.getMonth()]} de ${d.getFullYear()}`;
+  const weekday = new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(d);
+  const month = new Intl.DateTimeFormat(locale, { month: 'long' }).format(d);
+  if (language === 'es') return `${weekday}, ${d.getDate()} de ${month} de ${d.getFullYear()}`;
+  return `${weekday}, ${month} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
 async function writeToClipboard(text: string): Promise<void> {
@@ -75,9 +78,10 @@ interface ActivityListProps {
   autoFocus?: boolean;
   onPromoteToTask?: (text: string) => void;
   taskSuggestions?: Task[];
+  language: 'es' | 'en';
 }
 
-function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, taskSuggestions }: ActivityListProps) {
+function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, taskSuggestions, language }: ActivityListProps) {
   const [inputVal, setInputVal] = useState('');
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [editVal, setEditVal] = useState('');
@@ -241,7 +245,7 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
             <span
               className="flex-1 cursor-text select-none"
               onClick={() => startEdit(idx)}
-              title="Clic para editar · Arrastra para reordenar"
+              title={t(language, 'dailys', 'clickEditDrag')}
             >
               {item}
             </span>
@@ -259,7 +263,7 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
                       ? 'text-emerald-400 cursor-default'
                       : 'text-[var(--text-faint)] hover:bg-indigo-500/10 hover:text-indigo-400'
                   }`}
-                  title="Convertir en tarea"
+                  title={t(language, 'dailys', 'promoteTaskTitle')}
                 >
                   {promotedIdx === idx ? <Check size={11} /> : <ListTodo size={11} />}
                 </button>
@@ -267,7 +271,7 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
               <button
                 onClick={() => removeItem(idx)}
                 className="rounded p-0.5 text-[var(--text-faint)] transition hover:bg-red-500/10 hover:text-red-400"
-                title="Eliminar"
+                title={t(language, 'dailys', 'removeTitle')}
               >
                 <X size={11} />
               </button>
@@ -298,7 +302,7 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
               if (e.key === 'Enter') { e.preventDefault(); addItem(inputVal); }
             }}
             onBlur={() => { if (inputVal.trim()) addItem(inputVal); }}
-            placeholder="Nueva actividad… (Enter)"
+            placeholder={t(language, 'dailys', 'newActivityPlaceholder')}
             autoFocus={autoFocus}
             className="flex-1 bg-transparent text-sm text-[var(--text-body)] outline-none placeholder-[var(--text-faint)]"
           />
@@ -306,7 +310,7 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
         {filteredSuggestions.length > 0 && (
           <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-lg border border-[var(--border-card)] bg-[var(--bg-panel)] shadow-xl">
             <p className="border-b border-[var(--border)] px-3 py-1.5 text-[10px] font-medium text-[var(--text-faint)]">
-              Tareas existentes — clic para referenciar
+              {t(language, 'dailys', 'existingTasksHint')}
             </p>
             {filteredSuggestions.map((task, i) => (
               <button
@@ -334,29 +338,29 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
           <div className="w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
             <div className="mb-3 flex items-center gap-2 text-indigo-400">
               <ListTodo size={16} />
-              <h3 className="text-sm font-semibold">Convertir en tarea</h3>
+              <h3 className="text-sm font-semibold">{t(language, 'dailys', 'promoteModalTitle')}</h3>
             </div>
             <p className="text-xs leading-relaxed text-[var(--text-hint)]">
-              Se creará una nueva tarea con el título:
+              {t(language, 'dailys', 'promoteModalDesc')}
             </p>
             <p className="mt-1.5 rounded-lg border border-[var(--border-card)] bg-[var(--bg-base)] px-3 py-2 text-xs font-medium text-[var(--text-body)]">
               {pendingPromoteText}
             </p>
             <p className="mt-2 text-[10px] text-[var(--text-faint)]">
-              Se asignará al día del daily como fecha de vencimiento.
+              {t(language, 'dailys', 'promoteModalHint')}
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={() => setPendingPromoteText(null)}
                 className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
               >
-                Cancelar
+                {t(language, 'dailys', 'cancel')}
               </button>
               <button
                 onClick={confirmPromote}
                 className="rounded-lg bg-indigo-500/10 px-3 py-1.5 text-xs font-medium text-indigo-400 transition hover:bg-indigo-500/20"
               >
-                Crear tarea
+                {t(language, 'dailys', 'createTask')}
               </button>
             </div>
           </div>
@@ -379,6 +383,7 @@ export function DailyEditor() {
     tasks,
     createTask,
     updateTask,
+    language,
   } = useAppStore();
 
   const [todayActs, setTodayActs] = useState('');
@@ -507,9 +512,9 @@ export function DailyEditor() {
     return (
       <div className="flex flex-1 items-center justify-center bg-[var(--bg-base)]">
         <div className="text-center">
-          <p className="text-sm text-[var(--text-hint)]">Selecciona o crea un daily</p>
+          <p className="text-sm text-[var(--text-hint)]">{t(language, 'dailys', 'selectOrCreate')}</p>
           <p className="mt-1 text-xs text-[var(--text-faint)]">
-            Usa el botón "Hoy" para registrar tus actividades de hoy
+            {t(language, 'dailys', 'selectOrCreateHint')}
           </p>
         </div>
       </div>
@@ -525,16 +530,16 @@ export function DailyEditor() {
       <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-2.5">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">
-            {formatLongDate(activeDailyDate)}
+            {formatLongDate(activeDailyDate, language)}
           </h2>
           {isToday && (
             <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-indigo-400">
-              HOY
+              {t(language, 'dailys', 'todayBadge')}
             </span>
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          {saving && <span className="text-[10px] text-[var(--text-faint)]">Guardando…</span>}
+          {saving && <span className="text-[10px] text-[var(--text-faint)]">{t(language, 'dailys', 'saving')}</span>}
           <button
             onClick={handleCopy}
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition ${
@@ -542,22 +547,22 @@ export function DailyEditor() {
                 ? 'bg-emerald-500/10 text-emerald-400'
                 : 'bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20'
             }`}
-            title="Copiar mensaje formateado del daily"
+            title={t(language, 'dailys', 'copyFormattedTitle')}
           >
             {copied ? <Check size={13} /> : <Copy size={13} />}
-            {copied ? '¡Copiado!' : 'Copiar formato'}
+            {copied ? t(language, 'dailys', 'copiedLong') : t(language, 'dailys', 'copyFormat')}
           </button>
           <button
             onClick={() => setShowDeleteConfirm(true)}
             className="rounded-lg p-1.5 text-[var(--text-hint)] transition hover:bg-red-500/10 hover:text-red-400"
-            title="Eliminar este daily"
+            title={t(language, 'dailys', 'deleteThisDailyTitle')}
           >
             <Trash2 size={14} />
           </button>
           <button
             onClick={() => setActiveDailyDate(null)}
             className="rounded-lg p-1.5 text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-            title="Cerrar"
+            title={t(language, 'dailys', 'close')}
           >
             <X size={14} />
           </button>
@@ -572,10 +577,10 @@ export function DailyEditor() {
           <div className="rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)]">
             <div className="flex items-center gap-2 border-b border-[var(--border-card)] px-4 py-2.5">
               <span className="text-[9px] font-bold uppercase tracking-widest text-[var(--text-faint)]">
-                Previo
+                {t(language, 'dailys', 'previousPanel')}
               </span>
               <span className="text-xs font-medium text-[var(--text-secondary)]">
-                {formatShortDate(prevISO)}
+                {formatShortDate(prevISO, language)}
               </span>
             </div>
             <div className="px-4 py-3">
@@ -584,6 +589,7 @@ export function DailyEditor() {
                 onChange={handlePrevChange}
                 onPromoteToTask={handlePromoteToTask}
                 taskSuggestions={tasks}
+                language={language}
               />
             </div>
           </div>
@@ -593,10 +599,10 @@ export function DailyEditor() {
         <div className="rounded-xl border-2 border-indigo-500/40 bg-[var(--bg-surface)]">
           <div className="flex items-center gap-2 border-b border-indigo-500/20 px-4 py-2.5">
             <span className="text-[9px] font-bold uppercase tracking-widest text-indigo-400">
-              {isToday ? 'Hoy' : 'Seleccionado'}
+              {isToday ? t(language, 'dailys', 'todayBtn') : t(language, 'dailys', 'selectedPanel')}
             </span>
             <span className="text-xs font-medium text-[var(--text-secondary)]">
-              {formatShortDate(activeDailyDate)}
+              {formatShortDate(activeDailyDate, language)}
             </span>
           </div>
           <div className="px-4 py-3">
@@ -607,6 +613,7 @@ export function DailyEditor() {
               autoFocus
               onPromoteToTask={handlePromoteToTask}
               taskSuggestions={tasks}
+              language={language}
             />
           </div>
         </div>
@@ -628,10 +635,10 @@ export function DailyEditor() {
           }}
         >
           <p className="mb-2 text-[9px] font-bold uppercase tracking-widest text-[var(--text-faint)]">
-            Vista previa · Copiar formato
+            {t(language, 'dailys', 'previewTitle')}
           </p>
           <p className="select-text whitespace-pre-wrap font-mono text-xs leading-relaxed text-[var(--text-tertiary)]">
-            {previewText || '(escribe tus actividades arriba)'}
+            {previewText || t(language, 'dailys', 'previewEmpty')}
           </p>
         </div>
 
@@ -667,14 +674,14 @@ export function DailyEditor() {
                 }}
               >
                 <Copy size={12} />
-                Copiar formato
+                {t(language, 'dailys', 'copyFormat')}
               </button>
             </div>
           </>
         )}
 
         <p className="pb-2 text-center text-[10px] text-[var(--text-faint)]">
-          Guardado automático · Festivos CO omitidos
+          {t(language, 'dailys', 'autosaveHint')}
         </p>
       </div>
     </div>
@@ -685,25 +692,25 @@ export function DailyEditor() {
         <div className="w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
           <div className="mb-3 flex items-center gap-2 text-red-400">
             <Trash2 size={16} />
-            <h3 className="text-sm font-semibold">Eliminar daily</h3>
+            <h3 className="text-sm font-semibold">{t(language, 'dailys', 'deleteDailyTitle')}</h3>
           </div>
           <p className="text-xs leading-relaxed text-[var(--text-hint)]">
-            Se eliminará el registro del{' '}
-            <span className="font-medium text-[var(--text-body)]">{formatLongDate(activeDailyDate)}</span>.
-            Esta acción no se puede deshacer.
+            {t(language, 'dailys', 'deleteConfirmPrefix')}{' '}
+            <span className="font-medium text-[var(--text-body)]">{formatLongDate(activeDailyDate, language)}</span>.
+            {' '}{t(language, 'dailys', 'deleteConfirmSuffix')}
           </p>
           <div className="mt-4 flex justify-end gap-2">
             <button
               onClick={() => setShowDeleteConfirm(false)}
               className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
             >
-              Cancelar
+              {t(language, 'dailys', 'cancel')}
             </button>
             <button
               onClick={handleDelete}
               className="rounded-lg bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition hover:bg-red-500/20"
             >
-              Eliminar
+              {t(language, 'dailys', 'delete')}
             </button>
           </div>
         </div>

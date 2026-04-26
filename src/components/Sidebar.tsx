@@ -33,14 +33,26 @@ import {
 import { useAppStore } from '../store/appStore';
 import { ViewMode } from '../types';
 import { placeMenuAtPointer } from '../lib/menuPosition';
+import { t } from '../lib/i18n';
 import logoImg from '../assets/logo.png';
 import iconSquareNoBg from '../../icon_square_wiout_background.png';
+
+function formatYearMonthLabel(ym: string, language: 'es' | 'en', style: 'short' | 'long'): string {
+  const [year, month] = ym.split('-').map(Number);
+  const date = new Date(year, month - 1, 1);
+  const locale = language === 'es' ? 'es-CO' : 'en-US';
+  return new Intl.DateTimeFormat(locale, { month: style, year: 'numeric' }).format(date);
+}
 
 const ESTIMATED_AREA_MENU = { width: 180, height: 110 };
 const ESTIMATED_FOLDER_MENU = { width: 220, height: 360 };
 const ESTIMATED_OVERTIME_MENU = { width: 200, height: 110 };
+const ESTIMATED_PROJECT_MENU = { width: 210, height: 210 };
+const ESTIMATED_VIEW_MENU = { width: 170, height: 90 };
 
 type FolderCtxMenu = { folder: string; x: number; y: number } | null;
+type ProjectCtxMenu = { project: string; x: number; y: number } | null;
+type ViewCtxMenu = { view: ViewMode; x: number; y: number } | null;
 
 // ── Utilidad árbol de carpetas ─────────────────────────────────
 type FolderNode = { name: string; path: string; children: FolderNode[] };
@@ -210,7 +222,7 @@ function FolderTreeItem({
         <div
           onPointerDown={handleGripPointerDown}
           className="flex shrink-0 cursor-grab items-center justify-center w-3 opacity-0 group-hover:opacity-30 hover:!opacity-70 transition-opacity select-none"
-          title="Arrastrar carpeta"
+          title={t(useAppStore.getState().language, 'sidebar', 'dragFolder')}
         >
           <GripVertical size={11} />
         </div>
@@ -291,6 +303,148 @@ function FolderTreeItem({
   );
 }
 
+interface ProjectTreeItemProps {
+  node: FolderNode;
+  depth: number;
+  activeProject: string | null;
+  renamingProject: string | null;
+  projectRenameValue: string;
+  projectRenameInputRef: React.RefObject<HTMLInputElement | null>;
+  setProjectRenameValue: (v: string) => void;
+  setRenamingProject: (f: string | null) => void;
+  handleProjectRenameConfirm: () => void;
+  handleProjectContextMenu: (e: React.MouseEvent, project: string) => void;
+  selectProject: (p: string | null) => void;
+  expandedProjects: Set<string>;
+  setExpandedProjects: React.Dispatch<React.SetStateAction<Set<string>>>;
+  moveProject: (project: string, targetParent: string) => Promise<void>;
+}
+
+function ProjectTreeItem({
+  node,
+  depth,
+  activeProject,
+  renamingProject,
+  projectRenameValue,
+  projectRenameInputRef,
+  setProjectRenameValue,
+  setRenamingProject,
+  handleProjectRenameConfirm,
+  handleProjectContextMenu,
+  selectProject,
+  expandedProjects,
+  setExpandedProjects,
+  moveProject,
+}: ProjectTreeItemProps) {
+  const hasChildren = node.children.length > 0;
+  const isExpanded = expandedProjects.has(node.path);
+  const isActive = activeProject === node.path;
+  const indent = depth * 12;
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  useEffect(() => {
+    _dropHighlight.set(node.path, setIsDragOver);
+    return () => { _dropHighlight.delete(node.path); };
+  }, [node.path]);
+
+  const toggleExpand = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(node.path)) next.delete(node.path);
+      else next.add(node.path);
+      return next;
+    });
+  };
+
+  const handleGripPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    startFolderDrag(node.path, async (target) => {
+      if (target) setExpandedProjects((prev) => new Set([...prev, target]));
+      await moveProject(node.path, target);
+    });
+  };
+
+  return (
+    <div data-folder-item>
+      <div
+        data-folder-path={node.path}
+        className={`group flex items-center gap-1 rounded-lg transition ${
+          isDragOver
+            ? 'ring-1 ring-indigo-500/60 bg-indigo-500/10'
+            : isActive
+              ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]'
+              : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]'
+        }`}
+        style={{ paddingLeft: `${8 + indent}px`, paddingRight: '8px' }}
+      >
+        <div
+          onPointerDown={handleGripPointerDown}
+          className="flex shrink-0 cursor-grab items-center justify-center w-3 opacity-0 group-hover:opacity-30 hover:!opacity-70 transition-opacity select-none"
+          title={t(useAppStore.getState().language, 'sidebar', 'dragFolder')}
+        >
+          <GripVertical size={11} />
+        </div>
+
+        <button
+          onClick={hasChildren ? toggleExpand : undefined}
+          className={`flex shrink-0 items-center justify-center w-4 h-4 rounded transition ${hasChildren ? 'hover:bg-[var(--bg-surface)]' : ''}`}
+        >
+          {hasChildren ? (isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />) : <span className="w-4" />}
+        </button>
+
+        {renamingProject === node.path ? (
+          <input
+            ref={projectRenameInputRef}
+            value={projectRenameValue}
+            onChange={(e) => setProjectRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleProjectRenameConfirm();
+              if (e.key === 'Escape') setRenamingProject(null);
+            }}
+            onBlur={handleProjectRenameConfirm}
+            className="flex-1 rounded border border-indigo-500/40 bg-[var(--bg-surface)] px-1 py-0.5 text-xs text-[var(--text-primary)] outline-none"
+          />
+        ) : (
+          <button
+            onClick={() => selectProject(node.path)}
+            onContextMenu={(e) => handleProjectContextMenu(e, node.path)}
+            className="flex flex-1 min-w-0 items-center gap-1.5 py-2 text-left"
+          >
+            <FolderOpen size={13} className="shrink-0" />
+            <span className="truncate text-xs">{node.name}</span>
+          </button>
+        )}
+      </div>
+
+      {hasChildren && isExpanded && (
+        <div>
+          {node.children.map((child) => (
+            <ProjectTreeItem
+              key={child.path}
+              node={child}
+              depth={depth + 1}
+              activeProject={activeProject}
+              renamingProject={renamingProject}
+              projectRenameValue={projectRenameValue}
+              projectRenameInputRef={projectRenameInputRef}
+              setProjectRenameValue={setProjectRenameValue}
+              setRenamingProject={setRenamingProject}
+              handleProjectRenameConfirm={handleProjectRenameConfirm}
+              handleProjectContextMenu={handleProjectContextMenu}
+              selectProject={selectProject}
+              expandedProjects={expandedProjects}
+              setExpandedProjects={setExpandedProjects}
+              moveProject={moveProject}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Sidebar() {
   const {
     projects,
@@ -306,6 +460,9 @@ export function Sidebar() {
     activeDailyMonth,
     selectProject,
     createProject,
+    renameProject,
+    deleteProject,
+    moveProject,
     setView,
     toggleSearch,
     toggleSidebar,
@@ -328,6 +485,7 @@ export function Sidebar() {
     overtimeMonth,
     loadOvertimeMonth,
     deleteOvertimeMonth,
+    language,
   } = useAppStore();
 
   const [isProjectsOpen, setIsProjectsOpen] = useState(true);
@@ -345,6 +503,28 @@ export function Sidebar() {
 
   // Modal crear proyecto
   const [newProjectName, setNewProjectName] = useState('');
+  const [projectSubfolderParent, setProjectSubfolderParent] = useState<string | null>(null);
+  const [newProjectSubfolderName, setNewProjectSubfolderName] = useState('');
+  const projectSubfolderInputRef = useRef<HTMLInputElement>(null);
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+
+  const [projectCtx, setProjectCtx] = useState<ProjectCtxMenu>(null);
+  const [projectCtxPos, setProjectCtxPos] = useState<{ x: number; y: number } | null>(null);
+  const [projectCtxReady, setProjectCtxReady] = useState(false);
+  const projectCtxRef = useRef<HTMLDivElement>(null);
+  const [renamingProject, setRenamingProject] = useState<string | null>(null);
+  const [projectRenameValue, setProjectRenameValue] = useState('');
+  const projectRenameInputRef = useRef<HTMLInputElement>(null);
+
+  const [projectAreaCtx, setProjectAreaCtx] = useState<{ x: number; y: number } | null>(null);
+  const [projectAreaCtxPos, setProjectAreaCtxPos] = useState<{ x: number; y: number } | null>(null);
+  const [projectAreaCtxReady, setProjectAreaCtxReady] = useState(false);
+  const projectAreaCtxRef = useRef<HTMLDivElement>(null);
+
+  const [viewCtx, setViewCtx] = useState<ViewCtxMenu>(null);
+  const [viewCtxPos, setViewCtxPos] = useState<{ x: number; y: number } | null>(null);
+  const [viewCtxReady, setViewCtxReady] = useState(false);
+  const viewCtxRef = useRef<HTMLDivElement>(null);
 
   // Modal renombrar carpeta
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
@@ -463,8 +643,75 @@ export function Sidebar() {
   }, [overtimeMonthCtx]);
 
   useEffect(() => {
+    if (!projectCtx || !projectCtxRef.current) return;
+
+    const recalc = () => {
+      if (!projectCtx || !projectCtxRef.current) return;
+      const rect = projectCtxRef.current.getBoundingClientRect();
+      setProjectCtxPos(
+        placeMenuAtPointer(
+          { x: projectCtx.x, y: projectCtx.y },
+          { width: rect.width, height: rect.height },
+          { padding: 8 },
+        ),
+      );
+      setProjectCtxReady(true);
+    };
+
+    recalc();
+    window.addEventListener('resize', recalc);
+    return () => window.removeEventListener('resize', recalc);
+  }, [projectCtx]);
+
+  useEffect(() => {
+    if (!projectAreaCtx || !projectAreaCtxRef.current) return;
+
+    const recalc = () => {
+      if (!projectAreaCtx || !projectAreaCtxRef.current) return;
+      const rect = projectAreaCtxRef.current.getBoundingClientRect();
+      setProjectAreaCtxPos(
+        placeMenuAtPointer(
+          { x: projectAreaCtx.x, y: projectAreaCtx.y },
+          { width: rect.width, height: rect.height },
+          { padding: 8 },
+        ),
+      );
+      setProjectAreaCtxReady(true);
+    };
+
+    recalc();
+    window.addEventListener('resize', recalc);
+    return () => window.removeEventListener('resize', recalc);
+  }, [projectAreaCtx]);
+
+  useEffect(() => {
+    if (!viewCtx || !viewCtxRef.current) return;
+
+    const recalc = () => {
+      if (!viewCtx || !viewCtxRef.current) return;
+      const rect = viewCtxRef.current.getBoundingClientRect();
+      setViewCtxPos(
+        placeMenuAtPointer(
+          { x: viewCtx.x, y: viewCtx.y },
+          { width: rect.width, height: rect.height },
+          { padding: 8 },
+        ),
+      );
+      setViewCtxReady(true);
+    };
+
+    recalc();
+    window.addEventListener('resize', recalc);
+    return () => window.removeEventListener('resize', recalc);
+  }, [viewCtx]);
+
+  useEffect(() => {
     if (showCreateFolderModal) setTimeout(() => createFolderInputRef.current?.focus(), 50);
   }, [showCreateFolderModal]);
+
+  useEffect(() => {
+    if (projectSubfolderParent !== null) setTimeout(() => projectSubfolderInputRef.current?.focus(), 50);
+  }, [projectSubfolderParent]);
 
   useEffect(() => {
     if (subfolderParent !== null) setTimeout(() => subfolderInputRef.current?.focus(), 50);
@@ -477,6 +724,10 @@ export function Sidebar() {
   useEffect(() => {
     if (renamingFolder !== null) setTimeout(() => renameInputRef.current?.focus(), 50);
   }, [renamingFolder]);
+
+  useEffect(() => {
+    if (renamingProject !== null) setTimeout(() => projectRenameInputRef.current?.focus(), 50);
+  }, [renamingProject]);
 
   // Cerrar ctx menú de carpeta al click fuera
   useEffect(() => {
@@ -491,11 +742,128 @@ export function Sidebar() {
     return () => document.removeEventListener('mousedown', handler);
   }, [folderCtx]);
 
+  useEffect(() => {
+    if (!projectCtx) return;
+    const handler = (e: MouseEvent) => {
+      if (projectCtxRef.current && !projectCtxRef.current.contains(e.target as Node)) {
+        setProjectCtx(null);
+        setProjectCtxPos(null);
+        setProjectCtxReady(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [projectCtx]);
+
+  useEffect(() => {
+    if (!projectAreaCtx) return;
+    const handler = (e: MouseEvent) => {
+      if (projectAreaCtxRef.current && !projectAreaCtxRef.current.contains(e.target as Node)) {
+        setProjectAreaCtx(null);
+        setProjectAreaCtxPos(null);
+        setProjectAreaCtxReady(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [projectAreaCtx]);
+
+  useEffect(() => {
+    if (!viewCtx) return;
+    const handler = (e: MouseEvent) => {
+      if (viewCtxRef.current && !viewCtxRef.current.contains(e.target as Node)) {
+        setViewCtx(null);
+        setViewCtxPos(null);
+        setViewCtxReady(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [viewCtx]);
+
   const handleCreateProject = async () => {
     if (!newProjectName.trim()) return;
     await createProject(newProjectName.trim());
     setNewProjectName('');
     setShowNewProject(false);
+  };
+
+  const handleCreateProjectSubfolder = async () => {
+    if (!newProjectSubfolderName.trim() || projectSubfolderParent === null) return;
+    await createProject(newProjectSubfolderName.trim(), projectSubfolderParent);
+    setExpandedProjects((prev) => new Set([...prev, projectSubfolderParent]));
+    setNewProjectSubfolderName('');
+    setProjectSubfolderParent(null);
+  };
+
+  const handleProjectContextMenu = (e: React.MouseEvent, project: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setProjectCtxReady(false);
+    setProjectCtxPos(
+      placeMenuAtPointer(
+        { x: e.clientX, y: e.clientY },
+        ESTIMATED_PROJECT_MENU,
+        { padding: 8 },
+      ),
+    );
+    setProjectCtx({ project, x: e.clientX, y: e.clientY });
+  };
+
+  const handleProjectStartRename = () => {
+    if (!projectCtx) return;
+    setProjectRenameValue(projectCtx.project);
+    setRenamingProject(projectCtx.project);
+    setProjectCtx(null);
+  };
+
+  const handleProjectRenameConfirm = async () => {
+    if (!renamingProject || !projectRenameValue.trim()) {
+      setRenamingProject(null);
+      return;
+    }
+    if (projectRenameValue.trim() === renamingProject) {
+      setRenamingProject(null);
+      return;
+    }
+    await renameProject(renamingProject, projectRenameValue.trim());
+    setRenamingProject(null);
+  };
+
+  const handleProjectDelete = async () => {
+    if (!projectCtx) return;
+    const project = projectCtx.project;
+    setProjectCtx(null);
+    await deleteProject(project);
+  };
+
+  const handleProjectNewSubfolder = () => {
+    if (!projectCtx) return;
+    setProjectSubfolderParent(projectCtx.project);
+    setProjectCtx(null);
+  };
+
+  const handleProjectPromote = async () => {
+    if (!projectCtx) return;
+    const project = projectCtx.project;
+    setProjectCtx(null);
+    const parts = project.split('/');
+    const grandParent = parts.length > 2 ? parts.slice(0, -2).join('/') : '';
+    await moveProject(project, grandParent);
+  };
+
+  const handleViewContextMenu = (e: React.MouseEvent, view: ViewMode) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setViewCtxReady(false);
+    setViewCtxPos(
+      placeMenuAtPointer(
+        { x: e.clientX, y: e.clientY },
+        ESTIMATED_VIEW_MENU,
+        { padding: 8 },
+      ),
+    );
+    setViewCtx({ view, x: e.clientX, y: e.clientY });
   };
 
   const handleCreateFolder = async () => {
@@ -640,9 +1008,9 @@ export function Sidebar() {
   };
 
   const views: { id: ViewMode; label: string; Icon: React.ElementType }[] = [
-    { id: 'list', label: 'Lista', Icon: List },
-    { id: 'kanban', label: 'Kanban', Icon: Layout },
-    { id: 'calendar', label: 'Calendario', Icon: Calendar },
+    { id: 'list', label: t(language, 'sidebar', 'viewList'), Icon: List },
+    { id: 'kanban', label: t(language, 'sidebar', 'viewKanban'), Icon: Layout },
+    { id: 'calendar', label: t(language, 'sidebar', 'viewCalendar'), Icon: Calendar },
   ];
 
   if (isSidebarCollapsed) {
@@ -651,7 +1019,7 @@ export function Sidebar() {
         <button
           onClick={toggleSidebar}
           className="rounded-lg p-2 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-          title="Expandir sidebar"
+          title={t(language, 'sidebar', 'expand')}
         >
           <PanelLeft size={18} />
         </button>
@@ -663,7 +1031,7 @@ export function Sidebar() {
               ? 'text-indigo-400 bg-indigo-500/10'
               : 'text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
           }`}
-          title="Inicio"
+          title={t(language, 'sidebar', 'dashboard')}
         >
           <img src={logoImg} alt="Logday" className="h-[18px] w-[18px] rounded-sm object-cover" />
         </button>
@@ -675,7 +1043,7 @@ export function Sidebar() {
               ? 'text-indigo-400 bg-indigo-500/10'
               : 'text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
           }`}
-          title="Dailys"
+          title={t(language, 'sidebar', 'dailys')}
         >
           <CalendarDays size={18} />
         </button>
@@ -686,7 +1054,7 @@ export function Sidebar() {
               ? 'text-indigo-400 bg-indigo-500/10'
               : 'text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
           }`}
-          title="Tareas"
+          title={t(language, 'sidebar', 'tasks')}
         >
           <CheckSquare size={18} />
         </button>
@@ -697,7 +1065,7 @@ export function Sidebar() {
               ? 'text-indigo-400 bg-indigo-500/10'
               : 'text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
           }`}
-          title="Notas"
+          title={t(language, 'sidebar', 'notes')}
         >
           <Notebook size={18} />
         </button>
@@ -708,13 +1076,13 @@ export function Sidebar() {
               ? 'text-indigo-400 bg-indigo-500/10'
               : 'text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
           }`}
-          title="Horas Extras"
+          title={t(language, 'sidebar', 'overtime_long')}
         >
           <Timer size={18} />
         </button>
         <div className="my-1 h-px w-6 bg-[var(--border)]" />
         {activeSection === 'tasks' &&
-          views.map(({ id, Icon }) => (
+          views.map(({ id, Icon, label }) => (
             <button
               key={id}
               onClick={() => setView(id)}
@@ -723,7 +1091,7 @@ export function Sidebar() {
                   ? 'text-indigo-400 bg-indigo-500/10'
                   : 'text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
               }`}
-              title={id}
+              title={label}
             >
               <Icon size={18} />
             </button>
@@ -732,14 +1100,14 @@ export function Sidebar() {
         <button
           onClick={toggleSearch}
           className="rounded-lg p-2 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-          title="Búsqueda global (⌘F)"
+          title={t(language, 'sidebar', 'search')}
         >
           <Search size={18} />
         </button>
         <button
           onClick={toggleGit}
           className="relative rounded-lg p-2 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-          title="Git"
+          title={t(language, 'extras', 'gitTitle')}
         >
           <GitCommit size={18} />
           {gitConfig.enabled && (
@@ -755,7 +1123,7 @@ export function Sidebar() {
         <button
           onClick={toggleSettings}
           className="rounded-lg p-2 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-          title="Opciones"
+          title={t(language, 'sidebar', 'settingsBtn')}
         >
           <Settings size={18} />
         </button>
@@ -770,7 +1138,7 @@ export function Sidebar() {
         <button
           onClick={() => setSection('dashboard')}
           className="flex items-center gap-2"
-          title="Inicio"
+          title={t(language, 'sidebar', 'dashboard')}
         >
           <div className="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-600">
             <img src={iconSquareNoBg} alt="Logday" className="h-4 w-4 rounded-sm object-contain" />
@@ -781,7 +1149,7 @@ export function Sidebar() {
           <button
             onClick={toggleSearch}
             className="rounded p-1 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-            title="Búsqueda global (⌘F)"
+            title={t(language, 'sidebar', 'search')}
           >
             <Search size={14} />
           </button>
@@ -798,13 +1166,14 @@ export function Sidebar() {
       <div className="grid grid-cols-4 border-b border-[var(--border)] px-2 py-2 gap-1">
         {(
           [
-            { id: 'dailys',   Icon: CalendarDays, label: 'Dailys'  },
-            { id: 'tasks',    Icon: CheckSquare,  label: 'Tareas'  },
-            { id: 'notes',    Icon: Notebook,     label: 'Notas'   },
-            { id: 'overtime', Icon: Timer,        label: 'Extras'  },
+            { id: 'dailys',   Icon: CalendarDays, labelKey: 'dailys'   },
+            { id: 'tasks',    Icon: CheckSquare,  labelKey: 'tasks'    },
+            { id: 'notes',    Icon: Notebook,     labelKey: 'notes'    },
+            { id: 'overtime', Icon: Timer,        labelKey: 'overtime' },
           ] as const
-        ).map(({ id, Icon, label }) => {
+        ).map(({ id, Icon, labelKey }) => {
           const isActive = activeSection === id;
+          const label = t(language, 'sidebar', labelKey);
           return (
             <button
               key={id}
@@ -833,11 +1202,12 @@ export function Sidebar() {
       {activeSection === 'tasks' && (
         <>
           <div className="px-2 pt-2">
-            <p className="px-2 py-1 text-[10px] uppercase tracking-widest text-[var(--text-hint)] font-medium">Vistas</p>
+            <p className="px-2 py-1 text-[10px] uppercase tracking-widest text-[var(--text-hint)] font-medium">{t(language, 'sidebar', 'views')}</p>
             {views.map(({ id, label, Icon }) => (
               <button
                 key={id}
                 onClick={() => setView(id)}
+                onContextMenu={(e) => handleViewContextMenu(e, id)}
                 className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 transition ${
                   currentView === id
                     ? 'bg-indigo-500/15 text-indigo-400'
@@ -850,19 +1220,35 @@ export function Sidebar() {
             ))}
           </div>
 
-          <div className="mt-3 flex-1 overflow-y-auto px-2">
+          <div
+            data-root-zone
+            className="mt-3 flex-1 overflow-y-auto px-2"
+            onContextMenu={(e) => {
+              if ((e.target as HTMLElement).closest('[data-folder-item]')) return;
+              e.preventDefault();
+              setProjectAreaCtxReady(false);
+              setProjectAreaCtx({ x: e.clientX, y: e.clientY });
+              setProjectAreaCtxPos(
+                placeMenuAtPointer(
+                  { x: e.clientX, y: e.clientY },
+                  ESTIMATED_AREA_MENU,
+                  { padding: 8 },
+                ),
+              );
+            }}
+          >
             <div className="flex items-center justify-between px-2 py-1">
               <button
                 onClick={() => setIsProjectsOpen((v) => !v)}
                 className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-[var(--text-hint)] font-medium hover:text-[var(--text-muted)]"
               >
                 {isProjectsOpen ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-                Proyectos
+                {t(language, 'sidebar', 'projects')}
               </button>
               <button
                 onClick={() => setShowNewProject(true)}
                 className="rounded p-0.5 text-[var(--text-hint)] transition hover:text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)]"
-                title="Nuevo proyecto"
+                title={t(language, 'sidebar', 'newProject')}
               >
                 <Plus size={12} />
               </button>
@@ -879,27 +1265,162 @@ export function Sidebar() {
                   }`}
                 >
                   <CheckSquare size={13} />
-                  <span>Todas las tareas</span>
+                  <span>{t(language, 'sidebar', 'allTasks')}</span>
                 </button>
 
-                {projects.map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => selectProject(p)}
-                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 transition ${
-                      activeProject === p
-                        ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]'
-                        : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]'
-                    }`}
-                  >
-                    <FolderOpen size={13} />
-                    <span className="truncate">{p}</span>
-                  </button>
+                {projects.length > 0 && (
+                  <div className="my-1.5 px-2">
+                    <div className="h-px bg-[var(--border)]" />
+                  </div>
+                )}
+
+                {buildFolderTree(projects).map((node) => (
+                  <ProjectTreeItem
+                    key={node.path}
+                    node={node}
+                    depth={0}
+                    activeProject={activeProject}
+                    renamingProject={renamingProject}
+                    projectRenameValue={projectRenameValue}
+                    projectRenameInputRef={projectRenameInputRef}
+                    setProjectRenameValue={setProjectRenameValue}
+                    setRenamingProject={setRenamingProject}
+                    handleProjectRenameConfirm={handleProjectRenameConfirm}
+                    handleProjectContextMenu={handleProjectContextMenu}
+                    selectProject={selectProject}
+                    expandedProjects={expandedProjects}
+                    setExpandedProjects={setExpandedProjects}
+                    moveProject={moveProject}
+                  />
                 ))}
+                <RootDropLine />
               </div>
             )}
           </div>
         </>
+      )}
+
+      {/* Ctx menú de vistas (Tareas) */}
+      {viewCtx && (
+        <>
+          <div className="fixed inset-0 z-40" onMouseDown={() => { setViewCtx(null); setViewCtxPos(null); setViewCtxReady(false); }} />
+          <div
+            ref={viewCtxRef}
+            className="fixed z-50 min-w-[150px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl py-1"
+            style={{ left: viewCtxPos?.x ?? 8, top: viewCtxPos?.y ?? 8, visibility: viewCtxReady ? 'visible' : 'hidden' }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => { setView(viewCtx.view); setViewCtx(null); setViewCtxPos(null); setViewCtxReady(false); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
+            >
+              <CheckSquare size={13} />
+              {t(language, 'sidebar', 'activateView')}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Ctx menú de área libre de proyectos */}
+      {projectAreaCtx && (
+        <>
+          <div className="fixed inset-0 z-40" onMouseDown={() => { setProjectAreaCtx(null); setProjectAreaCtxPos(null); setProjectAreaCtxReady(false); }} />
+          <div
+            ref={projectAreaCtxRef}
+            className="fixed z-50 min-w-[160px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl py-1"
+            style={{ left: projectAreaCtxPos?.x ?? 8, top: projectAreaCtxPos?.y ?? 8, visibility: projectAreaCtxReady ? 'visible' : 'hidden' }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => { setProjectAreaCtx(null); setProjectAreaCtxPos(null); setProjectAreaCtxReady(false); setShowNewProject(true); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
+            >
+              <FolderPlus size={13} />
+              {t(language, 'sidebar', 'projectNewFolder')}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Ctx menú de carpeta de proyecto */}
+      {projectCtx && (
+        <>
+          <div className="fixed inset-0 z-40" onMouseDown={() => { setProjectCtx(null); setProjectCtxPos(null); setProjectCtxReady(false); }} />
+          <div
+            ref={projectCtxRef}
+            className="fixed z-50 min-w-[170px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl py-1"
+            style={{ left: projectCtxPos?.x ?? 8, top: projectCtxPos?.y ?? 8, visibility: projectCtxReady ? 'visible' : 'hidden' }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={handleProjectStartRename}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
+            >
+              <Pencil size={13} />
+              {t(language, 'sidebar', 'renameFolder')}
+            </button>
+            <button
+              onClick={handleProjectNewSubfolder}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
+            >
+              <FolderPlus size={13} />
+              {t(language, 'sidebar', 'newSubfolder')}
+            </button>
+            {projectCtx.project.includes('/') && (
+              <button
+                onClick={handleProjectPromote}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
+              >
+                <FolderUp size={13} />
+                {t(language, 'sidebar', 'moveTopLevel')}
+              </button>
+            )}
+            <div className="my-1 h-px bg-[var(--border)]" />
+            <button
+              onClick={handleProjectDelete}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-red-400 hover:bg-red-400/10 transition"
+            >
+              <Trash2 size={13} />
+              {t(language, 'sidebar', 'deleteFolder')}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Modal nueva subcarpeta de proyecto */}
+      {projectSubfolderParent !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="w-72 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
+            <h3 className="mb-1 text-sm font-semibold text-[var(--text-primary)]">{t(language, 'sidebar', 'projectSubfolderTitle')}</h3>
+            <p className="mb-3 text-xs text-[var(--text-hint)]">{t(language, 'sidebar', 'inFolder')} <span className="text-indigo-400">{projectSubfolderParent}</span></p>
+            <input
+              ref={projectSubfolderInputRef}
+              value={newProjectSubfolderName}
+              onChange={(e) => setNewProjectSubfolderName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCreateProjectSubfolder();
+                if (e.key === 'Escape') { setProjectSubfolderParent(null); setNewProjectSubfolderName(''); }
+              }}
+              placeholder={t(language, 'sidebar', 'subfolderNamePlaceholder')}
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none focus:border-indigo-500/60 placeholder-[var(--text-hint)]"
+            />
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                onClick={() => { setProjectSubfolderParent(null); setNewProjectSubfolderName(''); }}
+                className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-muted)] hover:bg-[var(--bg-hover)] transition"
+              >
+                {t(language, 'sidebar', 'cancel')}
+              </button>
+              <button
+                onClick={handleCreateProjectSubfolder}
+                disabled={!newProjectSubfolderName.trim()}
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs text-white transition hover:bg-indigo-500 disabled:opacity-40"
+              >
+                {t(language, 'sidebar', 'create')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* NOTES SECTION */}
@@ -927,12 +1448,12 @@ export function Sidebar() {
               className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-[var(--text-hint)] font-medium hover:text-[var(--text-muted)]"
             >
               {isFoldersOpen ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-              Carpetas
+              {t(language, 'sidebar', 'folders')}
             </button>
             <button
               onClick={() => setShowCreateFolderModal(true)}
               className="rounded p-0.5 text-[var(--text-hint)] transition hover:text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)]"
-              title="Nueva carpeta"
+              title={t(language, 'sidebar', 'newFolder')}
             >
               <Plus size={12} />
             </button>
@@ -949,7 +1470,7 @@ export function Sidebar() {
                 }`}
               >
                 <FileText size={13} />
-                <span>Todas las notas</span>
+                <span>{t(language, 'sidebar', 'allNotes')}</span>
               </button>
 
               <button
@@ -961,7 +1482,7 @@ export function Sidebar() {
                 }`}
               >
                 <FileText size={13} />
-                <span>Sin carpeta</span>
+                <span>{t(language, 'notes', 'noFolder')}</span>
               </button>
 
               {noteFolders.length > 0 && (
@@ -1012,7 +1533,7 @@ export function Sidebar() {
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
             >
               <FolderPlus size={13} />
-              Nueva carpeta
+              {t(language, 'sidebar', 'newFolder')}
             </button>
             {(copiedFolder || cuttedFolder) && (
               <button
@@ -1020,7 +1541,7 @@ export function Sidebar() {
                 className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
               >
                 <Clipboard size={13} />
-                <span className="truncate">Pegar &quot;{(cuttedFolder ?? copiedFolder)!.split('/').pop()}&quot;</span>
+                <span className="truncate">{t(language, 'sidebar', 'pasteFolder')} &quot;{(cuttedFolder ?? copiedFolder)!.split('/').pop()}&quot;</span>
               </button>
             )}
           </div>
@@ -1031,7 +1552,7 @@ export function Sidebar() {
       {showCreateFolderModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="w-72 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
-            <h3 className="mb-3 text-sm font-semibold text-[var(--text-primary)]">Nueva carpeta</h3>
+            <h3 className="mb-3 text-sm font-semibold text-[var(--text-primary)]">{t(language, 'sidebar', 'newFolderTitle')}</h3>
             <input
               ref={createFolderInputRef}
               value={newFolderName}
@@ -1040,7 +1561,7 @@ export function Sidebar() {
                 if (e.key === 'Enter') handleCreateFolder();
                 if (e.key === 'Escape') { setShowCreateFolderModal(false); setNewFolderName(''); }
               }}
-              placeholder="Nombre de la carpeta…"
+              placeholder={t(language, 'sidebar', 'folderNamePlaceholder')}
               className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none focus:border-indigo-500/60 placeholder-[var(--text-hint)]"
             />
             <div className="mt-3 flex justify-end gap-2">
@@ -1048,14 +1569,14 @@ export function Sidebar() {
                 onClick={() => { setShowCreateFolderModal(false); setNewFolderName(''); }}
                 className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-muted)] hover:bg-[var(--bg-hover)] transition"
               >
-                Cancelar
+                {t(language, 'sidebar', 'cancel')}
               </button>
               <button
                 onClick={handleCreateFolder}
                 disabled={!newFolderName.trim()}
                 className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs text-white transition hover:bg-indigo-500 disabled:opacity-40"
               >
-                Crear
+                {t(language, 'sidebar', 'create')}
               </button>
             </div>
           </div>
@@ -1077,21 +1598,21 @@ export function Sidebar() {
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
             >
               <Pencil size={13} />
-              Renombrar
+              {t(language, 'sidebar', 'renameFolder')}
             </button>
             <button
               onClick={handleNewSubfolder}
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
             >
               <FolderPlus size={13} />
-              Nueva subcarpeta
+              {t(language, 'sidebar', 'newSubfolder')}
             </button>
             <button
               onClick={handleEditFolderTags}
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
             >
               <Tag size={13} />
-              Editar tags
+              {t(language, 'sidebar', 'editFolderTags')}
             </button>
             {folderCtx.folder.includes('/') && (
               <button
@@ -1099,7 +1620,7 @@ export function Sidebar() {
                 className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
               >
                 <FolderUp size={13} />
-                Mover al nivel superior
+                {t(language, 'sidebar', 'moveTopLevel')}
               </button>
             )}
             <button
@@ -1107,7 +1628,7 @@ export function Sidebar() {
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
             >
               <Share2 size={13} />
-              {navigator.userAgent.includes('Windows') ? 'Mostrar en Explorador' : 'Mostrar en Finder'}
+              {navigator.userAgent.includes('Windows') ? t(language, 'notes', 'showInExplorer') : t(language, 'notes', 'showInFinder')}
             </button>
             <div className="my-1 h-px bg-[var(--border)]" />
             <button
@@ -1115,21 +1636,21 @@ export function Sidebar() {
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
             >
               <Scissors size={13} />
-              Cortar carpeta
+              {t(language, 'sidebar', 'cutFolder')}
             </button>
             <button
               onClick={handleCopyFolder}
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
             >
               <Copy size={13} />
-              Copiar carpeta
+              {t(language, 'sidebar', 'copyFolder')}
             </button>
             <button
               onClick={handleDuplicateFolder}
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
             >
               <CopyPlus size={13} />
-              Duplicar carpeta
+              {t(language, 'sidebar', 'duplicateFolder')}
             </button>
             {(copiedFolder || cuttedFolder) && (
               <button
@@ -1141,7 +1662,7 @@ export function Sidebar() {
                 className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
               >
                 <Clipboard size={13} />
-                <span className="truncate">Pegar &quot;{(cuttedFolder ?? copiedFolder)!.split('/').pop()}&quot; aquí</span>
+                <span className="truncate">{t(language, 'sidebar', 'pasteFolderHere')} &quot;{(cuttedFolder ?? copiedFolder)!.split('/').pop()}&quot;</span>
               </button>
             )}
             <div className="my-1 h-px bg-[var(--border)]" />
@@ -1150,7 +1671,7 @@ export function Sidebar() {
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-red-400 hover:bg-red-400/10 transition"
             >
               <Trash2 size={13} />
-              Eliminar carpeta
+              {t(language, 'sidebar', 'deleteFolder')}
             </button>
           </div>
         </>
@@ -1160,8 +1681,8 @@ export function Sidebar() {
       {subfolderParent !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="w-72 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
-            <h3 className="mb-1 text-sm font-semibold text-[var(--text-primary)]">Nueva subcarpeta</h3>
-            <p className="mb-3 text-xs text-[var(--text-hint)]">en <span className="text-indigo-400">{subfolderParent}</span></p>
+            <h3 className="mb-1 text-sm font-semibold text-[var(--text-primary)]">{t(language, 'sidebar', 'newSubfolder')}</h3>
+            <p className="mb-3 text-xs text-[var(--text-hint)]">{t(language, 'sidebar', 'inFolder')} <span className="text-indigo-400">{subfolderParent}</span></p>
             <input
               ref={subfolderInputRef}
               value={newSubfolderName}
@@ -1170,7 +1691,7 @@ export function Sidebar() {
                 if (e.key === 'Enter') handleCreateSubfolder();
                 if (e.key === 'Escape') { setSubfolderParent(null); setNewSubfolderName(''); }
               }}
-              placeholder="Nombre de la subcarpeta…"
+              placeholder={t(language, 'sidebar', 'subfolderNamePlaceholder')}
               className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none focus:border-indigo-500/60 placeholder-[var(--text-hint)]"
             />
             <div className="mt-3 flex justify-end gap-2">
@@ -1178,14 +1699,14 @@ export function Sidebar() {
                 onClick={() => { setSubfolderParent(null); setNewSubfolderName(''); }}
                 className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-muted)] hover:bg-[var(--bg-hover)] transition"
               >
-                Cancelar
+                {t(language, 'sidebar', 'cancel')}
               </button>
               <button
                 onClick={handleCreateSubfolder}
                 disabled={!newSubfolderName.trim()}
                 className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs text-white transition hover:bg-indigo-500 disabled:opacity-40"
               >
-                Crear
+                {t(language, 'sidebar', 'create')}
               </button>
             </div>
           </div>
@@ -1204,7 +1725,7 @@ export function Sidebar() {
           >
             <div className="mb-3 flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-semibold text-[var(--text-primary)]">Tags de carpeta</h3>
+                <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'sidebar', 'folderTagsTitle')}</h3>
                 <p className="text-xs text-[var(--text-hint)]">{editingTagsFolder}</p>
               </div>
               <button onClick={() => setEditingTagsFolder(null)} className="text-[var(--text-hint)] hover:text-[var(--text-muted)]">
@@ -1213,7 +1734,7 @@ export function Sidebar() {
             </div>
             <div className="mb-3 flex flex-wrap gap-1.5 min-h-[24px]">
               {(folderTags[editingTagsFolder] ?? []).length === 0 && (
-                <span className="text-xs text-[var(--text-faint)] italic">Sin tags</span>
+                <span className="text-xs text-[var(--text-faint)] italic">{t(language, 'notes', 'noTags')}</span>
               )}
               {(folderTags[editingTagsFolder] ?? []).map(tag => (
                 <span key={tag} className="flex items-center gap-1 rounded-full bg-indigo-500/15 px-2 py-0.5 text-xs text-indigo-400">
@@ -1233,7 +1754,7 @@ export function Sidebar() {
                   if (e.key === 'Enter') handleAddFolderTag();
                   if (e.key === 'Escape') setEditingTagsFolder(null);
                 }}
-                placeholder="Nuevo tag…"
+                placeholder={t(language, 'notes', 'newTagPlaceholder')}
                 className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs text-[var(--text-primary)] outline-none focus:border-indigo-500/60 placeholder-[var(--text-hint)]"
               />
               <button
@@ -1241,7 +1762,7 @@ export function Sidebar() {
                 disabled={!folderTagInput.trim()}
                 className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs text-white transition hover:bg-indigo-500 disabled:opacity-40"
               >
-                Añadir
+                {t(language, 'notes', 'addTag')}
               </button>
             </div>
           </div>
@@ -1256,23 +1777,20 @@ export function Sidebar() {
             className="mb-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-indigo-400 transition hover:bg-indigo-500/10"
           >
             <Plus size={12} />
-            Daily de hoy
+            {t(language, 'sidebar', 'dailyToday')}
           </button>
 
           <p className="px-2 py-1 text-[10px] uppercase tracking-widest text-[var(--text-hint)] font-medium">
-            Historial
+            {t(language, 'sidebar', 'history')}
           </p>
           <div className="mt-1 space-y-0.5">
             {dailyMonths.length === 0 ? (
               <p className="px-3 py-2 text-xs text-[var(--text-faint)] italic">
-                Sin dailys registrados
+                {t(language, 'sidebar', 'noDailysRecorded')}
               </p>
             ) : (
               dailyMonths.map((ym) => {
-                const [y, m] = ym.split('-');
-                const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
-                  'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-                const label = `${MESES[parseInt(m) - 1]} ${y}`;
+                const label = formatYearMonthLabel(ym, language, 'short');
                 return (
                   <button
                     key={ym}
@@ -1297,19 +1815,16 @@ export function Sidebar() {
       {activeSection === 'overtime' && (
         <div className="mt-2 flex-1 overflow-y-auto px-2">
           <p className="px-2 py-1 text-[10px] uppercase tracking-widest text-[var(--text-hint)] font-medium">
-            Historial
+            {t(language, 'sidebar', 'history')}
           </p>
           <div className="mt-1 space-y-0.5">
             {overtimeMonths.length === 0 ? (
               <p className="px-3 py-2 text-xs text-[var(--text-faint)] italic">
-                Sin extras registradas
+                {t(language, 'sidebar', 'noOvertimeRecorded')}
               </p>
             ) : (
               overtimeMonths.map((ym) => {
-                const [y, m] = ym.split('-');
-                const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
-                  'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-                const label = `${MESES[parseInt(m) - 1]} ${y}`;
+                const label = formatYearMonthLabel(ym, language, 'short');
                 return (
                   <button
                     key={ym}
@@ -1350,7 +1865,7 @@ export function Sidebar() {
           className="relative flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
         >
           <GitCommit size={14} />
-          <span>Git</span>
+          <span>{t(language, 'extras', 'gitTitle')}</span>
           {gitConfig.enabled && (
             <span className={`ml-auto h-1.5 w-1.5 rounded-full ${
               gitStatus === 'error'           ? 'bg-red-400'    :
@@ -1366,7 +1881,7 @@ export function Sidebar() {
           className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
         >
           <Settings size={14} />
-          <span>Opciones</span>
+          <span>{t(language, 'settings', 'title')}</span>
         </button>
         {basePath && (
           <p className="truncate px-3 text-[10px] text-[var(--text-faint)]" title={basePath}>
@@ -1388,10 +1903,10 @@ export function Sidebar() {
           >
             <div className="mb-4 flex items-center gap-2">
               <FolderOpen size={16} className="text-indigo-400" />
-              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Nuevo proyecto</h3>
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'sidebar', 'newProjectTitle')}</h3>
             </div>
             <label className="mb-1 block text-[10px] uppercase tracking-widest text-[var(--text-hint)]">
-              Nombre
+              {t(language, 'sidebar', 'nameLabel')}
             </label>
             <input
               ref={newProjectInputRef}
@@ -1401,25 +1916,25 @@ export function Sidebar() {
                 if (e.key === 'Enter') handleCreateProject();
                 if (e.key === 'Escape') { setShowNewProject(false); setNewProjectName(''); }
               }}
-              placeholder="ej. trabajo, personal, ideas…"
+              placeholder={t(language, 'sidebar', 'newProjectNamePlaceholder')}
               className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none focus:border-indigo-500/60 placeholder-[var(--text-hint)]"
             />
             <p className="mt-1.5 text-[10px] text-[var(--text-hint)]">
-              Se creará como carpeta dentro de <span className="font-mono">projects/</span>
+              {t(language, 'sidebar', 'createInsideProjectsHint')}
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={() => { setShowNewProject(false); setNewProjectName(''); }}
                 className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)]"
               >
-                Cancelar
+                {t(language, 'sidebar', 'cancel')}
               </button>
               <button
                 onClick={handleCreateProject}
                 disabled={!newProjectName.trim()}
                 className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs text-white transition hover:bg-indigo-500 disabled:opacity-40"
               >
-                Crear proyecto
+                {t(language, 'sidebar', 'createProjectBtn')}
               </button>
             </div>
           </div>
@@ -1428,10 +1943,7 @@ export function Sidebar() {
 
       {/* Menú contextual mes de Extras */}
       {overtimeMonthCtx && (() => {
-        const [y, m] = overtimeMonthCtx.ym.split('-');
-        const MESES_S = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
-          'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-        const label = `${MESES_S[parseInt(m) - 1]} ${y}`;
+        const label = formatYearMonthLabel(overtimeMonthCtx.ym, language, 'short');
         return (
           <div
             ref={overtimeMonthCtxRef}
@@ -1449,7 +1961,7 @@ export function Sidebar() {
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
             >
               <Timer size={13} />
-              Ir a {label}
+              {t(language, 'sidebar', 'goToMonth')} {label}
             </button>
             <div className="mx-2 my-1 border-t border-[var(--border)]" />
             <button
@@ -1457,7 +1969,7 @@ export function Sidebar() {
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 transition"
             >
               <Trash2 size={13} />
-              Eliminar extras de {label}
+              {t(language, 'sidebar', 'deleteOvertimeOf')} {label}
             </button>
           </div>
         );
@@ -1465,32 +1977,29 @@ export function Sidebar() {
 
       {/* Confirmación eliminar mes de Extras */}
       {confirmDeleteOvertimeMonth && (() => {
-        const [y, m] = confirmDeleteOvertimeMonth.split('-');
-        const MESES_L = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-          'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-        const label = `${MESES_L[parseInt(m) - 1]} ${y}`;
+        const label = formatYearMonthLabel(confirmDeleteOvertimeMonth, language, 'long');
         return (
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
             <div className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
               <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
                 <Trash2 size={15} className="text-red-400" />
-                Eliminar extras de {label}
+                {t(language, 'sidebar', 'deleteOvertimeMonthTitle')} {label}
               </div>
               <p className="mb-4 text-xs text-[var(--text-secondary)]">
-                Se eliminarán <span className="font-medium text-[var(--text-primary)]">todas las entradas</span> del mes de <span className="font-medium text-[var(--text-primary)]">{label}</span>. Esta acción no se puede deshacer.
+                {t(language, 'sidebar', 'deleteOvertimeMonthDescStart')} <span className="font-medium text-[var(--text-primary)]">{t(language, 'sidebar', 'deleteOvertimeMonthDescAllEntries')}</span> {t(language, 'sidebar', 'deleteOvertimeMonthDescOfMonth')} <span className="font-medium text-[var(--text-primary)]">{label}</span>. {t(language, 'sidebar', 'deleteOvertimeMonthDescEnd')}
               </p>
               <div className="flex justify-end gap-2">
                 <button
                   onClick={() => setConfirmDeleteOvertimeMonth(null)}
                   className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
                 >
-                  Cancelar
+                  {t(language, 'sidebar', 'cancel')}
                 </button>
                 <button
                   onClick={async () => { await deleteOvertimeMonth(confirmDeleteOvertimeMonth); setConfirmDeleteOvertimeMonth(null); }}
                   className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600"
                 >
-                  Eliminar todo
+                  {t(language, 'sidebar', 'deleteAll')}
                 </button>
               </div>
             </div>

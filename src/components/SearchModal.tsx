@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { Search, X, Circle, Clock, CheckCircle2, Calendar, BookOpen } from 'lucide-react';
 import { Task, TaskStatus } from '../types';
 import { useAppStore } from '../store/appStore';
+import { t } from '../lib/i18n';
 
 const STATUS_ICONS: Record<TaskStatus, React.ReactNode> = {
   todo: <Circle size={13} className="text-zinc-500 shrink-0" />,
@@ -12,7 +13,7 @@ const STATUS_ICONS: Record<TaskStatus, React.ReactNode> = {
 export function SearchModal() {
   const {
     isSearchOpen, searchQuery, searchResults, runSearch, toggleSearch, setActiveTask,
-    dailyEntries, setSection, setActiveDailyDate, setActiveDailyMonth, shortcuts,
+    dailyEntries, setSection, setActiveDailyDate, setActiveDailyMonth, shortcuts, language,
   } = useAppStore();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -87,7 +88,7 @@ export function SearchModal() {
             ref={inputRef}
             value={searchQuery}
             onChange={(e) => runSearch(e.target.value)}
-            placeholder="Buscar tareas, contenido, tags…"
+            placeholder={t(language, 'extras', 'searchPlaceholder')}
             className="flex-1 bg-transparent text-sm text-[var(--text-primary)] outline-none placeholder-[var(--text-hint)]"
           />
           {searchQuery && (
@@ -104,11 +105,11 @@ export function SearchModal() {
         <div className="max-h-[400px] overflow-y-auto">
           {!searchQuery ? (
             <div className="py-10 text-center text-sm text-[var(--text-faint)]">
-              Escribe para buscar en tareas y dailys
+              {t(language, 'extras', 'searchTypeHint')}
             </div>
           ) : !hasResults ? (
             <div className="py-10 text-center text-sm text-[var(--text-faint)]">
-              Sin resultados para "{searchQuery}"
+              {t(language, 'extras', 'noResultsFor')} "{searchQuery}"
             </div>
           ) : (
             <div className="p-2">
@@ -116,7 +117,7 @@ export function SearchModal() {
               {searchResults.length > 0 && (
                 <>
                   <p className="px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">
-                    Tareas
+                    {t(language, 'extras', 'tasksTitle')}
                   </p>
                   <ul className="space-y-0.5">
                     {searchResults.map((task) => (
@@ -157,7 +158,7 @@ export function SearchModal() {
               {dailyHits.length > 0 && (
                 <>
                   <p className="px-4 pt-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">
-                    Dailys
+                    {t(language, 'extras', 'dailysTitle')}
                   </p>
                   <ul className="space-y-0.5">
                     {dailyHits.map(({ date, snippet }) => (
@@ -186,7 +187,7 @@ export function SearchModal() {
         {hasResults && searchQuery && (
           <div className="border-t border-[var(--border)] px-4 py-2">
             <p className="text-[10px] text-[var(--text-faint)]">
-              {searchResults.length} tarea(s) · {dailyHits.length} daily(s)
+              {searchResults.length} {t(language, 'extras', 'tasksCount')} · {dailyHits.length} {t(language, 'extras', 'dailysCount')}
             </p>
           </div>
         )}

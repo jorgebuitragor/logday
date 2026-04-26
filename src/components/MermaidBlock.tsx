@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, ArrowDown, ArrowUp, CopyPlus, GripVertical, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, CopyPlus, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { renderMermaidSvg } from '../lib/mermaid';
 import { placeMenuAtPointer } from '../lib/menuPosition';
+import { useAppStore } from '../store/appStore';
+import { t } from '../lib/i18n';
 
 const ESTIMATED_MERMAID_MENU = { width: 190, height: 130 };
 
@@ -10,14 +12,15 @@ interface Props {
   code: string;
   compact?: boolean;
   onEdit?: () => void;
-  onStartDrag?: (event: React.PointerEvent<HTMLButtonElement>) => void;
+  onHeightChange?: (height: number) => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   onDuplicate?: () => void;
   onDelete?: () => void;
 }
 
-export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onStartDrag, onMoveUp, onMoveDown, onDuplicate, onDelete }: Props) {
+export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onHeightChange, onMoveUp, onMoveDown, onDuplicate, onDelete }: Props) {
+  const language = useAppStore((s) => s.language);
   const hostRef = useRef<HTMLDivElement>(null);
   const blockRef = useRef<HTMLDivElement>(null);
   const [svg, setSvg] = useState<string>('');
@@ -44,14 +47,14 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onSt
       })
       .catch(() => {
         if (!cancelled) {
-          setError('No se pudo renderizar el diagrama Mermaid');
+          setError(t(language, 'notes', 'mermaidRenderError'));
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [code]);
+  }, [code, language]);
 
   useEffect(() => {
     if (!menuPosition) return;
@@ -88,6 +91,31 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onSt
     return () => window.removeEventListener('resize', recalc);
   }, [menuPosition]);
 
+  useEffect(() => {
+    if (!onHeightChange || !blockRef.current) return;
+
+    const element = blockRef.current;
+    const reportHeight = () => {
+      const next = Math.ceil(element.getBoundingClientRect().height);
+      if (next > 0) onHeightChange(next);
+    };
+
+    // Measure after paint to capture final SVG size in webviews where
+    // ResizeObserver can be delayed/inconsistent.
+    const raf1 = requestAnimationFrame(() => {
+      reportHeight();
+      requestAnimationFrame(reportHeight);
+    });
+
+    const onResize = () => reportHeight();
+    window.addEventListener('resize', onResize);
+
+    return () => {
+      cancelAnimationFrame(raf1);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [onHeightChange, svg, error, compact]);
+
   const hasActions = Boolean(onEdit || onDuplicate || onDelete);
 
   const handleOpenEditor = () => {
@@ -106,30 +134,18 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onSt
   };
 
   return (
-    <div
-      ref={blockRef}
-      data-mermaid-card
-      data-mermaid-index={diagramIndex}
-      onClick={handleOpenEditor}
-      onContextMenu={handleContextMenu}
-      className={`mermaid-block relative my-3 overflow-hidden rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] ${onEdit ? 'cursor-pointer' : ''}`}
-    >
+    <div className="relative">
+      <div
+        ref={blockRef}
+        data-mermaid-card
+        data-mermaid-index={diagramIndex}
+        onClick={handleOpenEditor}
+        onContextMenu={handleContextMenu}
+        className={`mermaid-block relative overflow-hidden rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] ${onEdit ? 'cursor-pointer' : ''}`}
+      >
       <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-[var(--text-hint)]">
-        <span>Diagrama Mermaid</span>
+        <span>{t(language, 'notes', 'mermaidCardTitle')}</span>
         <div className="flex items-center gap-1">
-          {onStartDrag && (
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.stopPropagation();
-                onStartDrag(event);
-              }}
-              className="rounded p-1 text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-              title="Arrastrar diagrama"
-            >
-              <GripVertical size={12} />
-            </button>
-          )}
           {onEdit && (
             <button
               type="button"
@@ -138,7 +154,7 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onSt
                 onEdit();
               }}
               className="rounded p-1 text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-              title="Editar diagrama"
+              title={t(language, 'notes', 'editDiagram')}
             >
               <Pencil size={12} />
             </button>
@@ -151,7 +167,7 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onSt
                 onMoveUp();
               }}
               className="rounded p-1 text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-              title="Mover arriba"
+              title={t(language, 'notes', 'moveUp')}
             >
               <ArrowUp size={12} />
             </button>
@@ -164,7 +180,7 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onSt
                 onMoveDown();
               }}
               className="rounded p-1 text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-              title="Mover abajo"
+              title={t(language, 'notes', 'moveDown')}
             >
               <ArrowDown size={12} />
             </button>
@@ -177,7 +193,7 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onSt
                 onDuplicate();
               }}
               className="rounded p-1 text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-              title="Duplicar diagrama"
+              title={t(language, 'notes', 'duplicateDiagram')}
             >
               <CopyPlus size={12} />
             </button>
@@ -190,7 +206,7 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onSt
                 onDelete();
               }}
               className="rounded p-1 text-red-300 transition hover:bg-red-500/10 hover:text-red-400"
-              title="Eliminar diagrama"
+              title={t(language, 'notes', 'deleteDiagram')}
             >
               <Trash2 size={12} />
             </button>
@@ -209,7 +225,7 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onSt
       ) : !svg ? (
         <div className="flex items-center gap-2 px-3 py-4 text-xs text-[var(--text-hint)]">
           <Loader2 size={14} className="animate-spin" />
-          Renderizando diagrama…
+          {t(language, 'notes', 'renderingDiagram')}
         </div>
       ) : (
         <div className="relative">
@@ -230,7 +246,7 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onSt
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                 >
                   <Pencil size={13} />
-                  Editar diagrama
+                  {t(language, 'notes', 'editDiagram')}
                 </button>
               )}
               {onDuplicate && (
@@ -243,7 +259,7 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onSt
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                 >
                   <CopyPlus size={13} />
-                  Duplicar diagrama
+                  {t(language, 'notes', 'duplicateDiagram')}
                 </button>
               )}
               {onDelete && (
@@ -256,7 +272,7 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onSt
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-red-300 transition hover:bg-red-500/10 hover:text-red-400"
                 >
                   <Trash2 size={13} />
-                  Eliminar diagrama
+                  {t(language, 'notes', 'deleteDiagram')}
                 </button>
               )}
             </div>
@@ -269,6 +285,7 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onSt
           />
         </div>
       )}
+      </div>
     </div>
   );
 }

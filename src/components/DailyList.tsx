@@ -5,20 +5,26 @@ import { useAppStore } from '../store/appStore';
 import { toISO } from '../lib/colombianHolidays';
 import { AppCalendarGrid } from './AppDatePicker';
 import { placeMenuAtPointer } from '../lib/menuPosition';
-
-const MONTHS_ES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-];
-const DAYS_SHORT = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-const DAYS_FULL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+import { MONTHS_TITLE, t } from '../lib/i18n';
 
 const ESTIMATED_DAILY_ENTRY_MENU = { width: 190, height: 96 };
 const ESTIMATED_DAILY_EMPTY_MENU = { width: 200, height: 130 };
 
-function formatDayLabel(iso: string) {
+function formatDayLabel(iso: string, language: 'es' | 'en') {
+  const locale = language === 'es' ? 'es-CO' : 'en-US';
   const d = new Date(iso + 'T12:00:00');
-  return `${DAYS_FULL[d.getDay()]} ${d.getDate()} de ${MONTHS_ES[d.getMonth()]} de ${d.getFullYear()}`;
+  const weekday = new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(d);
+  const month = new Intl.DateTimeFormat(locale, { month: 'long' }).format(d);
+  if (language === 'es') {
+    return `${weekday} ${d.getDate()} de ${month} de ${d.getFullYear()}`;
+  }
+  return `${weekday}, ${month} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
+function formatShortWeekday(iso: string, language: 'es' | 'en') {
+  const locale = language === 'es' ? 'es-CO' : 'en-US';
+  const d = new Date(iso + 'T12:00:00');
+  return new Intl.DateTimeFormat(locale, { weekday: 'short' }).format(d);
 }
 
 export function DailyList() {
@@ -33,6 +39,7 @@ export function DailyList() {
     loadDailyMonth,
     setActiveDailyDate,
     setActiveDailyMonth,
+    language,
   } = useAppStore(
     useShallow((s) => ({
       activeSection: s.activeSection,
@@ -45,6 +52,7 @@ export function DailyList() {
       loadDailyMonth: s.loadDailyMonth,
       setActiveDailyDate: s.setActiveDailyDate,
       setActiveDailyMonth: s.setActiveDailyMonth,
+      language: s.language,
     }))
   );
 
@@ -189,7 +197,7 @@ export function DailyList() {
   const handleCopyToClipboard = async () => {
     if (!contextMenu) return;
     const content = dailyEntries[contextMenu.date] ?? '';
-    const label = formatDayLabel(contextMenu.date);
+    const label = formatDayLabel(contextMenu.date, language);
     await navigator.clipboard.writeText(`${label}\n\n${content}`);
     setCopied(true);
     setTimeout(() => {
@@ -226,7 +234,7 @@ export function DailyList() {
   if (activeSection !== 'dailys') return null;
 
   const [yearStr, monthStr] = activeDailyMonth.split('-');
-  const monthLabel = `${MONTHS_ES[parseInt(monthStr) - 1]} ${yearStr}`;
+  const monthLabel = `${MONTHS_TITLE[language][parseInt(monthStr) - 1]} ${yearStr}`;
   const isCurrentMonth = activeDailyMonth === todayYM;
 
   // Entradas del mes activo, ordenadas desc
@@ -255,7 +263,7 @@ export function DailyList() {
     <div className="flex h-full w-72 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
-        <h2 className="text-sm font-semibold text-[var(--text-primary)]">Dailys</h2>
+        <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'dailys', 'title')}</h2>
         <div className="flex items-center gap-1">
           {/* Selector de fecha – dropdown con posición fija */}
           <div className="relative">
@@ -267,10 +275,10 @@ export function DailyList() {
                   ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]'
                   : 'text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
               }`}
-              title="Añadir daily para una fecha anterior"
+              title={t(language, 'dailys', 'addPreviousDateTitle')}
             >
               <CalendarPlus size={13} />
-              Fecha
+              {t(language, 'dailys', 'dateBtn')}
             </button>
           </div>
           {/* Dropdown renderizado con position:fixed para evitar clipping */}
@@ -281,7 +289,7 @@ export function DailyList() {
               className="w-60 rounded-xl border border-[var(--border)] bg-[var(--bg-panel)] p-3 shadow-2xl"
             >
               <p className="mb-2 text-[11px] font-medium text-[var(--text-hint)]">
-                Elegir fecha para daily
+                {t(language, 'dailys', 'pickDateTitle')}
               </p>
               <AppCalendarGrid
                 value=""
@@ -296,10 +304,10 @@ export function DailyList() {
           <button
             onClick={createTodayDaily}
             className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-indigo-400 transition hover:bg-indigo-500/10"
-            title="Crear daily de hoy"
+            title={t(language, 'dailys', 'createTodayTitle')}
           >
             <Plus size={14} />
-            Hoy
+            {t(language, 'dailys', 'todayBtn')}
           </button>
         </div>
       </div>
@@ -309,7 +317,7 @@ export function DailyList() {
         <button
           onClick={goPrevMonth}
           className="rounded p-1 text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-          title="Mes anterior"
+          title={t(language, 'dailys', 'prevMonth')}
         >
           <ChevronLeft size={14} />
         </button>
@@ -318,7 +326,7 @@ export function DailyList() {
           onClick={goNextMonth}
           disabled={isCurrentMonth}
           className="rounded p-1 text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:cursor-default disabled:opacity-30"
-          title="Mes siguiente"
+          title={t(language, 'dailys', 'nextMonth')}
         >
           <ChevronRight size={14} />
         </button>
@@ -342,9 +350,9 @@ export function DailyList() {
       >
         {monthDates.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
-            <p className="text-sm text-[var(--text-hint)]">Sin dailys este mes</p>
+            <p className="text-sm text-[var(--text-hint)]">{t(language, 'dailys', 'emptyMonth')}</p>
             <p className="mt-1 text-xs text-[var(--text-faint)]">
-              Pulsa "Hoy" o elige una fecha con el botón "Fecha"
+              {t(language, 'dailys', 'emptyMonthHint')}
             </p>
           </div>
         ) : (
@@ -353,7 +361,7 @@ export function DailyList() {
             const isActive = activeDailyDate === date;
             const isToday = date === todayISO;
             const d = new Date(date + 'T12:00:00');
-            const dayName = DAYS_SHORT[d.getDay()];
+            const dayName = formatShortWeekday(date, language);
             const dayNum = d.getDate();
             const lines = (dailyEntries[date] ?? '').split('\n').filter((l) => l.trim().startsWith('-'));
             const taskCount = lines.length;
@@ -391,7 +399,7 @@ export function DailyList() {
                         </span>
                         {taskCount > 0 && (
                           <span className="text-[10px] text-[var(--text-faint)]">
-                            {taskCount} {taskCount === 1 ? 'tarea' : 'tareas'}
+                            {taskCount} {taskCount === 1 ? t(language, 'dailys', 'taskOne') : t(language, 'dailys', 'taskMany')}
                           </span>
                         )}
                       </div>
@@ -403,7 +411,7 @@ export function DailyList() {
                   {isToday && (
                     <div className="flex justify-end mt-1">
                       <span className="rounded-full bg-indigo-500/20 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-indigo-400">
-                        HOY
+                        {t(language, 'dailys', 'todayBadge')}
                       </span>
                     </div>
                   )}
@@ -413,7 +421,7 @@ export function DailyList() {
                 <button
                   onClick={(e) => { e.stopPropagation(); setDeleteConfirmDate(date); }}
                   className="absolute right-2 top-2 rounded-md p-1 text-[var(--text-faint)] opacity-0 transition group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-400"
-                  title="Eliminar daily"
+                  title={t(language, 'dailys', 'deleteDailyTitle')}
                 >
                   <Trash2 size={12} />
                 </button>
@@ -442,7 +450,7 @@ export function DailyList() {
           className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
         >
           <Plus size={13} />
-          <span>Añadir daily de hoy</span>
+          <span>{t(language, 'dailys', 'addToday')}</span>
         </button>
         <button
           onClick={() => {
@@ -454,7 +462,7 @@ export function DailyList() {
           className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
         >
           <CalendarPlus size={13} />
-          <span>Añadir daily para otra fecha</span>
+          <span>{t(language, 'dailys', 'addOtherDate')}</span>
         </button>
         <div className="mx-2 my-1 border-t border-[var(--border)]" />
         <button
@@ -468,7 +476,7 @@ export function DailyList() {
           className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
         >
           <ChevronRight size={13} />
-          <span>Ir al día actual</span>
+          <span>{t(language, 'dailys', 'goToCurrentDay')}</span>
         </button>
       </div>
     )}
@@ -485,7 +493,7 @@ export function DailyList() {
           className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
         >
           {copied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
-          <span>{copied ? 'Copiado' : 'Copiar al portapapeles'}</span>
+          <span>{copied ? t(language, 'dailys', 'copied') : t(language, 'dailys', 'copyClipboard')}</span>
         </button>
         <div className="mx-2 my-1 border-t border-[var(--border)]" />
         <button
@@ -493,7 +501,7 @@ export function DailyList() {
           className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-red-400 transition hover:bg-red-500/10"
         >
           <Trash2 size={13} />
-          <span>Eliminar daily</span>
+          <span>{t(language, 'dailys', 'deleteDailyTitle')}</span>
         </button>
       </div>
     )}
@@ -504,25 +512,25 @@ export function DailyList() {
         <div className="w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
           <div className="mb-3 flex items-center gap-2 text-red-400">
             <Trash2 size={16} />
-            <h3 className="text-sm font-semibold">Eliminar daily</h3>
+            <h3 className="text-sm font-semibold">{t(language, 'dailys', 'deleteDailyTitle')}</h3>
           </div>
           <p className="text-xs leading-relaxed text-[var(--text-hint)]">
-            Se eliminará el registro del{' '}
-            <span className="font-medium text-[var(--text-body)]">{formatDayLabel(deleteConfirmDate)}</span>.
-            Esta acción no se puede deshacer.
+            {t(language, 'dailys', 'deleteConfirmPrefix')}{' '}
+            <span className="font-medium text-[var(--text-body)]">{formatDayLabel(deleteConfirmDate, language)}</span>.
+            {' '}{t(language, 'dailys', 'deleteConfirmSuffix')}
           </p>
           <div className="mt-4 flex justify-end gap-2">
             <button
               onClick={() => setDeleteConfirmDate(null)}
               className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
             >
-              Cancelar
+              {t(language, 'dailys', 'cancel')}
             </button>
             <button
               onClick={handleConfirmDelete}
               className="rounded-lg bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition hover:bg-red-500/20"
             >
-              Eliminar
+              {t(language, 'dailys', 'delete')}
             </button>
           </div>
         </div>

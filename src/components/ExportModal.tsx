@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { flushSync } from 'react-dom';
-import { X, Download, Clipboard, Check } from 'lucide-react';
+import { X, Download, Clipboard, Check, Loader2 } from 'lucide-react';
 import { Note } from '../types';
 import { exportNote } from '../lib/exportNote';
+import { useAppStore } from '../store/appStore';
+import { t } from '../lib/i18n';
 
 type Format = 'md' | 'txt' | 'pdf';
 
@@ -11,21 +13,21 @@ interface Props {
   onClose: () => void;
 }
 
-const FORMATS: { value: Format; label: string; desc: string }[] = [
-  { value: 'md', label: 'Markdown', desc: '.md — con formato original' },
-  { value: 'txt', label: 'Texto plano', desc: '.txt — sin formato' },
-  { value: 'pdf', label: 'PDF', desc: '.pdf — documento portable' },
-];
-
 function buildText(note: Note, format: Format): string {
   if (format === 'md') return `# ${note.title}\n\n${note.content}`;
   return `${note.title}\n\n${note.content}`;
 }
 
 export function ExportModal({ note, onClose }: Props) {
+  const { language } = useAppStore();
   const [format, setFormat] = useState<Format>('md');
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
+  const FORMATS: { value: Format; label: string; desc: string }[] = [
+    { value: 'md', label: t(language, 'extras', 'formatMd'), desc: t(language, 'extras', 'formatMdDesc') },
+    { value: 'txt', label: t(language, 'extras', 'formatTxt'), desc: t(language, 'extras', 'formatTxtDesc') },
+    { value: 'pdf', label: t(language, 'extras', 'formatPdf'), desc: t(language, 'extras', 'formatPdfDesc') },
+  ];
 
   const handleCopy = async () => {
     const text = buildText(note, format === 'pdf' ? 'txt' : format);
@@ -55,7 +57,7 @@ export function ExportModal({ note, onClose }: Props) {
       >
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-[var(--text-primary)]">Exportar nota</h3>
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'extras', 'exportTitle')}</h3>
           <button
             onClick={onClose}
             className="rounded-md p-0.5 text-[var(--text-muted)] hover:bg-[var(--bg-hover)] transition"
@@ -66,12 +68,12 @@ export function ExportModal({ note, onClose }: Props) {
 
         {/* Nombre de la nota */}
         <p className="mb-4 truncate text-xs text-[var(--text-muted)]">
-          {note.title || 'Sin título'}
+          {note.title || t(language, 'extras', 'untitled')}
         </p>
 
         {/* Selector de formato */}
         <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-[var(--text-hint)]">
-          Formato
+          {t(language, 'extras', 'format')}
         </p>
         <div className="mb-5 flex flex-col gap-1.5">
           {FORMATS.map(({ value, label, desc }) => (
@@ -108,17 +110,15 @@ export function ExportModal({ note, onClose }: Props) {
             className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition disabled:opacity-60"
           >
             {copied ? <Check size={13} className="text-green-400" /> : <Clipboard size={13} />}
-            {copied ? '¡Copiado!' : 'Copiar'}
+            {copied ? t(language, 'extras', 'copied') : t(language, 'extras', 'copy')}
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs text-white transition hover:bg-indigo-500 disabled:opacity-60"
           >
-            <Download size={13} />
-            <span className="inline-block min-w-[72px] text-center">
-              {saving ? 'Guardando…' : 'Guardar archivo'}
-            </span>
+            {saving ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+            <span className="inline-block min-w-[90px] text-center">{t(language, 'extras', 'saveFile')}</span>
           </button>
         </div>
       </div>

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { invoke } from '@tauri-apps/api/core';
-import { Task, Note, AppConfig, ViewMode, Theme, ActiveSection, Shortcuts, DEFAULT_SHORTCUTS, OvertimeEntry, OvertimeMonthMeta, GitConfig, GitStatus, GitRemoteStatus } from '../types';
+import { Task, Note, AppConfig, ViewMode, Theme, ActiveSection, StartupScreen, Language, Shortcuts, DEFAULT_SHORTCUTS, OvertimeEntry, OvertimeMonthMeta, GitConfig, GitStatus, GitRemoteStatus } from '../types';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
 import { generateOvertimeXlsx } from '../lib/overtimeExcel';
 import { fs, pickFolder, pickFile, saveDialog, SearchResult } from '../lib/invoke';
@@ -58,6 +58,8 @@ interface AppState {
 
   // Theme + Settings
   theme: Theme;
+  startupScreen: StartupScreen;
+  language: Language;
   fontSize: number;
   isSettingsOpen: boolean;
   shortcuts: Shortcuts;
@@ -79,8 +81,11 @@ interface AppState {
   loadProjects: () => Promise<void>;
   loadTasks: (project?: string | null) => Promise<void>;
   selectProject: (project: string | null) => void;
-  createProject: (name: string) => Promise<void>;
-  createTask: (title: string, project?: string) => Promise<Task>;
+  createProject: (name: string, parent?: string) => Promise<void>;
+  renameProject: (project: string, newName: string) => Promise<void>;
+  deleteProject: (project: string) => Promise<void>;
+  moveProject: (project: string, targetParent: string) => Promise<void>;
+  createTask: (title: string, project?: string, content?: string) => Promise<Task>;
   updateTask: (task: Task) => Promise<void>;
   deleteTask: (task: Task) => Promise<void>;
   setActiveTask: (task: Task | null) => void;
@@ -135,6 +140,8 @@ interface AppState {
   removeLinkedPath: (task: Task, path: string) => Promise<void>;
   toggleSidebar: () => void;
   setTheme: (theme: Theme) => void;
+  setStartupScreen: (screen: StartupScreen) => Promise<void>;
+  setLanguage: (lang: Language) => Promise<void>;
   setFontSize: (size: number) => void;
   setShortcut: (action: keyof Shortcuts, key: string) => void;
   toggleSettings: () => void;
@@ -243,13 +250,21 @@ export function applyFontSizeToDOM(size: number) {
   document.documentElement.style.setProperty('--app-font-size', `${size}px`);
 }
 
-export function applyThemeToDOM(theme: Theme) {
+export function applyThemeToDOM(theme: Theme, animate = false) {
   const resolved =
     theme === 'system'
       ? window.matchMedia('(prefers-color-scheme: dark)').matches
         ? 'dark'
         : 'light'
       : theme;
+
+  if (animate) {
+    document.documentElement.classList.add('theme-animating');
+    window.setTimeout(() => {
+      document.documentElement.classList.remove('theme-animating');
+    }, 280);
+  }
+
   document.documentElement.dataset.theme = resolved;
 }
 
@@ -279,6 +294,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   searchResults: [],
   isSidebarCollapsed: false,
   theme: (localStorage.getItem('theme') as Theme) || 'system',
+  startupScreen: 'dashboard',
+  language: (localStorage.getItem('language') as Language) || 'es',
   fontSize: Number(localStorage.getItem('fontSize')) || 17,
   isSettingsOpen: false,
   shortcuts: (() => {
@@ -321,7 +338,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (cfg?.basePath) {
         const exists = await fs.exists(cfg.basePath);
         if (exists) {
-          set({ basePath: cfg.basePath, isConfigured: true });
+          const startupScreen: StartupScreen = cfg.startupScreen ?? 'dashboard';
+          const language: Language = (cfg.language as Language) ?? 'es';
+          set({
+            basePath: cfg.basePath,
+            isConfigured: true,
+            startupScreen,
+            activeSection: startupScreen,
+            language,
+          });
 
           const lastProject = cfg.lastOpenedProject || null;
           const lastNoteFolder = cfg.lastOpenedNoteFolder ?? null;
@@ -358,7 +383,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const picked = await pickFolder();
     if (!picked) return;
 
-    const { configDir } = get();
+    const { configDir, startupScreen } = get();
     const basePath = picked;
 
     await fs.createDir(`${basePath}/projects/inbox`);
@@ -366,7 +391,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await fs.createDir(`${basePath}/dailys`);
 
     if (configDir) {
-      await saveConfig(configDir, { basePath });
+      await saveConfig(configDir, { basePath, startupScreen, language: get().language });
     }
 
     set({ basePath, isConfigured: true });
@@ -380,7 +405,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const picked = await pickFolder();
     if (!picked) return;
 
-    const { configDir } = get();
+    const { configDir, startupScreen } = get();
     const basePath = picked;
 
     await fs.createDir(`${basePath}/projects/inbox`);
@@ -388,7 +413,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await fs.createDir(`${basePath}/dailys`);
 
     if (configDir) {
-      await saveConfig(configDir, { basePath });
+      await saveConfig(configDir, { basePath, startupScreen, language: get().language });
     }
 
     set({ basePath, activeProject: null, activeNote: null, activeNoteFolder: null, tasks: [], notes: [] });
@@ -406,13 +431,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const pDir = projectsDir(basePath);
       await fs.createDir(pDir).catch(() => {});
-      const entries = await fs.listDir(pDir);
-      const projects = entries.filter((e) => e.is_dir).map((e) => e.name);
-      if (!projects.includes('inbox')) {
+      if (!(await fs.exists(`${pDir}/inbox`))) {
         await fs.createDir(`${pDir}/inbox`);
-        projects.unshift('inbox');
       }
-      set({ projects: ['inbox', ...projects.filter((p) => p !== 'inbox')] });
+
+      async function scanProjects(dirPath: string, prefix: string): Promise<string[]> {
+        const entries = await fs.listDir(dirPath).catch(() => []);
+        const result: string[] = [];
+        for (const e of (entries as { name: string; path: string; is_dir: boolean }[]).filter((x) => x.is_dir)) {
+          const fullPath = prefix ? `${prefix}/${e.name}` : e.name;
+          result.push(fullPath);
+          const children = await scanProjects(e.path, fullPath);
+          result.push(...children);
+        }
+        return result;
+      }
+
+      const all = await scanProjects(pDir, '');
+      const uniq = Array.from(new Set(all));
+      const sorted = uniq.sort((a, b) => a.localeCompare(b));
+      set({ projects: sorted.includes('inbox') ? sorted : ['inbox', ...sorted] });
     } catch (e) {
       console.error('loadProjects error:', e);
     }
@@ -423,7 +461,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!basePath) return;
     try {
       const { projects } = get();
-      const targetProjects = project ? [project] : projects;
+      const targetProjects = project
+        ? projects.filter((p) => p === project || p.startsWith(project + '/'))
+        : projects;
       const tasksByProject = await Promise.all(
         targetProjects.map(async (p) => {
           const dir = projectDir(basePath, p);
@@ -446,21 +486,118 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectProject: (project) => {
     set({ activeProject: project });
     get().loadTasks(project);
-    const { configDir, basePath } = get();
+    const { configDir, basePath, activeNoteFolder, startupScreen } = get();
     if (configDir && basePath) {
-      saveConfig(configDir, { basePath, lastOpenedProject: project ?? undefined }).catch(() => {});
+      saveConfig(configDir, {
+        basePath,
+        startupScreen,
+        language: get().language,
+        lastOpenedProject: project ?? undefined,
+        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
+      }).catch(() => {});
     }
   },
 
-  createProject: async (name) => {
+  createProject: async (name, parent = '') => {
     const { basePath } = get();
     if (!basePath) return;
     const sanitized = name.trim().toLowerCase().replace(/\s+/g, '-');
-    await fs.createDir(projectDir(basePath, sanitized));
+    const fullPath = parent ? `${parent}/${sanitized}` : sanitized;
+    await fs.createDir(projectDir(basePath, fullPath));
     await get().loadProjects();
   },
 
-  createTask: async (title, project) => {
+  renameProject: async (project, newName) => {
+    const { basePath, tasks, activeTask, activeProject } = get();
+    if (!basePath || !project || !newName.trim()) return;
+
+    const parts = project.split('/');
+    parts[parts.length - 1] = newName.trim().toLowerCase().replace(/\s+/g, '-');
+    const renamed = parts.join('/');
+    if (renamed === project) return;
+
+    await fs.renameDir(projectDir(basePath, project), projectDir(basePath, renamed));
+
+    const updatedTasks = tasks.map((t) => {
+      if (t.project !== project && !t.project.startsWith(project + '/')) return t;
+      const newProject = renamed + t.project.slice(project.length);
+      return { ...t, project: newProject, filePath: taskFilePath(basePath, newProject, t.id) };
+    });
+
+    await Promise.all(
+      updatedTasks
+        .filter((t) => t.project === renamed || t.project.startsWith(renamed + '/'))
+        .map((t) => fs.writeFile(t.filePath, serializeTask(t)))
+    );
+
+    const newActiveTask = activeTask && (activeTask.project === project || activeTask.project.startsWith(project + '/'))
+      ? updatedTasks.find((t) => t.id === activeTask.id) ?? null
+      : activeTask;
+
+    const newActiveProject = activeProject === project
+      ? renamed
+      : activeProject?.startsWith(project + '/')
+        ? renamed + activeProject.slice(project.length)
+        : activeProject;
+
+    set({ tasks: updatedTasks, activeTask: newActiveTask, activeProject: newActiveProject });
+    await get().loadProjects();
+  },
+
+  deleteProject: async (project) => {
+    const { basePath, tasks, activeTask, activeProject } = get();
+    if (!basePath || !project || project === 'inbox') return;
+
+    await fs.deleteDir(projectDir(basePath, project));
+
+    const remainingTasks = tasks.filter((t) => t.project !== project && !t.project.startsWith(project + '/'));
+    const nextActiveTask = activeTask && (activeTask.project === project || activeTask.project.startsWith(project + '/'))
+      ? null
+      : activeTask;
+    const nextActiveProject = activeProject === project || activeProject?.startsWith(project + '/') ? null : activeProject;
+
+    set({ tasks: remainingTasks, activeTask: nextActiveTask, activeProject: nextActiveProject });
+    await get().loadProjects();
+  },
+
+  moveProject: async (project, targetParent) => {
+    const { basePath, tasks, activeTask, activeProject } = get();
+    if (!basePath || !project) return;
+    if (targetParent === project || targetParent.startsWith(project + '/')) return;
+
+    const leaf = project.split('/').pop()!;
+    const moved = targetParent ? `${targetParent}/${leaf}` : leaf;
+    if (moved === project) return;
+
+    await fs.renameDir(projectDir(basePath, project), projectDir(basePath, moved));
+
+    const updatedTasks = tasks.map((t) => {
+      if (t.project !== project && !t.project.startsWith(project + '/')) return t;
+      const newProject = moved + t.project.slice(project.length);
+      return { ...t, project: newProject, filePath: taskFilePath(basePath, newProject, t.id) };
+    });
+
+    await Promise.all(
+      updatedTasks
+        .filter((t) => t.project === moved || t.project.startsWith(moved + '/'))
+        .map((t) => fs.writeFile(t.filePath, serializeTask(t)))
+    );
+
+    const newActiveTask = activeTask && (activeTask.project === project || activeTask.project.startsWith(project + '/'))
+      ? updatedTasks.find((t) => t.id === activeTask.id) ?? null
+      : activeTask;
+
+    const newActiveProject = activeProject === project
+      ? moved
+      : activeProject?.startsWith(project + '/')
+        ? moved + activeProject.slice(project.length)
+        : activeProject;
+
+    set({ tasks: updatedTasks, activeTask: newActiveTask, activeProject: newActiveProject });
+    await get().loadProjects();
+  },
+
+  createTask: async (title, project, content = '') => {
     const { basePath, activeProject } = get();
     if (!basePath) throw new Error('No base path');
     const targetProject = project || activeProject || 'inbox';
@@ -474,7 +611,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       project: targetProject,
       created: today,
       linked_paths: [],
-      content: '',
+      content,
       filePath: taskFilePath(basePath, targetProject, id),
     };
     await fs.writeFile(task.filePath, serializeTask(task));
@@ -624,9 +761,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set({ activeNoteFolder: folder, activeNote: null });
     get().loadNotes(folder);
-    const { configDir, basePath } = get();
+    const { configDir, basePath, activeProject, startupScreen } = get();
     if (configDir && basePath) {
-      saveConfig(configDir, { basePath, lastOpenedNoteFolder: folder ?? undefined }).catch(() => {});
+      saveConfig(configDir, {
+        basePath,
+        startupScreen,
+        language: get().language,
+        lastOpenedProject: activeProject ?? undefined,
+        lastOpenedNoteFolder: folder ?? undefined,
+      }).catch(() => {});
     }
   },
 
@@ -1209,8 +1352,37 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setTheme: (theme: Theme) => {
     localStorage.setItem('theme', theme);
-    applyThemeToDOM(theme);
+    applyThemeToDOM(theme, true);
     set({ theme });
+  },
+
+  setStartupScreen: async (screen) => {
+    set({ startupScreen: screen, activeSection: screen });
+    const { configDir, basePath, activeProject, activeNoteFolder } = get();
+    if (configDir && basePath) {
+      await saveConfig(configDir, {
+        basePath,
+        startupScreen: screen,
+        language: get().language,
+        lastOpenedProject: activeProject ?? undefined,
+        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
+      });
+    }
+  },
+
+  setLanguage: async (lang) => {
+    localStorage.setItem('language', lang);
+    set({ language: lang });
+    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder } = get();
+    if (configDir && basePath) {
+      await saveConfig(configDir, {
+        basePath,
+        startupScreen,
+        language: lang,
+        lastOpenedProject: activeProject ?? undefined,
+        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
+      });
+    }
   },
 
   setFontSize: (size: number) => {

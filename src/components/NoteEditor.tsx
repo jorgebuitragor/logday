@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useReducer, useRef } from 'react';
+import { useState, useEffect, useCallback, useReducer, useRef, useMemo } from 'react';
 import {
   Pin,
   Trash2,
@@ -39,9 +39,12 @@ import {
   PanelBottomClose,
   TableProperties,
   Share2,
+  Smile,
 } from 'lucide-react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import { TextSelection } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import UnderlineExt from '@tiptap/extension-underline';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
@@ -57,6 +60,8 @@ import { TableCell } from '@tiptap/extension-table-cell';
 import Dropcursor from '@tiptap/extension-dropcursor';
 import { Markdown } from 'tiptap-markdown';
 import Paragraph from '@tiptap/extension-paragraph';
+import { common, createLowlight } from 'lowlight';
+import { gemoji } from 'gemoji';
 import { useAppStore } from '../store/appStore';
 import { Note } from '../types';
 import { ExportModal } from './ExportModal';
@@ -65,6 +70,35 @@ import { MermaidEditorModal } from './MermaidEditorModal';
 import { MermaidBlock } from './MermaidBlock';
 import { formatMermaidFence, parseMermaidBlocks } from '../lib/mermaid';
 import { ImageLinkModal } from './ImageLinkModal';
+import { CODE_LANGUAGE_OPTIONS, normalizeCodeLanguage } from '../lib/codeHighlight';
+import { placeMenuNearAnchor } from '../lib/menuPosition';
+import { t as tFn } from '../lib/i18n';
+
+const lowlight = createLowlight(common);
+const BLOCK_MENU_ESTIMATED_SIZE = { width: 220, height: 260 };
+
+type BlockMenuType =
+  | 'paragraph'
+  | 'heading'
+  | 'mermaid'
+  | 'code'
+  | 'blockquote'
+  | 'list'
+  | 'taskList'
+  | 'table'
+  | 'horizontalRule'
+  | 'other';
+
+interface BlockContextMenuState {
+  x: number;
+  y: number;
+  anchorRect: { left: number; top: number; right: number; bottom: number };
+  ready: boolean;
+  blockIndex: number;
+  type: BlockMenuType;
+  headingLevel?: number;
+  mermaidIndex?: number;
+}
 
 // Paragraph personalizado: serializa como \n simple en lugar de \n\n
 // tiptap-markdown lee extension.storage.markdown para sobrescribir el serializer
@@ -108,7 +142,137 @@ function normalizeEditorMarkdown(raw: string): string {
     }
   }
 
-  return lines.join('\n');
+  const normalized = lines.join('\n');
+
+  // Fuerza enlaces autolink (<https://...>) a formato explicito [url](url)
+  // para mantener consistencia con la vista markdown solicitada.
+  return normalized.replace(/<((?:https?:\/\/)[^\s<>]+)>/g, '[$1]($1)');
+}
+
+type EmojiOption = {
+  emoji: string;
+  nameEs: string;
+  nameEn: string;
+  keywords: string[];
+};
+
+const ES_TOKEN_MAP: Record<string, string[]> = {
+  smile: ['sonrisa'],
+  happy: ['feliz', 'alegre'],
+  laugh: ['risa'],
+  joy: ['alegria'],
+  wink: ['guino'],
+  heart: ['corazon', 'amor'],
+  fire: ['fuego'],
+  rocket: ['cohete', 'lanzamiento'],
+  target: ['objetivo', 'meta'],
+  pin: ['fijar'],
+  note: ['nota'],
+  memo: ['memo', 'nota'],
+  warning: ['advertencia', 'alerta'],
+  check: ['check', 'completo', 'listo'],
+  cross: ['error', 'cerrar'],
+  attachment: ['adjunto'],
+  file: ['archivo'],
+  idea: ['idea'],
+  think: ['pensar'],
+  thinking: ['pensando'],
+  pray: ['rezar', 'gracias'],
+  clap: ['aplauso'],
+  cool: ['genial'],
+  star: ['estrella'],
+  sun: ['sol'],
+  moon: ['luna'],
+  party: ['fiesta'],
+  celebration: ['celebracion'],
+  bug: ['error', 'bug'],
+  fix: ['arreglo'],
+  lock: ['candado', 'seguridad'],
+  key: ['llave'],
+  money: ['dinero'],
+  time: ['tiempo'],
+  clock: ['reloj'],
+  calendar: ['calendario'],
+  phone: ['telefono'],
+  email: ['correo'],
+  work: ['trabajo'],
+  task: ['tarea'],
+};
+
+const ES_CATEGORY_MAP: Record<string, string[]> = {
+  smileys: ['caras', 'emociones'],
+  emotion: ['emocion'],
+  people: ['personas'],
+  body: ['cuerpo'],
+  animals: ['animales'],
+  nature: ['naturaleza'],
+  food: ['comida'],
+  drink: ['bebida'],
+  travel: ['viaje'],
+  places: ['lugares'],
+  activities: ['actividades'],
+  objects: ['objetos'],
+  symbols: ['simbolos'],
+  flags: ['banderas'],
+};
+
+function tokenizeWords(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/_/g, ' ')
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+function buildSpanishName(nameEn: string): string {
+  const words = tokenizeWords(nameEn);
+  const translated = words.map((w) => ES_TOKEN_MAP[w]?.[0] || w);
+  if (translated.length === 0) return 'Emoji';
+  const sentence = translated.join(' ');
+  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
+}
+
+function buildEmojiCatalog(): EmojiOption[] {
+  const out: EmojiOption[] = [];
+  const seenEmoji = new Set<string>();
+
+  for (const item of gemoji) {
+    if (!item?.emoji || seenEmoji.has(item.emoji)) continue;
+    seenEmoji.add(item.emoji);
+
+    const englishBaseName = (item.names?.[0] || item.description || 'emoji').replace(/_/g, ' ');
+    const tokens = new Set<string>();
+
+    for (const n of item.names || []) tokenizeWords(n).forEach((w) => tokens.add(w));
+    for (const t of item.tags || []) tokenizeWords(t).forEach((w) => tokens.add(w));
+    tokenizeWords(item.description || '').forEach((w) => tokens.add(w));
+    tokenizeWords(item.category || '').forEach((w) => tokens.add(w));
+
+    const esTokens = new Set<string>();
+    for (const token of tokens) {
+      (ES_TOKEN_MAP[token] || []).forEach((w) => esTokens.add(w));
+      (ES_CATEGORY_MAP[token] || []).forEach((w) => esTokens.add(w));
+    }
+
+    out.push({
+      emoji: item.emoji,
+      nameEs: buildSpanishName(englishBaseName),
+      nameEn: englishBaseName,
+      keywords: Array.from(new Set([...tokens, ...esTokens])),
+    });
+  }
+
+  return out;
+}
+
+const EMOJI_CATALOG: EmojiOption[] = buildEmojiCatalog();
+
+function normalizeEmojiSearchTerm(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
 }
 
 export function NoteEditor() {
@@ -116,6 +280,7 @@ export function NoteEditor() {
     activeNote,
     activeSection,
     noteFolders,
+    language,
     updateNote,
     deleteNote,
     setActiveNote,
@@ -132,16 +297,22 @@ export function NoteEditor() {
   const [mdContent, setMdContent] = useState('');
   const [showBlockMenu, setShowBlockMenu] = useState(false);
   const [showCaseMenu, setShowCaseMenu] = useState(false);
+  const [showEmojiMenu, setShowEmojiMenu] = useState(false);
+  const [emojiQuery, setEmojiQuery] = useState('');
   const [showTableMenu, setShowTableMenu] = useState(false);
   const [showDiagramMenu, setShowDiagramMenu] = useState(false);
   const [showDiagramEditor, setShowDiagramEditor] = useState(false);
   const [diagramEditorMode, setDiagramEditorMode] = useState<'create' | 'edit'>('create');
   const [diagramDraft, setDiagramDraft] = useState('');
   const [editingDiagramIndex, setEditingDiagramIndex] = useState<number | null>(null);
+  const [openCodeLangMenuIndex, setOpenCodeLangMenuIndex] = useState<number | null>(null);
+  const [codeLangSearch, setCodeLangSearch] = useState('');
   const [showImageModal, setShowImageModal] = useState(false);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [isDroppingFile, setIsDroppingFile] = useState(false);
-  const [mermaidPreviewAnchors, setMermaidPreviewAnchors] = useState<Array<{ top: number; height: number }>>([]);
+  const [mermaidPreviewAnchors, setMermaidPreviewAnchors] = useState<Array<{ top: number; left: number; width: number; height: number }>>([]);
+  const [mermaidRenderedHeights, setMermaidRenderedHeights] = useState<number[]>([]);
+  const [codeBlockAnchors, setCodeBlockAnchors] = useState<Array<{ top: number; left: number; height: number }>>([]);
   const [blockDropLineY, setBlockDropLineY] = useState<number | null>(null);
   const [blockDropFlashY, setBlockDropFlashY] = useState<number | null>(null);
   const [dragHandlePos, setDragHandlePos] = useState<{ top: number; left: number; visible: boolean }>({
@@ -149,6 +320,9 @@ export function NoteEditor() {
     left: 0,
     visible: false,
   });
+  const [dragHandleBlockIndex, setDragHandleBlockIndex] = useState<number | null>(null);
+  const [blockContextMenu, setBlockContextMenu] = useState<BlockContextMenuState | null>(null);
+  const [isPointerInsideBlockContextMenu, setIsPointerInsideBlockContextMenu] = useState(false);
   const savedRangeRef = useRef<{ from: number; to: number } | null>(null);
   const hoverBlockIndexRef = useRef<number | null>(null);
   const isBlockDraggingRef = useRef(false);
@@ -156,13 +330,55 @@ export function NoteEditor() {
   const sourceTextareaRef = useRef<HTMLTextAreaElement>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const editorPaneRef = useRef<HTMLDivElement>(null);
+  const codeLangSelectionRef = useRef<{ from: number; to: number; scrollTop: number } | null>(null);
   const blockMenuRef = useRef<HTMLDivElement>(null);
   const caseMenuRef = useRef<HTMLDivElement>(null);
+  const emojiMenuRef = useRef<HTMLDivElement>(null);
   const tableMenuRef = useRef<HTMLDivElement>(null);
   const diagramMenuRef = useRef<HTMLDivElement>(null);
+  const blockContextMenuRef = useRef<HTMLDivElement>(null);
   const [, forceUpdate] = useReducer((x: number) => x + 1, 0);
 
+  const filteredEmojis = useMemo(() => {
+    const q = normalizeEmojiSearchTerm(emojiQuery);
+    if (!q) return EMOJI_CATALOG;
+    return EMOJI_CATALOG.filter((item) => {
+      const haystack = normalizeEmojiSearchTerm(`${item.nameEs} ${item.nameEn} ${item.keywords.join(' ')}`);
+      return haystack.includes(q);
+    });
+  }, [emojiQuery]);
+
+  const visibleEmojis = useMemo(() => {
+    const q = normalizeEmojiSearchTerm(emojiQuery);
+    const maxWithoutQuery = 240;
+    const maxWithQuery = 400;
+    return (q ? filteredEmojis.slice(0, maxWithQuery) : filteredEmojis.slice(0, maxWithoutQuery));
+  }, [emojiQuery, filteredEmojis]);
+
   const mermaidBlocks = parseMermaidBlocks(mdContent);
+  const codeBlockLanguages = useMemo(() => {
+    const lines = mdContent.split('\n');
+    const languages: string[] = [];
+    let inFence = false;
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      const fenceMatch = line.match(/^```([a-zA-Z0-9_-]+)?(?:\s+.*)?$/);
+      if (!fenceMatch) continue;
+
+      if (!inFence) {
+        inFence = true;
+        const language = normalizeCodeLanguage((fenceMatch[1] || '').toLowerCase() || 'plaintext');
+        if (language !== 'mermaid') {
+          languages.push(language);
+        }
+      } else {
+        inFence = false;
+      }
+    }
+
+    return languages;
+  }, [mdContent]);
 
   const applyCase = (mode: 'upper' | 'lower' | 'sentence' | 'title') => {
     if (!editor) return;
@@ -186,9 +402,13 @@ export function NoteEditor() {
     extensions: [
       StarterKit.configure({
         paragraph: false,
+        codeBlock: false,
         heading: { levels: [1, 2, 3, 4, 5] },
         bulletList: { keepMarks: true },
         orderedList: { keepMarks: true },
+      }),
+      CodeBlockLowlight.configure({
+        lowlight,
       }),
       CompactParagraph,
       UnderlineExt,
@@ -233,6 +453,7 @@ export function NoteEditor() {
       // Cierra menús desplegables al escribir
       setShowBlockMenu(false);
       setShowCaseMenu(false);
+      setShowEmojiMenu(false);
       setShowTableMenu(false);
       setShowDiagramMenu(false);
     },
@@ -260,18 +481,114 @@ export function NoteEditor() {
     const paneRect = pane.getBoundingClientRect();
     const anchors = Array.from(root.querySelectorAll('pre'))
       .filter((pre) => pre.querySelector('code.language-mermaid'))
-      .map((pre) => {
+      .map((pre, index) => {
+        // Keep extra breathing room so the following blocks never overlap
+        // while Mermaid finishes layouting fonts/SVG internals.
+        const renderedHeight = (mermaidRenderedHeights[index] ?? 220) + 32;
+        const placeholderHeight = Math.max(240, renderedHeight);
         const rect = pre.getBoundingClientRect();
         return {
           top: rect.top - paneRect.top + pane.scrollTop,
-          height: Math.max(rect.height, 220),
+          left: rect.left - paneRect.left,
+          width: rect.width,
+          height: Math.max(rect.height, placeholderHeight),
         };
       });
 
     setMermaidPreviewAnchors((prev) => {
       if (
         prev.length === anchors.length &&
-        prev.every((a, i) => Math.abs(a.top - anchors[i].top) < 0.5 && Math.abs(a.height - anchors[i].height) < 0.5)
+        prev.every(
+          (a, i) =>
+            Math.abs(a.top - anchors[i].top) < 0.5 &&
+            Math.abs(a.left - anchors[i].left) < 0.5 &&
+            Math.abs(a.width - anchors[i].width) < 0.5 &&
+            Math.abs(a.height - anchors[i].height) < 0.5,
+        )
+      ) {
+        return prev;
+      }
+      return anchors;
+    });
+  }, [editor, mermaidRenderedHeights, viewMode]);
+
+  useEffect(() => {
+    if (viewMode === 'source' || !editor) return;
+    let root: HTMLElement | null = null;
+    try {
+      root = editor.view.dom as HTMLElement;
+    } catch {
+      root = null;
+    }
+    if (!root) return;
+
+    const applyPlaceholderHeights = () => {
+      const mermaidPres = Array.from(root.querySelectorAll('pre')).filter((pre) => pre.querySelector('code.language-mermaid'));
+      mermaidPres.forEach((pre, index) => {
+        // Add a fixed safety buffer to avoid visual overlap with subsequent blocks.
+        const renderedHeight = (mermaidRenderedHeights[index] ?? 220) + 32;
+        const placeholderHeight = Math.max(240, renderedHeight);
+        const currentHeight = parseFloat(pre.style.height || '0');
+        if (Math.abs(currentHeight - placeholderHeight) > 0.5) {
+          // Explicit height keeps document flow aligned with overlayed Mermaid card.
+          pre.style.height = `${placeholderHeight}px`;
+          pre.style.minHeight = `${placeholderHeight}px`;
+        }
+      });
+      recalcMermaidPreviewAnchors();
+    };
+
+    applyPlaceholderHeights();
+    const raf = requestAnimationFrame(applyPlaceholderHeights);
+    return () => cancelAnimationFrame(raf);
+  }, [editor, mermaidRenderedHeights, mermaidBlocks.length, recalcMermaidPreviewAnchors, viewMode]);
+
+  useEffect(() => {
+    setMermaidRenderedHeights((prev) => {
+      if (prev.length <= mermaidBlocks.length) return prev;
+      return prev.slice(0, mermaidBlocks.length);
+    });
+  }, [mermaidBlocks.length]);
+
+  const recalcCodeBlockAnchors = useCallback(() => {
+    if (viewMode === 'source') {
+      setCodeBlockAnchors([]);
+      return;
+    }
+
+    const pane = editorPaneRef.current;
+    let root: HTMLElement | null = null;
+    try {
+      root = editor ? (editor.view.dom as HTMLElement) : null;
+    } catch {
+      root = null;
+    }
+
+    if (!pane || !root) {
+      setCodeBlockAnchors([]);
+      return;
+    }
+
+    const paneRect = pane.getBoundingClientRect();
+    const anchors = Array.from(root.querySelectorAll('pre'))
+      .filter((pre) => !pre.querySelector('code.language-mermaid'))
+      .map((pre) => {
+        const rect = pre.getBoundingClientRect();
+        return {
+          top: rect.top - paneRect.top + pane.scrollTop,
+          left: rect.left - paneRect.left,
+          height: rect.height,
+        };
+      });
+
+    setCodeBlockAnchors((prev) => {
+      if (
+        prev.length === anchors.length &&
+        prev.every((a, i) =>
+          Math.abs(a.top - anchors[i].top) < 0.5 &&
+          Math.abs(a.left - anchors[i].left) < 0.5 &&
+          Math.abs(a.height - anchors[i].height) < 0.5
+        )
       ) {
         return prev;
       }
@@ -284,6 +601,161 @@ export function NoteEditor() {
     for (let i = 0; i < index; i += 1) pos += doc.child(i).nodeSize;
     return pos;
   }, []);
+
+  const getBlockContextMeta = useCallback((blockIndex: number): Omit<BlockContextMenuState, 'x' | 'y' | 'anchorRect' | 'ready'> | null => {
+    if (!editor) return null;
+    if (blockIndex < 0 || blockIndex >= editor.state.doc.childCount) return null;
+
+    const node = editor.state.doc.child(blockIndex);
+    const typeName = node.type.name;
+
+    if (typeName === 'heading') {
+      const level = Number((node.attrs as { level?: number })?.level || 1);
+      return { blockIndex, type: 'heading', headingLevel: level };
+    }
+
+    if (typeName === 'paragraph') {
+      return { blockIndex, type: 'paragraph' };
+    }
+
+    if (typeName === 'codeBlock') {
+      const lang = String((node.attrs as { language?: string })?.language || '').toLowerCase();
+      if (lang === 'mermaid') {
+        let mermaidIndex = -1;
+        for (let i = 0; i <= blockIndex; i += 1) {
+          const current = editor.state.doc.child(i);
+          if (current.type.name !== 'codeBlock') continue;
+          const currentLang = String((current.attrs as { language?: string })?.language || '').toLowerCase();
+          if (currentLang === 'mermaid') mermaidIndex += 1;
+        }
+        return { blockIndex, type: 'mermaid', mermaidIndex: mermaidIndex >= 0 ? mermaidIndex : undefined };
+      }
+      return { blockIndex, type: 'code' };
+    }
+
+    if (typeName === 'blockquote') return { blockIndex, type: 'blockquote' };
+    if (typeName === 'taskList') return { blockIndex, type: 'taskList' };
+    if (typeName === 'bulletList' || typeName === 'orderedList') return { blockIndex, type: 'list' };
+    if (typeName === 'table') return { blockIndex, type: 'table' };
+    if (typeName === 'horizontalRule') return { blockIndex, type: 'horizontalRule' };
+
+    return { blockIndex, type: 'other' };
+  }, [editor]);
+
+  const closeBlockContextMenu = useCallback(() => {
+    setBlockContextMenu(null);
+    setIsPointerInsideBlockContextMenu(false);
+  }, []);
+
+  const insertEmptyParagraphAroundBlock = useCallback((target: 'above' | 'below') => {
+    if (!editor || !blockContextMenu) return;
+    const { blockIndex } = blockContextMenu;
+    if (blockIndex < 0 || blockIndex >= editor.state.doc.childCount) return;
+
+    const schema = editor.state.doc.type.schema;
+    const paragraph = schema.nodes.paragraph?.create();
+    if (!paragraph) return;
+
+    const insertIndex = target === 'above' ? blockIndex : blockIndex + 1;
+    const tr = editor.state.tr;
+    const insertPos = topLevelPosAtIndex(editor.state.doc, insertIndex);
+    tr.insert(insertPos, paragraph);
+    tr.setSelection(TextSelection.create(tr.doc, insertPos + 1));
+    editor.view.dispatch(tr.scrollIntoView());
+    editor.view.focus();
+    closeBlockContextMenu();
+  }, [blockContextMenu, closeBlockContextMenu, editor, topLevelPosAtIndex]);
+
+  const deleteBlockFromContextMenu = useCallback(() => {
+    if (!editor || !blockContextMenu) return;
+    const { blockIndex } = blockContextMenu;
+    if (blockIndex < 0 || blockIndex >= editor.state.doc.childCount) return;
+
+    if (editor.state.doc.childCount <= 1) {
+      editor.commands.setContent('');
+      editor.commands.focus('start');
+      closeBlockContextMenu();
+      return;
+    }
+
+    const doc = editor.state.doc;
+    const node = doc.child(blockIndex);
+    const from = topLevelPosAtIndex(doc, blockIndex);
+    const to = from + node.nodeSize;
+    const tr = editor.state.tr.delete(from, to);
+    editor.view.dispatch(tr.scrollIntoView());
+    editor.view.focus();
+    closeBlockContextMenu();
+  }, [blockContextMenu, closeBlockContextMenu, editor, topLevelPosAtIndex]);
+
+  const setBlockHeadingLevel = useCallback((level: 0 | 1 | 2 | 3 | 4 | 5) => {
+    if (!editor || !blockContextMenu) return;
+    const { blockIndex, type } = blockContextMenu;
+    if (!(type === 'paragraph' || type === 'heading')) return;
+    if (blockIndex < 0 || blockIndex >= editor.state.doc.childCount) return;
+
+    const doc = editor.state.doc;
+    const node = doc.child(blockIndex);
+    const from = topLevelPosAtIndex(doc, blockIndex);
+    const schema = doc.type.schema;
+    const textAlign = (node.attrs as { textAlign?: string })?.textAlign;
+
+    const tr = editor.state.tr;
+    if (level === 0) {
+      tr.setNodeMarkup(from, schema.nodes.paragraph, textAlign ? { textAlign } : {});
+    } else {
+      tr.setNodeMarkup(from, schema.nodes.heading, textAlign ? { level, textAlign } : { level });
+    }
+    editor.view.dispatch(tr.scrollIntoView());
+    editor.view.focus();
+    closeBlockContextMenu();
+  }, [blockContextMenu, closeBlockContextMenu, editor, topLevelPosAtIndex]);
+
+  const openMermaidEditorFromContextMenu = useCallback(() => {
+    if (!blockContextMenu || blockContextMenu.type !== 'mermaid') return;
+    const index = blockContextMenu.mermaidIndex;
+    if (index == null) return;
+    const block = mermaidBlocks[index];
+    if (!block) return;
+    setDiagramEditorMode('edit');
+    setDiagramDraft(block.code);
+    setEditingDiagramIndex(index);
+    setShowDiagramMenu(false);
+    setShowDiagramEditor(true);
+    closeBlockContextMenu();
+  }, [blockContextMenu, closeBlockContextMenu, mermaidBlocks]);
+
+  const handleDragHandleContextMenu = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const index = dragHandleBlockIndex ?? hoverBlockIndexRef.current;
+    if (index == null) return;
+
+    const meta = getBlockContextMeta(index);
+    if (!meta) return;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const anchorRect = {
+      left: rect.left,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+    };
+    const point = placeMenuNearAnchor(
+      anchorRect,
+      BLOCK_MENU_ESTIMATED_SIZE,
+      { sideX: 'right', alignY: 'start', gap: 8, padding: 8, flip: true },
+    );
+
+    setBlockContextMenu({
+      ...meta,
+      anchorRect,
+      ready: false,
+      x: point.x,
+      y: point.y,
+    });
+  }, [dragHandleBlockIndex, getBlockContextMeta]);
 
   const getBlockAtCoords = useCallback((clientX: number, clientY: number, probeOffsetX = 0) => {
     if (!editor) return null;
@@ -310,14 +782,16 @@ export function NoteEditor() {
   }, [editor]);
 
   const startBlockPointerDrag = useCallback((event: React.PointerEvent) => {
+    if (event.button !== 0) return;
     if (!editor) return;
-    const sourceIndexValue = hoverBlockIndexRef.current;
+    const sourceIndexValue = dragHandleBlockIndex ?? hoverBlockIndexRef.current;
     if (sourceIndexValue == null) return;
     const sourceIndex = sourceIndexValue;
     if (sourceIndex < 0 || sourceIndex >= editor.state.doc.childCount) return;
 
     event.preventDefault();
     event.stopPropagation();
+    setBlockContextMenu(null);
     isBlockDraggingRef.current = true;
     setDragHandlePos((prev) => ({ ...prev, visible: false }));
     document.body.style.cursor = 'grabbing';
@@ -388,7 +862,7 @@ export function NoteEditor() {
 
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onUp);
-  }, [editor, getBlockAtCoords, topLevelPosAtIndex]);
+  }, [dragHandleBlockIndex, editor, getBlockAtCoords, topLevelPosAtIndex]);
 
   const handleEditorPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!editor || isBlockDraggingRef.current) return;
@@ -402,20 +876,51 @@ export function NoteEditor() {
     }
 
     const { blockEl, blockIndex } = target;
+
+    // Mientras el menu contextual de bloque este abierto, bloqueamos el drawer al bloque origen.
+    if (blockContextMenu && blockIndex !== blockContextMenu.blockIndex) {
+      return;
+    }
+
     hoverBlockIndexRef.current = blockIndex;
+    setDragHandleBlockIndex(blockIndex);
 
     const rect = blockEl.getBoundingClientRect();
     const paneRect = pane.getBoundingClientRect();
     const top = rect.top - paneRect.top + pane.scrollTop + Math.max(0, (rect.height - 18) / 2);
     const left = 6;
     setDragHandlePos({ top, left, visible: true });
-  }, [editor, getBlockAtCoords]);
+  }, [blockContextMenu, editor, getBlockAtCoords]);
 
   const handleEditorPointerLeave = useCallback(() => {
     if (isBlockDraggingRef.current) return;
     setDragHandlePos((prev) => ({ ...prev, visible: false }));
+    setDragHandleBlockIndex(null);
     hoverBlockIndexRef.current = null;
   }, []);
+
+  useEffect(() => {
+    if (!blockContextMenu) return;
+
+    if (!dragHandlePos.visible) {
+      closeBlockContextMenu();
+      return;
+    }
+
+    if (
+      dragHandleBlockIndex !== null
+      && dragHandleBlockIndex !== blockContextMenu.blockIndex
+      && !isPointerInsideBlockContextMenu
+    ) {
+      closeBlockContextMenu();
+    }
+  }, [
+    blockContextMenu,
+    closeBlockContextMenu,
+    dragHandleBlockIndex,
+    dragHandlePos.visible,
+    isPointerInsideBlockContextMenu,
+  ]);
 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -460,21 +965,29 @@ export function NoteEditor() {
     const handler = () => {
       forceUpdate();
       recalcMermaidPreviewAnchors();
+      recalcCodeBlockAnchors();
     };
     editor.on('transaction', handler);
     return () => { editor.off('transaction', handler); };
-  }, [editor, recalcMermaidPreviewAnchors]);
+  }, [editor, recalcMermaidPreviewAnchors, recalcCodeBlockAnchors]);
 
   useEffect(() => {
     recalcMermaidPreviewAnchors();
   }, [mermaidBlocks, recalcMermaidPreviewAnchors]);
 
   useEffect(() => {
+    recalcCodeBlockAnchors();
+  }, [mdContent, recalcCodeBlockAnchors]);
+
+  useEffect(() => {
     if (viewMode === 'source') return;
     const pane = editorPaneRef.current;
     if (!pane) return;
 
-    const onRelayout = () => recalcMermaidPreviewAnchors();
+    const onRelayout = () => {
+      recalcMermaidPreviewAnchors();
+      recalcCodeBlockAnchors();
+    };
     pane.addEventListener('scroll', onRelayout);
     window.addEventListener('resize', onRelayout);
     requestAnimationFrame(onRelayout);
@@ -483,20 +996,84 @@ export function NoteEditor() {
       pane.removeEventListener('scroll', onRelayout);
       window.removeEventListener('resize', onRelayout);
     };
-  }, [viewMode, recalcMermaidPreviewAnchors]);
+  }, [viewMode, recalcMermaidPreviewAnchors, recalcCodeBlockAnchors]);
 
   // Cierra dropdowns al hacer click fuera de ellos
   useEffect(() => {
-    if (!showBlockMenu && !showCaseMenu && !showTableMenu && !showDiagramMenu) return;
+    if (!showBlockMenu
+      && !showCaseMenu
+      && !showEmojiMenu
+      && !showTableMenu
+      && !showDiagramMenu
+      && openCodeLangMenuIndex === null
+      && !blockContextMenu) return;
     const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
       if (showBlockMenu && !blockMenuRef.current?.contains(e.target as Node)) setShowBlockMenu(false);
       if (showCaseMenu && !caseMenuRef.current?.contains(e.target as Node)) setShowCaseMenu(false);
+      if (showEmojiMenu && !emojiMenuRef.current?.contains(e.target as Node)) setShowEmojiMenu(false);
       if (showTableMenu && !tableMenuRef.current?.contains(e.target as Node)) setShowTableMenu(false);
       if (showDiagramMenu && !diagramMenuRef.current?.contains(e.target as Node)) setShowDiagramMenu(false);
+      if (openCodeLangMenuIndex !== null && !target.closest('.code-block-lang-select-wrap')) {
+        setOpenCodeLangMenuIndex(null);
+        setCodeLangSearch('');
+      }
+      if (blockContextMenu && !blockContextMenuRef.current?.contains(e.target as Node)) {
+        setBlockContextMenu(null);
+      }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [showBlockMenu, showCaseMenu, showTableMenu, showDiagramMenu]);
+  }, [showBlockMenu, showCaseMenu, showEmojiMenu, showTableMenu, showDiagramMenu, openCodeLangMenuIndex, blockContextMenu]);
+
+  useEffect(() => {
+    if (!blockContextMenu) return;
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setBlockContextMenu(null);
+      }
+    };
+    document.addEventListener('keydown', onEscape);
+    return () => document.removeEventListener('keydown', onEscape);
+  }, [blockContextMenu]);
+
+  useEffect(() => {
+    if (!blockContextMenu || !blockContextMenuRef.current) return;
+
+    const rect = blockContextMenuRef.current.getBoundingClientRect();
+    const nextPoint = placeMenuNearAnchor(
+      blockContextMenu.anchorRect,
+      { width: rect.width, height: rect.height },
+      { sideX: 'right', alignY: 'start', gap: 8, padding: 8, flip: true },
+    );
+
+    const hasSamePosition = Math.abs(nextPoint.x - blockContextMenu.x) < 1 && Math.abs(nextPoint.y - blockContextMenu.y) < 1;
+    const shouldShow = !blockContextMenu.ready;
+    if (hasSamePosition && !shouldShow) return;
+
+    setBlockContextMenu((prev) => {
+      if (!prev) return prev;
+      if (prev.blockIndex !== blockContextMenu.blockIndex) return prev;
+      return {
+        ...prev,
+        ready: true,
+        x: nextPoint.x,
+        y: nextPoint.y,
+      };
+    });
+  }, [blockContextMenu]);
+
+  useEffect(() => {
+    if (!blockContextMenu) return;
+    const closeOnScroll = () => {
+      setBlockContextMenu(null);
+    };
+
+    window.addEventListener('scroll', closeOnScroll, true);
+    return () => {
+      window.removeEventListener('scroll', closeOnScroll, true);
+    };
+  }, [blockContextMenu]);
 
   const syncMarkdownToEditor = useCallback((nextMarkdown: string) => {
     setMdContent(nextMarkdown);
@@ -606,10 +1183,105 @@ export function NoteEditor() {
     syncMarkdownToEditor(nextMarkdown);
   }, [mdContent, syncMarkdownToEditor]);
 
+  const handleChangeCodeLanguage = useCallback((index: number, language: string) => {
+    if (index < 0) return;
+    const targetLanguage = language === 'plaintext' ? '' : language.trim().toLowerCase();
+
+    // Prefer direct ProseMirror node update to avoid full content reset (prevents visual jumps).
+    if (editor) {
+      if (!codeLangSelectionRef.current) {
+        codeLangSelectionRef.current = {
+          from: editor.state.selection.from,
+          to: editor.state.selection.to,
+          scrollTop: editorPaneRef.current?.scrollTop ?? 0,
+        };
+      }
+      let codeBlockCounter = -1;
+      let targetPos: number | null = null;
+      let currentLanguage: string | null = null;
+
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name !== 'codeBlock') return true;
+        const lang = String((node.attrs as { language?: string })?.language || '').toLowerCase();
+        if (lang === 'mermaid') return true;
+
+        codeBlockCounter += 1;
+        if (codeBlockCounter === index) {
+          targetPos = pos;
+          currentLanguage = (node.attrs as { language?: string | null })?.language ?? null;
+          return false;
+        }
+        return true;
+      });
+
+      if (targetPos !== null) {
+        const nextLanguage = targetLanguage || null;
+        if (currentLanguage !== nextLanguage) {
+          const currentNode = editor.state.doc.nodeAt(targetPos);
+          const currentAttrs = (currentNode?.attrs || {}) as Record<string, unknown>;
+          const tr = editor.state.tr;
+          tr.setNodeMarkup(targetPos, undefined, {
+            ...currentAttrs,
+            language: nextLanguage,
+          });
+          editor.view.dispatch(tr);
+
+          const saved = codeLangSelectionRef.current;
+          if (saved) {
+            const maxPos = editor.state.doc.content.size;
+            const from = Math.max(1, Math.min(saved.from, maxPos));
+            const to = Math.max(1, Math.min(saved.to, maxPos));
+            const selTr = editor.state.tr.setSelection(TextSelection.create(editor.state.doc, from, to));
+            editor.view.dispatch(selTr);
+            editor.view.focus();
+            if (editorPaneRef.current) {
+              editorPaneRef.current.scrollTop = saved.scrollTop;
+            }
+          }
+        }
+        codeLangSelectionRef.current = null;
+        return;
+      }
+    }
+
+    // Fallback path based on raw markdown manipulation.
+    const lines = mdContent.split('\n');
+    let inFence = false;
+    let codeBlockCounter = -1;
+
+    for (let i = 0; i < lines.length; i += 1) {
+      const fenceMatch = lines[i].trim().match(/^```([a-zA-Z0-9_-]+)?(?:\s+.*)?$/);
+      if (!fenceMatch) continue;
+
+      const fenceLanguage = (fenceMatch[1] || '').toLowerCase();
+
+      if (!inFence) {
+        // Opening fence
+        inFence = true;
+        if (fenceLanguage === 'mermaid') continue;
+
+        codeBlockCounter += 1;
+        if (codeBlockCounter !== index) continue;
+
+        lines[i] = targetLanguage ? `\`\`\`${targetLanguage}` : '```';
+        break;
+      }
+
+      // Closing fence
+      inFence = false;
+    }
+
+    const nextMarkdown = lines.join('\n');
+
+    if (nextMarkdown !== mdContent) {
+      syncMarkdownToEditor(nextMarkdown);
+    }
+  }, [mdContent, syncMarkdownToEditor]);
+
 
   const getDiagramLabel = (code: string, index: number) => {
     const firstLine = code.split('\n').map((line) => line.trim()).find(Boolean);
-    return firstLine ? `Diagrama ${index + 1}: ${firstLine}` : `Diagrama ${index + 1}`;
+    return firstLine ? `${tFn(language, 'notes', 'diagramLabel')} ${index + 1}: ${firstLine}` : `${tFn(language, 'notes', 'diagramLabel')} ${index + 1}`;
   };
 
   const handleTitleChange = (val: string) => {
@@ -653,7 +1325,7 @@ export function NoteEditor() {
     return (
       <div className="flex flex-1 items-center justify-center bg-[var(--bg-base)]">
         <div className="text-center">
-          <p className="text-sm text-[var(--text-hint)]">Selecciona o crea una nota</p>
+          <p className="text-sm text-[var(--text-hint)]">{tFn(language, 'notes', 'selectOrCreate')}</p>
         </div>
       </div>
     );
@@ -707,23 +1379,23 @@ export function NoteEditor() {
           <div className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
             <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
               <Trash2 size={15} className="text-red-400" />
-              Eliminar nota
+              {tFn(language, 'notes', 'confirmDeleteTitle')}
             </div>
             <p className="mb-4 text-xs text-[var(--text-secondary)]">
-              ¿Eliminar <span className="font-medium text-[var(--text-primary)]">"{activeNote.title || 'Sin título'}"</span>? Esta acción no se puede deshacer.
+              {tFn(language, 'notes', 'confirmDeleteMsg')} <span className="font-medium text-[var(--text-primary)]">"{activeNote.title || tFn(language, 'notes', 'untitled')}"</span>? {tFn(language, 'notes', 'confirmDeleteDesc')}
             </p>
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setShowDeleteConfirm(false)}
                 className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
               >
-                Cancelar
+                {tFn(language, 'notes', 'cancel')}
               </button>
               <button
                 onClick={() => { setShowDeleteConfirm(false); handleDelete(); }}
                 className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600"
               >
-                Eliminar
+                {tFn(language, 'notes', 'delete')}
               </button>
             </div>
           </div>
@@ -739,7 +1411,7 @@ export function NoteEditor() {
                 ? 'text-amber-400 bg-amber-400/10'
                 : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'
             }`}
-            title={activeNote.pinned ? 'Desanclar' : 'Anclar'}
+            title={activeNote.pinned ? tFn(language, 'notes', 'unpinTitle') : tFn(language, 'notes', 'pinTitle')}
           >
             <Pin size={14} />
           </button>
@@ -752,7 +1424,7 @@ export function NoteEditor() {
                   ? 'text-[var(--text-primary)] bg-[var(--bg-tertiary)] shadow-sm'
                   : 'text-[var(--text-faint)] hover:text-[var(--text-secondary)]'
               }`}
-              title="Visualizar"
+              title={tFn(language, 'notes', 'viewWysiwyg')}
             >
               <Eye size={12} />
             </button>
@@ -763,7 +1435,7 @@ export function NoteEditor() {
                   ? 'text-[var(--text-primary)] bg-[var(--bg-tertiary)] shadow-sm'
                   : 'text-[var(--text-faint)] hover:text-[var(--text-secondary)]'
               }`}
-              title="Markdown fuente"
+              title={tFn(language, 'notes', 'viewSource')}
             >
               <FileText size={12} />
             </button>
@@ -774,7 +1446,7 @@ export function NoteEditor() {
                   ? 'text-[var(--text-primary)] bg-[var(--bg-tertiary)] shadow-sm'
                   : 'text-[var(--text-faint)] hover:text-[var(--text-secondary)]'
               }`}
-              title="Comparar"
+              title={tFn(language, 'notes', 'viewSplit')}
             >
               <Columns2 size={12} />
             </button>
@@ -784,10 +1456,10 @@ export function NoteEditor() {
             <button
               onClick={() => setShowMoveMenu((v) => !v)}
               className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-              title="Mover a carpeta"
+              title={tFn(language, 'notes', 'moveFolder')}
             >
               <FolderOpen size={13} />
-              <span>{activeNote.folder || 'Sin carpeta'}</span>
+              <span>{activeNote.folder || tFn(language, 'notes', 'noFolder')}</span>
               <ChevronDown size={11} />
             </button>
             {showMoveMenu && (
@@ -799,11 +1471,11 @@ export function NoteEditor() {
                     className="flex w-full items-center gap-2 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
                   >
                     <FolderOpen size={11} />
-                    {f || 'Sin carpeta'}
+                    {f || tFn(language, 'notes', 'noFolder')}
                   </button>
                 ))}
                 {moveTargets.length === 0 && (
-                  <p className="px-3 py-2 text-xs text-[var(--text-faint)] italic">Sin otras carpetas</p>
+                  <p className="px-3 py-2 text-xs text-[var(--text-faint)] italic">{tFn(language, 'notes', 'noOtherFolders')}</p>
                 )}
               </div>
             )}
@@ -815,21 +1487,21 @@ export function NoteEditor() {
           <button
             onClick={() => setShowExportModal(true)}
             className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-            title="Exportar nota"
+            title={tFn(language, 'notes', 'exportNote')}
           >
             <Download size={13} />
           </button>
           <button
             onClick={() => setShowDeleteConfirm(true)}
             className="rounded-lg p-1.5 text-[var(--text-hint)] transition hover:text-red-400 hover:bg-red-400/10"
-            title="Eliminar nota"
+            title={tFn(language, 'notes', 'deleteNote')}
           >
             <Trash2 size={14} />
           </button>
           <button
             onClick={() => setActiveNote(null)}
             className="rounded-lg p-1.5 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-            title="Cerrar"
+            title={tFn(language, 'notes', 'close')}
           >
             <X size={14} />
           </button>
@@ -847,10 +1519,10 @@ export function NoteEditor() {
                 : editor?.isActive('heading', { level: 4 }) ? '4'
                 : editor?.isActive('heading', { level: 5 }) ? '5'
                 : '0';
-              const labels: Record<string, string> = { '0': 'Párrafo', '1': 'Título 1', '2': 'Título 2', '3': 'Título 3', '4': 'Título 4', '5': 'Título 5' };
+              const labels: Record<string, string> = { '0': tFn(language, 'notes', 'blockParagraph'), '1': tFn(language, 'notes', 'blockH1'), '2': tFn(language, 'notes', 'blockH2'), '3': tFn(language, 'notes', 'blockH3'), '4': tFn(language, 'notes', 'blockH4'), '5': tFn(language, 'notes', 'blockH5') };
               const options = [
-                { v: '0', label: 'Párrafo' }, { v: '1', label: 'Título 1' }, { v: '2', label: 'Título 2' },
-                { v: '3', label: 'Título 3' }, { v: '4', label: 'Título 4' }, { v: '5', label: 'Título 5' },
+                { v: '0', label: tFn(language, 'notes', 'blockParagraph') }, { v: '1', label: tFn(language, 'notes', 'blockH1') }, { v: '2', label: tFn(language, 'notes', 'blockH2') },
+                { v: '3', label: tFn(language, 'notes', 'blockH3') }, { v: '4', label: tFn(language, 'notes', 'blockH4') }, { v: '5', label: tFn(language, 'notes', 'blockH5') },
               ];
               return (
                 <div className="relative mr-1" ref={blockMenuRef}>
@@ -891,32 +1563,32 @@ export function NoteEditor() {
             <div className="mx-1 h-4 w-px bg-[var(--border)]" />
 
             {/* Bloque: cita y código */}
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleBlockquote().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('blockquote') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Cita"><Quote size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleCodeBlock().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('codeBlock') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Bloque de código"><Braces size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleBlockquote().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('blockquote') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={tFn(language, 'notes', 'tipQuote')}><Quote size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleCodeBlock().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('codeBlock') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={tFn(language, 'notes', 'tipCodeBlock')}><Braces size={13} /></button>
 
             <div className="mx-1 h-4 w-px bg-[var(--border)]" />
 
             {/* Inline styles */}
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleBold().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('bold') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Negrita"><Bold size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleItalic().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('italic') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Cursiva"><Italic size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleUnderline().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('underline') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Subrayado"><Underline size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleStrike().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('strike') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Tachado"><Strikethrough size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleCode().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('code') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Código inline"><Code size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleHighlight().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('highlight') ? 'text-amber-400 bg-amber-400/10' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Resaltado"><Highlighter size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleBold().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('bold') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={tFn(language, 'notes', 'tipBold')}><Bold size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleItalic().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('italic') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={tFn(language, 'notes', 'tipItalic')}><Italic size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleUnderline().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('underline') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={tFn(language, 'notes', 'tipUnderline')}><Underline size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleStrike().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('strike') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={tFn(language, 'notes', 'tipStrike')}><Strikethrough size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleCode().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('code') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={tFn(language, 'notes', 'tipCode')}><Code size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleHighlight().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('highlight') ? 'text-amber-400 bg-amber-400/10' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={tFn(language, 'notes', 'tipHighlight')}><Highlighter size={13} /></button>
 
             <div className="mx-1 h-4 w-px bg-[var(--border)]" />
 
             {/* Listas */}
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleBulletList().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('bulletList') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Lista de puntos"><List size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleOrderedList().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('orderedList') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Lista numerada"><ListOrdered size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleTaskList().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('taskList') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Lista de tareas"><CheckSquare size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleBulletList().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('bulletList') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={tFn(language, 'notes', 'tipBulletList')}><List size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleOrderedList().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('orderedList') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={tFn(language, 'notes', 'tipOrderedList')}><ListOrdered size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleTaskList().run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('taskList') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={tFn(language, 'notes', 'tipTaskList')}><CheckSquare size={13} /></button>
 
             <div className="mx-1 h-4 w-px bg-[var(--border)]" />
 
             {/* Alineación */}
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().setTextAlign('left').run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive({ textAlign: 'left' }) ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Alinear izquierda"><AlignLeft size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().setTextAlign('center').run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive({ textAlign: 'center' }) ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Centrar"><AlignCenter size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().setTextAlign('right').run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive({ textAlign: 'right' }) ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title="Alinear derecha"><AlignRight size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().setTextAlign('left').run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive({ textAlign: 'left' }) ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={tFn(language, 'notes', 'tipAlignLeft')}><AlignLeft size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().setTextAlign('center').run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive({ textAlign: 'center' }) ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={tFn(language, 'notes', 'tipAlignCenter')}><AlignCenter size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().setTextAlign('right').run(); }} className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive({ textAlign: 'right' }) ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`} title={tFn(language, 'notes', 'tipAlignRight')}><AlignRight size={13} /></button>
 
             <div className="mx-1 h-4 w-px bg-[var(--border)]" />
 
@@ -925,7 +1597,7 @@ export function NoteEditor() {
               <button
                 onMouseDown={(e) => { e.preventDefault(); setShowCaseMenu(v => !v); }}
                 className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition"
-                title="Cambiar capitalización"
+                title={tFn(language, 'notes', 'tipCase')}
               ><CaseSensitive size={14} /></button>
               {showCaseMenu && (
                 <div
@@ -933,10 +1605,10 @@ export function NoteEditor() {
                   onMouseDown={(e) => e.preventDefault()}
                 >
                   {([
-                    { mode: 'upper', label: 'TODO EN MAYÚSCULAS' },
-                    { mode: 'lower', label: 'todo en minúsculas' },
-                    { mode: 'sentence', label: 'Tipo oración' },
-                    { mode: 'title', label: 'Cada Palabra En Mayúscula' },
+                    { mode: 'upper', label: tFn(language, 'notes', 'caseUpper') },
+                    { mode: 'lower', label: tFn(language, 'notes', 'caseLower') },
+                    { mode: 'sentence', label: tFn(language, 'notes', 'caseSentence') },
+                    { mode: 'title', label: tFn(language, 'notes', 'caseTitle') },
                   ] as const).map(({ mode, label }) => (
                     <button
                       key={mode}
@@ -951,6 +1623,66 @@ export function NoteEditor() {
             </div>
 
             {/* Extras */}
+            <div className="relative" ref={emojiMenuRef}>
+              <button
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setShowEmojiMenu((v) => {
+                    const next = !v;
+                    if (next) setEmojiQuery('');
+                    return next;
+                  });
+                }}
+                className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition"
+                title={tFn(language, 'notes', 'tipEmoji')}
+              >
+                <Smile size={13} />
+              </button>
+              {showEmojiMenu && (
+                <div
+                  className="absolute top-full right-0 mt-1 z-50 w-[260px] rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] p-2 shadow-lg"
+                  onMouseDown={(e) => e.preventDefault()}
+                >
+                  <p className="mb-1.5 px-1 text-[10px] uppercase tracking-wider text-[var(--text-hint)]">{tFn(language, 'notes', 'emojisLabel')}</p>
+                  <input
+                    type="text"
+                    value={emojiQuery}
+                    onChange={(e) => setEmojiQuery(e.target.value)}
+                    placeholder={tFn(language, 'notes', 'emojiSearchPlaceholder')}
+                    className="mb-2 w-full rounded-md border border-[var(--border)] bg-[var(--bg-base)] px-2 py-1.5 text-[11px] text-[var(--text-primary)] outline-none focus:border-indigo-500/60"
+                    autoFocus
+                  />
+                  <p className="mb-1 px-1 text-[10px] text-[var(--text-hint)]">
+                    {tFn(language, 'notes', 'emojisShowing')} {visibleEmojis.length} {tFn(language, 'notes', 'emojisOf')} {filteredEmojis.length} {tFn(language, 'notes', 'emojisCount')}
+                  </p>
+                  <div className="grid max-h-[240px] grid-cols-10 gap-1 overflow-y-auto pr-1">
+                    {visibleEmojis.map((item) => (
+                      <button
+                        key={item.emoji}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          editor?.chain().focus().insertContent(item.emoji).run();
+                          setShowEmojiMenu(false);
+                        }}
+                        className="flex h-7 w-7 items-center justify-center rounded text-base transition hover:bg-[var(--bg-hover)]"
+                        title={`${item.nameEs} / ${item.nameEn}`}
+                      >
+                        {item.emoji}
+                      </button>
+                    ))}
+                  </div>
+                  {filteredEmojis.length === 0 && (
+                    <p className="mt-2 px-1 text-[11px] text-[var(--text-hint)]">{tFn(language, 'notes', 'emojisNoResults')}</p>
+                  )}
+                  {filteredEmojis.length > visibleEmojis.length && (
+                    <p className="mt-2 px-1 text-[10px] text-[var(--text-hint)]">
+                      {tFn(language, 'notes', 'emojisNarrowSearch')}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
             <button
               onMouseDown={(e) => {
                 e.preventDefault();
@@ -959,14 +1691,14 @@ export function NoteEditor() {
                 setShowLinkModal(true);
               }}
               className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${editor?.isActive('link') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'}`}
-              title="Enlace"
+              title={tFn(language, 'notes', 'tipLink')}
             ><Link size={13} /></button>
             <button
               onMouseDown={(e) => { e.preventDefault(); setShowImageModal(true); }}
               className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition"
-              title="Imagen"
+              title={tFn(language, 'notes', 'tipImage')}
             ><ImageIcon size={13} /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().setHorizontalRule().run(); }} className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition" title="Separador"><Minus size={13} /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().setHorizontalRule().run(); }} className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition" title={tFn(language, 'notes', 'tipSeparator')}><Minus size={13} /></button>
 
             {/* Tabla */}
             <div className="relative" ref={tableMenuRef}>
@@ -975,25 +1707,25 @@ export function NoteEditor() {
                 className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${
                   editor?.isActive('table') ? 'text-indigo-300 bg-indigo-500/20' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'
                 }`}
-                title="Tabla"
+                title={tFn(language, 'notes', 'tipTable')}
               ><TableIcon size={13} /></button>
               {showTableMenu && (
                 <div
                   className="absolute top-full right-0 mt-1 z-50 min-w-[180px] rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] py-1 shadow-lg"
                   onMouseDown={(e) => e.preventDefault()}
                 >
-                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">Insertar tabla (3×3)</button>
+                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">{tFn(language, 'notes', 'tableInsert')}</button>
                   <div className="my-1 border-t border-[var(--border)]" />
-                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addColumnBefore().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">Añadir columna antes</button>
-                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addColumnAfter().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">Añadir columna después</button>
-                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteColumn().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">Eliminar columna</button>
+                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addColumnBefore().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">{tFn(language, 'notes', 'tableAddColBefore')}</button>
+                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addColumnAfter().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">{tFn(language, 'notes', 'tableAddColAfter')}</button>
+                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteColumn().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">{tFn(language, 'notes', 'tableDeleteCol')}</button>
                   <div className="my-1 border-t border-[var(--border)]" />
-                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addRowBefore().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">Añadir fila antes</button>
-                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addRowAfter().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">Añadir fila después</button>
-                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteRow().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">Eliminar fila</button>
+                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addRowBefore().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">{tFn(language, 'notes', 'tableAddRowBefore')}</button>
+                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addRowAfter().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">{tFn(language, 'notes', 'tableAddRowAfter')}</button>
+                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteRow().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">{tFn(language, 'notes', 'tableDeleteRow')}</button>
                   <div className="my-1 border-t border-[var(--border)]" />
-                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleHeaderRow().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">Alternar fila de cabecera</button>
-                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteTable().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-red-400 hover:bg-[var(--bg-hover)] transition">Eliminar tabla</button>
+                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleHeaderRow().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">{tFn(language, 'notes', 'tableToggleHeader')}</button>
+                  <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteTable().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-red-400 hover:bg-[var(--bg-hover)] transition">{tFn(language, 'notes', 'tableDelete')}</button>
                 </div>
               )}
             </div>
@@ -1004,7 +1736,7 @@ export function NoteEditor() {
                 className={`rounded p-1.5 transition hover:bg-[var(--bg-hover)] ${
                   mermaidBlocks.length > 0 ? 'text-indigo-300 bg-indigo-500/14' : 'text-[var(--text-hint)] hover:text-[var(--text-primary)]'
                 }`}
-                title="Diagramas Mermaid"
+                title={tFn(language, 'notes', 'tipDiagram')}
               >
                 <Share2 size={13} />
               </button>
@@ -1020,7 +1752,7 @@ export function NoteEditor() {
                     }}
                     className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                   >
-                    Nuevo diagrama Mermaid
+                    {tFn(language, 'notes', 'diagramNew')}
                   </button>
                   {mermaidBlocks.length > 0 && <div className="my-1 border-t border-[var(--border)]" />}
                   {mermaidBlocks.map((block, index) => (
@@ -1047,20 +1779,20 @@ export function NoteEditor() {
       }`}>
         {/* Columnas */}
         <span className="text-[10px] text-[var(--text-faint)] mr-0.5 select-none"><Columns3 size={11} /></span>
-        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addColumnBefore().run(); }} className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition" title="Añadir columna a la izquierda"><BetweenHorizontalStart size={13} /></button>
-        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addColumnAfter().run(); }} className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition" title="Añadir columna a la derecha"><BetweenHorizontalEnd size={13} /></button>
-        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteColumn().run(); }} className="rounded p-1.5 text-red-400/60 hover:bg-red-500/10 hover:text-red-400 transition" title="Eliminar columna"><PanelRightClose size={13} /></button>
+        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addColumnBefore().run(); }} className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition" title={tFn(language, 'notes', 'tableAddColLeft')}><BetweenHorizontalStart size={13} /></button>
+        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addColumnAfter().run(); }} className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition" title={tFn(language, 'notes', 'tableAddColRight')}><BetweenHorizontalEnd size={13} /></button>
+        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteColumn().run(); }} className="rounded p-1.5 text-red-400/60 hover:bg-red-500/10 hover:text-red-400 transition" title={tFn(language, 'notes', 'tableDeleteCol')}><PanelRightClose size={13} /></button>
         <div className="mx-1.5 h-3.5 w-px bg-[var(--border)]" />
         {/* Filas */}
         <span className="text-[10px] text-[var(--text-faint)] mr-0.5 select-none"><Rows3 size={11} /></span>
-        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addRowAfter().run(); }} className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition" title="Añadir fila abajo"><BetweenVerticalEnd size={13} /></button>
-        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteRow().run(); }} className="rounded p-1.5 text-red-400/60 hover:bg-red-500/10 hover:text-red-400 transition" title="Eliminar fila"><PanelBottomClose size={13} /></button>
+        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addRowAfter().run(); }} className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition" title={tFn(language, 'notes', 'tableAddRowBelow')}><BetweenVerticalEnd size={13} /></button>
+        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteRow().run(); }} className="rounded p-1.5 text-red-400/60 hover:bg-red-500/10 hover:text-red-400 transition" title={tFn(language, 'notes', 'tableDeleteRow')}><PanelBottomClose size={13} /></button>
         <div className="mx-1.5 h-3.5 w-px bg-[var(--border)]" />
         {/* Cabecera */}
-        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleHeaderRow().run(); }} className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition" title="Alternar fila de cabecera"><TableProperties size={13} /></button>
+        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleHeaderRow().run(); }} className="rounded p-1.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition" title={tFn(language, 'notes', 'tableToggleHeader')}><TableProperties size={13} /></button>
         <div className="mx-1.5 h-3.5 w-px bg-[var(--border)]" />
         {/* Eliminar tabla */}
-        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteTable().run(); }} className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-red-400/70 hover:bg-red-500/10 hover:text-red-400 transition" title="Eliminar tabla"><Trash2 size={11} /> Tabla</button>
+        <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteTable().run(); }} className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-red-400/70 hover:bg-red-500/10 hover:text-red-400 transition" title={tFn(language, 'notes', 'tableDelete')}><Trash2 size={11} /> {tFn(language, 'notes', 'tableLabel')}</button>
       </div>
 
       {/* Content area */}
@@ -1073,7 +1805,7 @@ export function NoteEditor() {
             onChange={(e) => handleTitleChange(e.target.value)}
             rows={1}
             className="w-full resize-none bg-transparent text-2xl font-bold text-[var(--text-primary)] outline-none placeholder-[var(--text-faint)] leading-tight"
-            placeholder="Sin título"
+            placeholder={tFn(language, 'notes', 'titlePlaceholder')}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
@@ -1174,8 +1906,8 @@ export function NoteEditor() {
               {isDroppingFile && (
                 <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-indigo-400 bg-indigo-500/10 backdrop-blur-[2px]">
                   <ImageIcon size={36} className="text-indigo-400" />
-                  <p className="text-sm font-semibold text-indigo-300">Suelta la imagen aquí</p>
-                  <p className="text-xs text-indigo-400/70">Se insertará en la posición actual del cursor</p>
+                <p className="text-sm font-semibold text-indigo-300">{tFn(language, 'notes', 'dropImageTitle')}</p>
+                  <p className="text-xs text-indigo-400/70">{tFn(language, 'notes', 'dropImageHint')}</p>
                 </div>
               )}
               {blockDropLineY !== null && (
@@ -1192,8 +1924,9 @@ export function NoteEditor() {
               )}
               <button
                 type="button"
-                aria-label="Mover bloque"
+                aria-label={tFn(language, 'notes', 'dragHandle')}
                 onPointerDown={startBlockPointerDrag}
+                onContextMenu={handleDragHandleContextMenu}
                 className={`absolute z-30 rounded border border-transparent p-0 transition ${
                   dragHandlePos.visible ? 'opacity-100' : 'pointer-events-none opacity-0'
                 } drag-handle`}
@@ -1201,21 +1934,202 @@ export function NoteEditor() {
               >
                 <span className="drag-handle-grip" aria-hidden="true" />
               </button>
+              {blockContextMenu && (
+                <div
+                  ref={blockContextMenuRef}
+                  className="fixed z-[10050] min-w-[220px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-1.5 shadow-2xl"
+                  onPointerEnter={() => setIsPointerInsideBlockContextMenu(true)}
+                  onPointerLeave={() => setIsPointerInsideBlockContextMenu(false)}
+                  style={{
+                    left: blockContextMenu.x,
+                    top: blockContextMenu.y,
+                    opacity: blockContextMenu.ready ? 1 : 0,
+                    transform: blockContextMenu.ready ? 'translateY(0) scale(1)' : 'translateY(4px) scale(0.98)',
+                    transformOrigin: 'top left',
+                    transition: 'opacity 120ms ease, transform 120ms ease',
+                    pointerEvents: blockContextMenu.ready ? 'auto' : 'none',
+                  }}
+                >
+                  <div className="mb-1 px-2 py-1 text-[10px] uppercase tracking-wide text-[var(--text-faint)]">
+                    {tFn(language, 'notes', 'blockActions')}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => insertEmptyParagraphAroundBlock('above')}
+                    className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                  >
+                    {tFn(language, 'notes', 'insertAbove')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => insertEmptyParagraphAroundBlock('below')}
+                    className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                  >
+                    {tFn(language, 'notes', 'insertBelow')}
+                  </button>
+
+                  {(blockContextMenu.type === 'paragraph' || blockContextMenu.type === 'heading') && (
+                    <>
+                      <div className="my-1 h-px bg-[var(--border)]" />
+                      <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-[var(--text-faint)]">
+                        {tFn(language, 'notes', 'blockType')}
+                      </div>
+                      {[
+                        { label: tFn(language, 'notes', 'blockParaLabel'), level: 0 as const },
+                        { label: tFn(language, 'notes', 'blockH1Label'), level: 1 as const },
+                        { label: tFn(language, 'notes', 'blockH2Label'), level: 2 as const },
+                        { label: tFn(language, 'notes', 'blockH3Label'), level: 3 as const },
+                      ].map((option) => {
+                        const isActive = option.level === 0
+                          ? blockContextMenu.type === 'paragraph'
+                          : blockContextMenu.type === 'heading' && blockContextMenu.headingLevel === option.level;
+                        return (
+                          <button
+                            key={option.label}
+                            type="button"
+                            onClick={() => setBlockHeadingLevel(option.level)}
+                            className={`flex w-full items-center rounded-lg px-2 py-1.5 text-left text-xs transition ${
+                              isActive
+                                ? 'bg-indigo-500/15 text-indigo-300'
+                                : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </>
+                  )}
+
+                  {blockContextMenu.type === 'mermaid' && (
+                    <>
+                      <div className="my-1 h-px bg-[var(--border)]" />
+                      <button
+                        type="button"
+                        onClick={openMermaidEditorFromContextMenu}
+                        className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                      >
+                        {tFn(language, 'notes', 'editDiagram')}
+                      </button>
+                    </>
+                  )}
+
+                  <div className="my-1 h-px bg-[var(--border)]" />
+                  <button
+                    type="button"
+                    onClick={deleteBlockFromContextMenu}
+                    className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-xs text-red-300 transition hover:bg-red-500/10 hover:text-red-200"
+                  >
+                    {tFn(language, 'notes', 'deleteBlock')}
+                  </button>
+                </div>
+              )}
               <EditorContent editor={editor} />
               <div className="pointer-events-none absolute inset-0 z-10">
+                {codeBlockAnchors.map((anchor, index) => (
+                  <div
+                    key={`code-lang-${index}`}
+                    className={`pointer-events-auto absolute code-block-lang-select-wrap ${openCodeLangMenuIndex !== null && openCodeLangMenuIndex !== index ? 'opacity-0 pointer-events-none' : ''}`}
+                    style={{ top: anchor.top + 4, left: anchor.left + 6 }}
+                  >
+                    {(() => {
+                      const filteredLanguageOptions = CODE_LANGUAGE_OPTIONS.filter((option) => {
+                        if (!codeLangSearch.trim()) return true;
+                        const q = codeLangSearch.trim().toLowerCase();
+                        return option.label.toLowerCase().includes(q) || option.value.toLowerCase().includes(q);
+                      });
+
+                      return (
+                        <>
+                    <button
+                      type="button"
+                      className="code-block-lang-select"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        if (editor) {
+                          codeLangSelectionRef.current = {
+                            from: editor.state.selection.from,
+                            to: editor.state.selection.to,
+                            scrollTop: editorPaneRef.current?.scrollTop ?? 0,
+                          };
+                        }
+                        setOpenCodeLangMenuIndex((prev) => {
+                          const next = prev === index ? null : index;
+                          if (next === null) {
+                            setCodeLangSearch('');
+                            codeLangSelectionRef.current = null;
+                          }
+                          return next;
+                        });
+                      }}
+                      title="Lenguaje del bloque de código"
+                    >
+                      <span>
+                        {CODE_LANGUAGE_OPTIONS.find((option) => option.value === (codeBlockLanguages[index] || 'plaintext'))?.label || 'Texto'}
+                      </span>
+                      <ChevronDown size={11} className="opacity-70" />
+                    </button>
+                    {openCodeLangMenuIndex === index && (
+                      <div className="code-block-lang-menu relative z-40">
+                        <input
+                          type="text"
+                          value={codeLangSearch}
+                          onChange={(e) => setCodeLangSearch(e.target.value)}
+                          placeholder={tFn(language, 'notes', 'codeLangSearch')}
+                          className="mb-1.5 w-full rounded-md border border-[var(--border)] bg-[var(--bg-base)] px-2 py-1 text-[11px] text-[var(--text-primary)] outline-none focus:border-indigo-500/60"
+                        />
+                        <div className="code-block-lang-menu-list">
+                          {filteredLanguageOptions.map((option) => {
+                            const isActive = option.value === (codeBlockLanguages[index] || 'plaintext');
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  handleChangeCodeLanguage(index, option.value);
+                                  setOpenCodeLangMenuIndex(null);
+                                  setCodeLangSearch('');
+                                  codeLangSelectionRef.current = null;
+                                }}
+                                className={`code-block-lang-menu-item ${isActive ? 'is-active' : ''}`}
+                              >
+                                {option.label}
+                              </button>
+                            );
+                          })}
+                          {filteredLanguageOptions.length === 0 && (
+                            <div className="px-2 py-1 text-[11px] text-[var(--text-hint)]">{tFn(language, 'notes', 'noCodeResults')}</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                ))}
                 {mermaidBlocks.map((block, index) => {
                   const anchor = mermaidPreviewAnchors[index];
                   if (!anchor) return null;
                   return (
                     <div
                       key={`${block.start}-${index}`}
-                      className="pointer-events-auto absolute left-0 right-0"
-                      style={{ top: anchor.top }}
+                      className="pointer-events-auto absolute"
+                      style={{ top: anchor.top, left: anchor.left, width: anchor.width }}
                     >
                       <MermaidBlock
                         diagramIndex={index}
                         code={block.code}
                         compact
+                        onHeightChange={(height) => {
+                          setMermaidRenderedHeights((prev) => {
+                            if (prev[index] && Math.abs(prev[index] - height) < 1) return prev;
+                            const next = [...prev];
+                            next[index] = height;
+                            return next;
+                          });
+                        }}
                         onEdit={() => openDiagramEditor('edit', block.code, index)}
                         onMoveUp={index > 0 ? () => handleMoveDiagram(index, 'up') : undefined}
                         onMoveDown={index < mermaidBlocks.length - 1 ? () => handleMoveDiagram(index, 'down') : undefined}
@@ -1238,7 +2152,7 @@ export function NoteEditor() {
                   setMdContent(e.target.value);
                 }}
                 className="note-source-textarea w-full h-full min-h-[400px] resize-none bg-transparent font-mono text-sm text-[var(--text-secondary)] outline-none leading-relaxed placeholder-[var(--text-faint)]"
-                placeholder="# Tu nota en Markdown…"
+                placeholder={tFn(language, 'notes', 'sourcePlaceholder')}
                 spellCheck={false}
               />
             </div>
@@ -1247,10 +2161,11 @@ export function NoteEditor() {
           {/* Split — WYSIWYG izquierda, Markdown fuente derecha */}
           {viewMode === 'split' && (
             <div className="flex-1 overflow-y-auto px-8 pb-8">
-              <div className="mb-2 text-[10px] text-[var(--text-faint)] uppercase tracking-wider">Vista previa Markdown</div>
+              <div className="mb-2 text-[10px] text-[var(--text-faint)] uppercase tracking-wider">{tFn(language, 'notes', 'splitPreviewLabel')}</div>
               {mdContent.trim() ? (
                 <MarkdownPreview
                   markdown={mdContent}
+                  onChangeCodeLanguage={handleChangeCodeLanguage}
                   onEditMermaid={(index, code) => openDiagramEditor('edit', code, index)}
                   onMoveMermaidUp={(index) => handleMoveDiagram(index, 'up')}
                   onMoveMermaidDown={(index) => handleMoveDiagram(index, 'down')}
@@ -1258,7 +2173,7 @@ export function NoteEditor() {
                   onDeleteMermaid={handleDeleteDiagram}
                 />
               ) : (
-                <div className="italic text-sm text-[var(--text-faint)]">Sin contenido.</div>
+                <div className="italic text-sm text-[var(--text-faint)]">{tFn(language, 'notes', 'splitNoContent')}</div>
               )}
             </div>
           )}

@@ -46,7 +46,13 @@ export function formatMermaidFence(code: string): string {
 
 export async function renderMermaidSvg(code: string, prefix = 'mermaid') {
   ensureMermaid();
-  return mermaid.render(uniqueId(prefix), code);
+  try {
+    const result = await mermaid.render(uniqueId(prefix), code);
+    return result;
+  } catch (error) {
+    // Re-throw Mermaid errors so they bubble up to the caller
+    throw new Error(`Mermaid render error: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 export async function renderMermaidPngDataUrl(code: string): Promise<string | null> {
@@ -55,7 +61,13 @@ export async function renderMermaidPngDataUrl(code: string): Promise<string | nu
     const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 
     return await new Promise((resolve) => {
+      const timeoutId = setTimeout(() => {
+        resolve(null);
+      }, 5000); // 5 second timeout
+
       const image = new Image();
+      image.crossOrigin = 'anonymous';
+
       image.onload = () => {
         try {
           const canvas = document.createElement('canvas');
@@ -63,18 +75,26 @@ export async function renderMermaidPngDataUrl(code: string): Promise<string | nu
           canvas.height = image.naturalHeight || 800;
           const ctx = canvas.getContext('2d');
           if (!ctx) {
+            clearTimeout(timeoutId);
             resolve(null);
             return;
           }
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(image, 0, 0);
+          clearTimeout(timeoutId);
           resolve(canvas.toDataURL('image/png'));
-        } catch {
+        } catch (err) {
+          clearTimeout(timeoutId);
           resolve(null);
         }
       };
-      image.onerror = () => resolve(null);
+
+      image.onerror = () => {
+        clearTimeout(timeoutId);
+        resolve(null);
+      };
+
       image.src = svgUrl;
     });
   } catch {

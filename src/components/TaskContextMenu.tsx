@@ -4,6 +4,7 @@ import { Circle, Clock, CheckCircle2, Copy, Check, Trash2, Pencil, Plus } from '
 import { Task, TaskStatus } from '../types';
 import { useAppStore } from '../store/appStore';
 import { placeMenuAtPointer } from '../lib/menuPosition';
+import { t } from '../lib/i18n';
 
 const ESTIMATED_TASK_MENU = { width: 220, height: 330 };
 const ESTIMATED_TASK_CONFIRM = { width: 260, height: 170 };
@@ -18,7 +19,7 @@ interface Props {
 }
 
 export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) {
-  const { updateTask, deleteTask, setActiveTask } = useAppStore();
+  const { updateTask, deleteTask, setActiveTask, language } = useAppStore();
   const ref = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -76,9 +77,9 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
   };
 
   const statuses: { status: TaskStatus; label: string; Icon: React.ElementType; color: string }[] = [
-    { status: 'todo',        label: 'Por hacer',   Icon: Circle,       color: 'text-zinc-400'  },
-    { status: 'in-progress', label: 'En progreso', Icon: Clock,        color: 'text-amber-400' },
-    { status: 'done',        label: 'Hecho',       Icon: CheckCircle2, color: 'text-green-400' },
+    { status: 'todo',        label: t(language, 'tasks', 'statusTodo'),        Icon: Circle,       color: 'text-zinc-400'  },
+    { status: 'in-progress', label: t(language, 'tasks', 'statusInProgress'),  Icon: Clock,        color: 'text-amber-400' },
+    { status: 'done',        label: t(language, 'tasks', 'statusDone'),        Icon: CheckCircle2, color: 'text-green-400' },
   ];
 
   if (confirmDelete) {
@@ -90,25 +91,25 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
       >
         <div className="mb-3 flex items-center gap-2 text-red-400">
           <Trash2 size={14} />
-          <p className="text-xs font-semibold">Eliminar tarea</p>
+          <p className="text-xs font-semibold">{t(language, 'tasks', 'deleteTask')}</p>
         </div>
         <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-3">
-          Se eliminará{' '}
-          <span className="font-medium text-[var(--text-primary)]">"{task.title}"</span>.
-          Esta acción no se puede deshacer.
+          {t(language, 'tasks', 'confirmDeleteMsg')}{' '}
+          <span className="font-medium text-[var(--text-primary)]">&#34;{task.title}&#34;</span>.{' '}
+          {t(language, 'tasks', 'confirmDeleteDesc')}
         </p>
         <div className="flex justify-end gap-2">
           <button
             onClick={() => setConfirmDelete(false)}
             className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
           >
-            Cancelar
+            {t(language, 'tasks', 'cancel')}
           </button>
           <button
             onClick={handleDelete}
             className="rounded-lg bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition hover:bg-red-500/20"
           >
-            Eliminar
+            {t(language, 'tasks', 'delete')}
           </button>
         </div>
       </div>,
@@ -138,12 +139,12 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
         className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
       >
         <Pencil size={12} />
-        Abrir / Editar
+        {t(language, 'tasks', 'openEdit')}
       </button>
 
       {/* Estado */}
       <div className="mx-2 my-1 border-t border-[var(--border)]" />
-      <p className="px-3 py-1 text-[10px] uppercase tracking-widest text-[var(--text-hint)]">Estado</p>
+      <p className="px-3 py-1 text-[10px] uppercase tracking-widest text-[var(--text-hint)]">{t(language, 'tasks', 'statusLabel')}</p>
       {statuses.map(({ status, label, Icon, color }) => (
         <button
           key={status}
@@ -167,7 +168,7 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
         className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
       >
         {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
-        {copied ? 'Copiado' : 'Copiar título'}
+        {copied ? t(language, 'tasks', 'copied') : t(language, 'tasks', 'copyTitle')}
       </button>
 
       {/* Eliminar */}
@@ -177,7 +178,7 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
         className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-red-400 transition hover:bg-red-500/10"
       >
         <Trash2 size={12} />
-        Eliminar tarea
+        {t(language, 'tasks', 'deleteTask')}
       </button>
     </div>,
     document.body
@@ -189,6 +190,7 @@ export function NewTaskContextMenu({ x, y, onClose }: { x: number; y: number; on
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState(() => placeMenuAtPointer({ x, y }, ESTIMATED_NEW_TASK_MENU, { padding: 8 }));
   const [ready, setReady] = useState(false);
+  const language = useAppStore((s) => s.language);
 
   useEffect(() => {
     setReady(false);
@@ -232,7 +234,7 @@ export function NewTaskContextMenu({ x, y, onClose }: { x: number; y: number; on
         className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
       >
         <Plus size={12} className="text-indigo-400" />
-        Nueva tarea
+        {t(language, 'tasks', 'newTask')}
       </button>
     </div>,
     document.body

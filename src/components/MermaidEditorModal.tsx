@@ -5,6 +5,8 @@ import { MermaidBlock } from './MermaidBlock';
 import { FlowVisualEditor, type FlowVisualDiagramType } from './visual-editors/FlowVisualEditor';
 import { SequenceVisualEditor } from './visual-editors/SequenceVisualEditor';
 import { ERVisualEditor } from './visual-editors/ERVisualEditor';
+import { useAppStore } from '../store/appStore';
+import { t } from '../lib/i18n';
 
 interface Props {
   initialCode: string;
@@ -15,7 +17,7 @@ interface Props {
 
 const TEMPLATES = [
   {
-    label: 'Flujo',
+    key: 'templateFlow',
     code: `flowchart TD
   Inicio([Inicio]) --> Validar{Hay datos?}
   Validar -->|Si| Proceso[Procesar tarea]
@@ -23,7 +25,7 @@ const TEMPLATES = [
   Proceso --> Fin([Fin])`,
   },
   {
-    label: 'Secuencia',
+    key: 'templateSequence',
     code: `sequenceDiagram
   autonumber
   Usuario->>App: Crear nota
@@ -32,7 +34,7 @@ const TEMPLATES = [
   App-->>Usuario: Mostrar nota`,
   },
   {
-    label: 'Estados',
+    key: 'templateState',
     code: `stateDiagram-v2
   [*] --> Borrador
   Borrador --> Revisando
@@ -40,7 +42,7 @@ const TEMPLATES = [
   Revisando --> Borrador`,
   },
   {
-    label: 'ER',
+    key: 'templateER',
     code: `erDiagram
   NOTE ||--o{ TAG : contiene
   NOTE {
@@ -55,6 +57,7 @@ const TEMPLATES = [
 ];
 
 export function MermaidEditorModal({ initialCode, mode, onClose, onSave }: Props) {
+  const { language } = useAppStore();
   const [code, setCode] = useState(initialCode);
   const [editorMode, setEditorMode] = useState<'code' | 'visual'>('code');
   const [visualKey, setVisualKey] = useState(0);
@@ -124,16 +127,16 @@ export function MermaidEditorModal({ initialCode, mode, onClose, onSave }: Props
         <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-5 py-4">
           <div>
             <div className="text-sm font-semibold text-[var(--text-primary)]">
-              {mode === 'edit' ? 'Editar diagrama Mermaid' : 'Nuevo diagrama Mermaid'}
+              {mode === 'edit' ? t(language, 'extras', 'mermaidEditTitle') : t(language, 'extras', 'mermaidNewTitle')}
             </div>
             <div className="mt-1 text-xs text-[var(--text-secondary)]">
-              Edita el codigo Mermaid con vista previa inmediata y guardalo dentro de la nota.
+              {t(language, 'extras', 'mermaidSubtitle')}
             </div>
           </div>
           <button
             onClick={onClose}
             className="rounded-lg p-2 text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-            title="Cerrar"
+            title={t(language, 'extras', 'close')}
           >
             <X size={15} />
           </button>
@@ -143,16 +146,16 @@ export function MermaidEditorModal({ initialCode, mode, onClose, onSave }: Props
           <div className="flex min-h-0 overflow-hidden flex-col border-b border-[var(--border)] lg:border-b-0 lg:border-r">
             <div className="border-b border-[var(--border)] px-5 py-3">
               <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--text-hint)]">
-                Plantillas
+                {t(language, 'extras', 'templates')}
               </div>
               <div className="flex flex-wrap gap-2">
                 {TEMPLATES.map((template) => (
                   <button
-                    key={template.label}
+                    key={template.key}
                     onClick={() => handleTemplateClick(template.code)}
                     className="rounded-full border border-[var(--border)] px-3 py-1 text-[11px] text-[var(--text-secondary)] transition hover:border-[var(--border-high)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                   >
-                    {template.label}
+                    {t(language, 'extras', template.key as 'templateFlow' | 'templateSequence' | 'templateState' | 'templateER')}
                   </button>
                 ))}
               </div>
@@ -160,20 +163,20 @@ export function MermaidEditorModal({ initialCode, mode, onClose, onSave }: Props
 
             <div className="min-h-0 flex flex-1 flex-col overflow-hidden px-5 py-4">
               <div className="mb-2 flex items-center justify-between text-[11px] uppercase tracking-[0.18em] text-[var(--text-hint)]">
-                <span>{editorMode === 'code' ? 'Codigo Mermaid' : 'Editor visual'}</span>
+                <span>{editorMode === 'code' ? t(language, 'extras', 'codeMermaid') : t(language, 'extras', 'visualEditor')}</span>
                 <div className="flex items-center gap-2">
                   {editorMode === 'code' && (
-                    <span>{code.trim().split(/\s+/).filter(Boolean).length} palabras</span>
+                    <span>{code.trim().split(/\s+/).filter(Boolean).length} {t(language, 'extras', 'words')}</span>
                   )}
                   <button
                     onClick={handleToggleVisual}
                     disabled={!canVisual}
-                    title={canVisual ? (editorMode === 'code' ? 'Cambiar a modo visual' : 'Cambiar a modo código') : 'Tipo de diagrama no soportado visualmente'}
+                    title={canVisual ? (editorMode === 'code' ? t(language, 'extras', 'switchToVisual') : t(language, 'extras', 'switchToCode')) : t(language, 'extras', 'visualUnsupported')}
                     className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1 text-[10px] font-medium transition hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-40"
                     style={{ color: editorMode === 'visual' ? '#6366f1' : 'var(--text-secondary)', borderColor: editorMode === 'visual' ? '#6366f1' : undefined }}
                   >
                     {editorMode === 'code' ? <LayoutTemplate size={11} /> : <Code2 size={11} />}
-                    {editorMode === 'code' ? 'Visual' : 'Código'}
+                    {editorMode === 'code' ? t(language, 'extras', 'visual') : t(language, 'extras', 'code')}
                   </button>
                 </div>
               </div>
@@ -185,7 +188,7 @@ export function MermaidEditorModal({ initialCode, mode, onClose, onSave }: Props
                   spellCheck={false}
                   className="min-h-0 flex-1 w-full resize-none rounded-2xl border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-3 font-mono text-sm leading-relaxed text-[var(--text-secondary)] outline-none transition focus:border-indigo-400/50 focus:text-[var(--text-primary)]"
                   style={{ scrollbarGutter: 'stable' }}
-                  placeholder="flowchart TD\n  A[Inicio] --> B[Fin]"
+                  placeholder={t(language, 'extras', 'mermaidPlaceholder')}
                 />
               ) : (
                 <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-indigo-400/40">
@@ -198,7 +201,7 @@ export function MermaidEditorModal({ initialCode, mode, onClose, onSave }: Props
           <div className="flex min-h-0 overflow-hidden flex-col bg-[var(--bg-base)]/45 px-5 py-4">
             <div className="mb-3 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--text-hint)]">
               <Sparkles size={13} />
-              Vista previa
+              {t(language, 'extras', 'preview')}
             </div>
             <div
               className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-3"
@@ -208,7 +211,7 @@ export function MermaidEditorModal({ initialCode, mode, onClose, onSave }: Props
                 <MermaidBlock code={code} compact />
               ) : (
                 <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-[var(--border)] text-sm text-[var(--text-hint)]">
-                  Escribe o elige una plantilla para ver el diagrama.
+                  {t(language, 'extras', 'previewEmptyHint')}
                 </div>
               )}
             </div>
@@ -217,14 +220,14 @@ export function MermaidEditorModal({ initialCode, mode, onClose, onSave }: Props
 
         <div className="relative z-20 flex shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--bg-elevated)] px-5 py-4">
           <div className="text-xs text-[var(--text-hint)]">
-            Se guardara como bloque Mermaid dentro del markdown de la nota.
+            {t(language, 'extras', 'saveAsMermaidHint')}
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={onClose}
               className="rounded-xl px-4 py-2 text-sm text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             >
-              Cancelar
+              {t(language, 'extras', 'cancel')}
             </button>
             <button
               onClick={() => onSave(code)}
@@ -232,7 +235,7 @@ export function MermaidEditorModal({ initialCode, mode, onClose, onSave }: Props
               className="inline-flex items-center gap-2 rounded-xl bg-indigo-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-indigo-500/45"
             >
               <Check size={14} />
-              {mode === 'edit' ? 'Actualizar diagrama' : 'Insertar diagrama'}
+              {mode === 'edit' ? t(language, 'extras', 'updateDiagram') : t(language, 'extras', 'insertDiagram')}
             </button>
           </div>
         </div>

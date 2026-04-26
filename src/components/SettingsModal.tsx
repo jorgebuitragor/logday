@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
-import { X, Monitor, Sun, Moon, FolderOpen, Minus, Plus, Download, Upload, Type, Keyboard, AlertTriangle } from 'lucide-react';
-import { Theme, Shortcuts } from '../types';
+import { useEffect, useRef, useState } from 'react';
+import { X, Monitor, Sun, Moon, FolderOpen, Minus, Plus, Download, Upload, Type, Keyboard, AlertTriangle, ChevronDown, Eye } from 'lucide-react';
+import { Theme, Shortcuts, StartupScreen, Language } from '../types';
 import { useAppStore } from '../store/appStore';
+import { t } from '../lib/i18n';
 import { fs } from '../lib/invoke';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
@@ -15,13 +16,23 @@ function isICloudPath(path: string): boolean {
   );
 }
 
-const THEME_OPTIONS: { value: Theme; label: string; Icon: React.ElementType; desc: string }[] = [
-  { value: 'system', label: 'Sistema', Icon: Monitor, desc: 'Sigue la preferencia del SO' },
-  { value: 'light',  label: 'Claro',   Icon: Sun,     desc: 'Fondo blanco, texto oscuro' },
-  { value: 'dark',   label: 'Oscuro',  Icon: Moon,    desc: 'Fondo negro, texto claro' },
+const THEME_VALUES: { value: Theme; Icon: React.ElementType }[] = [
+  { value: 'system', Icon: Monitor },
+  { value: 'light', Icon: Sun },
+  { value: 'dark', Icon: Moon },
+  { value: 'high-contrast', Icon: AlertTriangle },
+  { value: 'visual-rest', Icon: Eye },
 ];
 
 const FONT_SIZES = [11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+
+const LANGUAGE_OPTIONS: { value: Language; label: string }[] = [
+  { value: 'es', label: 'Español' },
+  { value: 'en', label: 'English' },
+];
+
+// STARTUP_SCREEN_OPTIONS se genera reactivamente dentro del componente con t()
+const STARTUP_SCREEN_VALUES: StartupScreen[] = ['dashboard', 'dailys', 'tasks', 'notes', 'overtime'];
 
 async function collectFiles(
   zip: JSZip,
@@ -53,6 +64,8 @@ export function SettingsModal() {
   const {
     isSettingsOpen, toggleSettings,
     theme, setTheme,
+    startupScreen, setStartupScreen,
+    language, setLanguage,
     fontSize, setFontSize,
     basePath, changeBasePath,
     shortcuts, setShortcut,
@@ -61,15 +74,51 @@ export function SettingsModal() {
   const [backupStatus, setBackupStatus] = useState<'idle' | 'exporting' | 'importing' | 'done' | 'error'>('idle');
   const [backupMsg, setBackupMsg] = useState('');
   const [recordingFor, setRecordingFor] = useState<keyof Shortcuts | null>(null);
+  const [isStartupSelectorOpen, setIsStartupSelectorOpen] = useState(false);
+  const startupSelectorRef = useRef<HTMLDivElement | null>(null);
+
+  const startupScreenOptions = STARTUP_SCREEN_VALUES.map((value) => ({
+    value,
+    label: t(language, 'settings', `startup${value.charAt(0).toUpperCase() + value.slice(1)}` as any),
+    desc: t(language, 'settings', `startupDesc${value.charAt(0).toUpperCase() + value.slice(1)}` as any),
+  }));
+  const themeOptions = THEME_VALUES.map(({ value, Icon }) => {
+    const keySuffix = value
+      .split('-')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join('');
+    return {
+      value,
+      Icon,
+      label: t(language, 'settings', `theme${keySuffix}` as any),
+      desc: t(language, 'settings', `themeDesc${keySuffix}` as any),
+    };
+  });
+  const activeStartupOption = startupScreenOptions.find((o) => o.value === startupScreen) ?? startupScreenOptions[0];
 
   // Cerrar con Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isSettingsOpen) toggleSettings();
+      if (e.key !== 'Escape' || !isSettingsOpen) return;
+      if (isStartupSelectorOpen) {
+        setIsStartupSelectorOpen(false);
+        return;
+      }
+      toggleSettings();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [isSettingsOpen, toggleSettings]);
+  }, [isSettingsOpen, isStartupSelectorOpen, toggleSettings]);
+
+  useEffect(() => {
+    const onPointerDown = (e: MouseEvent) => {
+      if (!isStartupSelectorOpen) return;
+      if (startupSelectorRef.current?.contains(e.target as Node)) return;
+      setIsStartupSelectorOpen(false);
+    };
+    window.addEventListener('mousedown', onPointerDown);
+    return () => window.removeEventListener('mousedown', onPointerDown);
+  }, [isStartupSelectorOpen]);
 
   // Grabar nuevo atajo
   useEffect(() => {
@@ -90,7 +139,7 @@ export function SettingsModal() {
     if (!basePath) return;
     try {
       setBackupStatus('exporting');
-      setBackupMsg('Empaquetando archivos…');
+      setBackupMsg(t(language, 'settings', 'backupPacking'));
 
       const zip = new JSZip();
       await collectFiles(zip, basePath, basePath);
@@ -108,14 +157,14 @@ export function SettingsModal() {
       if (dest) {
         await invoke('write_file_binary', { path: dest, data: b64 });
         setBackupStatus('done');
-        setBackupMsg('Respaldo guardado correctamente');
+        setBackupMsg(t(language, 'settings', 'backupSaved'));
       } else {
         setBackupStatus('idle');
         setBackupMsg('');
       }
     } catch (err) {
       setBackupStatus('error');
-      setBackupMsg('Error al exportar: ' + String(err));
+      setBackupMsg(`${t(language, 'settings', 'backupExportError')} ${String(err)}`);
     }
   }
 
@@ -130,7 +179,7 @@ export function SettingsModal() {
       if (!filePath) return;
 
       setBackupStatus('importing');
-      setBackupMsg('Restaurando archivos…');
+      setBackupMsg(t(language, 'settings', 'backupRestoring'));
 
       const b64Raw: string = await invoke('read_file_binary', { path: filePath });
       const rawBytes = Uint8Array.from(atob(b64Raw), c => c.charCodeAt(0));
@@ -156,10 +205,10 @@ export function SettingsModal() {
 
       await Promise.all(tasks);
       setBackupStatus('done');
-      setBackupMsg('Datos restaurados. Reinicia la app para ver los cambios.');
+      setBackupMsg(t(language, 'settings', 'backupRestored'));
     } catch (err) {
       setBackupStatus('error');
-      setBackupMsg('Error al importar: ' + String(err));
+      setBackupMsg(`${t(language, 'settings', 'backupImportError')} ${String(err)}`);
     }
   }
 
@@ -180,7 +229,7 @@ export function SettingsModal() {
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4 shrink-0">
-          <h2 className="text-sm font-semibold text-[var(--text-primary)]">Opciones</h2>
+          <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'settings', 'title')}</h2>
           <button
             onClick={toggleSettings}
             className="rounded-lg p-1.5 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
@@ -195,19 +244,19 @@ export function SettingsModal() {
           {/* Storage section */}
           <div>
             <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
-              Almacenamiento
+              {t(language, 'settings', 'storage')}
             </p>
             <div className="rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 space-y-2">
-              <p className="text-[10px] text-[var(--text-hint)]">Carpeta base</p>
+              <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'baseFolder')}</p>
               <p
                 className="truncate text-xs text-[var(--text-secondary)] font-mono"
-                title={basePath || '(sin configurar)'}
+                title={basePath || t(language, 'settings', 'notConfigured')}
               >
-                {basePath || '(sin configurar)'}
+                {basePath || t(language, 'settings', 'notConfigured')}
               </p>
               <div className="flex gap-2 pt-1 text-[10px] text-[var(--text-faint)]">
-                <span>↳ projects/ (tareas)</span>
-                <span>↳ notes/ (notas)</span>
+                <span>{t(language, 'settings', 'storageProjectsHint')}</span>
+                <span>{t(language, 'settings', 'storageNotesHint')}</span>
               </div>
             </div>
             <button
@@ -215,31 +264,53 @@ export function SettingsModal() {
               className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-2.5 text-xs text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
             >
               <FolderOpen size={13} />
-              Cambiar carpeta base…
+              {t(language, 'settings', 'changeFolder')}
             </button>
             <p className="mt-1.5 text-[10px] text-[var(--text-hint)] text-center">
-              Los archivos existentes no se mueven automáticamente
+              {t(language, 'settings', 'filesNotMoved')}
             </p>
             {basePath && isICloudPath(basePath) && (
               <div className="mt-2 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
                 <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-400" />
                 <div>
-                  <p className="text-[11px] font-semibold text-amber-400">Carpeta en iCloud Drive</p>
+                  <p className="text-[11px] font-semibold text-amber-400">{t(language, 'settings', 'icloudTitle')}</p>
                   <p className="mt-0.5 text-[10px] text-amber-300/80">
-                    La app puede congelarse mientras iCloud sincroniza. Recomendamos usar una carpeta local.
+                    {t(language, 'settings', 'icloudDesc')}
                   </p>
                 </div>
               </div>
             )}
           </div>
 
+          {/* Language section */}
+          <div>
+            <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
+              {t(language, 'settings', 'language')}
+            </p>
+            <div className="flex gap-2">
+              {LANGUAGE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setLanguage(opt.value)}
+                  className={`flex-1 rounded-xl border px-4 py-3 text-sm font-medium transition ${
+                    language === opt.value
+                      ? 'border-indigo-500/60 bg-indigo-500/10 text-indigo-400'
+                      : 'border-[var(--border-card)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:border-[var(--border-high)] hover:text-[var(--text-secondary)]'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Theme section */}
           <div>
             <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
-              Tema
+              {t(language, 'settings', 'theme')}
             </p>
             <div className="grid grid-cols-3 gap-2">
-              {THEME_OPTIONS.map(({ value, label, Icon, desc }) => {
+              {themeOptions.map(({ value, label, Icon, desc }) => {
                 const isActive = theme === value;
                 return (
                   <button
@@ -262,20 +333,88 @@ export function SettingsModal() {
               })}
             </div>
             <p className="mt-2 text-center text-[10px] text-[var(--text-hint)]">
-              {THEME_OPTIONS.find((o) => o.value === theme)?.desc}
+              {themeOptions.find((o) => o.value === theme)?.desc}
+            </p>
+          </div>
+
+          {/* Startup screen section */}
+          <div>
+            <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
+              {t(language, 'settings', 'startupScreen')}
+            </p>
+            <div className="rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] p-3">
+              <div ref={startupSelectorRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsStartupSelectorOpen((s) => !s)}
+                  className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition ${
+                    isStartupSelectorOpen
+                      ? 'border-indigo-500/60 bg-indigo-500/10'
+                      : 'border-[var(--border-card)] bg-[var(--bg-elevated)] hover:border-[var(--border-high)] hover:bg-[var(--bg-hover)]'
+                  }`}
+                  aria-haspopup="listbox"
+                  aria-expanded={isStartupSelectorOpen}
+                >
+                  <span>
+                    <span className="block text-xs font-medium text-[var(--text-secondary)]">
+                      {activeStartupOption.label}
+                    </span>
+                    <span className="mt-0.5 block text-[10px] text-[var(--text-hint)]">
+                      {activeStartupOption.desc}
+                    </span>
+                  </span>
+                  <ChevronDown
+                    size={14}
+                    className={`text-[var(--text-hint)] transition-transform ${isStartupSelectorOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+
+                {isStartupSelectorOpen && (
+                  <div className="absolute left-0 right-0 z-20 mt-1.5 overflow-hidden rounded-lg border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl">
+                    <div role="listbox" aria-label={t(language, 'settings', 'startupOptionsAria')} className="p-1">
+                      {startupScreenOptions.map(({ value, label, desc }) => {
+                        const isActive = startupScreen === value;
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            role="option"
+                            aria-selected={isActive}
+                            onClick={() => {
+                              void setStartupScreen(value);
+                              setIsStartupSelectorOpen(false);
+                            }}
+                            className={`w-full rounded-md px-3 py-2 text-left transition ${
+                              isActive
+                                ? 'bg-indigo-500/10 text-indigo-400'
+                                : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                            }`}
+                          >
+                            <span className="block text-xs font-medium">{label}</span>
+                            <span className="mt-0.5 block text-[10px] text-[var(--text-hint)]">{desc}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <p className="mt-2 text-center text-[10px] text-[var(--text-hint)]">
+              {t(language, 'settings', 'startupHint')}
             </p>
           </div>
 
           {/* Font size section */}
           <div>
             <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
-              Tipografía
+              {t(language, 'settings', 'fontSize')}
             </p>
             <div className="rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2 text-[var(--text-secondary)]">
                   <Type size={13} />
-                  <span className="text-xs">Tamaño de fuente</span>
+                  <span className="text-xs">{t(language, 'settings', 'fontSizeLabel')}</span>
                 </div>
                 <span className="text-xs font-mono font-semibold text-[var(--text-primary)]">
                   {fontSize}px
@@ -318,14 +457,14 @@ export function SettingsModal() {
           {/* Atajos de teclado */}
           <div>
             <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
-              Atajos de teclado
+              {t(language, 'settings', 'shortcuts')}
             </p>
             <div className="rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] divide-y divide-[var(--border)]">
               {(
                 [
-                  { key: 'newNote' as keyof Shortcuts, label: 'Nueva nota' },
-                  { key: 'newTask' as keyof Shortcuts, label: 'Nueva tarea' },
-                  { key: 'search'  as keyof Shortcuts, label: 'Búsqueda global' },
+                  { key: 'newNote' as keyof Shortcuts, label: t(language, 'settings', 'shortcutNewNote') },
+                  { key: 'newTask' as keyof Shortcuts, label: t(language, 'settings', 'shortcutNewTask') },
+                  { key: 'search'  as keyof Shortcuts, label: t(language, 'settings', 'shortcutSearch') },
                 ] as { key: keyof Shortcuts; label: string }[]
               ).map(({ key, label }) => {
                 const isRecording = recordingFor === key;
@@ -344,21 +483,21 @@ export function SettingsModal() {
                           : 'border-[var(--border-card)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-indigo-500/50 hover:text-indigo-400'
                       }`}
                     >
-                      {isRecording ? 'Presiona una tecla…' : `⌘ ${currentKey}`}
+                      {isRecording ? t(language, 'settings', 'shortcutPress') : `⌘ ${currentKey}`}
                     </button>
                   </div>
                 );
               })}
             </div>
             <p className="mt-1.5 text-center text-[10px] text-[var(--text-hint)]">
-              Siempre se combinan con ⌘ (Mac) o Ctrl (Windows)
+              {t(language, 'settings', 'shortcutHint')}
             </p>
           </div>
 
           {/* Backup section */}
           <div>
             <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
-              Respaldo de datos
+              {t(language, 'settings', 'backup')}
             </p>
             <div className="space-y-2">
               <button
@@ -368,8 +507,8 @@ export function SettingsModal() {
               >
                 <Download size={13} className="shrink-0 text-indigo-400" />
                 <div className="text-left">
-                  <p className="font-medium text-[var(--text-secondary)]">Exportar como .zip</p>
-                  <p className="text-[10px] text-[var(--text-hint)]">Guarda todos tus datos en un archivo de respaldo</p>
+                  <p className="font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'exportLabel')}</p>
+                  <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'exportDesc')}</p>
                 </div>
               </button>
               <button
@@ -379,8 +518,8 @@ export function SettingsModal() {
               >
                 <Upload size={13} className="shrink-0 text-emerald-400" />
                 <div className="text-left">
-                  <p className="font-medium text-[var(--text-secondary)]">Importar desde .zip</p>
-                  <p className="text-[10px] text-[var(--text-hint)]">Restaura datos desde un respaldo previo</p>
+                  <p className="font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'importLabel')}</p>
+                  <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'importDesc')}</p>
                 </div>
               </button>
             </div>

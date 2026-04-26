@@ -3,19 +3,15 @@ import { ChevronLeft, ChevronRight, Plus, Download, Trash2, X, User, Pencil } fr
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
 import { OvertimeEntry } from '../types';
+import { MONTHS_TITLE, t } from '../lib/i18n';
 
 interface Props {
   onEdit: (entry: OvertimeEntry | null) => void;
 }
 
-const MONTH_NAMES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-];
-
-function formatFecha(fecha: string): string {
+function formatFecha(fecha: string, language: 'es' | 'en'): string {
   const [, month, day] = fecha.split('-');
-  return `${parseInt(day)} ${MONTH_NAMES[parseInt(month) - 1].slice(0, 3)}`;
+  return `${parseInt(day)} ${MONTHS_TITLE[language][parseInt(month) - 1].slice(0, 3)}`;
 }
 
 function prevMonth(ym: string): string {
@@ -35,6 +31,7 @@ export function OvertimeList({ onEdit }: Props) {
     overtimeEntries, overtimeMonth, loadOvertimeMonth,
     deleteOvertimeEntry, exportOvertimeExcel,
     overtimeMeta, setOvertimeMeta,
+    language,
   } = useAppStore(
     useShallow((s) => ({
       overtimeEntries: s.overtimeEntries,
@@ -44,6 +41,7 @@ export function OvertimeList({ onEdit }: Props) {
       exportOvertimeExcel: s.exportOvertimeExcel,
       overtimeMeta: s.overtimeMeta,
       setOvertimeMeta: s.setOvertimeMeta,
+      language: s.language,
     }))
   );
   const [showConfig, setShowConfig] = useState(false);
@@ -93,14 +91,14 @@ export function OvertimeList({ onEdit }: Props) {
     <div className="flex h-full w-72 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
-        <h2 className="text-sm font-semibold text-[var(--text-primary)]">Extras</h2>
+        <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'overtime', 'title')}</h2>
         <button
           onClick={() => onEdit(null)}
           className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-indigo-400 transition hover:bg-indigo-500/10"
-          title="Nueva hora extra"
+          title={t(language, 'overtime', 'newOvertimeTitle')}
         >
           <Plus size={14} />
-          Nueva
+          {t(language, 'overtime', 'newBtn')}
         </button>
       </div>
       {/* Navegación año / mes */}
@@ -108,18 +106,18 @@ export function OvertimeList({ onEdit }: Props) {
         <button
           onClick={() => loadOvertimeMonth(prevMonth(overtimeMonth))}
           className="rounded p-1 text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-          title="Mes anterior"
+          title={t(language, 'overtime', 'prevMonth')}
         >
           <ChevronLeft size={14} />
         </button>
         <div className="flex flex-1 flex-col items-center">
           <span className="text-[10px] text-[var(--text-hint)] leading-none">{year}</span>
-          <span className="text-xs font-semibold text-[var(--text-primary)]">{MONTH_NAMES[month - 1]}</span>
+          <span className="text-xs font-semibold text-[var(--text-primary)]">{MONTHS_TITLE[language][month - 1]}</span>
         </div>
         <button
           onClick={() => loadOvertimeMonth(nextMonth(overtimeMonth))}
           className="rounded p-1 text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-          title="Mes siguiente"
+          title={t(language, 'overtime', 'nextMonth')}
         >
           <ChevronRight size={14} />
         </button>
@@ -132,12 +130,12 @@ export function OvertimeList({ onEdit }: Props) {
       >
         {overtimeEntries.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-[var(--text-hint)]">
-            <p className="text-sm">Sin horas extras este mes</p>
+            <p className="text-sm">{t(language, 'overtime', 'emptyMonth')}</p>
             <button
               onClick={() => onEdit(null)}
               className="text-xs text-indigo-400 hover:underline"
             >
-              + Agregar primera entrada
+              {t(language, 'overtime', 'addFirstEntry')}
             </button>
           </div>
         ) : (
@@ -151,12 +149,12 @@ export function OvertimeList({ onEdit }: Props) {
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-indigo-400">{formatFecha(entry.fecha)}</span>
+                    <span className="text-xs font-semibold text-indigo-400">{formatFecha(entry.fecha, language)}</span>
                     <span className="text-[10px] text-[var(--text-hint)]">{entry.horaInicio}–{entry.horaFinal}</span>
                     <span className="ml-auto text-[10px] font-medium text-[var(--text-secondary)]">{fmt(entry.totalHoras)}h</span>
                   </div>
                   <p className="mt-0.5 truncate text-xs text-[var(--text-primary)]">
-                    {entry.actividad || <span className="italic text-[var(--text-hint)]">Sin descripción</span>}
+                    {entry.actividad || <span className="italic text-[var(--text-hint)]">{t(language, 'overtime', 'noDescription')}</span>}
                   </p>
                   {entry.observaciones && (
                     <span className="mt-0.5 inline-block rounded-full bg-indigo-500/10 px-1.5 py-0.5 text-[10px] text-indigo-400">
@@ -167,7 +165,7 @@ export function OvertimeList({ onEdit }: Props) {
                 <button
                   onClick={(e) => { e.stopPropagation(); setConfirmDelete(entry); }}
                   className="mt-0.5 hidden shrink-0 rounded p-1 text-[var(--text-hint)] hover:text-red-400 hover:bg-red-500/10 group-hover:flex"
-                  title="Eliminar"
+                  title={t(language, 'overtime', 'deleteTitle')}
                 >
                   <Trash2 size={13} />
                 </button>
@@ -180,13 +178,13 @@ export function OvertimeList({ onEdit }: Props) {
       {/* Totales del mes */}
       {overtimeEntries.length > 0 && (
         <div className="border-t border-[var(--border)] px-3 py-2 space-y-0.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-hint)]">Total del mes</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-hint)]">{t(language, 'overtime', 'monthTotal')}</p>
           <div className="grid grid-cols-2 gap-x-2 text-xs text-[var(--text-hint)]">
-            <span>Total:</span><span className="text-right font-semibold text-[var(--text-primary)]">{fmt(totalHoras)}h</span>
-            <span>Diurnas:</span><span className="text-right">{fmt(totalDiurnas)}h</span>
-            <span>Nocturnas:</span><span className="text-right">{fmt(totalNocturnas)}h</span>
-            <span>Diurnas fest.:</span><span className="text-right">{fmt(totalDiurnasFest)}h</span>
-            <span>Nocturnas fest.:</span><span className="text-right">{fmt(totalNocturnasFest)}h</span>
+            <span>{t(language, 'overtime', 'total')}</span><span className="text-right font-semibold text-[var(--text-primary)]">{fmt(totalHoras)}h</span>
+            <span>{t(language, 'overtime', 'day')}</span><span className="text-right">{fmt(totalDiurnas)}h</span>
+            <span>{t(language, 'overtime', 'night')}</span><span className="text-right">{fmt(totalNocturnas)}h</span>
+            <span>{t(language, 'overtime', 'dayHoliday')}</span><span className="text-right">{fmt(totalDiurnasFest)}h</span>
+            <span>{t(language, 'overtime', 'nightHoliday')}</span><span className="text-right">{fmt(totalNocturnasFest)}h</span>
           </div>
         </div>
       )}
@@ -195,7 +193,7 @@ export function OvertimeList({ onEdit }: Props) {
       {showConfig && (
         <div className="border-t border-[var(--border)] bg-[var(--bg-base)] px-3 py-3 space-y-2 animate-in">
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-hint)]">Datos del colaborador</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-hint)]">{t(language, 'overtime', 'collaboratorData')}</p>
             <button onClick={() => setShowConfig(false)} className="rounded p-0.5 text-[var(--text-hint)] hover:text-[var(--text-primary)]">
               <X size={12} />
             </button>
@@ -205,16 +203,16 @@ export function OvertimeList({ onEdit }: Props) {
               className={inputCls}
               value={overtimeMeta.colaborador}
               onChange={(e) => setOvertimeMeta({ colaborador: e.target.value })}
-              placeholder="Nombre completo"
+              placeholder={t(language, 'overtime', 'fullNamePlaceholder')}
             />
             <input
               className={inputCls}
               value={overtimeMeta.cedula}
               onChange={(e) => setOvertimeMeta({ cedula: e.target.value })}
-              placeholder="Número de cédula"
+              placeholder={t(language, 'overtime', 'idPlaceholder')}
             />
           </div>
-          <p className="text-[10px] text-[var(--text-hint)]">Se usarán en todos los reportes exportados.</p>
+          <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'overtime', 'collaboratorHint')}</p>
         </div>
       )}
 
@@ -224,10 +222,10 @@ export function OvertimeList({ onEdit }: Props) {
           <button
             onClick={() => onEdit(null)}
             className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-indigo-400 hover:bg-indigo-500/10 transition-colors"
-            title="Nueva entrada"
+            title={t(language, 'overtime', 'newEntryTitle')}
           >
             <Plus size={14} />
-            Nueva extra
+            {t(language, 'overtime', 'newExtra')}
           </button>
         </div>
         <div className="flex items-center gap-1">
@@ -238,14 +236,14 @@ export function OvertimeList({ onEdit }: Props) {
                 ? 'text-indigo-400 bg-indigo-500/10'
                 : 'text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
             }`}
-            title="Datos del colaborador"
+            title={t(language, 'overtime', 'collaboratorData')}
           >
             <User size={14} />
           </button>
           <button
             onClick={() => exportOvertimeExcel(overtimeMonth)}
             className="rounded p-1.5 text-[var(--text-hint)] hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
-            title="Exportar a Excel"
+            title={t(language, 'overtime', 'exportExcel')}
           >
             <Download size={14} />
           </button>
@@ -264,7 +262,7 @@ export function OvertimeList({ onEdit }: Props) {
           className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
         >
           <Plus size={13} />
-          <span>Nueva extra</span>
+          <span>{t(language, 'overtime', 'newExtra')}</span>
         </button>
       </div>
     )}
@@ -280,7 +278,7 @@ export function OvertimeList({ onEdit }: Props) {
           className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
         >
           <Pencil size={13} />
-          <span>Editar extra</span>
+          <span>{t(language, 'overtime', 'editExtra')}</span>
         </button>
         <div className="mx-2 my-1 border-t border-[var(--border)]" />
         <button
@@ -288,7 +286,7 @@ export function OvertimeList({ onEdit }: Props) {
           className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-red-400 transition hover:bg-red-500/10"
         >
           <Trash2 size={13} />
-          <span>Eliminar extra</span>
+          <span>{t(language, 'overtime', 'deleteExtra')}</span>
         </button>
       </div>
     )}
@@ -297,23 +295,23 @@ export function OvertimeList({ onEdit }: Props) {
         <div className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
           <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
             <Trash2 size={15} className="text-red-400" />
-            Eliminar extra
+            {t(language, 'overtime', 'deleteExtra')}
           </div>
           <p className="mb-4 text-xs text-[var(--text-secondary)]">
-            ¿Eliminar la extra del <span className="font-medium text-[var(--text-primary)]">{formatFecha(confirmDelete.fecha)}</span>? Esta acción no se puede deshacer.
+            {t(language, 'overtime', 'deleteExtraAskPrefix')} <span className="font-medium text-[var(--text-primary)]">{formatFecha(confirmDelete.fecha, language)}</span>? {t(language, 'overtime', 'deleteExtraAskSuffix')}
           </p>
           <div className="flex justify-end gap-2">
             <button
               onClick={() => setConfirmDelete(null)}
               className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
             >
-              Cancelar
+              {t(language, 'overtime', 'cancel')}
             </button>
             <button
               onClick={() => { deleteOvertimeEntry(confirmDelete.id); setConfirmDelete(null); }}
               className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600"
             >
-              Eliminar
+              {t(language, 'overtime', 'delete')}
             </button>
           </div>
         </div>

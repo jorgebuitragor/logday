@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback } from 'react';
 import { X, Link, Image as ImageIcon, Upload, Check } from 'lucide-react';
 import { fs, pickFile } from '../lib/invoke';
+import { useAppStore } from '../store/appStore';
+import { t } from '../lib/i18n';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -23,6 +25,7 @@ export type ImageLinkModalProps = ImageModalProps | LinkModalProps;
 // ── Image Modal ──────────────────────────────────────────────────────────────
 
 function ImageModal({ onInsert, onClose }: Omit<ImageModalProps, 'mode'>) {
+  const { language } = useAppStore();
   const [tab, setTab] = useState<'url' | 'file'>('url');
   const [url, setUrl] = useState('');
   const [alt, setAlt] = useState('');
@@ -43,7 +46,7 @@ function ImageModal({ onInsert, onClose }: Omit<ImageModalProps, 'mode'>) {
   };
 
   const handleInsertUrl = () => {
-    if (!url.trim()) { setError('Ingresa una URL válida'); return; }
+    if (!url.trim()) { setError(t(language, 'extras', 'invalidUrl')); return; }
     onInsert(url.trim(), alt.trim() || undefined);
   };
 
@@ -61,7 +64,7 @@ function ImageModal({ onInsert, onClose }: Omit<ImageModalProps, 'mode'>) {
         onInsert(src, alt || fileName);
       }
     } catch (err) {
-      setError('No se pudo cargar el archivo. Intenta de nuevo.');
+      setError(t(language, 'extras', 'loadFileError'));
       console.error(err);
     } finally {
       setIsLoading(false);
@@ -82,15 +85,15 @@ function ImageModal({ onInsert, onClose }: Omit<ImageModalProps, 'mode'>) {
         setIsLoading(false);
       };
       reader.onerror = () => {
-        setError('No se pudo leer el archivo.');
+        setError(t(language, 'extras', 'readFileError'));
         setIsLoading(false);
       };
       reader.readAsDataURL(file);
     } catch (err) {
-      setError('Error al procesar el archivo.');
+      setError(t(language, 'extras', 'processFileError'));
       setIsLoading(false);
     }
-  }, [alt, onInsert]);
+  }, [alt, language, onInsert]);
 
   const handleDropZoneDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -108,7 +111,7 @@ function ImageModal({ onInsert, onClose }: Omit<ImageModalProps, 'mode'>) {
     if (file && file.type.startsWith('image/')) {
       handleFileDrop(file);
     } else {
-      setError('Solo se aceptan archivos de imagen.');
+      setError(t(language, 'extras', 'onlyImages'));
     }
   };
 
@@ -125,7 +128,7 @@ function ImageModal({ onInsert, onClose }: Omit<ImageModalProps, 'mode'>) {
           }`}
         >
           <Link size={12} />
-          Desde URL
+          {t(language, 'extras', 'fromUrl')}
         </button>
         <button
           onClick={() => { setTab('file'); setError(''); }}
@@ -136,38 +139,38 @@ function ImageModal({ onInsert, onClose }: Omit<ImageModalProps, 'mode'>) {
           }`}
         >
           <Upload size={12} />
-          Archivo local
+          {t(language, 'extras', 'localFile')}
         </button>
       </div>
 
       {tab === 'url' ? (
         <>
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] font-medium text-[var(--text-hint)]">URL de la imagen</label>
+            <label className="text-[11px] font-medium text-[var(--text-hint)]">{t(language, 'extras', 'imageUrlLabel')}</label>
             <input
               autoFocus
               type="text"
               value={url}
               onChange={(e) => handleUrlChange(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleInsertUrl(); if (e.key === 'Escape') onClose(); }}
-              placeholder="https://ejemplo.com/imagen.png"
+              placeholder={t(language, 'extras', 'imageUrlPlaceholder')}
               className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none placeholder-[var(--text-faint)] focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 transition"
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] font-medium text-[var(--text-hint)]">Texto alternativo (opcional)</label>
+            <label className="text-[11px] font-medium text-[var(--text-hint)]">{t(language, 'extras', 'altTextLabel')}</label>
             <input
               type="text"
               value={alt}
               onChange={(e) => setAlt(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleInsertUrl(); if (e.key === 'Escape') onClose(); }}
-              placeholder="Descripción de la imagen"
+              placeholder={t(language, 'extras', 'altTextPlaceholder')}
               className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none placeholder-[var(--text-faint)] focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 transition"
             />
           </div>
           {preview && (
             <div className="rounded-lg border border-[var(--border)] overflow-hidden bg-[var(--bg-surface)]">
-              <img src={preview} alt={alt || 'Preview'} className="w-full max-h-40 object-contain" onError={() => setError('No se pudo cargar la imagen desde esta URL')} />
+              <img src={preview} alt={alt || 'Preview'} className="w-full max-h-40 object-contain" onError={() => setError(t(language, 'extras', 'loadFileError'))} />
             </div>
           )}
           {error && <p className="text-xs text-red-400">{error}</p>}
@@ -177,7 +180,7 @@ function ImageModal({ onInsert, onClose }: Omit<ImageModalProps, 'mode'>) {
             className="flex items-center justify-center gap-2 rounded-lg bg-indigo-600 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Check size={14} />
-            Insertar imagen
+            {t(language, 'extras', 'insertImage')}
           </button>
         </>
       ) : (
@@ -197,13 +200,13 @@ function ImageModal({ onInsert, onClose }: Omit<ImageModalProps, 'mode'>) {
             <Upload size={28} className={isDraggingFile ? 'text-indigo-400' : ''} />
             <div className="text-center">
               <p className="text-sm font-medium">
-                {isDraggingFile ? 'Suelta la imagen aquí' : 'Arrastra una imagen o haz clic'}
+                {isDraggingFile ? t(language, 'extras', 'dropImageHere') : t(language, 'extras', 'dragOrClickImage')}
               </p>
-              <p className="mt-1 text-[11px] opacity-70">PNG, JPG, GIF, WebP soportados</p>
+              <p className="mt-1 text-[11px] opacity-70">{t(language, 'extras', 'imageFormats')}</p>
             </div>
             {isLoading && (
               <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-[var(--bg-surface)]/80">
-                <div className="text-sm text-[var(--text-hint)]">Cargando…</div>
+                <div className="text-sm text-[var(--text-hint)]">{t(language, 'extras', 'loading')}</div>
               </div>
             )}
           </div>
@@ -217,40 +220,41 @@ function ImageModal({ onInsert, onClose }: Omit<ImageModalProps, 'mode'>) {
 // ── Link Modal ───────────────────────────────────────────────────────────────
 
 function LinkModal({ selectedText, currentHref, onInsert, onClose }: Omit<LinkModalProps, 'mode'>) {
+  const { language } = useAppStore();
   const [href, setHref] = useState(currentHref ?? '');
   const [text, setText] = useState(selectedText ?? '');
   const [error, setError] = useState('');
 
   const handleInsert = () => {
     const trimmed = href.trim();
-    if (!trimmed) { setError('Ingresa una URL válida'); return; }
+    if (!trimmed) { setError(t(language, 'extras', 'invalidUrl')); return; }
     onInsert(trimmed, text.trim() || undefined);
   };
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <label className="text-[11px] font-medium text-[var(--text-hint)]">URL del enlace</label>
+        <label className="text-[11px] font-medium text-[var(--text-hint)]">{t(language, 'extras', 'linkUrlLabel')}</label>
         <input
           autoFocus
           type="text"
           value={href}
           onChange={(e) => { setHref(e.target.value); setError(''); }}
           onKeyDown={(e) => { if (e.key === 'Enter') handleInsert(); if (e.key === 'Escape') onClose(); }}
-          placeholder="https://..."
+          placeholder={t(language, 'extras', 'linkUrlPlaceholder')}
           className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none placeholder-[var(--text-faint)] focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 transition"
         />
       </div>
 
       {!selectedText && (
         <div className="flex flex-col gap-1.5">
-          <label className="text-[11px] font-medium text-[var(--text-hint)]">Texto del enlace</label>
+          <label className="text-[11px] font-medium text-[var(--text-hint)]">{t(language, 'extras', 'linkTextLabel')}</label>
           <input
             type="text"
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleInsert(); if (e.key === 'Escape') onClose(); }}
-            placeholder="Texto visible del enlace"
+            placeholder={t(language, 'extras', 'linkTextPlaceholder')}
             className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none placeholder-[var(--text-faint)] focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 transition"
           />
         </div>
@@ -264,7 +268,7 @@ function LinkModal({ selectedText, currentHref, onInsert, onClose }: Omit<LinkMo
             onClick={() => onInsert('', undefined)}
             className="flex-1 rounded-lg border border-red-500/30 py-2 text-sm text-red-400 transition hover:bg-red-500/10"
           >
-            Quitar enlace
+            {t(language, 'extras', 'removeLink')}
           </button>
         )}
         <button
@@ -273,7 +277,7 @@ function LinkModal({ selectedText, currentHref, onInsert, onClose }: Omit<LinkMo
           className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-indigo-600 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Check size={14} />
-          {currentHref ? 'Actualizar enlace' : 'Insertar enlace'}
+          {currentHref ? t(language, 'extras', 'updateLink') : t(language, 'extras', 'insertLink')}
         </button>
       </div>
     </div>
@@ -283,7 +287,12 @@ function LinkModal({ selectedText, currentHref, onInsert, onClose }: Omit<LinkMo
 // ── Root Modal Wrapper ───────────────────────────────────────────────────────
 
 export function ImageLinkModal(props: ImageLinkModalProps) {
-  const title = props.mode === 'image' ? 'Insertar imagen' : props.mode === 'link' && props.currentHref ? 'Editar enlace' : 'Insertar enlace';
+  const { language } = useAppStore();
+  const title = props.mode === 'image'
+    ? t(language, 'extras', 'insertImage')
+    : props.mode === 'link' && props.currentHref
+      ? t(language, 'extras', 'editLink')
+      : t(language, 'extras', 'insertLink');
   const Icon = props.mode === 'image' ? ImageIcon : Link;
 
   return (

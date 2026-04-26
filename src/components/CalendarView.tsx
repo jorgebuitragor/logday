@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Task, TaskStatus } from '../types';
 import { useAppStore } from '../store/appStore';
 import { TaskContextMenu, NewTaskContextMenu } from './TaskContextMenu';
+import { t, MONTHS_TITLE, WEEKDAYS_SHORT } from '../lib/i18n';
 
 const STATUS_DOT: Record<TaskStatus, string> = {
   todo: 'bg-zinc-500',
@@ -10,14 +11,12 @@ const STATUS_DOT: Record<TaskStatus, string> = {
   done: 'bg-green-400',
 };
 
-const WEEKDAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-const MONTHS = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-];
 
 export function CalendarView() {
-  const { tasks, currentView, setActiveTask, activeTask } = useAppStore();
+  const { tasks, currentView, setActiveTask, activeTask, language } = useAppStore();
+
+  const MONTHS = MONTHS_TITLE[language];
+  const WEEKDAYS = WEEKDAYS_SHORT[language];
 
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
@@ -87,7 +86,7 @@ export function CalendarView() {
     >
       {/* Header */}
       <div className="border-b border-[var(--border)] px-6 py-4 flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-[var(--text-primary)]">Calendario</h1>
+        <h1 className="text-lg font-semibold text-[var(--text-primary)]">{t(language, 'tasks', 'calendarTitle')}</h1>
         <div className="flex items-center gap-3">
           <button onClick={prevMonth} className="rounded-lg p-1.5 text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition">
             <ChevronLeft size={18} />
@@ -173,11 +172,11 @@ export function CalendarView() {
           <div className="w-64 border-l border-[var(--border)] flex flex-col overflow-hidden">
             <div className="border-b border-[var(--border)] px-4 py-3">
               <p className="text-sm font-medium text-[var(--text-primary)]">{selectedDate}</p>
-              <p className="text-xs text-[var(--text-hint)]">{selectedTasks.length} tarea(s)</p>
+              <p className="text-xs text-[var(--text-hint)]">{selectedTasks.length} {t(language, 'tasks', 'taskCount')}</p>
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-2">
               {selectedTasks.length === 0 ? (
-                <p className="text-xs text-[var(--text-faint)] italic text-center pt-4">Sin tareas para esta fecha</p>
+                <p className="text-xs text-[var(--text-faint)] italic text-center pt-4">{t(language, 'tasks', 'noTasksDate')}</p>
               ) : (
                 selectedTasks.map((task) => (
                   <button
@@ -231,7 +230,7 @@ export function CalendarView() {
             ))}
             {tasksByDate[hoverDate].length > 6 && (
               <p className="px-1 text-[10px] text-[var(--text-faint)]">
-                +{tasksByDate[hoverDate].length - 6} más…
+                +{tasksByDate[hoverDate].length - 6} {t(language, 'tasks', 'moreSuffix')}
               </p>
             )}
           </div>

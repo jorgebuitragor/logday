@@ -3,11 +3,12 @@ import { Plus, Circle, Clock, CheckCircle2, Calendar, GripVertical, X } from 'lu
 import { Task, TaskStatus } from '../types';
 import { useAppStore } from '../store/appStore';
 import { TaskContextMenu, NewTaskContextMenu } from './TaskContextMenu';
+import { t } from '../lib/i18n';
 
-const COLUMNS: { status: TaskStatus; label: string; color: string; border: string; Icon: React.ElementType }[] = [
-  { status: 'todo', label: 'Por hacer', color: 'text-zinc-400', border: 'border-zinc-600/30', Icon: Circle },
-  { status: 'in-progress', label: 'En progreso', color: 'text-amber-400', border: 'border-amber-500/30', Icon: Clock },
-  { status: 'done', label: 'Hecho', color: 'text-green-400', border: 'border-green-500/30', Icon: CheckCircle2 },
+const COLUMN_DEFS: { status: TaskStatus; color: string; border: string; Icon: React.ElementType }[] = [
+  { status: 'todo',        color: 'text-zinc-400',  border: 'border-zinc-600/30',  Icon: Circle },
+  { status: 'in-progress', color: 'text-amber-400', border: 'border-amber-500/30', Icon: Clock },
+  { status: 'done',        color: 'text-green-400', border: 'border-green-500/30', Icon: CheckCircle2 },
 ];
 
 // Variable de módulo para el id en drag (evita problemas de closure en async)
@@ -96,9 +97,14 @@ function DragGhost({ task, x, y }: { task: Task; x: number; y: number }) {
 }
 
 export function KanbanBoard() {
-  const { tasks, currentView, projects } = useAppStore();
+  const { tasks, currentView, projects, language } = useAppStore();
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
+
+  const COLUMNS = COLUMN_DEFS.map((col) => ({
+    ...col,
+    label: t(language, 'tasks', col.status === 'todo' ? 'statusTodo' : col.status === 'in-progress' ? 'statusInProgress' : 'statusDone'),
+  }));
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [ghostPos, setGhostPos] = useState({ x: 0, y: 0 });
@@ -184,7 +190,7 @@ export function KanbanBoard() {
     >
       {/* Header + filtros */}
       <div className="border-b border-[var(--border)] px-6 pt-4 pb-3 space-y-2.5">
-        <h1 className="text-lg font-semibold text-[var(--text-primary)]">Tablero Kanban</h1>
+        <h1 className="text-lg font-semibold text-[var(--text-primary)]">{t(language, 'tasks', 'kanbanTitle')}</h1>
 
         {/* Barra de filtros */}
         {(projects.length > 1 || allTags.length > 0) && (
@@ -196,7 +202,7 @@ export function KanbanBoard() {
                 onChange={(e) => setFilterProject(e.target.value || null)}
                 className="rounded-lg border border-[var(--border-card)] bg-[var(--bg-surface)] px-2.5 py-1 text-xs text-[var(--text-secondary)] outline-none cursor-pointer hover:border-[var(--border)]"
               >
-                <option value="">Todos los proyectos</option>
+                <option value="">{t(language, 'tasks', 'allProjects')}</option>
                 {projects.map((p) => (
                   <option key={p} value={p}>{p}</option>
                 ))}
@@ -224,7 +230,7 @@ export function KanbanBoard() {
                 onClick={() => { setFilterProject(null); setFilterTags([]); }}
                 className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] text-[var(--text-hint)] transition hover:text-red-400"
               >
-                <X size={9} /> Limpiar
+                <X size={9} /> {t(language, 'tasks', 'clearFilters')}
               </button>
             )}
           </div>
@@ -268,11 +274,11 @@ export function KanbanBoard() {
                   />
                 ))}
                 {colTasks.length === 0 && !draggingTask && (
-                  <p className="py-4 text-center text-xs text-[var(--text-faint)] italic">Sin tareas</p>
+                  <p className="py-4 text-center text-xs text-[var(--text-faint)] italic">{t(language, 'tasks', 'noTasks')}</p>
                 )}
                 {isTarget && draggingTask && (
                   <div className="rounded-xl border-2 border-dashed border-indigo-400/40 p-2.5 text-center text-xs text-indigo-400">
-                    Soltar aquí
+                    {t(language, 'tasks', 'dropHere')}
                   </div>
                 )}
               </div>
@@ -294,7 +300,7 @@ export function KanbanBoard() {
 }
 
 function KanbanAddButton({ status }: { status: TaskStatus }) {
-  const { updateTask, createTask, activeProject } = useAppStore();
+  const { updateTask, createTask, activeProject, language } = useAppStore();
   const [newTitle, setNewTitle] = useState('');
   const [isAdding, setIsAdding] = useState(false);
 
@@ -319,16 +325,16 @@ function KanbanAddButton({ status }: { status: TaskStatus }) {
       {isAdding && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setIsAdding(false); setNewTitle(''); }}>
           <div className="w-72 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <p className="mb-2 text-xs font-medium text-[var(--text-secondary)]">Nueva tarea</p>
+            <p className="mb-2 text-xs font-medium text-[var(--text-secondary)]">{t(language, 'tasks', 'newTask')}</p>
             <input
               autoFocus
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
               onKeyDown={handleCreate}
-              placeholder="Nombre de la tarea…"
+              placeholder={t(language, 'tasks', 'taskNamePlaceholder')}
               className="w-full rounded-xl border border-indigo-500/40 bg-[var(--bg-surface)] px-3 py-2.5 text-sm text-[var(--text-primary)] outline-none placeholder-[var(--text-hint)]"
             />
-            <p className="mt-1.5 text-[10px] text-[var(--text-faint)]">Enter para crear · Esc para cancelar</p>
+            <p className="mt-1.5 text-[10px] text-[var(--text-faint)]">{t(language, 'tasks', 'enterToCreate')}</p>
           </div>
         </div>
       )}

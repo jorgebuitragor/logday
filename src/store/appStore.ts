@@ -111,6 +111,7 @@ interface AppState {
   moveNote: (note: Note, toFolder: string) => Promise<void>;
   toggleNotePin: (note: Note) => Promise<void>;
   setFolderTags: (folder: string, tags: string[]) => void;
+  replaceFolderTags: (tags: Record<string, string[]>) => void;
   moveNoteFolder: (folder: string, targetParent: string) => Promise<void>;
   duplicateNoteFolder: (folder: string, targetParent: string | null) => Promise<void>;
 
@@ -132,6 +133,7 @@ interface AppState {
   deleteOvertimeEntry: (id: string) => Promise<void>;
   deleteOvertimeMonth: (yearMonth: string) => Promise<void>;
   setOvertimeMeta: (meta: Partial<OvertimeMonthMeta>) => void;
+  replaceOvertimeMetaSnapshot: (meta: OvertimeMonthMeta) => void;
   exportOvertimeExcel: (yearMonth: string) => Promise<void>;
 
   // UI
@@ -957,6 +959,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ folderTags: updated });
   },
 
+  replaceFolderTags: (tags) => {
+    localStorage.setItem('folderTags', JSON.stringify(tags));
+    set({ folderTags: tags });
+  },
+
   moveNoteFolder: async (folder, targetParent) => {
     const { basePath, notes, activeNote, activeNoteFolder, folderTags } = get();
     // targetParent puede ser '' para mover a la raíz
@@ -1381,6 +1388,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const updated = { ...get().overtimeMeta, ...meta };
     localStorage.setItem('overtimeMeta', JSON.stringify(updated));
     set({ overtimeMeta: updated });
+  },
+
+  replaceOvertimeMetaSnapshot: (meta) => {
+    localStorage.setItem('overtimeMeta', JSON.stringify(meta));
+    set({ overtimeMeta: meta });
   },
 
   exportOvertimeExcel: async (yearMonth) => {

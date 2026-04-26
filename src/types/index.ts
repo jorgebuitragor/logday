@@ -73,6 +73,17 @@ export interface AppConfig {
   confirmDestructiveActions?: boolean;
 }
 
+export interface BackupSettings {
+  language?: Language;
+  startupScreen?: StartupScreen;
+  confirmDestructiveActions?: boolean;
+  theme?: Theme;
+  fontSize?: number;
+  shortcuts?: Partial<Shortcuts>;
+  folderTags?: Record<string, string[]>;
+  overtimeMeta?: OvertimeMonthMeta;
+}
+
 export interface GitConfig {
   enabled: boolean;
   remote: string;

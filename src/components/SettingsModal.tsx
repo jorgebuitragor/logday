@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, Monitor, Sun, Moon, FolderOpen, Minus, Plus, Download, Upload, Type, Keyboard, AlertTriangle, ChevronDown, Eye } from 'lucide-react';
-import { Theme, Shortcuts, StartupScreen, Language } from '../types';
+import { Theme, Shortcuts, StartupScreen, Language, BackupSettings } from '../types';
 import { useAppStore } from '../store/appStore';
 import { t } from '../lib/i18n';
 import { fs } from '../lib/invoke';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import JSZip from 'jszip';
+
+const BACKUP_SETTINGS_PATH = '__logday/settings.json';
 
 function isICloudPath(path: string): boolean {
   return (
@@ -70,6 +72,12 @@ export function SettingsModal() {
     confirmDestructiveActions, setConfirmDestructiveActions,
     basePath, changeBasePath,
     shortcuts, setShortcut,
+    folderTags, replaceFolderTags,
+    overtimeMeta, replaceOvertimeMetaSnapshot,
+    activeProject, activeNoteFolder,
+    loadProjects, loadTasks,
+    loadNoteFolders, loadNotes,
+    loadDailyMonths, loadOvertimeMonths,
     showToast,
   } = useAppStore();
 
@@ -145,6 +153,17 @@ export function SettingsModal() {
 
       const zip = new JSZip();
       await collectFiles(zip, basePath, basePath);
+      const backupSettings: BackupSettings = {
+        language,
+        startupScreen,
+        confirmDestructiveActions,
+        theme,
+        fontSize,
+        shortcuts,
+        folderTags,
+        overtimeMeta,
+      };
+      zip.file(BACKUP_SETTINGS_PATH, JSON.stringify(backupSettings, null, 2));
 
       const data = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
       // Convertir a base64 para enviar al comando Rust
@@ -199,24 +218,73 @@ export function SettingsModal() {
       const zip = await JSZip.loadAsync(rawBytes);
 
       const tasks: Promise<void>[] = [];
+      const importedSettingsRef: { value: BackupSettings | null } = { value: null };
       zip.forEach((relativePath, file) => {
-        if (!file.dir) {
-          const task = file.async('uint8array').then(async (content) => {
-            const targetPath = `${basePath}/${relativePath}`;
-            // Ensure parent dir exists
-            const parts = relativePath.split('/');
-            if (parts.length > 1) {
-              const parentRelative = parts.slice(0, -1).join('/');
-              await fs.createDir(`${basePath}/${parentRelative}`);
-            }
-            const fileB64 = btoa(String.fromCharCode(...content));
-            await invoke('write_file_binary', { path: targetPath, data: fileB64 });
-          });
-          tasks.push(task);
+        if (file.dir) return;
+
+        if (relativePath === BACKUP_SETTINGS_PATH) {
+          tasks.push(
+            file.async('string').then(async (content) => {
+              importedSettingsRef.value = JSON.parse(content) as BackupSettings;
+            })
+          );
+          return;
         }
+
+        const task = file.async('uint8array').then(async (content) => {
+          const targetPath = `${basePath}/${relativePath}`;
+          // Ensure parent dir exists
+          const parts = relativePath.split('/');
+          if (parts.length > 1) {
+            const parentRelative = parts.slice(0, -1).join('/');
+            await fs.createDir(`${basePath}/${parentRelative}`);
+          }
+          const fileB64 = btoa(String.fromCharCode(...content));
+          await invoke('write_file_binary', { path: targetPath, data: fileB64 });
+        });
+        tasks.push(task);
       });
 
       await Promise.all(tasks);
+      const importedSettings = importedSettingsRef.value;
+
+      if (importedSettings?.theme) {
+        setTheme(importedSettings.theme);
+      }
+      if (typeof importedSettings?.fontSize === 'number') {
+        setFontSize(importedSettings.fontSize);
+      }
+      if (importedSettings?.language) {
+        await setLanguage(importedSettings.language);
+      }
+      if (importedSettings?.startupScreen) {
+        await setStartupScreen(importedSettings.startupScreen);
+      }
+      if (typeof importedSettings?.confirmDestructiveActions === 'boolean') {
+        await setConfirmDestructiveActions(importedSettings.confirmDestructiveActions);
+      }
+      if (importedSettings?.shortcuts) {
+        for (const [action, key] of Object.entries(importedSettings.shortcuts) as [keyof Shortcuts, string | undefined][]) {
+          if (typeof key === 'string' && key) {
+            setShortcut(action, key);
+          }
+        }
+      }
+      if (importedSettings?.folderTags) {
+        replaceFolderTags(importedSettings.folderTags);
+      }
+      if (importedSettings?.overtimeMeta) {
+        replaceOvertimeMetaSnapshot(importedSettings.overtimeMeta);
+      }
+
+      await Promise.all([loadProjects(), loadNoteFolders()]);
+      await Promise.all([
+        loadTasks(activeProject),
+        loadNotes(activeNoteFolder),
+        loadDailyMonths(),
+        loadOvertimeMonths(),
+      ]);
+
       setBackupStatus('done');
       setBackupMsg(t(language, 'settings', 'backupRestored'));
       showToast({

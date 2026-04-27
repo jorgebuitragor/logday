@@ -336,6 +336,37 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+
+            #[cfg(windows)]
+            {
+                use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+                use windows_sys::Win32::UI::WindowsAndMessaging::{
+                    GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, SendMessageW,
+                };
+                if let Some(win) = app.get_webview_window("main") {
+                    if let Ok(rwh) = win.window_handle() {
+                        if let RawWindowHandle::Win32(h) = rwh.as_raw() {
+                            let hwnd = h.hwnd.get() as windows_sys::Win32::Foundation::HWND;
+                            unsafe {
+                                // WS_EX_DLGMODALFRAME quita el icono de la barra de titulo
+                                const GWL_EXSTYLE: i32 = -20;
+                                const WS_EX_DLGMODALFRAME: isize = 0x0001;
+                                const SWP_NOMOVE: u32 = 0x0002;
+                                const SWP_NOSIZE: u32 = 0x0001;
+                                const SWP_NOZORDER: u32 = 0x0004;
+                                const SWP_FRAMECHANGED: u32 = 0x0020;
+                                let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+                                SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style | WS_EX_DLGMODALFRAME);
+                                // Aplicar cambio de estilo y limpiar iconos
+                                SetWindowPos(hwnd, std::ptr::null_mut(), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+                                SendMessageW(hwnd, 0x0080, 0, 0); // WM_SETICON ICON_SMALL = null
+                                SendMessageW(hwnd, 0x0080, 1, 0); // WM_SETICON ICON_BIG = null
+                            }
+                        }
+                    }
+                }
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {

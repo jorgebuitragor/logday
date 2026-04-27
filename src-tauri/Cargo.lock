@@ -2057,6 +2057,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "dirs-next",
+ "raw-window-handle",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -2064,6 +2065,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

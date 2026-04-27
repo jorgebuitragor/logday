@@ -38,20 +38,25 @@ async function writeToClipboard(text: string): Promise<void> {
     await navigator.clipboard.writeText(text);
     return;
   } catch { /* continúa */ }
-  // 2) Comando Rust via pbcopy/clip (fallback)
+  // 2) execCommand fallback (en macOS suele preservar mejor acentos que pbcopy)
+  try {
+    const el = document.createElement('textarea');
+    el.value = text;
+    el.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0';
+    document.body.appendChild(el);
+    el.focus();
+    el.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(el);
+    if (ok) return;
+  } catch { /* continúa */ }
+  // 3) Comando Rust via pbcopy/clip (último fallback)
   try {
     await invoke('write_clipboard', { text });
     return;
   } catch { /* continúa */ }
-  // 3) execCommand fallback
-  const el = document.createElement('textarea');
-  el.value = text;
-  el.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0';
-  document.body.appendChild(el);
-  el.focus();
-  el.select();
-  document.execCommand('copy');
-  document.body.removeChild(el);
+
+  throw new Error('No se pudo copiar al portapapeles');
 }
 
 // ── Helpers para convertir entre string almacenado y array de items ───────────

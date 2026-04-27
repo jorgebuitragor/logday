@@ -150,13 +150,19 @@ fn write_clipboard(text: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         let mut child = Command::new("pbcopy")
+            .env("LANG", "en_US.UTF-8")
+            .env("LC_ALL", "en_US.UTF-8")
+            .env("LC_CTYPE", "UTF-8")
             .stdin(Stdio::piped())
             .spawn()
             .map_err(|e| e.to_string())?;
         if let Some(stdin) = child.stdin.as_mut() {
             stdin.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
         }
-        child.wait().map_err(|e| e.to_string())?;
+        let status = child.wait().map_err(|e| e.to_string())?;
+        if !status.success() {
+            return Err(format!("pbcopy falló con código {:?}", status.code()));
+        }
         return Ok(());
     }
     #[cfg(target_os = "windows")]

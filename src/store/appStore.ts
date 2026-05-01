@@ -126,6 +126,7 @@ interface AppState {
   createDailyForDate: (date: string) => void;
   copyDailyFormat: (date: string) => Promise<string>;
   deleteDailyEntry: (date: string) => Promise<void>;
+  deleteDailyMonth: (yearMonth: string) => Promise<void>;
 
   // Overtime
   loadOvertimeMonths: () => Promise<void>;
@@ -1230,6 +1231,31 @@ export const useAppStore = create<AppState>((set, get) => ({
       kind: 'success',
       title: t(language, 'toast', 'dailyDeleted'),
       description: date,
+    });
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+  },
+
+  deleteDailyMonth: async (yearMonth) => {
+    const base = get().basePath;
+    if (!base) return;
+    const language = get().language;
+    const [year, month] = yearMonth.split('-');
+    const dir = dailyMonthDir(base, year, month);
+    try { await fs.deleteDir(dir); } catch { /* ya no existe */ }
+    set((s) => {
+      const entries = { ...s.dailyEntries };
+      Object.keys(entries).forEach((d) => { if (d.startsWith(yearMonth)) delete entries[d]; });
+      const newMonths = s.dailyMonths.filter((m) => m !== yearMonth);
+      const newActive = s.activeDailyDate?.startsWith(yearMonth) ? null : s.activeDailyDate;
+      const newActiveMonth = s.activeDailyMonth === yearMonth
+        ? (newMonths[0] ?? yearMonth)
+        : s.activeDailyMonth;
+      return { dailyEntries: entries, dailyMonths: newMonths, activeDailyDate: newActive, activeDailyMonth: newActiveMonth };
+    });
+    get().showToast({
+      kind: 'success',
+      title: t(language, 'toast', 'dailyMonthDeleted'),
+      description: yearMonth,
     });
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },

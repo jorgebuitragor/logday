@@ -3,7 +3,6 @@ import { Copy, Check, X, Plus, GripVertical, Trash2, ListTodo } from 'lucide-rea
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../store/appStore';
 import { Task } from '../types';
-import { placeMenuAtPointer } from '../lib/menuPosition';
 import {
   toISO,
   dateFromISO,
@@ -11,8 +10,6 @@ import {
   buildDailyCopyText,
 } from '../lib/colombianHolidays';
 import { t } from '../lib/i18n';
-
-const ESTIMATED_PREVIEW_CTX_MENU = { width: 160, height: 46 };
 
 function formatShortDate(iso: string, language: 'es' | 'en'): string {
   const locale = language === 'es' ? 'es-CO' : 'en-US';
@@ -397,34 +394,8 @@ export function DailyEditor() {
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [previewCtxMenu, setPreviewCtxMenu] = useState<{ x: number; y: number } | null>(null);
-  const [previewCtxMenuPos, setPreviewCtxMenuPos] = useState<{ x: number; y: number } | null>(null);
-  const [previewCtxMenuReady, setPreviewCtxMenuReady] = useState(false);
-  const previewCtxMenuRef = useRef<HTMLDivElement>(null);
-
   const todaySave = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevSave = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (!previewCtxMenu || !previewCtxMenuRef.current) return;
-
-    const recalc = () => {
-      if (!previewCtxMenu || !previewCtxMenuRef.current) return;
-      const rect = previewCtxMenuRef.current.getBoundingClientRect();
-      setPreviewCtxMenuPos(
-        placeMenuAtPointer(
-          { x: previewCtxMenu.x, y: previewCtxMenu.y },
-          { width: rect.width, height: rect.height },
-          { padding: 8 },
-        ),
-      );
-      setPreviewCtxMenuReady(true);
-    };
-
-    recalc();
-    window.addEventListener('resize', recalc);
-    return () => window.removeEventListener('resize', recalc);
-  }, [previewCtxMenu]);
 
   const prevDate = useMemo(() => {
     if (!activeDailyDate) return null;
@@ -548,15 +519,14 @@ export function DailyEditor() {
           {saving && <span className="text-[10px] text-[var(--text-faint)]">{t(language, 'dailys', 'saving')}</span>}
           <button
             onClick={handleCopy}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition ${
+            className={`flex items-center justify-center rounded-lg p-1.5 text-xs transition ${
               copied
                 ? 'bg-emerald-500/10 text-emerald-400'
                 : 'bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20'
             }`}
             title={t(language, 'dailys', 'copyFormattedTitle')}
           >
-            {copied ? <Check size={13} /> : <Copy size={13} />}
-            {copied ? t(language, 'dailys', 'copiedLong') : t(language, 'dailys', 'copyFormat')}
+            {copied ? <Check size={14} /> : <Copy size={14} />}
           </button>
           <button
             onClick={() => {
@@ -628,66 +598,29 @@ export function DailyEditor() {
         </div>
 
         {/* Vista previa */}
-        <div
-          className="rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3"
-          onContextMenu={(e) => {
-            e.preventDefault();
-            setPreviewCtxMenuReady(false);
-            setPreviewCtxMenuPos(
-              placeMenuAtPointer(
-                { x: e.clientX, y: e.clientY },
-                ESTIMATED_PREVIEW_CTX_MENU,
-                { padding: 8 },
-              ),
-            );
-            setPreviewCtxMenu({ x: e.clientX, y: e.clientY });
-          }}
-        >
-          <p className="mb-2 text-[9px] font-bold uppercase tracking-widest text-[var(--text-faint)]">
-            {t(language, 'dailys', 'previewTitle')}
-          </p>
+        <div className="rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-[9px] font-bold uppercase tracking-widest text-[var(--text-faint)]">
+              {t(language, 'dailys', 'previewTitle')}
+            </p>
+            <button
+              onClick={handleCopy}
+              className={`flex items-center justify-center rounded-lg p-1 transition ${
+                copied
+                  ? 'text-emerald-400'
+                  : 'text-[var(--text-faint)] hover:text-indigo-400'
+              }`}
+              title={t(language, 'dailys', 'copyFormattedTitle')}
+            >
+              {copied ? <Check size={12} /> : <Copy size={12} />}
+            </button>
+          </div>
           <p className="select-text whitespace-pre-wrap font-mono text-xs leading-relaxed text-[var(--text-tertiary)]">
             {previewText || t(language, 'dailys', 'previewEmpty')}
           </p>
         </div>
 
-        {/* Menú contextual vista previa */}
-        {previewCtxMenu && (
-          <>
-            <div
-              className="fixed inset-0 z-[400]"
-              onClick={() => {
-                setPreviewCtxMenu(null);
-                setPreviewCtxMenuPos(null);
-                setPreviewCtxMenuReady(false);
-              }}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setPreviewCtxMenu(null);
-                setPreviewCtxMenuPos(null);
-                setPreviewCtxMenuReady(false);
-              }}
-            />
-            <div
-              ref={previewCtxMenuRef}
-              className="fixed z-[401] min-w-[140px] rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] py-1 shadow-xl"
-              style={{ left: previewCtxMenuPos?.x ?? 8, top: previewCtxMenuPos?.y ?? 8, visibility: previewCtxMenuReady ? 'visible' : 'hidden' }}
-            >
-              <button
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-[var(--text-body)] hover:bg-[var(--bg-hover)]"
-                onClick={async () => {
-                  setPreviewCtxMenu(null);
-                  setPreviewCtxMenuPos(null);
-                  setPreviewCtxMenuReady(false);
-                  await handleCopy();
-                }}
-              >
-                <Copy size={12} />
-                {t(language, 'dailys', 'copyFormat')}
-              </button>
-            </div>
-          </>
-        )}
+
 
         <p className="pb-2 text-center text-[10px] text-[var(--text-faint)]">
           {t(language, 'dailys', 'autosaveHint')}

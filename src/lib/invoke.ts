@@ -57,7 +57,20 @@ export const fs = {
 
   fetchImageBase64: (url: string): Promise<string> =>
     invoke('fetch_image_base64', { url }),
+
+  openUrl: (url: string): Promise<void> =>
+    invoke('open_url', { url }),
 };
+
+export interface ReleaseInfo {
+  tag_name: string;
+  html_url: string;
+  body: string;
+}
+
+export function checkUpdate(): Promise<ReleaseInfo> {
+  return invoke('check_update');
+}
 
 /** Opens a native save dialog and returns the selected path */
 export async function saveDialog(opts?: { defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null> {

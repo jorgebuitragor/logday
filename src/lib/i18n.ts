@@ -70,6 +70,16 @@ const dict = {
       backupRestoring: 'Restaurando archivos…',
       backupRestored: 'Datos restaurados. Reinicia la app para ver los cambios.',
       backupImportError: 'Error al importar:',
+      // Updates
+      updates: 'Actualizaciones',
+      currentVersion: 'Versión actual',
+      checkUpdates: 'Buscar actualizaciones',
+      checking: 'Verificando…',
+      upToDate: 'Estás al día con la última versión',
+      updateAvailable: 'Nueva versión disponible',
+      downloadUpdate: 'Descargar',
+      checkError: 'No se pudo verificar',
+      releaseNotes: 'Notas de la versión',
     },
     toast: {
       dismiss: 'Cerrar notificación',
@@ -659,6 +669,16 @@ const dict = {
       backupRestoring: 'Restoring files…',
       backupRestored: 'Data restored. Restart the app to see changes.',
       backupImportError: 'Import error:',
+      // Updates
+      updates: 'Updates',
+      currentVersion: 'Current version',
+      checkUpdates: 'Check for updates',
+      checking: 'Checking…',
+      upToDate: 'You are up to date',
+      updateAvailable: 'New version available',
+      downloadUpdate: 'Download',
+      checkError: 'Could not check for updates',
+      releaseNotes: 'Release notes',
     },
     toast: {
       dismiss: 'Dismiss notification',

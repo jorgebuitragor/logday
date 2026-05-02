@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Download, Trash2, X, User, Pencil } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Download, Trash2, X, User, Pencil, Eye, Loader2 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
 import { OvertimeEntry } from '../types';
 import { MONTHS_TITLE, t } from '../lib/i18n';
+import { OvertimePreviewModal } from './OvertimePreviewModal';
 
 interface Props {
-  onEdit: (entry: OvertimeEntry | null) => void;
+  activeEntryId?: string | null;
+  onEdit: (entry: OvertimeEntry | null | undefined) => void;
 }
 
 function formatFecha(fecha: string, language: 'es' | 'en'): string {
@@ -26,7 +28,7 @@ function nextMonth(ym: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-export function OvertimeList({ onEdit }: Props) {
+export function OvertimeList({ onEdit, activeEntryId }: Props) {
   const {
     overtimeEntries, overtimeMonth, loadOvertimeMonth,
     deleteOvertimeEntry, exportOvertimeExcel,
@@ -46,6 +48,17 @@ export function OvertimeList({ onEdit }: Props) {
     }))
   );
   const [showConfig, setShowConfig] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExport(yearMonth: string) {
+    setExporting(true);
+    try {
+      await exportOvertimeExcel(yearMonth);
+    } finally {
+      setExporting(false);
+    }
+  }
   const [confirmDelete, setConfirmDelete] = useState<OvertimeEntry | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const ctxMenuRef = useRef<HTMLDivElement>(null);
@@ -145,13 +158,20 @@ export function OvertimeList({ onEdit }: Props) {
           </div>
         ) : (
           <ul key={listKey} className="divide-y divide-[var(--border)]">
-            {overtimeEntries.map((entry, idx) => (
+            {overtimeEntries.map((entry, idx) => {
+              const isActive = entry.id === activeEntryId;
+              return (
               <li
                 key={entry.id}
-                className={`task-row-enter task-d${Math.min(idx, 10)} group flex cursor-pointer items-start gap-2 px-3 py-2.5 hover:bg-[var(--bg-hover)]`}
-                onClick={() => onEdit(entry)}
+                className={`group flex cursor-pointer items-start gap-2 px-3 py-2.5 transition-colors ${
+                  isActive
+                    ? 'border-l-2 border-l-indigo-500 bg-indigo-500/10 pl-[10px]'
+                    : 'border-l-2 border-l-transparent hover:bg-[var(--bg-hover)]'
+                }`}
+                onClick={() => onEdit(isActive ? undefined : entry)}
                 onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setEntryCtx({ entry, x: e.clientX, y: e.clientY }); }}
               >
+                <div className={`task-row-enter task-d${Math.min(idx, 10)} contents`}>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-semibold text-indigo-400">{formatFecha(entry.fecha, language)}</span>
@@ -180,8 +200,10 @@ export function OvertimeList({ onEdit }: Props) {
                 >
                   <Trash2 size={13} />
                 </button>
+                </div>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </div>
@@ -189,6 +211,11 @@ export function OvertimeList({ onEdit }: Props) {
       {/* Totales del mes */}
       {overtimeEntries.length > 0 && (
         <div className="border-t border-[var(--border)] px-3 py-2 space-y-0.5">
+          {/* Barra de escaneo — aparece solo durante la exportación */}
+          <div className="relative h-0.5 overflow-hidden rounded-full mb-1.5" style={{ visibility: exporting ? 'visible' : 'hidden' }}>
+            <div className="absolute inset-0 bg-[var(--border)]" />
+            <div className="export-scan-bar absolute inset-y-0 left-0 w-1/4 rounded-full bg-indigo-500/70" />
+          </div>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-hint)]">{t(language, 'overtime', 'monthTotal')}</p>
           <div className="grid grid-cols-2 gap-x-2 text-xs text-[var(--text-hint)]">
             <span>{t(language, 'overtime', 'total')}</span><span className="text-right font-semibold text-[var(--text-primary)]">{fmt(totalHoras)}h</span>
@@ -228,35 +255,35 @@ export function OvertimeList({ onEdit }: Props) {
       )}
 
       {/* Barra de acciones (bottom) */}
-      <div className="flex items-center justify-between border-t border-[var(--border)] px-3 py-2">
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => onEdit(null)}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-indigo-400 hover:bg-indigo-500/10 transition-colors"
-            title={t(language, 'overtime', 'newEntryTitle')}
-          >
-            <Plus size={14} />
-            {t(language, 'overtime', 'newExtra')}
-          </button>
-        </div>
+      <div className="flex items-center justify-end border-t border-[var(--border)] px-3 py-2">
         <div className="flex items-center gap-1">
           <button
             onClick={() => setShowConfig((v) => !v)}
             className={`rounded p-1.5 transition-colors ${
               showConfig
                 ? 'text-indigo-400 bg-indigo-500/10'
-                : 'text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+                : 'text-[var(--text-hint)] hover:text-indigo-400 hover:bg-indigo-500/10'
             }`}
             title={t(language, 'overtime', 'collaboratorData')}
           >
             <User size={14} />
           </button>
           <button
-            onClick={() => exportOvertimeExcel(overtimeMonth)}
-            className="rounded p-1.5 text-[var(--text-hint)] hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+            onClick={() => setShowPreview(true)}
+            className="rounded p-1.5 text-[var(--text-hint)] hover:text-indigo-400 hover:bg-indigo-500/10 transition-colors"
+            title={t(language, 'overtime', 'previewTitle')}
+          >
+            <Eye size={14} />
+          </button>
+          <button
+            onClick={() => handleExport(overtimeMonth)}
+            disabled={exporting}
+            className="rounded p-1.5 text-[var(--text-hint)] hover:text-indigo-400 hover:bg-indigo-500/10 transition-colors disabled:opacity-50 disabled:pointer-events-none"
             title={t(language, 'overtime', 'exportExcel')}
           >
-            <Download size={14} />
+            {exporting
+              ? <Loader2 size={14} className="animate-spin text-indigo-400" />
+              : <Download size={14} />}
           </button>
         </div>
       </div>
@@ -304,6 +331,16 @@ export function OvertimeList({ onEdit }: Props) {
           <span>{t(language, 'overtime', 'deleteExtra')}</span>
         </button>
       </div>
+    )}
+    {showPreview && (
+      <OvertimePreviewModal
+        entries={overtimeEntries}
+        meta={overtimeMeta}
+        month={overtimeMonth}
+        language={language}
+        onClose={() => setShowPreview(false)}
+        onExport={() => { void handleExport(overtimeMonth); setShowPreview(false); }}
+      />
     )}
     {confirmDelete && confirmDestructiveActions && (
       <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">

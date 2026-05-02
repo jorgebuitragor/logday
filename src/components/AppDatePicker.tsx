@@ -154,7 +154,7 @@ export function AppDatePicker({ value, max, onChange }: PickerProps) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-base)] px-2.5 py-1.5 text-left text-sm text-[var(--text-primary)] hover:border-indigo-500/50 focus:border-indigo-500 focus:outline-none transition-colors"
+        className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-input)] px-2.5 py-1.5 text-left text-sm text-[var(--text-primary)] hover:border-indigo-500/50 focus:border-indigo-500 focus:outline-none transition-colors"
       >
         {formatDateDisplay(value, language)}
       </button>

@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { Clock, Plus } from 'lucide-react';
 import './App.css';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from './store/appStore';
@@ -26,7 +27,7 @@ const OvertimeList  = lazy(() => import('./components/OvertimeList').then(m => (
 const OvertimeEditor = lazy(() => import('./components/OvertimeEditor').then(m => ({ default: m.OvertimeEditor })));
 
 export default function App() {
-  const { init, isLoading, isConfigured, activeTask, activeSection, createNote, setSection, shortcuts } = useAppStore(
+  const { init, isLoading, isConfigured, activeTask, activeSection, createNote, setSection, shortcuts, overtimeMonth, language } = useAppStore(
     useShallow((s) => ({
       init: s.init,
       isLoading: s.isLoading,
@@ -36,9 +37,16 @@ export default function App() {
       createNote: s.createNote,
       setSection: s.setSection,
       shortcuts: s.shortcuts,
+      overtimeMonth: s.overtimeMonth,
+      language: s.language,
     }))
   );
   const [editingEntry, setEditingEntry] = useState<OvertimeEntry | null | undefined>(undefined);
+
+  // Cerrar el editor de extras al cambiar de mes
+  useEffect(() => {
+    setEditingEntry(undefined);
+  }, [overtimeMonth]);
 
   useEffect(() => {
     init();
@@ -125,9 +133,27 @@ export default function App() {
           </>
         ) : activeSection === 'overtime' ? (
           <>
-            <OvertimeList onEdit={(e) => setEditingEntry(e ?? null)} />
-            {editingEntry !== undefined && (
+            <OvertimeList
+              activeEntryId={editingEntry?.id ?? null}
+              onEdit={setEditingEntry}
+            />
+            {editingEntry !== undefined ? (
               <OvertimeEditor key={editingEntry?.id ?? 'new'} entry={editingEntry} onClose={() => setEditingEntry(undefined)} />
+            ) : (
+              <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-[var(--bg-base)] text-[var(--text-hint)]">
+                <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-surface)] p-4">
+                  <Clock size={28} className="text-[var(--text-hint)]" />
+                </div>
+                <p className="text-sm font-medium text-[var(--text-secondary)]">{t(language, 'overtime', 'emptyPanelTitle')}</p>
+                <p className="text-xs text-[var(--text-hint)]">{t(language, 'overtime', 'emptyPanelDesc')}</p>
+                <button
+                  onClick={() => setEditingEntry(null)}
+                  className="mt-1 flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-indigo-500"
+                >
+                  <Plus size={13} />
+                  {t(language, 'overtime', 'emptyPanelBtn')}
+                </button>
+              </div>
             )}
           </>
         ) : (

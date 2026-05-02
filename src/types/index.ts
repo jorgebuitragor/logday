@@ -21,6 +21,7 @@ export interface DailyEntry {
 export interface Task {
   id: string;
   title: string;
+  taskCode?: string; // optional unique code, e.g. "FEAT-01"
   status: TaskStatus;
   tags: string[];
   project: string;

@@ -42,7 +42,9 @@ import {
   Smile,
 } from 'lucide-react';
 import { useEditor, EditorContent } from '@tiptap/react';
-import { TextSelection } from '@tiptap/pm/state';
+import { TextSelection, Plugin, PluginKey } from '@tiptap/pm/state';
+import { DecorationSet, Decoration } from '@tiptap/pm/view';
+import { Extension } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import UnderlineExt from '@tiptap/extension-underline';
@@ -76,6 +78,46 @@ import { t as tFn } from '../lib/i18n';
 
 const lowlight = createLowlight(common);
 const BLOCK_MENU_ESTIMATED_SIZE = { width: 220, height: 260 };
+
+// ── Task-code decoration plugin (display-only, no toca el markdown) ────────
+const taskCodePluginKey = new PluginKey<DecorationSet>('taskCodeDecorations');
+const TASK_CODE_RE = /#([A-Z0-9\-_]+)/gi;
+
+function createTaskCodePlugin(tasksRef: React.MutableRefObject<import('../types').Task[]>): Plugin {
+  return new Plugin({
+    key: taskCodePluginKey,
+    props: {
+      decorations(state) {
+        const tasksByCode = new Map(
+          (tasksRef.current ?? [])
+            .filter((t) => t.taskCode)
+            .map((t) => [t.taskCode!.toUpperCase(), t])
+        );
+        if (tasksByCode.size === 0) return DecorationSet.empty;
+        const decorations: Decoration[] = [];
+        state.doc.descendants((node, pos) => {
+          if (!node.isText || !node.text) return;
+          TASK_CODE_RE.lastIndex = 0;
+          let match: RegExpExecArray | null;
+          while ((match = TASK_CODE_RE.exec(node.text)) !== null) {
+            const code = match[1].toUpperCase();
+            if (!tasksByCode.has(code)) continue;
+            const from = pos + match.index;
+            const to = from + match[0].length;
+            decorations.push(
+              Decoration.inline(from, to, {
+                class: 'task-code-link',
+                'data-task-code': code,
+                title: tasksByCode.get(code)!.title,
+              })
+            );
+          }
+        });
+        return DecorationSet.create(state.doc, decorations);
+      },
+    },
+  });
+}
 
 type BlockMenuType =
   | 'paragraph'
@@ -287,6 +329,9 @@ export function NoteEditor() {
     setActiveNote,
     toggleNotePin,
     moveNote,
+    tasks,
+    setSection,
+    setActiveTask,
   } = useAppStore();
 
   const [title, setTitle] = useState('');
@@ -311,6 +356,24 @@ export function NoteEditor() {
   const [showImageModal, setShowImageModal] = useState(false);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [isDroppingFile, setIsDroppingFile] = useState(false);
+
+  // ── Task-code reference popup (#code autocomplete) ──────────────────────────
+  const [taskRefQuery, setTaskRefQuery] = useState<string | null>(null);
+  const [taskRefAnchor, setTaskRefAnchor] = useState<{ top: number; left: number } | null>(null);
+  const [taskRefSuggestIdx, setTaskRefSuggestIdx] = useState(0);
+  const taskRefPopupRef = useRef<HTMLDivElement>(null);
+
+  const tasksWithCode = useMemo(
+    () => tasks.filter((t) => t.taskCode),
+    [tasks]
+  );
+  const taskRefSuggestions = useMemo(() => {
+    if (taskRefQuery === null) return [];
+    const q = taskRefQuery.toLowerCase();
+    return tasksWithCode
+      .filter((t) => t.taskCode!.toLowerCase().includes(q))
+      .slice(0, 6);
+  }, [taskRefQuery, tasksWithCode]);
   const [mermaidPreviewAnchors, setMermaidPreviewAnchors] = useState<Array<{ top: number; left: number; width: number; height: number }>>([]);
   const [mermaidRenderedHeights, setMermaidRenderedHeights] = useState<number[]>([]);
   const [codeBlockAnchors, setCodeBlockAnchors] = useState<Array<{ top: number; left: number; height: number }>>([]);
@@ -381,6 +444,19 @@ export function NoteEditor() {
     return languages;
   }, [mdContent]);
 
+  // ── Task-code decorations ────────────────────────────────────────────────
+  const tasksRef = useRef<import('../types').Task[]>(tasks);
+  useEffect(() => { tasksRef.current = tasks; }, [tasks]);
+
+  const taskCodeExtension = useMemo(
+    () => Extension.create({
+      name: 'taskCodeDecorations',
+      addProseMirrorPlugins() { return [createTaskCodePlugin(tasksRef)]; },
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
   const applyCase = (mode: 'upper' | 'lower' | 'sentence' | 'title') => {
     if (!editor) return;
     const { from, to } = editor.state.selection;
@@ -435,12 +511,34 @@ export function NoteEditor() {
         transformPastedText: true,
         transformCopiedText: false,
       }),
+      taskCodeExtension,
     ],
     content: '',
     editorProps: {
       attributes: {
         class: 'prose-editor focus:outline-none',
         spellcheck: 'false',
+      },
+      handleKeyDown(_view, event) {
+        // Close task-ref popup on Escape; handle Enter/ArrowDown/ArrowUp via React state
+        if (event.key === 'Escape') {
+          setTaskRefQuery(null);
+          setTaskRefAnchor(null);
+        }
+      },
+      handleClick(_view, _pos, event) {
+        const target = (event.target as HTMLElement).closest('[data-task-code]') as HTMLElement | null;
+        if (!target) return false;
+        const code = target.getAttribute('data-task-code');
+        if (!code) return false;
+        const task = useAppStore.getState().tasks.find(
+          (t) => t.taskCode?.toUpperCase() === code
+        );
+        if (!task) return false;
+        event.preventDefault();
+        setSection('tasks');
+        setActiveTask(task);
+        return true;
       },
     },
     onUpdate({ editor: ed }) {
@@ -457,6 +555,35 @@ export function NoteEditor() {
       setShowEmojiMenu(false);
       setShowTableMenu(false);
       setShowDiagramMenu(false);
+
+      // ── Detectar patrón #code al escribir ─────────────────────────────
+      const { $anchor } = ed.state.selection;
+      const blockStart = $anchor.start();
+      const cursorPos = $anchor.pos;
+      const textBeforeCursor = ed.state.doc.textBetween(blockStart, cursorPos, '\n', '\n');
+      const codeMatch = textBeforeCursor.match(/#([a-zA-Z0-9\-_]*)$/);
+      if (codeMatch) {
+        const query = codeMatch[1];
+        setTaskRefQuery(query);
+        setTaskRefSuggestIdx(0);
+        // Posicionar popup relativo al contenedor del editor
+        try {
+          const coords = ed.view.coordsAtPos(cursorPos);
+          const editorEl = ed.view.dom.closest('.prose-editor-wrapper') as HTMLElement | null;
+          if (editorEl) {
+            const rect = editorEl.getBoundingClientRect();
+            setTaskRefAnchor({
+              top: coords.bottom - rect.top + 4,
+              left: Math.max(0, coords.left - rect.left - 8),
+            });
+          } else {
+            setTaskRefAnchor({ top: coords.bottom + 4, left: coords.left });
+          }
+        } catch { /* view not ready */ }
+      } else {
+        setTaskRefQuery(null);
+        setTaskRefAnchor(null);
+      }
     },
   });
 
@@ -1904,7 +2031,7 @@ export function NoteEditor() {
           {(viewMode === 'wysiwyg' || viewMode === 'split') && (
             <div
               ref={editorPaneRef}
-              className={`relative overflow-y-auto px-8 pb-8 ${
+              className={`prose-editor-wrapper relative overflow-y-auto px-8 pb-8 ${
                 viewMode === 'split' ? 'flex-1 border-r border-[var(--border)]' : 'flex-1'
               }`}
               onPointerMove={handleEditorPointerMove}
@@ -2069,6 +2196,53 @@ export function NoteEditor() {
                 </div>
               )}
               <EditorContent editor={editor} />
+
+              {/* ── Task code reference popup (#code autocomplete) ── */}
+              {taskRefQuery !== null && taskRefSuggestions.length > 0 && taskRefAnchor && (
+                <div
+                  ref={taskRefPopupRef}
+                  className="absolute z-[500] min-w-[240px] overflow-hidden rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-2xl animate-in"
+                  style={{ top: taskRefAnchor.top, left: taskRefAnchor.left }}
+                  onMouseDown={(e) => e.preventDefault()}
+                >
+                  <p className="border-b border-[var(--border)] px-3 py-1.5 text-[10px] font-medium text-[var(--text-faint)]">
+                    {tFn(language, 'notes', 'taskRefSuggestHint')}
+                  </p>
+                  {taskRefSuggestions.map((task, i) => (
+                    <button
+                      key={task.id}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        if (!editor) return;
+                        // Replace the #partial text with the full #code
+                        const { $anchor } = editor.state.selection;
+                        const blockStart = $anchor.start();
+                        const cursorPos = $anchor.pos;
+                        const textBeforeCursor = editor.state.doc.textBetween(blockStart, cursorPos, '\n', '\n');
+                        const codeMatch = textBeforeCursor.match(/#([a-zA-Z0-9\-_]*)$/);
+                        if (codeMatch) {
+                          const replaceFrom = cursorPos - codeMatch[0].length;
+                          editor.chain().focus()
+                            .deleteRange({ from: replaceFrom, to: cursorPos })
+                            .insertContentAt(replaceFrom, `#${task.taskCode!} `)
+                            .run();
+                        }
+                        setTaskRefQuery(null);
+                        setTaskRefAnchor(null);
+                      }}
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition ${
+                        taskRefSuggestIdx === i
+                          ? 'bg-indigo-500/10 text-[var(--text-primary)]'
+                          : 'text-[var(--text-body)] hover:bg-[var(--bg-hover)]'
+                      }`}
+                    >
+                      <span className="font-mono text-indigo-400">#{task.taskCode}</span>
+                      <span className="flex-1 truncate text-[var(--text-secondary)]">{task.title}</span>
+                      <span className="shrink-0 text-[9px] text-[var(--text-faint)]">{task.project}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="pointer-events-none absolute inset-0 z-10">
                 {codeBlockAnchors.map((anchor, index) => (
                   <div

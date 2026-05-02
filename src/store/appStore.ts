@@ -104,7 +104,7 @@ interface AppState {
   renameProject: (project: string, newName: string) => Promise<void>;
   deleteProject: (project: string) => Promise<void>;
   moveProject: (project: string, targetParent: string) => Promise<void>;
-  createTask: (title: string, project?: string, content?: string) => Promise<Task>;
+  createTask: (title: string, project?: string, content?: string, taskCode?: string) => Promise<Task>;
   updateTask: (task: Task) => Promise<void>;
   deleteTask: (task: Task) => Promise<void>;
   setActiveTask: (task: Task | null) => void;
@@ -684,12 +684,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadProjects();
   },
 
-  createTask: async (title, project, content = '') => {
+  createTask: async (title, project, content = '', taskCode?: string) => {
     const { basePath, activeProject } = get();
     if (!basePath) throw new Error('No base path');
     const targetProject = project || activeProject || 'inbox';
     const id = uuidv4();
     const today = formatDate(new Date());
+    // Validate taskCode uniqueness
+    if (taskCode) {
+      const duplicate = get().tasks.find((t) => t.taskCode && t.taskCode === taskCode);
+      if (duplicate) {
+        const language = get().language;
+        get().showToast({
+          kind: 'error',
+          title: t(language, 'tasks', 'taskCodeDuplicate'),
+          description: `"${taskCode}"`,
+        });
+        taskCode = undefined;
+      }
+    }
     const task: Task = {
       id,
       title: title.trim() || 'Nueva tarea',
@@ -699,6 +712,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       created: today,
       linked_paths: [],
       content,
+      taskCode: taskCode || undefined,
       filePath: taskFilePath(basePath, targetProject, id),
     };
     await fs.writeFile(task.filePath, serializeTask(task));
@@ -708,6 +722,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   updateTask: async (task) => {
+    // Validate taskCode uniqueness (skip own id)
+    if (task.taskCode) {
+      const duplicate = get().tasks.find(
+        (t) => t.id !== task.id && t.taskCode && t.taskCode === task.taskCode
+      );
+      if (duplicate) {
+        const language = get().language;
+        get().showToast({
+          kind: 'error',
+          title: t(language, 'tasks', 'taskCodeDuplicate'),
+          description: `"${task.taskCode}"`,
+        });
+        return;
+      }
+    }
+
     const prev = get().tasks.find((t) => t.id === task.id);
     const today = formatDate(new Date());
     const normalizedTask: Task = { ...task };

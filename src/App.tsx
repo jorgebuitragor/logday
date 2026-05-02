@@ -138,7 +138,9 @@ export default function App() {
               onEdit={setEditingEntry}
             />
             {editingEntry !== undefined ? (
-              <OvertimeEditor key={editingEntry?.id ?? 'new'} entry={editingEntry} onClose={() => setEditingEntry(undefined)} />
+              <Suspense fallback={null}>
+                <OvertimeEditor key={editingEntry?.id ?? 'new'} entry={editingEntry} onClose={() => setEditingEntry(undefined)} />
+              </Suspense>
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-[var(--bg-base)] text-[var(--text-hint)]">
                 <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-surface)] p-4">

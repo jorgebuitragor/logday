@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, memo } from 'react';
-import { Plus, Circle, Clock, CheckCircle2, Calendar } from 'lucide-react';
+import { Plus, Circle, Clock, CheckCircle2, Calendar, AlertTriangle } from 'lucide-react';
 import { Task, TaskStatus } from '../types';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
@@ -146,6 +146,12 @@ export function TaskList() {
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskContent, setNewTaskContent] = useState('');
+  const [newTaskCode, setNewTaskCode] = useState('');
+
+  const isDuplicateNewCode = useMemo(
+    () => newTaskCode.length > 0 && tasks.some((t) => t.taskCode === newTaskCode),
+    [newTaskCode, tasks]
+  );
   const [filter, setFilter] = useState<TaskStatus | 'all'>('all');
   const [emptyCtxMenu, setEmptyCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [newTaskIds, setNewTaskIds] = useState<Set<string>>(new Set());
@@ -202,16 +208,17 @@ export function TaskList() {
 
   const handleCreateTask = async () => {
     if (newTaskTitle.trim()) {
-      await createTask(newTaskTitle.trim(), undefined, newTaskContent);
+      await createTask(newTaskTitle.trim(), undefined, newTaskContent, newTaskCode.trim() || undefined);
     }
     setNewTaskTitle('');
     setNewTaskContent('');
+    setNewTaskCode('');
     setShowNewTaskModal(false);
   };
 
   const handleCreateTaskKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleCreateTask();
-    if (e.key === 'Escape') { setNewTaskTitle(''); setNewTaskContent(''); setShowNewTaskModal(false); }
+    if (e.key === 'Escape') { setNewTaskTitle(''); setNewTaskContent(''); setNewTaskCode(''); setShowNewTaskModal(false); }
   };
 
   const newTaskModal = showNewTaskModal ? (
@@ -227,8 +234,26 @@ export function TaskList() {
           onChange={(e) => setNewTaskTitle(e.target.value)}
           onKeyDown={handleCreateTaskKey}
           placeholder={t(language, 'tasks', 'taskNamePlaceholder')}
-          className="mb-4 w-full rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-2.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500/60 placeholder-[var(--text-hint)]"
+          className="mb-3 w-full rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-2.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500/60 placeholder-[var(--text-hint)]"
         />
+        <div className="mb-4 flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-2.5">
+          <span className="shrink-0 text-xs text-[var(--text-hint)]"># {t(language, 'tasks', 'taskCodeLabel')}</span>
+          <input
+            value={newTaskCode}
+            onChange={(e) => setNewTaskCode(e.target.value.replace(/[^a-zA-Z0-9\-_]/g, '').toUpperCase())}
+            onKeyDown={handleCreateTaskKey}
+            maxLength={32}
+            spellCheck={false}
+            className={`flex-1 bg-transparent font-mono text-xs outline-none transition-colors ${
+              isDuplicateNewCode ? 'text-red-400' : 'text-[var(--text-secondary)]'
+            }`}
+          />
+          {isDuplicateNewCode ? (
+            <AlertTriangle size={12} className="shrink-0 text-red-400" aria-label={t(language, 'tasks', 'taskCodeDuplicate')} />
+          ) : (
+            <span className="shrink-0 text-[10px] text-[var(--text-faint)]">{t(language, 'tasks', 'taskCodeHint')}</span>
+          )}
+        </div>
         <div className="mb-4">
           <div className="mb-2 text-[10px] uppercase tracking-wider text-[var(--text-hint)]">{t(language, 'tasks', 'descriptionLabel')}</div>
           <RichTextEditor
@@ -240,7 +265,7 @@ export function TaskList() {
         </div>
         <div className="flex justify-end gap-2">
           <button
-            onClick={() => { setNewTaskTitle(''); setNewTaskContent(''); setShowNewTaskModal(false); }}
+            onClick={() => { setNewTaskTitle(''); setNewTaskContent(''); setNewTaskCode(''); setShowNewTaskModal(false); }}
             className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
           >
             {t(language, 'tasks', 'cancel')}

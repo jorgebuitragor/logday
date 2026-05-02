@@ -368,6 +368,19 @@ html.theme-animating body * {
   animation: export-scan 1.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+/* ── Task code reference links in notes (WYSIWYG, display-only) ────────── */
+.task-code-link {
+  color: rgb(129 140 248);
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 1px dotted rgb(129 140 248 / 0.5);
+  transition: color 0.12s, border-color 0.12s;
+}
+.task-code-link:hover {
+  color: rgb(165 180 252);
+  border-bottom-style: solid;
+}
+
 .md-editor {
   font-family: "JetBrains Mono", "Fira Code", "Courier New", monospace;
   font-size: 14px; line-height: 1.7;

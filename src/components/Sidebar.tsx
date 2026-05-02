@@ -924,7 +924,8 @@ export function Sidebar() {
 
   const handleProjectStartRename = () => {
     if (!projectCtx) return;
-    setProjectRenameValue(projectCtx.project);
+    const leaf = projectCtx.project.split('/').pop() ?? projectCtx.project;
+    setProjectRenameValue(leaf);
     setRenamingProject(projectCtx.project);
     setProjectCtx(null);
   };
@@ -934,7 +935,8 @@ export function Sidebar() {
       setRenamingProject(null);
       return;
     }
-    if (projectRenameValue.trim() === renamingProject) {
+    const leaf = renamingProject.split('/').pop() ?? renamingProject;
+    if (projectRenameValue.trim() === leaf) {
       setRenamingProject(null);
       return;
     }

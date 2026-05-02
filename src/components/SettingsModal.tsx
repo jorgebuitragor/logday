@@ -73,6 +73,8 @@ export function SettingsModal() {
     confirmDestructiveActions, setConfirmDestructiveActions,
     notificationsEnabled, setNotificationsEnabled,
     defaultReminderMinutes, setDefaultReminderMinutes,
+    workWeekDays, setWorkWeekDays,
+    holidaysAsNonWork, setHolidaysAsNonWork,
     basePath, changeBasePath,
     shortcuts, setShortcut,
     folderTags, replaceFolderTags,
@@ -641,6 +643,60 @@ export function SettingsModal() {
                   </select>
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Semana laboral */}
+          <div>
+            <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
+              {t(language, 'settings', 'workWeekSection')}
+            </p>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3">
+              <div>
+                <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'workWeekTitle')}</p>
+                <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'workWeekDesc')}</p>
+              </div>
+              <div className="flex gap-1 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-0.5">
+                {([5, 6] as (5 | 6)[]).map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => void setWorkWeekDays(d)}
+                    className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                      workWeekDays === d
+                        ? 'bg-indigo-600 text-white shadow'
+                        : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                    }`}
+                  >
+                    {t(language, 'settings', d === 5 ? 'workWeek5' : 'workWeek6')}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3">
+              <div>
+                <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'holidaysTitle')}</p>
+                <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'holidaysDesc')}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void setHolidaysAsNonWork(!holidaysAsNonWork)}
+                className="flex shrink-0 items-center gap-2"
+              >
+                <span className={`text-[10px] font-semibold uppercase tracking-wider ${
+                  holidaysAsNonWork ? 'text-[var(--accent)]' : 'text-[var(--text-hint)]'
+                }`}>
+                  {holidaysAsNonWork
+                    ? t(language, 'settings', 'holidaysEnabled')
+                    : t(language, 'settings', 'holidaysDisabled')}
+                </span>
+                <span className={`relative h-6 w-11 rounded-full transition ${
+                  holidaysAsNonWork ? 'bg-[var(--accent)]' : 'bg-[var(--border-card)]'
+                }`}>
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-150 ${
+                    holidaysAsNonWork ? 'left-[22px]' : 'left-0.5'
+                  }`} />
+                </span>
+              </button>
             </div>
           </div>
 

@@ -67,6 +67,10 @@ interface AppState {
   notificationsEnabled: boolean;
   defaultReminderMinutes: number;
 
+  // Semana laboral
+  workWeekDays: 5 | 6;
+  holidaysAsNonWork: boolean;
+
   // Theme + Settings
   theme: Theme;
   startupScreen: StartupScreen;
@@ -163,6 +167,8 @@ interface AppState {
   setConfirmDestructiveActions: (enabled: boolean) => Promise<void>;
   setNotificationsEnabled: (enabled: boolean) => Promise<void>;
   setDefaultReminderMinutes: (mins: number) => Promise<void>;
+  setWorkWeekDays: (days: 5 | 6) => Promise<void>;
+  setHolidaysAsNonWork: (enabled: boolean) => Promise<void>;
   setTheme: (theme: Theme) => void;
   setStartupScreen: (screen: StartupScreen) => Promise<void>;
   setLanguage: (lang: Language) => Promise<void>;
@@ -328,6 +334,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   confirmDestructiveActions: true,
   notificationsEnabled: true,
   defaultReminderMinutes: 5,
+  workWeekDays: 5 as (5 | 6),
+  holidaysAsNonWork: true,
   theme: (localStorage.getItem('theme') as Theme) || 'system',
   startupScreen: 'dashboard',
   language: (localStorage.getItem('language') as Language) || 'es',
@@ -402,6 +410,8 @@ export const useAppStore = create<AppState>((set, get) => ({
             confirmDestructiveActions: cfg.confirmDestructiveActions ?? true,
             notificationsEnabled: cfg.notificationsEnabled ?? true,
             defaultReminderMinutes: cfg.defaultReminderMinutes ?? 5,
+            workWeekDays: (cfg.workWeekDays as (5 | 6)) ?? 5,
+            holidaysAsNonWork: cfg.holidaysAsNonWork ?? true,
           });
 
           const lastProject = cfg.lastOpenedProject || null;
@@ -1537,6 +1547,46 @@ export const useAppStore = create<AppState>((set, get) => ({
         confirmDestructiveActions: get().confirmDestructiveActions,
         notificationsEnabled: get().notificationsEnabled,
         defaultReminderMinutes: mins,
+        workWeekDays: get().workWeekDays,
+        holidaysAsNonWork: get().holidaysAsNonWork,
+        lastOpenedProject: activeProject ?? undefined,
+        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
+      });
+    }
+  },
+
+  setWorkWeekDays: async (days) => {
+    set({ workWeekDays: days });
+    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
+    if (configDir && basePath) {
+      await saveConfig(configDir, {
+        basePath,
+        startupScreen,
+        language,
+        confirmDestructiveActions: get().confirmDestructiveActions,
+        notificationsEnabled: get().notificationsEnabled,
+        defaultReminderMinutes: get().defaultReminderMinutes,
+        workWeekDays: days,
+        holidaysAsNonWork: get().holidaysAsNonWork,
+        lastOpenedProject: activeProject ?? undefined,
+        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
+      });
+    }
+  },
+
+  setHolidaysAsNonWork: async (enabled) => {
+    set({ holidaysAsNonWork: enabled });
+    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
+    if (configDir && basePath) {
+      await saveConfig(configDir, {
+        basePath,
+        startupScreen,
+        language,
+        confirmDestructiveActions: get().confirmDestructiveActions,
+        notificationsEnabled: get().notificationsEnabled,
+        defaultReminderMinutes: get().defaultReminderMinutes,
+        workWeekDays: get().workWeekDays,
+        holidaysAsNonWork: enabled,
         lastOpenedProject: activeProject ?? undefined,
         lastOpenedNoteFolder: activeNoteFolder ?? undefined,
       });

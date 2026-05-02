@@ -199,6 +199,9 @@ html.theme-animating body * {
 .animate-in {
   animation: fade-in-up 180ms ease-out both;
 }
+.logday-animate-in {
+  animation: fade-in-up 160ms ease-out both;
+}
 .animate-fade-in {
   animation: fade-in 200ms ease-out both;
 }
@@ -209,6 +212,36 @@ html.theme-animating body * {
 
 .toast-card {
   animation: fade-in-up 180ms ease-out both;
+}
+
+/* ── Dashboard entrance animations ──────────────────────────── */
+@keyframes dash-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes dash-icon-float {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  30%      { transform: scale(1.10) rotate(-4deg); }
+  60%      { transform: scale(1.06) rotate(3deg); }
+}
+@keyframes dash-action-pop {
+  0%   { opacity: 0; transform: translateY(6px) scale(0.94); }
+  60%  { transform: translateY(-1px) scale(1.02); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.dash-enter {
+  animation: dash-in 220ms ease-out both;
+}
+.dash-d0 { animation-delay: 0ms; }
+.dash-d1 { animation-delay: 65ms; }
+.dash-d2 { animation-delay: 130ms; }
+.dash-d3 { animation-delay: 195ms; }
+.dash-d4 { animation-delay: 260ms; }
+.dash-action-btn {
+  animation: dash-action-pop 240ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.dash-icon-greet {
+  animation: dash-icon-float 3.6s ease-in-out 500ms infinite;
 }
 
 @keyframes discard-note {

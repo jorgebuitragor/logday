@@ -453,6 +453,20 @@ export function CalendarView() {
     setDayCtxReady(true);
   }, [dayCtxMenu]);
 
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const date = (e as CustomEvent<{ date: string }>).detail?.date;
+      if (!date) return;
+      const d = new Date(`${date}T12:00:00`);
+      setYear(d.getFullYear());
+      setMonth(d.getMonth());
+      setSelectedDate(date);
+      setEventEditor({ event: { date } });
+    };
+    window.addEventListener('logday:new-event', handler);
+    return () => window.removeEventListener('logday:new-event', handler);
+  }, []);
+
   if (currentView !== 'calendar') return null;
 
   const firstDay    = new Date(year, month, 1);

@@ -73,6 +73,8 @@ export interface AppConfig {
   confirmDestructiveActions?: boolean;
   notificationsEnabled?: boolean;
   defaultReminderMinutes?: number;
+  workWeekDays?: 5 | 6;
+  holidaysAsNonWork?: boolean;
 }
 
 export interface BackupSettings {

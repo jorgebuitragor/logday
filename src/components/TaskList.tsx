@@ -121,7 +121,7 @@ const TaskRow = memo(function TaskRow({
 });
 
 export function TaskList() {
-  const { tasks, activeProject, currentView, createTask, deleteTask, isLoading, language } = useAppStore(
+  const { tasks, activeProject, currentView, createTask, deleteTask, isLoading, language, setActiveTask } = useAppStore(
     useShallow((s) => ({
       tasks: s.tasks,
       activeProject: s.activeProject,
@@ -130,6 +130,7 @@ export function TaskList() {
       deleteTask: s.deleteTask,
       isLoading: s.isLoading,
       language: s.language,
+      setActiveTask: s.setActiveTask,
     }))
   );
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
@@ -173,6 +174,10 @@ export function TaskList() {
   };
 
   useEffect(() => {
+    setActiveTask(null);
+  }, [activeProject, currentView]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     const handler = () => setShowNewTaskModal(true);
     window.addEventListener('logday:new-task', handler);
     return () => window.removeEventListener('logday:new-task', handler);
@@ -182,8 +187,6 @@ export function TaskList() {
     () => filter === 'all' ? tasks : tasks.filter((t) => t.status === filter),
     [tasks, filter]
   );
-
-  if (currentView !== 'list') return null;
 
   const handleCreateTask = async () => {
     if (newTaskTitle.trim()) {
@@ -198,6 +201,51 @@ export function TaskList() {
     if (e.key === 'Enter') handleCreateTask();
     if (e.key === 'Escape') { setNewTaskTitle(''); setNewTaskContent(''); setShowNewTaskModal(false); }
   };
+
+  const newTaskModal = showNewTaskModal ? (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
+      <div className="w-[680px] max-w-[92vw] rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
+        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
+          <Plus size={15} className="text-indigo-400" />
+          {t(language, 'tasks', 'modalTitle')}
+        </div>
+        <input
+          autoFocus
+          value={newTaskTitle}
+          onChange={(e) => setNewTaskTitle(e.target.value)}
+          onKeyDown={handleCreateTaskKey}
+          placeholder={t(language, 'tasks', 'taskNamePlaceholder')}
+          className="mb-4 w-full rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-2.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500/60 placeholder-[var(--text-hint)]"
+        />
+        <div className="mb-4">
+          <div className="mb-2 text-[10px] uppercase tracking-wider text-[var(--text-hint)]">{t(language, 'tasks', 'descriptionLabel')}</div>
+          <RichTextEditor
+            value={newTaskContent}
+            onChange={setNewTaskContent}
+            placeholder={t(language, 'tasks', 'descriptionPlaceholder')}
+            minHeight="220px"
+          />
+        </div>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => { setNewTaskTitle(''); setNewTaskContent(''); setShowNewTaskModal(false); }}
+            className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
+          >
+            {t(language, 'tasks', 'cancel')}
+          </button>
+          <button
+            onClick={handleCreateTask}
+            disabled={!newTaskTitle.trim()}
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {t(language, 'tasks', 'createTask')}
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  if (currentView !== 'list') return newTaskModal;
 
   const title = activeProject ? activeProject : t(language, 'tasks', 'title');
   const counts = {
@@ -245,48 +293,7 @@ export function TaskList() {
       </div>
 
       {/* Modal nueva tarea */}
-      {showNewTaskModal && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
-          <div className="w-[680px] max-w-[92vw] rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-              <Plus size={15} className="text-indigo-400" />
-              {t(language, 'tasks', 'modalTitle')}
-            </div>
-            <input
-              autoFocus
-              value={newTaskTitle}
-              onChange={(e) => setNewTaskTitle(e.target.value)}
-              onKeyDown={handleCreateTaskKey}
-              placeholder={t(language, 'tasks', 'taskNamePlaceholder')}
-              className="mb-4 w-full rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-2.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500/60 placeholder-[var(--text-hint)]"
-            />
-            <div className="mb-4">
-              <div className="mb-2 text-[10px] uppercase tracking-wider text-[var(--text-hint)]">{t(language, 'tasks', 'descriptionLabel')}</div>
-              <RichTextEditor
-                value={newTaskContent}
-                onChange={setNewTaskContent}
-                placeholder={t(language, 'tasks', 'descriptionPlaceholder')}
-                minHeight="220px"
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => { setNewTaskTitle(''); setNewTaskContent(''); setShowNewTaskModal(false); }}
-                className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
-              >
-                {t(language, 'tasks', 'cancel')}
-              </button>
-              <button
-                onClick={handleCreateTask}
-                disabled={!newTaskTitle.trim()}
-                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {t(language, 'tasks', 'createTask')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {newTaskModal}
 
       {/* Task list */}
       <div className="flex-1 overflow-y-auto px-4 py-3">

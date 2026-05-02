@@ -53,6 +53,7 @@ interface AppState {
 
   // Calendar Events
   calendarEvents: CalendarEvent[];
+  activeCalendarEvent: CalendarEvent | null;
 
   // UI
   currentView: ViewMode;
@@ -104,6 +105,7 @@ interface AppState {
   updateTask: (task: Task) => Promise<void>;
   deleteTask: (task: Task) => Promise<void>;
   setActiveTask: (task: Task | null) => void;
+  setActiveCalendarEvent: (event: CalendarEvent | null) => void;
   moveTask: (task: Task, toProject: string) => Promise<void>;
 
   // Notes
@@ -369,6 +371,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     catch { return { colaborador: '', cedula: '' }; }
   })(),
   calendarEvents: [],
+  activeCalendarEvent: null,
 
   showToast: ({ kind, title, description, durationMs = 3200 }) => {
     const id = uuidv4();
@@ -726,7 +729,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
-  setActiveTask: (task) => set({ activeTask: task }),
+  setActiveTask: (task) => set({ activeTask: task, activeCalendarEvent: null }),
+  setActiveCalendarEvent: (event) => set({ activeCalendarEvent: event, activeTask: null }),
 
   moveTask: async (task, toProject) => {
     const { basePath } = get();

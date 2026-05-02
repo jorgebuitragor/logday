@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, ChevronRight, ChevronDown, Plus, Pencil, Trash2, Clock, CalendarDays } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Plus, Pencil, Trash2, Clock, CalendarDays, Copy, Bell, Repeat2, X } from 'lucide-react';
 import { Task, TaskStatus, CalendarEvent, EventColor, EventRepeat } from '../types';
 import { useAppStore } from '../store/appStore';
 import { TaskContextMenu, NewTaskContextMenu } from './TaskContextMenu';
@@ -409,7 +409,7 @@ function EventEditor({ initial, language, onSave, onDelete, onClose }: EventEdit
 
 
 export function CalendarView() {
-  const { tasks, currentView, setActiveTask, activeTask, language, calendarEvents, saveCalendarEvent, deleteCalendarEvent, showToast } = useAppStore();
+  const { tasks, currentView, setActiveTask, activeTask, language, calendarEvents, saveCalendarEvent, deleteCalendarEvent, showToast, confirmDestructiveActions, activeCalendarEvent, setActiveCalendarEvent } = useAppStore();
 
   const MONTHS = MONTHS_TITLE[language];
   const WEEKDAYS = WEEKDAYS_SHORT[language];
@@ -432,6 +432,25 @@ export function CalendarView() {
   const [dayCtxMenu, setDayCtxMenu] = useState<{ x: number; y: number; date: string } | null>(null);
   const [dayCtxPos, setDayCtxPos] = useState({ x: 0, y: 0 });
   const [dayCtxReady, setDayCtxReady] = useState(false);
+  // Event context menu (right-click on an event card)
+  const evCtxRef = useRef<HTMLDivElement>(null);
+  const [evCtxMenu, setEvCtxMenu] = useState<{ event: CalendarEvent; x: number; y: number } | null>(null);
+  const [evCtxPos, setEvCtxPos] = useState({ x: 0, y: 0 });
+  const [evCtxReady, setEvCtxReady] = useState(false);
+  // Active event detail panel - managed in store (mutual exclusion with activeTask)
+  const [confirmDeleteEvent, setConfirmDeleteEvent] = useState<CalendarEvent | null>(null);
+  // Inline-editing state for the event detail panel
+  const [evTitle, setEvTitle] = useState('');
+  const [evDate, setEvDate] = useState('');
+  const [evAllDay, setEvAllDay] = useState(true);
+  const [evTime, setEvTime] = useState('09:00');
+  const [evDesc, setEvDesc] = useState('');
+  const [evColor, setEvColor] = useState<EventColor>('indigo');
+  const [evReminderEnabled, setEvReminderEnabled] = useState(false);
+  const [evReminder, setEvReminder] = useState(15);
+  const [evRepeatEnabled, setEvRepeatEnabled] = useState(false);
+  const [evRepeat, setEvRepeat] = useState<Exclude<EventRepeat, 'none'>>('weekly');
+  const [evDirty, setEvDirty] = useState(false);
 
   useEffect(() => {
     if (!dayCtxMenu) return;
@@ -441,6 +460,26 @@ export function CalendarView() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [dayCtxMenu]);
+
+  useEffect(() => {
+    if (!evCtxMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (!evCtxRef.current?.contains(e.target as Node)) { setEvCtxMenu(null); }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [evCtxMenu]);
+
+  useEffect(() => {
+    if (!evCtxMenu || !evCtxRef.current) return;
+    const rect = evCtxRef.current.getBoundingClientRect();
+    setEvCtxPos(placeMenuAtPointer(
+      { x: evCtxMenu.x, y: evCtxMenu.y },
+      { width: rect.width, height: rect.height },
+      { padding: 8 },
+    ));
+    setEvCtxReady(true);
+  }, [evCtxMenu]);
 
   useEffect(() => {
     if (!dayCtxMenu || !dayCtxRef.current) return;
@@ -466,6 +505,43 @@ export function CalendarView() {
     window.addEventListener('logday:new-event', handler);
     return () => window.removeEventListener('logday:new-event', handler);
   }, []);
+
+  // Sync inline-edit form when activeCalendarEvent changes
+  useEffect(() => {
+    if (!activeCalendarEvent) return;
+    setEvTitle(activeCalendarEvent.title);
+    setEvDate(activeCalendarEvent.date);
+    setEvAllDay(!activeCalendarEvent.time);
+    setEvTime(activeCalendarEvent.time || '09:00');
+    setEvDesc(activeCalendarEvent.description);
+    setEvColor(activeCalendarEvent.color);
+    setEvReminderEnabled(activeCalendarEvent.reminderMinutes > 0);
+    setEvReminder(activeCalendarEvent.reminderMinutes > 0 ? activeCalendarEvent.reminderMinutes : 15);
+    setEvRepeatEnabled(activeCalendarEvent.repeat !== 'none');
+    setEvRepeat(activeCalendarEvent.repeat !== 'none' ? (activeCalendarEvent.repeat as Exclude<EventRepeat, 'none'>) : 'weekly');
+    setEvDirty(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCalendarEvent?.id]);
+
+  // Auto-save inline edits with debounce
+  useEffect(() => {
+    if (!evDirty || !activeCalendarEvent) return;
+    const timer = setTimeout(async () => {
+      await saveCalendarEvent({
+        id: activeCalendarEvent.id,
+        title: evTitle.trim() || activeCalendarEvent.title,
+        date: evDate,
+        time: evAllDay ? '' : evTime,
+        description: evDesc,
+        color: evColor,
+        reminderMinutes: evAllDay || !evReminderEnabled ? 0 : evReminder,
+        repeat: evRepeatEnabled ? evRepeat : 'none',
+      });
+      setEvDirty(false);
+    }, 800);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [evDirty, evTitle, evDate, evAllDay, evTime, evDesc, evColor, evReminderEnabled, evReminder, evRepeatEnabled, evRepeat]);
 
   if (currentView !== 'calendar') return null;
 
@@ -508,7 +584,12 @@ export function CalendarView() {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
     hoverTimerRef.current = setTimeout(() => {
-      setHoverPos({ x: rect.right + 6, y: rect.top });
+      const tooltipWidth = 224; // w-56
+      const spaceRight = window.innerWidth - rect.right - 6;
+      const x = spaceRight >= tooltipWidth
+        ? rect.right + 6
+        : rect.left - tooltipWidth - 6;
+      setHoverPos({ x, y: rect.top });
       setHoverDate(dateStr);
     }, 350);
   };
@@ -661,7 +742,16 @@ export function CalendarView() {
                     {selectedEvents.map((ev) => (
                       <div
                         key={ev.id}
-                        className={`rounded-xl border px-3 py-2 flex items-start justify-between gap-2 ${EVENT_COLOR_BADGE[ev.color]}`}
+                        onClick={() => setActiveCalendarEvent(activeCalendarEvent?.id === ev.id ? null : ev)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setActiveCalendarEvent(null);
+                            setEvCtxReady(false);
+                          setEvCtxPos(placeMenuAtPointer({ x: e.clientX, y: e.clientY }, { width: 190, height: 128 }, { padding: 8 }));
+                          setEvCtxMenu({ event: ev, x: e.clientX, y: e.clientY });
+                        }}
+                        className={`rounded-xl border px-3 py-2 flex items-start justify-between gap-2 cursor-pointer select-none transition hover:brightness-110 ${activeCalendarEvent?.id === ev.id ? 'ring-1 ring-white/20' : ''} ${EVENT_COLOR_BADGE[ev.color]}`}
                       >
                         <div className="min-w-0">
                           <p className="truncate text-xs font-medium">{ev.title}</p>
@@ -681,7 +771,7 @@ export function CalendarView() {
                           )}
                         </div>
                         <button
-                          onClick={() => setEventEditor({ event: ev })}
+                          onClick={(e) => { e.stopPropagation(); setEventEditor({ event: ev }); }}
                           className="shrink-0 opacity-50 hover:opacity-100 transition mt-0.5"
                         >
                           <Pencil size={11} />
@@ -697,9 +787,17 @@ export function CalendarView() {
 
               {/* Tasks section */}
               <div>
-                <span className="block mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-hint)]">
-                  {t(language, 'calendar', 'tasks')}
-                </span>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-hint)]">
+                    {t(language, 'calendar', 'tasks')}
+                  </span>
+                  <button
+                    onClick={() => { window.dispatchEvent(new CustomEvent('logday:new-task')); }}
+                    className="flex items-center gap-1 text-[10px] text-indigo-400 hover:text-indigo-300 transition"
+                  >
+                    <Plus size={11} /> {t(language, 'tasks', 'newTask')}
+                  </button>
+                </div>
                 {selectedTasks.length === 0 ? (
                   <p className="text-xs text-[var(--text-faint)] italic py-1">{t(language, 'tasks', 'noTasksDate')}</p>
                 ) : (
@@ -734,9 +832,205 @@ export function CalendarView() {
             </div>
           </div>
         )}
-      </div>
 
-      {/* Hover preview tooltip */}
+        {/* Event detail panel — inline editable */}
+        {activeCalendarEvent && (
+          <div className="animate-fade-in flex h-full w-[420px] shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-input)]">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const idx = EVENT_COLORS.indexOf(evColor);
+                    const next = EVENT_COLORS[(idx + 1) % EVENT_COLORS.length];
+                    setEvColor(next); setEvDirty(true);
+                  }}
+                  className={`h-3 w-3 shrink-0 rounded-full ${EVENT_COLOR_DOT[evColor]} transition ring-offset-2 ring-offset-[var(--bg-input)] hover:ring-2 hover:ring-white/40`}
+                  title={t(language, 'calendar', 'eventColor')}
+                />
+                {evDirty && <span className="text-[10px] text-[var(--text-hint)]">{t(language, 'tasks', 'saving')}</span>}
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => {
+                    const ev = activeCalendarEvent;
+                    setActiveCalendarEvent(null);
+                    if (confirmDestructiveActions) setConfirmDeleteEvent(ev);
+                    else handleDeleteEvent(ev.id!);
+                  }}
+                  className="rounded-lg p-1.5 text-[var(--text-hint)] transition hover:text-red-400 hover:bg-red-400/10"
+                >
+                  <Trash2 size={14} />
+                </button>
+                <button
+                  onClick={() => setActiveCalendarEvent(null)}
+                  className="rounded-lg p-1.5 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              {/* Title */}
+              <div className="px-5 pt-5 pb-3">
+                <textarea
+                  value={evTitle}
+                  onChange={(e) => { setEvTitle(e.target.value); setEvDirty(true); }}
+                  placeholder={t(language, 'calendar', 'eventTitlePlaceholder')}
+                  rows={1}
+                  className="w-full resize-none bg-transparent text-xl font-semibold text-[var(--text-primary)] outline-none placeholder-[var(--text-faint)] leading-tight"
+                  style={{ overflow: 'hidden' }}
+                  onInput={(e) => {
+                    const el = e.currentTarget;
+                    el.style.height = 'auto';
+                    el.style.height = el.scrollHeight + 'px';
+                  }}
+                />
+              </div>
+
+              {/* Metadata */}
+              <div className="px-5 pb-4 space-y-2 text-sm">
+                {/* Date */}
+                <div className="flex items-center gap-3">
+                  <span className="w-24 shrink-0 text-xs text-[var(--text-hint)]">
+                    <CalendarDays size={12} className="inline mr-1" />
+                    {t(language, 'calendar', 'eventDate')}
+                  </span>
+                  <div className="flex-1">
+                    <AppDatePicker value={evDate} onChange={(v) => { setEvDate(v); setEvDirty(true); }} />
+                  </div>
+                </div>
+
+                {/* All day / Time toggle */}
+                <div className="flex items-center gap-3">
+                  <span className="w-24 shrink-0 text-xs text-[var(--text-hint)]">
+                    <Clock size={12} className="inline mr-1" />
+                    {t(language, 'calendar', 'eventTime')}
+                  </span>
+                  <div className="flex rounded-lg border border-[var(--border-card)] bg-[var(--bg-surface)] p-0.5 gap-0.5 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => { setEvAllDay(true); setEvReminderEnabled(false); setEvDirty(true); }}
+                      className={`rounded-md px-2.5 py-1 font-medium transition ${evAllDay ? 'bg-[var(--bg-elevated)] text-[var(--text-primary)] shadow-sm' : 'text-[var(--text-hint)] hover:text-[var(--text-secondary)]'}`}
+                    >
+                      {t(language, 'calendar', 'eventAllDay')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setEvAllDay(false); setEvDirty(true); }}
+                      className={`rounded-md px-2.5 py-1 font-medium transition ${!evAllDay ? 'bg-[var(--bg-elevated)] text-[var(--text-primary)] shadow-sm' : 'text-[var(--text-hint)] hover:text-[var(--text-secondary)]'}`}
+                    >
+                      {t(language, 'calendar', 'eventSpecificTime')}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Time input */}
+                {!evAllDay && (
+                  <div className="flex items-center gap-3">
+                    <span className="w-24 shrink-0" />
+                    <input
+                      type="time"
+                      value={evTime}
+                      onChange={(e) => { setEvTime(e.target.value); setEvDirty(true); }}
+                      className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs text-[var(--text-body)] focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                    />
+                  </div>
+                )}
+
+                {/* Reminder */}
+                {!evAllDay && (
+                  <div className="flex items-center gap-3">
+                    <span className="w-24 shrink-0 text-xs text-[var(--text-hint)]">
+                      <Bell size={12} className="inline mr-1" />
+                      {t(language, 'calendar', 'reminderLabel')}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { setEvReminderEnabled(!evReminderEnabled); setEvDirty(true); }}
+                        className={`relative h-5 w-9 rounded-full transition ${evReminderEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--border-card)]'}`}
+                      >
+                        <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-[left] duration-150 ${evReminderEnabled ? 'left-[18px]' : 'left-0.5'}`} />
+                      </button>
+                      {evReminderEnabled && (
+                        <AppSelect
+                          value={evReminder}
+                          options={REMINDER_OPTIONS.filter((m) => m > 0).map((m) => ({ value: m as number, label: reminderLabel(language, m) }))}
+                          onChange={(v) => { setEvReminder(v as number); setEvDirty(true); }}
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Repeat */}
+                <div className="flex items-center gap-3">
+                  <span className="w-24 shrink-0 text-xs text-[var(--text-hint)]">
+                    <Repeat2 size={12} className="inline mr-1" />
+                    {t(language, 'calendar', 'repeatToggleLabel')}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setEvRepeatEnabled(!evRepeatEnabled); setEvDirty(true); }}
+                      className={`relative h-5 w-9 rounded-full transition ${evRepeatEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--border-card)]'}`}
+                    >
+                      <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-[left] duration-150 ${evRepeatEnabled ? 'left-[18px]' : 'left-0.5'}`} />
+                    </button>
+                    {evRepeatEnabled && (
+                      <AppSelect
+                        value={evRepeat}
+                        options={[
+                          { value: 'daily'    as const, label: t(language, 'calendar', 'repeatDaily') },
+                          { value: 'weekly'   as const, label: t(language, 'calendar', 'repeatWeekly') },
+                          { value: 'biweekly' as const, label: t(language, 'calendar', 'repeatBiweekly') },
+                          { value: 'monthly'  as const, label: t(language, 'calendar', 'repeatMonthly') },
+                          { value: 'yearly'   as const, label: t(language, 'calendar', 'repeatYearly') },
+                        ]}
+                        onChange={(v) => { setEvRepeat(v as Exclude<EventRepeat, 'none'>); setEvDirty(true); }}
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {/* Color */}
+                <div className="flex items-center gap-3">
+                  <span className="w-24 shrink-0 text-xs text-[var(--text-hint)]">
+                    {t(language, 'calendar', 'eventColor')}
+                  </span>
+                  <div className="flex gap-2">
+                    {EVENT_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => { setEvColor(c); setEvDirty(true); }}
+                        className={`h-5 w-5 rounded-full transition ring-offset-2 ring-offset-[var(--bg-input)] ${EVENT_COLOR_DOT[c]} ${evColor === c ? 'ring-2 ring-white/60' : 'opacity-50 hover:opacity-100'}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Divider */}
+              <div className="mx-5 mb-3 h-px bg-[var(--border)]" />
+
+              {/* Description */}
+              <div className="px-5 pb-6">
+                <textarea
+                  value={evDesc}
+                  onChange={(e) => { setEvDesc(e.target.value); setEvDirty(true); }}
+                  placeholder={t(language, 'calendar', 'eventDescPlaceholder')}
+                  rows={4}
+                  className="w-full resize-none bg-transparent text-xs text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-faint)] leading-relaxed"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
       {hoverDate && (tasksByDate[hoverDate]?.length > 0 || eventsByDate[hoverDate]?.length > 0) && (
         <div
           style={{ position: 'fixed', top: hoverPos.y, left: hoverPos.x, zIndex: 9998 }}
@@ -766,6 +1060,80 @@ export function CalendarView() {
         </div>
       )}
 
+      {/* Event context menu */}
+      {evCtxMenu && createPortal(
+        <div
+          ref={evCtxRef}
+          style={{ position: 'fixed', top: evCtxPos.y, left: evCtxPos.x, zIndex: 9999, visibility: evCtxReady ? 'visible' : 'hidden' }}
+          className="min-w-[190px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-2xl"
+        >
+          <div className="border-b border-[var(--border)] px-3 pb-2 pt-1.5">
+            <p className="truncate text-[10px] font-semibold uppercase tracking-widest text-[var(--text-hint)]">{evCtxMenu.event.title}</p>
+          </div>
+          <button
+            onClick={() => { setEventEditor({ event: evCtxMenu.event }); setEvCtxMenu(null); }}
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          >
+            <Pencil size={12} className="text-indigo-400" />
+            {t(language, 'calendar', 'editEvent')}
+          </button>
+          <button
+            onClick={() => { navigator.clipboard.writeText(evCtxMenu.event.title); setEvCtxMenu(null); }}
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          >
+            <Copy size={12} className="text-[var(--text-hint)]" />
+            {t(language, 'tasks', 'copyTitle')}
+          </button>
+          <div className="my-1 border-t border-[var(--border)]" />
+          <button
+            onClick={() => {
+              if (confirmDestructiveActions) {
+                setConfirmDeleteEvent(evCtxMenu.event);
+                setEvCtxMenu(null);
+              } else {
+                handleDeleteEvent(evCtxMenu.event.id!);
+                setEvCtxMenu(null);
+              }
+            }}
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-red-400"
+          >
+            <Trash2 size={12} className="text-red-400/60" />
+            {t(language, 'calendar', 'deleteEvent')}
+          </button>
+        </div>,
+        document.body
+      )}
+
+      {/* Modal confirmación eliminar evento */}
+      {confirmDeleteEvent && confirmDestructiveActions && createPortal(
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
+          <div className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
+            <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
+              <Trash2 size={15} className="text-red-400" />
+              {t(language, 'calendar', 'deleteEvent')}
+            </div>
+            <p className="mb-4 text-xs text-[var(--text-secondary)]">
+              {t(language, 'calendar', 'deleteEventConfirm')}
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmDeleteEvent(null)}
+                className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
+              >
+                {t(language, 'calendar', 'cancel')}
+              </button>
+              <button
+                onClick={() => { handleDeleteEvent(confirmDeleteEvent.id!); setConfirmDeleteEvent(null); }}
+                className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600"
+              >
+                {t(language, 'calendar', 'deleteEvent')}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* Context menu en tareas del panel lateral */}
       {ctxMenu && (
         <TaskContextMenu
@@ -780,6 +1148,10 @@ export function CalendarView() {
           x={emptyCtxMenu.x}
           y={emptyCtxMenu.y}
           onClose={() => setEmptyCtxMenu(null)}
+          onNewEvent={() => {
+            setEventEditor({ event: { date: selectedDate ?? todayStr } });
+            setEmptyCtxMenu(null);
+          }}
         />
       )}
 

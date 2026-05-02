@@ -73,6 +73,11 @@ export function DailyList() {
   // ── Estado de confirmación de borrado ────────────────────────────────────
   const [deleteConfirmDate, setDeleteConfirmDate] = useState<string | null>(null);
 
+  const [listKey, setListKey] = useState(0);
+  useEffect(() => {
+    setListKey((k) => k + 1);
+  }, [activeDailyMonth]);
+
   // ── Estado del menú contextual (sobre una entrada) ────────────────────────
   const [contextMenu, setContextMenu] = useState<{ date: string; x: number; y: number } | null>(null);
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
@@ -458,8 +463,8 @@ export function DailyList() {
             </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
-            {monthDates.map((date) => {
+          <div key={listKey} className="flex flex-col gap-2">
+            {monthDates.map((date, idx) => {
             const isActive = activeDailyDate === date;
             const isToday = date === todayISO;
             const d = new Date(date + 'T12:00:00');
@@ -470,7 +475,7 @@ export function DailyList() {
             const preview = lines[0]?.replace(/^-\s*/, '').slice(0, 45) ?? '';
 
             return (
-              <div key={date} className="animate-in group relative">
+              <div key={date} className={`task-row-enter task-d${Math.min(idx, 10)} group relative`}>
                 <button
                   onContextMenu={(e) => handleContextMenu(e, date)}
                   onClick={() => setActiveDailyDate(isActive ? null : date)}
@@ -661,7 +666,7 @@ export function DailyList() {
     {/* Modal confirmación eliminar mes (siempre obligatorio) */}
     {deleteMonthConfirm && (
       <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/50">
-        <div className="w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
+        <div className="modal-spring-in w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
           <div className="mb-3 flex items-center gap-2 text-red-400">
             <Trash2 size={16} />
             <h3 className="text-sm font-semibold">{t(language, 'dailys', 'deleteMonthTitle')}</h3>
@@ -692,7 +697,7 @@ export function DailyList() {
     {/* Modal de confirmación de borrado */}
     {deleteConfirmDate && confirmDestructiveActions && (
       <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/50">
-        <div className="w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
+        <div className="modal-spring-in w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
           <div className="mb-3 flex items-center gap-2 text-red-400">
             <Trash2 size={16} />
             <h3 className="text-sm font-semibold">{t(language, 'dailys', 'deleteDailyTitle')}</h3>

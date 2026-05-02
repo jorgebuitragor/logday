@@ -75,6 +75,7 @@ export interface AppConfig {
   defaultReminderMinutes?: number;
   workWeekDays?: 5 | 6;
   holidaysAsNonWork?: boolean;
+  animationsEnabled?: boolean;
 }
 
 export interface BackupSettings {
@@ -107,6 +108,7 @@ export interface AppToast {
   kind: ToastKind;
   title: string;
   description?: string;
+  exiting?: boolean;
 }
 
 export interface SearchResult {

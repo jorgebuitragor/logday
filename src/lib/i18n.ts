@@ -71,6 +71,12 @@ const dict = {
       holidaysDesc: 'Si está activo, los festivos colombianos se tratan como días no laborables en el dashboard.',
       holidaysEnabled: 'Activado',
       holidaysDisabled: 'Desactivado',
+      // Accessibility
+      accessibility: 'Accesibilidad',
+      animationsTitle: 'Animaciones de interfaz',
+      animationsDesc: 'Activa o desactiva todas las animaciones y transiciones de la app.',
+      animationsEnabled: 'Activadas',
+      animationsDisabled: 'Desactivadas',
       // Shortcuts
       shortcutNewNote: 'Nueva nota',
       shortcutNewTask: 'Nueva tarea',
@@ -775,6 +781,12 @@ const dict = {
       holidaysDesc: 'When enabled, Colombian holidays are treated as non-working days in the dashboard.',
       holidaysEnabled: 'Enabled',
       holidaysDisabled: 'Disabled',
+      // Accessibility
+      accessibility: 'Accessibility',
+      animationsTitle: 'Interface animations',
+      animationsDesc: 'Enable or disable all animations and transitions in the app.',
+      animationsEnabled: 'Enabled',
+      animationsDisabled: 'Disabled',
       // Shortcuts
       shortcutNewNote: 'New note',
       shortcutNewTask: 'New task',

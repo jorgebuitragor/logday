@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* ── Accessibility: disable animations ─────────────────────── */
+.no-animations *,
+.no-animations *::before,
+.no-animations *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
 /* ── Theme variables ───────────────────────────────────────── */
 :root {
   --bg-base:     #0f0f0f;
@@ -210,8 +218,21 @@ html.theme-animating body * {
   pointer-events: none;
 }
 
+@keyframes toast-enter {
+  from { opacity: 0; transform: translateX(16px) scale(0.96); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes toast-exit {
+  from { opacity: 1; transform: translateX(0) scale(1); max-height: 120px; margin-bottom: 0; }
+  to   { opacity: 0; transform: translateX(22px) scale(0.95); max-height: 0; margin-bottom: -8px; }
+}
 .toast-card {
-  animation: fade-in-up 180ms ease-out both;
+  animation: toast-enter 300ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.toast-card-exit {
+  animation: toast-exit 240ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  pointer-events: none;
+  overflow: hidden;
 }
 
 /* ── Dashboard entrance animations ──────────────────────────── */
@@ -255,6 +276,89 @@ html.theme-animating body * {
   pointer-events: none;
   overflow: hidden;
 }
+
+/* ── Tasks section animations ────────────────────────────────── */
+@keyframes task-row-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes task-panel-slide-in {
+  from { opacity: 0; transform: translateX(18px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes status-pop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.35) rotate(-8deg); }
+  70%  { transform: scale(0.9) rotate(4deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+@keyframes header-drop-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes modal-spring-in {
+  0%   { opacity: 0; transform: translateY(12px) scale(0.96); }
+  60%  { transform: translateY(-3px) scale(1.01); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.task-header-enter {
+  animation: header-drop-in 180ms ease-out both;
+}
+.task-row-enter {
+  animation: task-row-in 200ms ease-out both;
+}
+.task-panel-enter {
+  animation: task-panel-slide-in 220ms cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+@keyframes daily-panel-slide-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.daily-panel-enter {
+  animation: daily-panel-slide-in 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.status-pop {
+  animation: status-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.modal-spring-in {
+  animation: modal-spring-in 250ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+/* stagger helpers for task rows */
+.task-d0  { animation-delay:   0ms; }
+.task-d1  { animation-delay:  30ms; }
+.task-d2  { animation-delay:  60ms; }
+.task-d3  { animation-delay:  90ms; }
+.task-d4  { animation-delay: 120ms; }
+.task-d5  { animation-delay: 150ms; }
+.task-d6  { animation-delay: 180ms; }
+.task-d7  { animation-delay: 210ms; }
+.task-d8  { animation-delay: 240ms; }
+.task-d9  { animation-delay: 270ms; }
+.task-d10 { animation-delay: 300ms; }
+
+/* ── Kanban animations ───────────────────────────────────────── */
+@keyframes kanban-col-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.kanban-col-enter  { animation: kanban-col-in 260ms cubic-bezier(0.25, 0.46, 0.45, 0.94) both; }
+.kanban-col-d0     { animation-delay:   0ms; }
+.kanban-col-d1     { animation-delay:  70ms; }
+.kanban-col-d2     { animation-delay: 140ms; }
+.kanban-card-enter { animation: task-row-in 180ms ease-out both; }
+.kanban-d0  { animation-delay:   0ms; }
+.kanban-d1  { animation-delay:  35ms; }
+.kanban-d2  { animation-delay:  70ms; }
+.kanban-d3  { animation-delay: 105ms; }
+.kanban-d4  { animation-delay: 140ms; }
+.kanban-d5  { animation-delay: 175ms; }
+.kanban-d6  { animation-delay: 210ms; }
+.kanban-d7  { animation-delay: 245ms; }
+
+/* ── Calendar animations ─────────────────────────────────────── */
+.cal-grid-enter  { animation: fade-in-up 200ms ease-out both; }
+.cal-panel-enter { animation: task-panel-slide-in 220ms cubic-bezier(0.25, 0.46, 0.45, 0.94) both; }
+
 
 .md-editor {
   font-family: "JetBrains Mono", "Fira Code", "Courier New", monospace;

@@ -18,9 +18,10 @@ interface KanbanCardProps {
   task: Task;
   isDragging: boolean;
   onPointerDown: (e: React.PointerEvent, taskId: string) => void;
+  staggerIndex?: number;
 }
 
-function KanbanCard({ task, isDragging, onPointerDown }: KanbanCardProps) {
+function KanbanCard({ task, isDragging, onPointerDown, staggerIndex = 0 }: KanbanCardProps) {
   const { setActiveTask, activeTask } = useAppStore();
   const isActive = activeTask?.id === task.id;
   const today = new Date().toISOString().slice(0, 10);
@@ -31,7 +32,7 @@ function KanbanCard({ task, isDragging, onPointerDown }: KanbanCardProps) {
     <>
     <div
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
-      className={`rounded-xl border p-3.5 transition select-none ${
+      className={`kanban-card-enter kanban-d${Math.min(staggerIndex, 7)} rounded-xl border p-3.5 transition select-none ${
         isDragging
           ? 'opacity-40 border-indigo-400/40 bg-indigo-500/5'
           : isActive
@@ -176,6 +177,11 @@ export function KanbanBoard() {
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
 
+  const [boardKey, setBoardKey] = useState(0);
+  useEffect(() => {
+    if (currentView === 'kanban') setBoardKey((k) => k + 1);
+  }, [currentView]);
+
   const COLUMNS = COLUMN_DEFS.map((col) => ({
     ...col,
     label: t(language, 'tasks', col.status === 'todo' ? 'statusTodo' : col.status === 'in-progress' ? 'statusInProgress' : 'statusDone'),
@@ -308,8 +314,8 @@ export function KanbanBoard() {
         )}
       </div>
 
-      <div className="flex flex-1 gap-4 overflow-x-auto p-5">
-        {COLUMNS.map((col) => {
+      <div key={boardKey} className="flex flex-1 gap-4 overflow-x-auto p-5">
+        {COLUMNS.map((col, colIndex) => {
           const { Icon } = col;
           const colTasks = filteredTasks.filter((t) => t.status === col.status);
           const isTarget = targetStatus === col.status;
@@ -318,7 +324,7 @@ export function KanbanBoard() {
             <div
               key={col.status}
               data-col-status={col.status}
-              className={`flex flex-1 flex-col rounded-2xl border min-w-[240px] transition-colors ${
+              className={`kanban-col-enter kanban-col-d${colIndex} flex flex-1 flex-col rounded-2xl border min-w-[240px] transition-colors ${
                 isTarget
                   ? 'border-indigo-400/60 bg-indigo-500/5'
                   : 'bg-[var(--bg-panel)] border-[var(--border)]'
@@ -336,12 +342,13 @@ export function KanbanBoard() {
 
               {/* Tarjetas */}
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                {colTasks.map((task) => (
+                {colTasks.map((task, cardIndex) => (
                   <KanbanCard
                     key={task.id}
                     task={task}
                     isDragging={draggingId === task.id}
                     onPointerDown={handleCardPointerDown}
+                    staggerIndex={cardIndex}
                   />
                 ))}
                 {colTasks.length === 0 && !draggingTask && (
@@ -395,7 +402,7 @@ function KanbanAddButton({ status }: { status: TaskStatus }) {
       </button>
       {isAdding && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setIsAdding(false); setNewTitle(''); }}>
-          <div className="w-72 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-spring-in w-72 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <p className="mb-2 text-xs font-medium text-[var(--text-secondary)]">{t(language, 'tasks', 'newTask')}</p>
             <input
               autoFocus

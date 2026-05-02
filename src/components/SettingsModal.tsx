@@ -75,6 +75,7 @@ export function SettingsModal() {
     defaultReminderMinutes, setDefaultReminderMinutes,
     workWeekDays, setWorkWeekDays,
     holidaysAsNonWork, setHolidaysAsNonWork,
+    animationsEnabled, setAnimationsEnabled,
     basePath, changeBasePath,
     shortcuts, setShortcut,
     folderTags, replaceFolderTags,
@@ -698,6 +699,38 @@ export function SettingsModal() {
                 </span>
               </button>
             </div>
+          </div>
+
+          {/* Accesibilidad */}
+          <div>
+            <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
+              {t(language, 'settings', 'accessibility')}
+            </p>
+            <button
+              onClick={() => void setAnimationsEnabled(!animationsEnabled)}
+              className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 text-left transition hover:bg-[var(--bg-hover)]"
+            >
+              <div>
+                <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'animationsTitle')}</p>
+                <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'animationsDesc')}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] font-semibold uppercase tracking-wider ${
+                  animationsEnabled ? 'text-[var(--accent)]' : 'text-[var(--text-hint)]'
+                }`}>
+                  {animationsEnabled
+                    ? t(language, 'settings', 'animationsEnabled')
+                    : t(language, 'settings', 'animationsDisabled')}
+                </span>
+                <span className={`relative h-6 w-11 rounded-full transition ${
+                  animationsEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--border-card)]'
+                }`}>
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-150 ${
+                    animationsEnabled ? 'left-[22px]' : 'left-0.5'
+                  }`} />
+                </span>
+              </div>
+            </button>
           </div>
 
           {/* Atajos de teclado */}

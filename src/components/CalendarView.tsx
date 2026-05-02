@@ -506,6 +506,13 @@ export function CalendarView() {
     return () => window.removeEventListener('logday:new-event', handler);
   }, []);
 
+  // Cerrar panel de detalle al cambiar de día seleccionado
+  useEffect(() => {
+    setActiveCalendarEvent(null);
+    setActiveTask(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate]);
+
   // Sync inline-edit form when activeCalendarEvent changes
   useEffect(() => {
     if (!activeCalendarEvent) return;
@@ -649,7 +656,7 @@ export function CalendarView() {
           </div>
 
           {/* Day cells */}
-          <div className="grid grid-cols-7 gap-1">
+          <div key={`${year}-${month}`} className="cal-grid-enter grid grid-cols-7 gap-1">
             {Array.from({ length: totalCells }).map((_, i) => {
               const dayNum = i - startOffset + 1;
               const isValid = dayNum >= 1 && dayNum <= lastDay.getDate();
@@ -713,7 +720,7 @@ export function CalendarView() {
 
         {/* Selected day panel */}
         {selectedDate && (
-          <div className="w-72 border-l border-[var(--border)] flex flex-col overflow-hidden">
+          <div key={selectedDate} className="cal-panel-enter w-72 border-l border-[var(--border)] flex flex-col overflow-hidden">
             <div className="border-b border-[var(--border)] px-4 py-3">
               <p className="text-sm font-medium text-[var(--text-primary)]">{selectedDate}</p>
               <p className="text-xs text-[var(--text-hint)]">
@@ -835,7 +842,7 @@ export function CalendarView() {
 
         {/* Event detail panel — inline editable */}
         {activeCalendarEvent && (
-          <div className="animate-fade-in flex h-full w-[420px] shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-input)]">
+          <div key={activeCalendarEvent.id} className="task-panel-enter flex h-full w-[420px] shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-input)]">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
               <div className="flex items-center gap-2">

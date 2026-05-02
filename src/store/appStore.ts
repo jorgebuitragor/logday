@@ -72,6 +72,9 @@ interface AppState {
   workWeekDays: 5 | 6;
   holidaysAsNonWork: boolean;
 
+  // Accesibilidad
+  animationsEnabled: boolean;
+
   // Theme + Settings
   theme: Theme;
   startupScreen: StartupScreen;
@@ -165,12 +168,14 @@ interface AppState {
   removeLinkedPath: (task: Task, path: string) => Promise<void>;
   toggleSidebar: () => void;
   showToast: (toast: { kind: ToastKind; title: string; description?: string; durationMs?: number }) => string;
+  preExitToast: (id: string) => void;
   dismissToast: (id: string) => void;
   setConfirmDestructiveActions: (enabled: boolean) => Promise<void>;
   setNotificationsEnabled: (enabled: boolean) => Promise<void>;
   setDefaultReminderMinutes: (mins: number) => Promise<void>;
   setWorkWeekDays: (days: 5 | 6) => Promise<void>;
   setHolidaysAsNonWork: (enabled: boolean) => Promise<void>;
+  setAnimationsEnabled: (enabled: boolean) => Promise<void>;
   setTheme: (theme: Theme) => void;
   setStartupScreen: (screen: StartupScreen) => Promise<void>;
   setLanguage: (lang: Language) => Promise<void>;
@@ -282,6 +287,10 @@ export function applyFontSizeToDOM(size: number) {
   document.documentElement.style.setProperty('--app-font-size', `${size}px`);
 }
 
+export function applyAnimationsToDOM(enabled: boolean) {
+  document.documentElement.classList.toggle('no-animations', !enabled);
+}
+
 export function applyThemeToDOM(theme: Theme, animate = false) {
   const resolved =
     theme === 'system'
@@ -338,6 +347,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   defaultReminderMinutes: 5,
   workWeekDays: 5 as (5 | 6),
   holidaysAsNonWork: true,
+  animationsEnabled: true,
   theme: (localStorage.getItem('theme') as Theme) || 'system',
   startupScreen: 'dashboard',
   language: (localStorage.getItem('language') as Language) || 'es',
@@ -380,11 +390,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
     if (durationMs > 0) {
       window.setTimeout(() => {
-        get().dismissToast(id);
+        get().preExitToast(id);
       }, durationMs);
     }
     return id;
   },
+
+  preExitToast: (id) => set((state) => ({
+    toasts: state.toasts.map((toast) => toast.id === id ? { ...toast, exiting: true } : toast),
+  })),
 
   dismissToast: (id) => set((state) => ({
     toasts: state.toasts.filter((toast) => toast.id !== id),
@@ -394,6 +408,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ isLoading: true });
     applyThemeToDOM(get().theme);
     applyFontSizeToDOM(get().fontSize);
+    applyAnimationsToDOM(get().animationsEnabled);
     try {
       const configDir = await fs.getAppConfigDir();
       set({ configDir });
@@ -415,6 +430,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             defaultReminderMinutes: cfg.defaultReminderMinutes ?? 5,
             workWeekDays: (cfg.workWeekDays as (5 | 6)) ?? 5,
             holidaysAsNonWork: cfg.holidaysAsNonWork ?? true,
+            animationsEnabled: cfg.animationsEnabled ?? true,
           });
 
           const lastProject = cfg.lastOpenedProject || null;
@@ -1591,6 +1607,28 @@ export const useAppStore = create<AppState>((set, get) => ({
         defaultReminderMinutes: get().defaultReminderMinutes,
         workWeekDays: get().workWeekDays,
         holidaysAsNonWork: enabled,
+        animationsEnabled: get().animationsEnabled,
+        lastOpenedProject: activeProject ?? undefined,
+        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
+      });
+    }
+  },
+
+  setAnimationsEnabled: async (enabled) => {
+    set({ animationsEnabled: enabled });
+    applyAnimationsToDOM(enabled);
+    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
+    if (configDir && basePath) {
+      await saveConfig(configDir, {
+        basePath,
+        startupScreen,
+        language,
+        confirmDestructiveActions: get().confirmDestructiveActions,
+        notificationsEnabled: get().notificationsEnabled,
+        defaultReminderMinutes: get().defaultReminderMinutes,
+        workWeekDays: get().workWeekDays,
+        holidaysAsNonWork: get().holidaysAsNonWork,
+        animationsEnabled: enabled,
         lastOpenedProject: activeProject ?? undefined,
         lastOpenedNoteFolder: activeNoteFolder ?? undefined,
       });

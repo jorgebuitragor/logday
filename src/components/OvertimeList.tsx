@@ -51,6 +51,7 @@ export function OvertimeList({ onEdit }: Props) {
   const ctxMenuRef = useRef<HTMLDivElement>(null);
   const [entryCtx, setEntryCtx] = useState<{ entry: OvertimeEntry; x: number; y: number } | null>(null);
   const entryCtxRef = useRef<HTMLDivElement>(null);
+  const [listKey, setListKey] = useState(0);
 
   useEffect(() => {
     if (!ctxMenu) return;
@@ -73,8 +74,9 @@ export function OvertimeList({ onEdit }: Props) {
   // Cargar entradas del mes al montar
   useEffect(() => {
     loadOvertimeMonth(overtimeMonth);
+    setListKey((k) => k + 1);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [overtimeMonth]);
 
   const [year, month] = overtimeMonth.split('-').map(Number);
 
@@ -87,6 +89,8 @@ export function OvertimeList({ onEdit }: Props) {
   const fmt = (n: number) => Math.round(n * 100) / 100;
 
   const inputCls = 'w-full rounded-md border border-[var(--border)] bg-[var(--bg-base)] px-2 py-1.5 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none';
+
+  const COMP_KEYS = new Set(['comp', 'pay', 'other']);
 
   return (<>
     <div className="flex h-full w-72 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]">
@@ -140,11 +144,11 @@ export function OvertimeList({ onEdit }: Props) {
             </button>
           </div>
         ) : (
-          <ul className="divide-y divide-[var(--border)]">
-            {overtimeEntries.map((entry) => (
+          <ul key={listKey} className="divide-y divide-[var(--border)]">
+            {overtimeEntries.map((entry, idx) => (
               <li
                 key={entry.id}
-                className="group flex cursor-pointer items-start gap-2 px-3 py-2.5 hover:bg-[var(--bg-hover)]"
+                className={`task-row-enter task-d${Math.min(idx, 10)} group flex cursor-pointer items-start gap-2 px-3 py-2.5 hover:bg-[var(--bg-hover)]`}
                 onClick={() => onEdit(entry)}
                 onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setEntryCtx({ entry, x: e.clientX, y: e.clientY }); }}
               >
@@ -159,7 +163,9 @@ export function OvertimeList({ onEdit }: Props) {
                   </p>
                   {entry.observaciones && (
                     <span className="mt-0.5 inline-block rounded-full bg-indigo-500/10 px-1.5 py-0.5 text-[10px] text-indigo-400">
-                      {entry.observaciones}
+                      {COMP_KEYS.has(entry.observaciones)
+                        ? t(language, 'overtime', entry.observaciones as 'comp' | 'pay' | 'other')
+                        : entry.observaciones}
                     </span>
                   )}
                 </div>
@@ -196,7 +202,7 @@ export function OvertimeList({ onEdit }: Props) {
 
       {/* Panel datos colaborador (encima del toolbar, colapsable) */}
       {showConfig && (
-        <div className="border-t border-[var(--border)] bg-[var(--bg-base)] px-3 py-3 space-y-2 animate-in">
+        <div className="border-t border-[var(--border)] bg-[var(--bg-base)] px-3 py-3 space-y-2 modal-spring-in">
           <div className="flex items-center justify-between">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-hint)]">{t(language, 'overtime', 'collaboratorData')}</p>
             <button onClick={() => setShowConfig(false)} className="rounded p-0.5 text-[var(--text-hint)] hover:text-[var(--text-primary)]">
@@ -301,7 +307,7 @@ export function OvertimeList({ onEdit }: Props) {
     )}
     {confirmDelete && confirmDestructiveActions && (
       <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
-        <div className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
+        <div className="modal-spring-in w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
           <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
             <Trash2 size={15} className="text-red-400" />
             {t(language, 'overtime', 'deleteExtra')}

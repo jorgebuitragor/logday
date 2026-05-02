@@ -46,7 +46,7 @@ export function OvertimeEditor({ entry, onClose }: Props) {
   const [fecha, setFecha] = useState(entry?.fecha ?? today());
   const [solicitadaPor, setSolicitadaPor] = useState(entry?.solicitadaPor ?? '');
   const [actividad, setActividad] = useState(entry?.actividad ?? '');
-  const [observaciones, setObservaciones] = useState<string>(entry?.observaciones ?? t(language, 'overtime', 'comp'));
+  const [observaciones, setObservaciones] = useState<string>(entry?.observaciones ?? 'comp');
   const [horaInicio, setHoraInicio] = useState(entry?.horaInicio ?? '18:00');
   const [horaFinal, setHoraFinal] = useState(entry?.horaFinal ?? '20:00');
   const [saving, setSaving] = useState(false);
@@ -94,14 +94,13 @@ export function OvertimeEditor({ entry, onClose }: Props) {
 
   // Clave única: dispara animación al cambiar entre nuevo/edición o entre distintas entradas
   const animKey = entry ? `edit-${entry.id}` : 'new';
-  const animClass = entry ? 'animate-fade-in' : 'animate-in';
 
   return (
-    <div key={animKey} className={`${animClass} flex h-full flex-1 flex-col overflow-hidden bg-[var(--bg-base)]`}>
+    <div key={animKey} className="task-panel-enter flex h-full flex-1 flex-col overflow-hidden bg-[var(--bg-base)]">
       {/* Modal de conflicto de horario */}
       {conflicts.length > 0 && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
-          <div className="w-96 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
+          <div className="modal-spring-in w-96 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
             <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-400">
               <AlertTriangle size={15} />
               {t(language, 'overtime', 'conflictTitle')}
@@ -232,7 +231,7 @@ export function OvertimeEditor({ entry, onClose }: Props) {
 
         {/* Preview del cálculo */}
         {preview && (
-          <section className="rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-3 space-y-2">
+          <section className="animate-fade-in rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-3 space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-indigo-400">{t(language, 'overtime', 'breakdown')}</p>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
               <span className="text-[var(--text-hint)]">{t(language, 'overtime', 'totalHours')}</span>

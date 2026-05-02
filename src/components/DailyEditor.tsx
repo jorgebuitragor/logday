@@ -337,7 +337,7 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
       {/* Modal confirmación de promoción */}
       {pendingPromoteText && (
         <div className="fixed inset-0 z-[600] flex items-center justify-center bg-black/50">
-          <div className="w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
+          <div className="modal-spring-in w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
             <div className="mb-3 flex items-center gap-2 text-indigo-400">
               <ListTodo size={16} />
               <h3 className="text-sm font-semibold">{t(language, 'dailys', 'promoteModalTitle')}</h3>
@@ -502,7 +502,7 @@ export function DailyEditor() {
 
   return (
     <>
-    <div key={activeDailyDate} className="animate-fade-in flex flex-1 flex-col overflow-hidden bg-[var(--bg-base)]">
+    <div className="flex flex-1 flex-col overflow-hidden bg-[var(--bg-base)]">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-2.5">
         <div className="flex items-center gap-2">
@@ -631,7 +631,7 @@ export function DailyEditor() {
     {/* Modal de confirmación de borrado */}
     {showDeleteConfirm && confirmDestructiveActions && activeDailyDate && (
       <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/50">
-        <div className="w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
+        <div className="modal-spring-in w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
           <div className="mb-3 flex items-center gap-2 text-red-400">
             <Trash2 size={16} />
             <h3 className="text-sm font-semibold">{t(language, 'dailys', 'deleteDailyTitle')}</h3>

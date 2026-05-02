@@ -133,7 +133,7 @@ export function TaskEditor() {
   const localizedStatusLabel = t(language, 'tasks', status === 'todo' ? 'statusTodo' : status === 'in-progress' ? 'statusInProgress' : 'statusDone');
 
   return (
-    <div key={activeTask.id} className="animate-fade-in flex h-full w-[420px] shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-input)]">
+    <div key={activeTask.id} className="task-panel-enter flex h-full w-[420px] shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-input)]">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
         <div className="flex items-center gap-2">

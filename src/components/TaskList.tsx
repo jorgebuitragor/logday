@@ -17,11 +17,13 @@ const TaskRow = memo(function TaskRow({
   task,
   isNew,
   isRemoving,
+  staggerIndex = 0,
   onBeforeDelete,
 }: {
   task: Task;
   isNew?: boolean;
   isRemoving?: boolean;
+  staggerIndex?: number;
   onBeforeDelete?: () => void;
 }) {
   const { setActiveTask, activeTask, updateTask } = useAppStore(
@@ -29,17 +31,21 @@ const TaskRow = memo(function TaskRow({
   );
   const isActive = activeTask?.id === task.id;
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [statusPopped, setStatusPopped] = useState(false);
   // Animación de entrada
   const [visible, setVisible] = useState(!isNew);
   useEffect(() => {
     if (isNew) requestAnimationFrame(() => setVisible(true));
   }, [isNew]);
 
+  const staggerClass = `task-d${Math.min(staggerIndex, 10)}`;
+
   const today = new Date().toISOString().slice(0, 10);
   const isOverdue = task.due && task.due < today && task.status !== 'done';
 
   const cycleStatus = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    setStatusPopped(true);
     const order: TaskStatus[] = ['todo', 'in-progress', 'done'];
     const next = order[(order.indexOf(task.status) + 1) % order.length];
     await updateTask({ ...task, status: next });
@@ -48,7 +54,7 @@ const TaskRow = memo(function TaskRow({
   return (
     <>
     <div
-      className={`transition-all duration-[220ms] ease-out ${
+      className={`task-row-enter ${staggerClass} transition-all duration-[220ms] ease-out ${
         isRemoving
           ? 'opacity-0 scale-95 pointer-events-none'
           : isNew && !visible
@@ -66,7 +72,11 @@ const TaskRow = memo(function TaskRow({
       }`}
     >
       {/* Status icon */}
-      <button onClick={cycleStatus} className="mt-0.5 shrink-0 transition hover:scale-110">
+      <button
+        onClick={cycleStatus}
+        className={`mt-0.5 shrink-0 transition hover:scale-110 ${statusPopped ? 'status-pop' : ''}`}
+        onAnimationEnd={() => setStatusPopped(false)}
+      >
         {STATUS_ICONS[task.status]}
       </button>
 
@@ -140,6 +150,7 @@ export function TaskList() {
   const [emptyCtxMenu, setEmptyCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [newTaskIds, setNewTaskIds] = useState<Set<string>>(new Set());
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
+  const [listKey, setListKey] = useState(0);
   const loadedRef = useRef(false);
   const prevIdsRef = useRef<Set<string>>(new Set());
 
@@ -175,6 +186,7 @@ export function TaskList() {
 
   useEffect(() => {
     setActiveTask(null);
+    setListKey((k) => k + 1);
   }, [activeProject, currentView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -203,8 +215,8 @@ export function TaskList() {
   };
 
   const newTaskModal = showNewTaskModal ? (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
-      <div className="w-[680px] max-w-[92vw] rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 animate-fade-in">
+      <div className="modal-spring-in w-[680px] max-w-[92vw] rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
         <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
           <Plus size={15} className="text-indigo-400" />
           {t(language, 'tasks', 'modalTitle')}
@@ -318,13 +330,14 @@ export function TaskList() {
             )}
           </div>
         ) : (
-          <div className="space-y-1">
-            {filtered.map((task) => (
+          <div key={listKey} className="space-y-1">
+            {filtered.map((task, idx) => (
               <TaskRow
                 key={task.id}
                 task={task}
                 isNew={newTaskIds.has(task.id)}
                 isRemoving={removingIds.has(task.id)}
+                staggerIndex={idx}
                 onBeforeDelete={() => handleBeforeDelete(task)}
               />
             ))}

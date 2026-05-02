@@ -71,6 +71,8 @@ export interface AppConfig {
   startupScreen?: StartupScreen;
   language?: Language;
   confirmDestructiveActions?: boolean;
+  notificationsEnabled?: boolean;
+  defaultReminderMinutes?: number;
 }
 
 export interface BackupSettings {
@@ -108,4 +110,18 @@ export interface AppToast {
 export interface SearchResult {
   path: string;
   content: string;
+}
+
+export type EventColor = 'indigo' | 'amber' | 'emerald' | 'rose' | 'sky' | 'violet';
+export type EventRepeat = 'none' | 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly';
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  date: string;              // YYYY-MM-DD
+  time: string;              // HH:MM   ('' = todo el día)
+  description: string;
+  color: EventColor;
+  reminderMinutes: number;   // 0 = sin recordatorio
+  repeat: EventRepeat;       // 'none' = sin repetición
 }

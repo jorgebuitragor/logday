@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Task, Note, AppConfig, ViewMode, Theme, ActiveSection, StartupScreen, Language, Shortcuts, DEFAULT_SHORTCUTS, OvertimeEntry, OvertimeMonthMeta, GitConfig, GitStatus, GitRemoteStatus, AppToast, ToastKind } from '../types';
+import { Task, Note, AppConfig, ViewMode, Theme, ActiveSection, StartupScreen, Language, Shortcuts, DEFAULT_SHORTCUTS, OvertimeEntry, OvertimeMonthMeta, GitConfig, GitStatus, GitRemoteStatus, AppToast, ToastKind, CalendarEvent } from '../types';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
 import { generateOvertimeXlsx } from '../lib/overtimeExcel';
 import { fs, pickFolder, pickFile, saveDialog, SearchResult } from '../lib/invoke';
@@ -51,6 +51,9 @@ interface AppState {
   overtimeMonths: string[];           // YYYY-MM[] con entradas, desc
   overtimeMeta: OvertimeMonthMeta;
 
+  // Calendar Events
+  calendarEvents: CalendarEvent[];
+
   // UI
   currentView: ViewMode;
   isSearchOpen: boolean;
@@ -59,6 +62,10 @@ interface AppState {
   isSidebarCollapsed: boolean;
   toasts: AppToast[];
   confirmDestructiveActions: boolean;
+
+  // Notificaciones
+  notificationsEnabled: boolean;
+  defaultReminderMinutes: number;
 
   // Theme + Settings
   theme: Theme;
@@ -138,6 +145,11 @@ interface AppState {
   replaceOvertimeMetaSnapshot: (meta: OvertimeMonthMeta) => void;
   exportOvertimeExcel: (yearMonth: string) => Promise<void>;
 
+  // Calendar Events
+  loadCalendarEvents: () => Promise<void>;
+  saveCalendarEvent: (event: CalendarEvent) => Promise<void>;
+  deleteCalendarEvent: (id: string) => Promise<void>;
+
   // UI
   setSection: (section: ActiveSection) => Promise<void>;
   setView: (view: ViewMode) => void;
@@ -149,6 +161,8 @@ interface AppState {
   showToast: (toast: { kind: ToastKind; title: string; description?: string; durationMs?: number }) => string;
   dismissToast: (id: string) => void;
   setConfirmDestructiveActions: (enabled: boolean) => Promise<void>;
+  setNotificationsEnabled: (enabled: boolean) => Promise<void>;
+  setDefaultReminderMinutes: (mins: number) => Promise<void>;
   setTheme: (theme: Theme) => void;
   setStartupScreen: (screen: StartupScreen) => Promise<void>;
   setLanguage: (lang: Language) => Promise<void>;
@@ -312,6 +326,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   isSidebarCollapsed: false,
   toasts: [],
   confirmDestructiveActions: true,
+  notificationsEnabled: true,
+  defaultReminderMinutes: 5,
   theme: (localStorage.getItem('theme') as Theme) || 'system',
   startupScreen: 'dashboard',
   language: (localStorage.getItem('language') as Language) || 'es',
@@ -344,6 +360,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try { return { colaborador: '', cedula: '', ...JSON.parse(localStorage.getItem('overtimeMeta') || '{}') }; }
     catch { return { colaborador: '', cedula: '' }; }
   })(),
+  calendarEvents: [],
 
   showToast: ({ kind, title, description, durationMs = 3200 }) => {
     const id = uuidv4();
@@ -383,6 +400,8 @@ export const useAppStore = create<AppState>((set, get) => ({
             activeSection: startupScreen,
             language,
             confirmDestructiveActions: cfg.confirmDestructiveActions ?? true,
+            notificationsEnabled: cfg.notificationsEnabled ?? true,
+            defaultReminderMinutes: cfg.defaultReminderMinutes ?? 5,
           });
 
           const lastProject = cfg.lastOpenedProject || null;
@@ -397,6 +416,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             get().loadNotes(lastNoteFolder),
             get().loadDailyMonths(),
             get().loadOvertimeMonths(),
+            get().loadCalendarEvents(),
           ]);
 
           if (lastProject) set({ activeProject: lastProject });
@@ -428,7 +448,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await fs.createDir(`${basePath}/dailys`);
 
     if (configDir) {
-      await saveConfig(configDir, { basePath, startupScreen, language: get().language, confirmDestructiveActions });
+      await saveConfig(configDir, { basePath, startupScreen, language: get().language, confirmDestructiveActions, notificationsEnabled: get().notificationsEnabled, defaultReminderMinutes: get().defaultReminderMinutes });
     }
 
     set({ basePath, isConfigured: true });
@@ -450,7 +470,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await fs.createDir(`${basePath}/dailys`);
 
     if (configDir) {
-      await saveConfig(configDir, { basePath, startupScreen, language: get().language, confirmDestructiveActions });
+      await saveConfig(configDir, { basePath, startupScreen, language: get().language, confirmDestructiveActions, notificationsEnabled: get().notificationsEnabled, defaultReminderMinutes: get().defaultReminderMinutes });
     }
 
     set({ basePath, activeProject: null, activeNote: null, activeNoteFolder: null, tasks: [], notes: [] });
@@ -812,6 +832,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         startupScreen,
         language: get().language,
         confirmDestructiveActions: get().confirmDestructiveActions,
+        notificationsEnabled: get().notificationsEnabled,
+        defaultReminderMinutes: get().defaultReminderMinutes,
         lastOpenedProject: activeProject ?? undefined,
         lastOpenedNoteFolder: folder ?? undefined,
       }).catch(() => {});
@@ -1479,6 +1501,42 @@ export const useAppStore = create<AppState>((set, get) => ({
         startupScreen,
         language,
         confirmDestructiveActions: enabled,
+        notificationsEnabled: get().notificationsEnabled,
+        defaultReminderMinutes: get().defaultReminderMinutes,
+        lastOpenedProject: activeProject ?? undefined,
+        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
+      });
+    }
+  },
+
+  setNotificationsEnabled: async (enabled) => {
+    set({ notificationsEnabled: enabled });
+    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
+    if (configDir && basePath) {
+      await saveConfig(configDir, {
+        basePath,
+        startupScreen,
+        language,
+        confirmDestructiveActions: get().confirmDestructiveActions,
+        notificationsEnabled: enabled,
+        defaultReminderMinutes: get().defaultReminderMinutes,
+        lastOpenedProject: activeProject ?? undefined,
+        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
+      });
+    }
+  },
+
+  setDefaultReminderMinutes: async (mins) => {
+    set({ defaultReminderMinutes: mins });
+    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
+    if (configDir && basePath) {
+      await saveConfig(configDir, {
+        basePath,
+        startupScreen,
+        language,
+        confirmDestructiveActions: get().confirmDestructiveActions,
+        notificationsEnabled: get().notificationsEnabled,
+        defaultReminderMinutes: mins,
         lastOpenedProject: activeProject ?? undefined,
         lastOpenedNoteFolder: activeNoteFolder ?? undefined,
       });
@@ -1494,6 +1552,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         startupScreen: screen,
         language: get().language,
         confirmDestructiveActions: get().confirmDestructiveActions,
+        notificationsEnabled: get().notificationsEnabled,
+        defaultReminderMinutes: get().defaultReminderMinutes,
         lastOpenedProject: activeProject ?? undefined,
         lastOpenedNoteFolder: activeNoteFolder ?? undefined,
       });
@@ -1510,6 +1570,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         startupScreen,
         language: lang,
         confirmDestructiveActions: get().confirmDestructiveActions,
+        notificationsEnabled: get().notificationsEnabled,
+        defaultReminderMinutes: get().defaultReminderMinutes,
         lastOpenedProject: activeProject ?? undefined,
         lastOpenedNoteFolder: activeNoteFolder ?? undefined,
       });
@@ -1652,4 +1714,45 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   toggleGit: () => set((s) => ({ isGitOpen: !s.isGitOpen })),
+
+  // ── Calendar Events ────────────────────────────────────────────
+
+  loadCalendarEvents: async () => {
+    const base = get().basePath;
+    if (!base) return;
+    const path = `${base}/calendar/events.json`;
+    try {
+      if (await fs.exists(path)) {
+        const raw = await fs.readFile(path);
+        const events: CalendarEvent[] = JSON.parse(raw);
+        set({ calendarEvents: events });
+      }
+    } catch {
+      set({ calendarEvents: [] });
+    }
+  },
+
+  saveCalendarEvent: async (event) => {
+    const base = get().basePath;
+    if (!base) return;
+    const dir = `${base}/calendar`;
+    if (!(await fs.exists(dir))) await fs.createDir(dir);
+    const path = `${dir}/events.json`;
+    const current = get().calendarEvents;
+    const idx = current.findIndex((e) => e.id === event.id);
+    const next = idx >= 0
+      ? current.map((e) => (e.id === event.id ? event : e))
+      : [...current, event];
+    await fs.writeFile(path, JSON.stringify(next, null, 2));
+    set({ calendarEvents: next });
+  },
+
+  deleteCalendarEvent: async (id) => {
+    const base = get().basePath;
+    if (!base) return;
+    const path = `${base}/calendar/events.json`;
+    const next = get().calendarEvents.filter((e) => e.id !== id);
+    await fs.writeFile(path, JSON.stringify(next, null, 2));
+    set({ calendarEvents: next });
+  },
 }));

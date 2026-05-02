@@ -72,6 +72,15 @@ export function checkUpdate(): Promise<ReleaseInfo> {
   return invoke('check_update');
 }
 
+// ── Notificaciones del sistema ───────────────────────────────────────────────
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from '@tauri-apps/plugin-notification';
+
+export { isPermissionGranted, requestPermission, sendNotification };
+
 /** Opens a native save dialog and returns the selected path */
 export async function saveDialog(opts?: { defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null> {
   const result = await saveNativeDialog(opts);

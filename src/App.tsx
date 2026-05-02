@@ -13,6 +13,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { GitModal } from './components/GitModal';
 import { ToastViewport } from './components/ToastViewport';
 import { OvertimeEntry } from './types';
+import { useEventNotifier } from './lib/eventNotifier';
 
 const KanbanBoard   = lazy(() => import('./components/KanbanBoard').then(m => ({ default: m.KanbanBoard })));
 const CalendarView  = lazy(() => import('./components/CalendarView').then(m => ({ default: m.CalendarView })));
@@ -42,6 +43,8 @@ export default function App() {
   useEffect(() => {
     init();
   }, []);
+
+  useEventNotifier();
 
   useEffect(() => {
     const handler = async (e: KeyboardEvent) => {

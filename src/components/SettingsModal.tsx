@@ -71,6 +71,8 @@ export function SettingsModal() {
     language, setLanguage,
     fontSize, setFontSize,
     confirmDestructiveActions, setConfirmDestructiveActions,
+    notificationsEnabled, setNotificationsEnabled,
+    defaultReminderMinutes, setDefaultReminderMinutes,
     basePath, changeBasePath,
     shortcuts, setShortcut,
     folderTags, replaceFolderTags,
@@ -597,6 +599,49 @@ export function SettingsModal() {
                 </span>
               </div>
             </button>
+          </div>
+
+          {/* Notificaciones */}
+          <div>
+            <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
+              {t(language, 'settings', 'notificationsSection')}
+            </p>
+            <div className="space-y-2">
+              <button
+                onClick={() => void setNotificationsEnabled(!notificationsEnabled)}
+                className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 text-left transition hover:bg-[var(--bg-hover)]"
+              >
+                <div>
+                  <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'notificationsEnabledTitle')}</p>
+                  <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'notificationsEnabledDesc')}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] font-semibold uppercase tracking-wider ${notificationsEnabled ? 'text-[var(--accent)]' : 'text-[var(--text-hint)]'}`}>
+                    {notificationsEnabled ? t(language, 'settings', 'notificationsOn') : t(language, 'settings', 'notificationsOff')}
+                  </span>
+                  <span className={`relative h-6 w-11 rounded-full transition ${notificationsEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--border-card)]'}`}>
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${notificationsEnabled ? 'left-[22px]' : 'left-0.5'}`} />
+                  </span>
+                </div>
+              </button>
+              {notificationsEnabled && (
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3">
+                  <div>
+                    <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'notificationsDefaultMinutes')}</p>
+                    <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'notificationsDefaultMinutesDesc')}</p>
+                  </div>
+                  <select
+                    value={defaultReminderMinutes}
+                    onChange={(e) => void setDefaultReminderMinutes(Number(e.target.value))}
+                    className="rounded-lg border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-xs text-[var(--text-body)] focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                  >
+                    {[5, 10, 15, 30, 60, 120].map((m) => (
+                      <option key={m} value={m}>{m} min</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Atajos de teclado */}

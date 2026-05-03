@@ -72,7 +72,7 @@ const dict = {
       holidaysEnabled: 'Activado',
       holidaysDisabled: 'Desactivado',
       // Accessibility
-      accessibility: 'Accesibilidad',
+      accessibility: 'Animaciones',
       animationsTitle: 'Animaciones de interfaz',
       animationsDesc: 'Activa o desactiva todas las animaciones y transiciones de la app.',
       animationsEnabled: 'Activadas',
@@ -104,6 +104,13 @@ const dict = {
       downloadUpdate: 'Descargar',
       checkError: 'No se pudo verificar',
       releaseNotes: 'Notas de la versión',
+      // Tabs de configuración
+      tabGeneral: 'General',
+      tabWork: 'Preferencias',
+      tabShortcuts: 'Atajos',
+      tabData: 'Almacenamiento',
+      tabGit: 'Git',
+      tabAbout: 'Acerca de',
     },
     toast: {
       dismiss: 'Cerrar notificación',
@@ -807,7 +814,7 @@ const dict = {
       holidaysEnabled: 'Enabled',
       holidaysDisabled: 'Disabled',
       // Accessibility
-      accessibility: 'Accessibility',
+      accessibility: 'Animations',
       animationsTitle: 'Interface animations',
       animationsDesc: 'Enable or disable all animations and transitions in the app.',
       animationsEnabled: 'Enabled',
@@ -839,6 +846,13 @@ const dict = {
       downloadUpdate: 'Download',
       checkError: 'Could not check for updates',
       releaseNotes: 'Release notes',
+      // Settings tabs
+      tabGeneral: 'General',
+      tabWork: 'Preferences',
+      tabShortcuts: 'Shortcuts',
+      tabData: 'Storage',
+      tabGit: 'Git',
+      tabAbout: 'About',
     },
     toast: {
       dismiss: 'Dismiss notification',

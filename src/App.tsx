@@ -11,7 +11,6 @@ import { DashboardView } from './components/DashboardView';
 import { TaskList } from './components/TaskList';
 import { SearchModal } from './components/SearchModal';
 import { SettingsModal } from './components/SettingsModal';
-import { GitModal } from './components/GitModal';
 import { ToastViewport } from './components/ToastViewport';
 import { OvertimeEntry } from './types';
 import { useEventNotifier } from './lib/eventNotifier';
@@ -170,7 +169,6 @@ export default function App() {
       {/* Global search overlay */}
       <SearchModal />
       <SettingsModal />
-      <GitModal />
       <ToastViewport />
     </div>
   );

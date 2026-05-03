@@ -191,6 +191,7 @@ interface AppState {
   gitPull: () => Promise<void>;
   gitFetch: () => Promise<void>;
   toggleGit: () => void;
+  openSettingsGitTab: () => void;
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -1836,6 +1837,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   toggleGit: () => set((s) => ({ isGitOpen: !s.isGitOpen })),
+  openSettingsGitTab: () => set({ isGitOpen: true, isSettingsOpen: true }),
 
   // ── Calendar Events ────────────────────────────────────────────
 

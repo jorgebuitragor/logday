@@ -45,6 +45,11 @@ function formatYearMonthLabel(ym: string, language: 'es' | 'en', style: 'short' 
   const [year, month] = ym.split('-').map(Number);
   const date = new Date(year, month - 1, 1);
   const locale = language === 'es' ? 'es-CO' : 'en-US';
+  if (style === 'short') {
+    const monthName = new Intl.DateTimeFormat(locale, { month: 'long' }).format(date);
+    const capitalized = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+    return `${capitalized} ${year}`;
+  }
   return new Intl.DateTimeFormat(locale, { month: style, year: 'numeric' }).format(date);
 }
 

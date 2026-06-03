@@ -21,6 +21,7 @@ export interface DailyEntry {
 export interface Task {
   id: string;
   title: string;
+  taskCode?: string; // optional unique code, e.g. "FEAT-01"
   status: TaskStatus;
   tags: string[];
   project: string;
@@ -71,6 +72,11 @@ export interface AppConfig {
   startupScreen?: StartupScreen;
   language?: Language;
   confirmDestructiveActions?: boolean;
+  notificationsEnabled?: boolean;
+  defaultReminderMinutes?: number;
+  workWeekDays?: 5 | 6;
+  holidaysAsNonWork?: boolean;
+  animationsEnabled?: boolean;
 }
 
 export interface BackupSettings {
@@ -103,9 +109,24 @@ export interface AppToast {
   kind: ToastKind;
   title: string;
   description?: string;
+  exiting?: boolean;
 }
 
 export interface SearchResult {
   path: string;
   content: string;
+}
+
+export type EventColor = 'indigo' | 'amber' | 'emerald' | 'rose' | 'sky' | 'violet';
+export type EventRepeat = 'none' | 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly';
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  date: string;              // YYYY-MM-DD
+  time: string;              // HH:MM   ('' = todo el día)
+  description: string;
+  color: EventColor;
+  reminderMinutes: number;   // 0 = sin recordatorio
+  repeat: EventRepeat;       // 'none' = sin repetición
 }

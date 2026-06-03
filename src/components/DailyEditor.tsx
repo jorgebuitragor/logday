@@ -1,18 +1,17 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Copy, Check, X, Plus, GripVertical, Trash2, ListTodo } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../store/appStore';
 import { Task } from '../types';
-import { placeMenuAtPointer } from '../lib/menuPosition';
 import {
   toISO,
   dateFromISO,
   getPreviousWorkingDay,
   buildDailyCopyText,
 } from '../lib/colombianHolidays';
+import { placeMenuAtPointer } from '../lib/menuPosition';
 import { t } from '../lib/i18n';
-
-const ESTIMATED_PREVIEW_CTX_MENU = { width: 160, height: 46 };
 
 function formatShortDate(iso: string, language: 'es' | 'en'): string {
   const locale = language === 'es' ? 'es-CO' : 'en-US';
@@ -95,10 +94,15 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
   const [promotedIdx, setPromotedIdx] = useState<number | null>(null);
   const [pendingPromoteText, setPendingPromoteText] = useState<string | null>(null);
   const [suggestIdx, setSuggestIdx] = useState(-1);
+  const [cursorPos, setCursorPos] = useState(0);
+  const [editCursorPos, setEditCursorPos] = useState(0);
+  const [activityCtxMenu, setActivityCtxMenu] = useState<{ idx: number; x: number; y: number } | null>(null);
   const dragSrcIdx = useRef<number | null>(null);
   const itemsRef = useRef<string[]>([]);
   const onChangeRef = useRef(onChange);
   const inputRef = useRef<HTMLInputElement>(null);
+  const editInputRef = useRef<HTMLTextAreaElement>(null);
+  const ctxMenuRef = useRef<HTMLDivElement>(null);
 
   const items = useMemo(() => parseItems(value), [value]);
   itemsRef.current = items;
@@ -121,6 +125,8 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
   const startEdit = (idx: number) => {
     setEditingIdx(idx);
     setEditVal(items[idx]);
+    setEditCursorPos(items[idx].length);
+    setSuggestIdx(-1);
   };
 
   const commitEdit = () => {
@@ -136,7 +142,13 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
     setEditingIdx(null);
   };
 
-  const handleEditKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleEditKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (filteredSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSuggestIdx((i) => Math.min(i + 1, filteredSuggestions.length - 1)); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setSuggestIdx((i) => Math.max(i - 1, -1)); return; }
+      if (e.key === 'Enter' && suggestIdx >= 0) { e.preventDefault(); handleSelectSuggestion(filteredSuggestions[suggestIdx]); return; }
+      if (e.key === 'Escape') { setSuggestIdx(-1); return; }
+    }
     if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
     if (e.key === 'Escape') { setEditingIdx(null); }
   };
@@ -201,16 +213,88 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
   };
 
   // ── Sugerencias de tareas existentes ───────────────────────────────────────
+  // Modo #code: detecta "#..." justo antes del cursor en cualquier posición
+  // Funciona tanto en el input nuevo como en el input de edición
+  const isEditing = editingIdx !== null;
+  const activeVal = isEditing ? editVal : inputVal;
+  const activeCursor = isEditing ? editCursorPos : cursorPos;
+
+  const getHashFragment = (): { query: string; start: number } | null => {
+    const before = activeVal.slice(0, activeCursor);
+    const m = before.match(/#([a-zA-Z0-9\-_]*)$/);
+    if (!m) return null;
+    return { query: m[1], start: activeCursor - m[0].length };
+  };
+  const hashFragment = getHashFragment();
+  const isHashMode = hashFragment !== null;
   const filteredSuggestions = useMemo(() => {
-    if (!taskSuggestions || inputVal.length < 2) return [];
-    const q = inputVal.toLowerCase();
+    if (!taskSuggestions) return [];
+    if (isHashMode) {
+      const q = (hashFragment?.query ?? '').toLowerCase();
+      return taskSuggestions
+        .filter((t) => t.taskCode && t.taskCode.toLowerCase().includes(q))
+        .slice(0, 6);
+    }
+    if (activeVal.length < 2) return [];
+    const q = activeVal.toLowerCase();
     return taskSuggestions.filter((t) => t.title.toLowerCase().includes(q)).slice(0, 5);
-  }, [taskSuggestions, inputVal]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskSuggestions, activeVal, isHashMode, hashFragment?.query]);
+
+  // Auto-resize del textarea de edición
+  useEffect(() => {
+    const el = editInputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }, [editVal, editingIdx]);
+
+  // Cerrar menú contextual al hacer clic fuera o Escape
+  useEffect(() => {
+    if (!activityCtxMenu) return;
+    const onMouse = (e: MouseEvent) => {
+      if (!ctxMenuRef.current?.contains(e.target as Node)) setActivityCtxMenu(null);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setActivityCtxMenu(null); };
+    document.addEventListener('mousedown', onMouse);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onMouse);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [activityCtxMenu]);
 
   const handleSelectSuggestion = (task: Task) => {
-    setInputVal(task.title);
+    if (isHashMode && task.taskCode && hashFragment) {
+      const proj = task.project && task.project !== 'inbox'
+        ? task.project.split('/').filter(Boolean).pop() ?? ''
+        : '';
+      const suffix = proj ? ` (${proj})` : '';
+      const replacement = `#${task.taskCode} - ${task.title}${suffix}`;
+      const newVal =
+        activeVal.slice(0, hashFragment.start) +
+        replacement +
+        activeVal.slice(activeCursor);
+      const newCursor = hashFragment.start + replacement.length;
+      if (isEditing) {
+        setEditVal(newVal);
+        setEditCursorPos(newCursor);
+      } else {
+        setInputVal(newVal);
+        setCursorPos(newCursor);
+      }
+    } else {
+      if (isEditing) {
+        setEditVal(task.title);
+        setEditCursorPos(task.title.length);
+      } else {
+        setInputVal(task.title);
+        setCursorPos(task.title.length);
+      }
+    }
     setSuggestIdx(-1);
-    inputRef.current?.focus();
+    if (isEditing) editInputRef.current?.focus();
+    else inputRef.current?.focus();
   };
 
   // ── Estilos ──────────────────────────────────────────────────────────────────
@@ -233,19 +317,60 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
           <GripVertical
             size={13}
             onPointerDown={(e) => handleGripPointerDown(e, idx)}
+            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setActivityCtxMenu({ idx, x: e.clientX, y: e.clientY }); }}
             className="shrink-0 cursor-grab touch-none text-[var(--text-faint)] opacity-0 transition group-hover:opacity-60 active:cursor-grabbing"
           />
 
           {/* Texto / input de edición */}
           {editingIdx === idx ? (
-            <input
-              autoFocus
-              value={editVal}
-              onChange={(e) => setEditVal(e.target.value)}
-              onKeyDown={handleEditKeyDown}
-              onBlur={commitEdit}
-              className="flex-1 bg-transparent text-sm text-[var(--text-body)] outline-none"
-            />
+            <div className="relative flex-1">
+              <textarea
+                ref={editInputRef}
+                autoFocus
+                rows={1}
+                value={editVal}
+                onChange={(e) => { setEditVal(e.target.value); setEditCursorPos(e.target.selectionStart ?? e.target.value.length); setSuggestIdx(-1); }}
+                onKeyDown={handleEditKeyDown}
+                onBlur={() => { setTimeout(commitEdit, 150); }}
+                className="w-full resize-none overflow-hidden bg-transparent text-sm leading-snug text-[var(--text-body)] outline-none"
+              />
+              {filteredSuggestions.length > 0 && (
+                <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-lg border border-[var(--border-card)] bg-[var(--bg-panel)] shadow-xl">
+                  <p className="border-b border-[var(--border)] px-3 py-1.5 text-[10px] font-medium text-[var(--text-faint)]">
+                    {t(language, 'dailys', isHashMode ? 'taskCodeSuggestHint' : 'existingTasksHint')}
+                  </p>
+                  {filteredSuggestions.map((task, i) => (
+                    <button
+                      key={task.id}
+                      onMouseDown={(e) => { e.preventDefault(); handleSelectSuggestion(task); }}
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition ${
+                        suggestIdx === i
+                          ? 'bg-indigo-500/10 text-[var(--text-primary)]'
+                          : 'text-[var(--text-body)] hover:bg-[var(--bg-hover)]'
+                      }`}
+                    >
+                      <ListTodo size={11} className="shrink-0 text-indigo-400" />
+                      {isHashMode && task.taskCode ? (
+                        <>
+                          <span className="font-mono text-indigo-400">#{task.taskCode}</span>
+                          <span className="flex-1 truncate text-[var(--text-secondary)]">
+                            - {task.title}
+                            {task.project && task.project !== 'inbox' && (
+                              <span className="ml-1 text-[var(--text-faint)]">
+                                ({task.project.split('/').filter(Boolean).pop()})
+                              </span>
+                            )}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="flex-1 truncate">{task.title}</span>
+                      )}
+                      <span className="text-[9px] text-[var(--text-faint)]">{task.project}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           ) : (
             <span
               className="flex-1 cursor-text select-none"
@@ -296,7 +421,7 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
           <input
             ref={inputRef}
             value={inputVal}
-            onChange={(e) => { setInputVal(e.target.value); setSuggestIdx(-1); }}
+            onChange={(e) => { setInputVal(e.target.value); setCursorPos(e.target.selectionStart ?? e.target.value.length); setSuggestIdx(-1); }}
             onKeyDown={(e) => {
               if (filteredSuggestions.length > 0) {
                 if (e.key === 'ArrowDown') { e.preventDefault(); setSuggestIdx((i) => Math.min(i + 1, filteredSuggestions.length - 1)); return; }
@@ -312,10 +437,10 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
             className="flex-1 bg-transparent text-sm text-[var(--text-body)] outline-none placeholder-[var(--text-faint)]"
           />
         </div>
-        {filteredSuggestions.length > 0 && (
+        {filteredSuggestions.length > 0 && !isEditing && (
           <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-lg border border-[var(--border-card)] bg-[var(--bg-panel)] shadow-xl">
             <p className="border-b border-[var(--border)] px-3 py-1.5 text-[10px] font-medium text-[var(--text-faint)]">
-              {t(language, 'dailys', 'existingTasksHint')}
+              {t(language, 'dailys', isHashMode ? 'taskCodeSuggestHint' : 'existingTasksHint')}
             </p>
             {filteredSuggestions.map((task, i) => (
               <button
@@ -328,7 +453,21 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
                 }`}
               >
                 <ListTodo size={11} className="shrink-0 text-indigo-400" />
-                <span className="flex-1 truncate">{task.title}</span>
+                {isHashMode && task.taskCode ? (
+                  <>
+                    <span className="font-mono text-indigo-400">#{task.taskCode}</span>
+                    <span className="flex-1 truncate text-[var(--text-secondary)]">
+                      - {task.title}
+                      {task.project && task.project !== 'inbox' && (
+                        <span className="ml-1 text-[var(--text-faint)]">
+                          ({task.project.split('/').filter(Boolean).pop()})
+                        </span>
+                      )}
+                    </span>
+                  </>
+                ) : (
+                  <span className="flex-1 truncate">{task.title}</span>
+                )}
                 <span className="text-[9px] text-[var(--text-faint)]">{task.project}</span>
               </button>
             ))}
@@ -340,7 +479,7 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
       {/* Modal confirmación de promoción */}
       {pendingPromoteText && (
         <div className="fixed inset-0 z-[600] flex items-center justify-center bg-black/50">
-          <div className="w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
+          <div className="modal-spring-in w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
             <div className="mb-3 flex items-center gap-2 text-indigo-400">
               <ListTodo size={16} />
               <h3 className="text-sm font-semibold">{t(language, 'dailys', 'promoteModalTitle')}</h3>
@@ -371,6 +510,44 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
           </div>
         </div>
       )}
+
+      {/* Menú contextual de actividad */}
+      {activityCtxMenu && createPortal((() => {
+        const ctxPos = placeMenuAtPointer(
+          { x: activityCtxMenu.x, y: activityCtxMenu.y },
+          { width: 172, height: 84 },
+          { padding: 8 },
+        );
+        return (
+          <div
+            ref={ctxMenuRef}
+            style={{ position: 'fixed', top: ctxPos.y, left: ctxPos.x, zIndex: 9999 }}
+            className="min-w-[172px] overflow-hidden rounded-lg border border-[var(--border-card)] bg-[var(--bg-panel)] py-1 shadow-2xl"
+          >
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(items[activityCtxMenu.idx]);
+                setActivityCtxMenu(null);
+              }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs text-[var(--text-body)] transition hover:bg-[var(--bg-hover)]"
+            >
+              <Copy size={11} className="shrink-0 text-[var(--text-hint)]" />
+              {t(language, 'dailys', 'activityCtxCopy')}
+            </button>
+            <div className="mx-2 border-t border-[var(--border)]" />
+            <button
+              onClick={() => {
+                removeItem(activityCtxMenu.idx);
+                setActivityCtxMenu(null);
+              }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs text-red-400 transition hover:bg-red-500/10"
+            >
+              <Trash2 size={11} className="shrink-0" />
+              {t(language, 'dailys', 'activityCtxDelete')}
+            </button>
+          </div>
+        );
+      })(), document.body)}
     </>
   );
 }
@@ -397,34 +574,8 @@ export function DailyEditor() {
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [previewCtxMenu, setPreviewCtxMenu] = useState<{ x: number; y: number } | null>(null);
-  const [previewCtxMenuPos, setPreviewCtxMenuPos] = useState<{ x: number; y: number } | null>(null);
-  const [previewCtxMenuReady, setPreviewCtxMenuReady] = useState(false);
-  const previewCtxMenuRef = useRef<HTMLDivElement>(null);
-
   const todaySave = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevSave = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (!previewCtxMenu || !previewCtxMenuRef.current) return;
-
-    const recalc = () => {
-      if (!previewCtxMenu || !previewCtxMenuRef.current) return;
-      const rect = previewCtxMenuRef.current.getBoundingClientRect();
-      setPreviewCtxMenuPos(
-        placeMenuAtPointer(
-          { x: previewCtxMenu.x, y: previewCtxMenu.y },
-          { width: rect.width, height: rect.height },
-          { padding: 8 },
-        ),
-      );
-      setPreviewCtxMenuReady(true);
-    };
-
-    recalc();
-    window.addEventListener('resize', recalc);
-    return () => window.removeEventListener('resize', recalc);
-  }, [previewCtxMenu]);
 
   const prevDate = useMemo(() => {
     if (!activeDailyDate) return null;
@@ -531,7 +682,7 @@ export function DailyEditor() {
 
   return (
     <>
-    <div key={activeDailyDate} className="animate-fade-in flex flex-1 flex-col overflow-hidden bg-[var(--bg-base)]">
+    <div className="flex flex-1 flex-col overflow-hidden bg-[var(--bg-base)]">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-2.5">
         <div className="flex items-center gap-2">
@@ -548,15 +699,14 @@ export function DailyEditor() {
           {saving && <span className="text-[10px] text-[var(--text-faint)]">{t(language, 'dailys', 'saving')}</span>}
           <button
             onClick={handleCopy}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition ${
+            className={`flex items-center justify-center rounded-lg p-1.5 text-xs transition ${
               copied
                 ? 'bg-emerald-500/10 text-emerald-400'
                 : 'bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20'
             }`}
             title={t(language, 'dailys', 'copyFormattedTitle')}
           >
-            {copied ? <Check size={13} /> : <Copy size={13} />}
-            {copied ? t(language, 'dailys', 'copiedLong') : t(language, 'dailys', 'copyFormat')}
+            {copied ? <Check size={14} /> : <Copy size={14} />}
           </button>
           <button
             onClick={() => {
@@ -628,66 +778,29 @@ export function DailyEditor() {
         </div>
 
         {/* Vista previa */}
-        <div
-          className="rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3"
-          onContextMenu={(e) => {
-            e.preventDefault();
-            setPreviewCtxMenuReady(false);
-            setPreviewCtxMenuPos(
-              placeMenuAtPointer(
-                { x: e.clientX, y: e.clientY },
-                ESTIMATED_PREVIEW_CTX_MENU,
-                { padding: 8 },
-              ),
-            );
-            setPreviewCtxMenu({ x: e.clientX, y: e.clientY });
-          }}
-        >
-          <p className="mb-2 text-[9px] font-bold uppercase tracking-widest text-[var(--text-faint)]">
-            {t(language, 'dailys', 'previewTitle')}
-          </p>
+        <div className="rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-[9px] font-bold uppercase tracking-widest text-[var(--text-faint)]">
+              {t(language, 'dailys', 'previewTitle')}
+            </p>
+            <button
+              onClick={handleCopy}
+              className={`flex items-center justify-center rounded-lg p-1 transition ${
+                copied
+                  ? 'text-emerald-400'
+                  : 'text-[var(--text-faint)] hover:text-indigo-400'
+              }`}
+              title={t(language, 'dailys', 'copyFormattedTitle')}
+            >
+              {copied ? <Check size={12} /> : <Copy size={12} />}
+            </button>
+          </div>
           <p className="select-text whitespace-pre-wrap font-mono text-xs leading-relaxed text-[var(--text-tertiary)]">
             {previewText || t(language, 'dailys', 'previewEmpty')}
           </p>
         </div>
 
-        {/* Menú contextual vista previa */}
-        {previewCtxMenu && (
-          <>
-            <div
-              className="fixed inset-0 z-[400]"
-              onClick={() => {
-                setPreviewCtxMenu(null);
-                setPreviewCtxMenuPos(null);
-                setPreviewCtxMenuReady(false);
-              }}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setPreviewCtxMenu(null);
-                setPreviewCtxMenuPos(null);
-                setPreviewCtxMenuReady(false);
-              }}
-            />
-            <div
-              ref={previewCtxMenuRef}
-              className="fixed z-[401] min-w-[140px] rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] py-1 shadow-xl"
-              style={{ left: previewCtxMenuPos?.x ?? 8, top: previewCtxMenuPos?.y ?? 8, visibility: previewCtxMenuReady ? 'visible' : 'hidden' }}
-            >
-              <button
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-[var(--text-body)] hover:bg-[var(--bg-hover)]"
-                onClick={async () => {
-                  setPreviewCtxMenu(null);
-                  setPreviewCtxMenuPos(null);
-                  setPreviewCtxMenuReady(false);
-                  await handleCopy();
-                }}
-              >
-                <Copy size={12} />
-                {t(language, 'dailys', 'copyFormat')}
-              </button>
-            </div>
-          </>
-        )}
+
 
         <p className="pb-2 text-center text-[10px] text-[var(--text-faint)]">
           {t(language, 'dailys', 'autosaveHint')}
@@ -698,7 +811,7 @@ export function DailyEditor() {
     {/* Modal de confirmación de borrado */}
     {showDeleteConfirm && confirmDestructiveActions && activeDailyDate && (
       <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/50">
-        <div className="w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
+        <div className="modal-spring-in w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
           <div className="mb-3 flex items-center gap-2 text-red-400">
             <Trash2 size={16} />
             <h3 className="text-sm font-semibold">{t(language, 'dailys', 'deleteDailyTitle')}</h3>

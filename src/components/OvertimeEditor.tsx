@@ -4,7 +4,8 @@ import { useAppStore } from '../store/appStore';
 import { OvertimeEntry } from '../types';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
 import { AppDatePicker } from './AppDatePicker';
-import { t } from '../lib/i18n';
+import { t, MONTHS_TITLE } from '../lib/i18n';
+import { toISO } from '../lib/colombianHolidays';
 
 function toMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number);
@@ -37,7 +38,7 @@ interface Props {
 const COMP_OPTIONS = ['comp', 'pay', 'other'] as const;
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return toISO(new Date());
 }
 
 export function OvertimeEditor({ entry, onClose }: Props) {
@@ -94,11 +95,9 @@ export function OvertimeEditor({ entry, onClose }: Props) {
 
   useEffect(() => {
     if (!entry) {
-      const [y, m] = overtimeMonth.split('-');
-      const currentMonth = new Date().toISOString().slice(0, 7);
-      setFecha(currentMonth === overtimeMonth ? today() : `${y}-${m}-01`);
+      setFecha(today());
     }
-  }, [entry, overtimeMonth]);
+  }, [entry]);
 
   const isDirty = Boolean(entry) && Boolean(savedSnapshot) && (
     fecha !== savedSnapshot!.fecha ||
@@ -193,6 +192,11 @@ export function OvertimeEditor({ entry, onClose }: Props) {
                 </>
               ) : t(language, 'overtime', 'newEntryHint')}
             </p>
+            {fecha && fecha.slice(0, 7) !== overtimeMonth && (
+              <p className="mt-0.5 text-[10px] text-amber-400/80">
+                {t(language, 'overtime', 'filedUnder')} {MONTHS_TITLE[language][parseInt(fecha.slice(5, 7)) - 1]} {fecha.slice(0, 4)}
+              </p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">

@@ -1438,7 +1438,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const calc = calcOvertimeBreakdown(input.fecha, input.horaInicio, input.horaFinal);
     const id = input.id ?? uuidv4();
     const entry: OvertimeEntry = { ...input, id, ...calc };
-    const ym = get().overtimeMonth;
+    // Usar el mes de la fecha de la entrada, no el mes visible en la lista
+    const ym = input.fecha.slice(0, 7);
     const [year, month] = ym.split('-');
     await fs.createDir(overtimeMonthDir(base, year, month));
     const path = overtimeMonthFilePath(base, year, month);
@@ -1453,13 +1454,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     const entries = [...existing.filter(e => e.id !== entry.id), entry]
       .sort((a, b) => a.fecha.localeCompare(b.fecha));
-    set({ overtimeEntries: entries });
-    await fs.writeFile(path, `---\n${JSON.stringify({ entries }, null, 2)}\n---\n`);
     // Actualizar lista de meses si es nuevo
     const { overtimeMonths } = get();
     if (!overtimeMonths.includes(ym)) {
       set({ overtimeMonths: [ym, ...overtimeMonths].sort().reverse() });
     }
+    await fs.writeFile(path, `---\n${JSON.stringify({ entries }, null, 2)}\n---\n`);
+    // Navegar al mes de la entrada para que aparezca en la lista
+    await get().loadOvertimeMonth(ym);
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 

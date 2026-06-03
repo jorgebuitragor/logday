@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, memo } from 'react';
-import { Plus, Circle, Clock, CheckCircle2, Calendar } from 'lucide-react';
+import { Plus, Circle, Clock, CheckCircle2, Calendar, AlertTriangle } from 'lucide-react';
 import { Task, TaskStatus } from '../types';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
@@ -17,11 +17,13 @@ const TaskRow = memo(function TaskRow({
   task,
   isNew,
   isRemoving,
+  staggerIndex = 0,
   onBeforeDelete,
 }: {
   task: Task;
   isNew?: boolean;
   isRemoving?: boolean;
+  staggerIndex?: number;
   onBeforeDelete?: () => void;
 }) {
   const { setActiveTask, activeTask, updateTask } = useAppStore(
@@ -29,17 +31,21 @@ const TaskRow = memo(function TaskRow({
   );
   const isActive = activeTask?.id === task.id;
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [statusPopped, setStatusPopped] = useState(false);
   // Animación de entrada
   const [visible, setVisible] = useState(!isNew);
   useEffect(() => {
     if (isNew) requestAnimationFrame(() => setVisible(true));
   }, [isNew]);
 
+  const staggerClass = `task-d${Math.min(staggerIndex, 10)}`;
+
   const today = new Date().toISOString().slice(0, 10);
   const isOverdue = task.due && task.due < today && task.status !== 'done';
 
   const cycleStatus = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    setStatusPopped(true);
     const order: TaskStatus[] = ['todo', 'in-progress', 'done'];
     const next = order[(order.indexOf(task.status) + 1) % order.length];
     await updateTask({ ...task, status: next });
@@ -48,7 +54,7 @@ const TaskRow = memo(function TaskRow({
   return (
     <>
     <div
-      className={`transition-all duration-[220ms] ease-out ${
+      className={`task-row-enter ${staggerClass} transition-all duration-[220ms] ease-out ${
         isRemoving
           ? 'opacity-0 scale-95 pointer-events-none'
           : isNew && !visible
@@ -66,7 +72,11 @@ const TaskRow = memo(function TaskRow({
       }`}
     >
       {/* Status icon */}
-      <button onClick={cycleStatus} className="mt-0.5 shrink-0 transition hover:scale-110">
+      <button
+        onClick={cycleStatus}
+        className={`mt-0.5 shrink-0 transition hover:scale-110 ${statusPopped ? 'status-pop' : ''}`}
+        onAnimationEnd={() => setStatusPopped(false)}
+      >
         {STATUS_ICONS[task.status]}
       </button>
 
@@ -121,7 +131,7 @@ const TaskRow = memo(function TaskRow({
 });
 
 export function TaskList() {
-  const { tasks, activeProject, currentView, createTask, deleteTask, isLoading, language } = useAppStore(
+  const { tasks, activeProject, currentView, createTask, deleteTask, isLoading, language, setActiveTask } = useAppStore(
     useShallow((s) => ({
       tasks: s.tasks,
       activeProject: s.activeProject,
@@ -130,15 +140,23 @@ export function TaskList() {
       deleteTask: s.deleteTask,
       isLoading: s.isLoading,
       language: s.language,
+      setActiveTask: s.setActiveTask,
     }))
   );
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskContent, setNewTaskContent] = useState('');
+  const [newTaskCode, setNewTaskCode] = useState('');
+
+  const isDuplicateNewCode = useMemo(
+    () => newTaskCode.length > 0 && tasks.some((t) => t.taskCode === newTaskCode),
+    [newTaskCode, tasks]
+  );
   const [filter, setFilter] = useState<TaskStatus | 'all'>('all');
   const [emptyCtxMenu, setEmptyCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [newTaskIds, setNewTaskIds] = useState<Set<string>>(new Set());
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
+  const [listKey, setListKey] = useState(0);
   const loadedRef = useRef(false);
   const prevIdsRef = useRef<Set<string>>(new Set());
 
@@ -173,6 +191,11 @@ export function TaskList() {
   };
 
   useEffect(() => {
+    setActiveTask(null);
+    setListKey((k) => k + 1);
+  }, [activeProject, currentView]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     const handler = () => setShowNewTaskModal(true);
     window.addEventListener('logday:new-task', handler);
     return () => window.removeEventListener('logday:new-task', handler);
@@ -183,21 +206,83 @@ export function TaskList() {
     [tasks, filter]
   );
 
-  if (currentView !== 'list') return null;
-
   const handleCreateTask = async () => {
     if (newTaskTitle.trim()) {
-      await createTask(newTaskTitle.trim(), undefined, newTaskContent);
+      await createTask(newTaskTitle.trim(), undefined, newTaskContent, newTaskCode.trim() || undefined);
     }
     setNewTaskTitle('');
     setNewTaskContent('');
+    setNewTaskCode('');
     setShowNewTaskModal(false);
   };
 
   const handleCreateTaskKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleCreateTask();
-    if (e.key === 'Escape') { setNewTaskTitle(''); setNewTaskContent(''); setShowNewTaskModal(false); }
+    if (e.key === 'Escape') { setNewTaskTitle(''); setNewTaskContent(''); setNewTaskCode(''); setShowNewTaskModal(false); }
   };
+
+  const newTaskModal = showNewTaskModal ? (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 animate-fade-in">
+      <div className="modal-spring-in w-[680px] max-w-[92vw] rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
+        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
+          <Plus size={15} className="text-indigo-400" />
+          {t(language, 'tasks', 'modalTitle')}
+        </div>
+        <input
+          autoFocus
+          value={newTaskTitle}
+          onChange={(e) => setNewTaskTitle(e.target.value)}
+          onKeyDown={handleCreateTaskKey}
+          placeholder={t(language, 'tasks', 'taskNamePlaceholder')}
+          className="mb-3 w-full rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-2.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500/60 placeholder-[var(--text-hint)]"
+        />
+        <div className="mb-4 flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-2.5">
+          <span className="shrink-0 text-xs text-[var(--text-hint)]"># {t(language, 'tasks', 'taskCodeLabel')}</span>
+          <input
+            value={newTaskCode}
+            onChange={(e) => setNewTaskCode(e.target.value.replace(/[^a-zA-Z0-9\-_]/g, '').toUpperCase())}
+            onKeyDown={handleCreateTaskKey}
+            maxLength={32}
+            spellCheck={false}
+            className={`flex-1 bg-transparent font-mono text-xs outline-none transition-colors ${
+              isDuplicateNewCode ? 'text-red-400' : 'text-[var(--text-secondary)]'
+            }`}
+          />
+          {isDuplicateNewCode ? (
+            <AlertTriangle size={12} className="shrink-0 text-red-400" aria-label={t(language, 'tasks', 'taskCodeDuplicate')} />
+          ) : (
+            <span className="shrink-0 text-[10px] text-[var(--text-faint)]">{t(language, 'tasks', 'taskCodeHint')}</span>
+          )}
+        </div>
+        <div className="mb-4">
+          <div className="mb-2 text-[10px] uppercase tracking-wider text-[var(--text-hint)]">{t(language, 'tasks', 'descriptionLabel')}</div>
+          <RichTextEditor
+            value={newTaskContent}
+            onChange={setNewTaskContent}
+            placeholder={t(language, 'tasks', 'descriptionPlaceholder')}
+            minHeight="220px"
+          />
+        </div>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => { setNewTaskTitle(''); setNewTaskContent(''); setNewTaskCode(''); setShowNewTaskModal(false); }}
+            className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
+          >
+            {t(language, 'tasks', 'cancel')}
+          </button>
+          <button
+            onClick={handleCreateTask}
+            disabled={!newTaskTitle.trim()}
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {t(language, 'tasks', 'createTask')}
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  if (currentView !== 'list') return newTaskModal;
 
   const title = activeProject ? activeProject : t(language, 'tasks', 'title');
   const counts = {
@@ -245,48 +330,7 @@ export function TaskList() {
       </div>
 
       {/* Modal nueva tarea */}
-      {showNewTaskModal && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
-          <div className="w-[680px] max-w-[92vw] rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-              <Plus size={15} className="text-indigo-400" />
-              {t(language, 'tasks', 'modalTitle')}
-            </div>
-            <input
-              autoFocus
-              value={newTaskTitle}
-              onChange={(e) => setNewTaskTitle(e.target.value)}
-              onKeyDown={handleCreateTaskKey}
-              placeholder={t(language, 'tasks', 'taskNamePlaceholder')}
-              className="mb-4 w-full rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-2.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500/60 placeholder-[var(--text-hint)]"
-            />
-            <div className="mb-4">
-              <div className="mb-2 text-[10px] uppercase tracking-wider text-[var(--text-hint)]">{t(language, 'tasks', 'descriptionLabel')}</div>
-              <RichTextEditor
-                value={newTaskContent}
-                onChange={setNewTaskContent}
-                placeholder={t(language, 'tasks', 'descriptionPlaceholder')}
-                minHeight="220px"
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => { setNewTaskTitle(''); setNewTaskContent(''); setShowNewTaskModal(false); }}
-                className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
-              >
-                {t(language, 'tasks', 'cancel')}
-              </button>
-              <button
-                onClick={handleCreateTask}
-                disabled={!newTaskTitle.trim()}
-                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {t(language, 'tasks', 'createTask')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {newTaskModal}
 
       {/* Task list */}
       <div className="flex-1 overflow-y-auto px-4 py-3">
@@ -311,13 +355,14 @@ export function TaskList() {
             )}
           </div>
         ) : (
-          <div className="space-y-1">
-            {filtered.map((task) => (
+          <div key={listKey} className="space-y-1">
+            {filtered.map((task, idx) => (
               <TaskRow
                 key={task.id}
                 task={task}
                 isNew={newTaskIds.has(task.id)}
                 isRemoving={removingIds.has(task.id)}
+                staggerIndex={idx}
                 onBeforeDelete={() => handleBeforeDelete(task)}
               />
             ))}

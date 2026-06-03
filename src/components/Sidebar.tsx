@@ -28,12 +28,16 @@ import {
   GripVertical,
   Scissors,
   FolderUp,
-  GitCommit,
+  FileDown,
+  FileType2,
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { ViewMode } from '../types';
 import { placeMenuAtPointer } from '../lib/menuPosition';
-import { t } from '../lib/i18n';
+import { t, MONTHS_TITLE } from '../lib/i18n';
+import { save } from '@tauri-apps/plugin-dialog';
+import { fs } from '../lib/invoke';
+import jsPDF from 'jspdf';
 import logoImg from '../assets/logo.png';
 import iconSquareNoBg from '../../icon_square_wiout_background.png';
 
@@ -41,6 +45,11 @@ function formatYearMonthLabel(ym: string, language: 'es' | 'en', style: 'short' 
   const [year, month] = ym.split('-').map(Number);
   const date = new Date(year, month - 1, 1);
   const locale = language === 'es' ? 'es-CO' : 'en-US';
+  if (style === 'short') {
+    const monthName = new Intl.DateTimeFormat(locale, { month: 'long' }).format(date);
+    const capitalized = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+    return `${capitalized} ${year}`;
+  }
   return new Intl.DateTimeFormat(locale, { month: style, year: 'numeric' }).format(date);
 }
 
@@ -467,10 +476,6 @@ export function Sidebar() {
     toggleSearch,
     toggleSidebar,
     toggleSettings,
-    toggleGit,
-    gitConfig,
-    gitStatus,
-    gitRemoteStatus,
     setSection,
     selectNoteFolder,
     createNoteFolder,
@@ -481,6 +486,9 @@ export function Sidebar() {
     duplicateNoteFolder,
     setActiveDailyMonth,
     createTodayDaily,
+    deleteDailyMonth,
+    loadDailyMonth,
+    showToast,
     overtimeMonths,
     overtimeMonth,
     loadOvertimeMonth,
@@ -560,6 +568,90 @@ export function Sidebar() {
   const [areaCtxReady, setAreaCtxReady] = useState(false);
   const areaCtxRef = useRef<HTMLDivElement>(null);
 
+  // Menú contextual de mes en Dailys
+  const [dailyMonthCtx, setDailyMonthCtx] = useState<{ ym: string; x: number; y: number } | null>(null);
+  const [dailyMonthCtxPos, setDailyMonthCtxPos] = useState<{ x: number; y: number } | null>(null);
+  const [dailyMonthCtxReady, setDailyMonthCtxReady] = useState(false);
+  const dailyMonthCtxRef = useRef<HTMLDivElement>(null);
+  const [confirmDeleteDailyMonth, setConfirmDeleteDailyMonth] = useState<string | null>(null);
+  const [exportingDailyMonth, setExportingDailyMonth] = useState(false);
+
+  const handleExportDailyMonth = async (ym: string, format: 'pdf' | 'md' | 'txt') => {
+    setDailyMonthCtx(null); setDailyMonthCtxPos(null); setDailyMonthCtxReady(false);
+    setExportingDailyMonth(true);
+    try {
+      // Asegurar que las entradas del mes estén cargadas
+      await loadDailyMonth(ym);
+      const [yearStr, monthStr] = ym.split('-');
+      const label = `${MONTHS_TITLE[language][parseInt(monthStr) - 1]}-${yearStr}`;
+      // Leer del estado del store tras la carga
+      const freshEntries = useAppStore.getState().dailyEntries;
+      const entries = Object.entries(freshEntries)
+        .filter(([d]) => d.startsWith(ym))
+        .sort(([a], [b]) => a.localeCompare(b));
+
+      if (format === 'pdf') {
+        const path = await save({
+          defaultPath: `dailys-${ym}.pdf`,
+          filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        });
+        if (!path) return;
+        const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
+        const margin = 15;
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const maxWidth = pageWidth - margin * 2;
+        let y = margin;
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(16);
+        pdf.text(label, margin, y); y += 10;
+        for (const [date, content] of entries) {
+          if (y > 270) { pdf.addPage(); y = margin; }
+          pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11);
+          pdf.text(date, margin, y); y += 6;
+          pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9);
+          const lines = content.split('\n').filter((l) => l.trim());
+          for (const line of lines) {
+            const wrapped = pdf.splitTextToSize(line, maxWidth);
+            if (y + wrapped.length * 4.5 > 280) { pdf.addPage(); y = margin; }
+            pdf.text(wrapped, margin, y); y += wrapped.length * 4.5;
+          }
+          y += 5;
+        }
+        const base64 = pdf.output('datauristring').split(',')[1];
+        await fs.writeBinary(path, base64);
+      } else {
+        const path = await save({
+          defaultPath: `dailys-${ym}.${format}`,
+          filters: [{ name: format === 'md' ? 'Markdown' : 'Plain text', extensions: [format] }],
+        });
+        if (!path) return;
+        const ismd = format === 'md';
+        const header = ismd ? `# ${label}\n\n` : `${label}\n${'='.repeat(label.length)}\n\n`;
+        const body = entries
+          .map(([date, content]) =>
+            ismd ? `## ${date}\n\n${content}` : `${date}\n${'-'.repeat(date.length)}\n${content}`
+          )
+          .join('\n\n---\n\n');
+        await fs.writeFile(path, header + body + '\n');
+      }
+      showToast({ kind: 'success', title: t(language, 'toast', 'dailyExported'), description: `${label}.${format}` });
+    } finally {
+      setExportingDailyMonth(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!dailyMonthCtx) return;
+    const handler = (e: MouseEvent) => {
+      if (!dailyMonthCtxRef.current?.contains(e.target as Node)) {
+        setDailyMonthCtx(null);
+        setDailyMonthCtxPos(null);
+        setDailyMonthCtxReady(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [dailyMonthCtx]);
+
   // Menú contextual de mes en Extras
   const [overtimeMonthCtx, setOvertimeMonthCtx] = useState<{ ym: string; x: number; y: number } | null>(null);
   const [overtimeMonthCtxPos, setOvertimeMonthCtxPos] = useState<{ x: number; y: number } | null>(null);
@@ -621,6 +713,25 @@ export function Sidebar() {
     window.addEventListener('resize', recalc);
     return () => window.removeEventListener('resize', recalc);
   }, [areaCtx]);
+
+  useEffect(() => {
+    if (!dailyMonthCtx || !dailyMonthCtxRef.current) return;
+    const recalc = () => {
+      if (!dailyMonthCtx || !dailyMonthCtxRef.current) return;
+      const rect = dailyMonthCtxRef.current.getBoundingClientRect();
+      setDailyMonthCtxPos(
+        placeMenuAtPointer(
+          { x: dailyMonthCtx.x, y: dailyMonthCtx.y },
+          { width: rect.width, height: rect.height },
+          { padding: 8 },
+        ),
+      );
+      setDailyMonthCtxReady(true);
+    };
+    recalc();
+    window.addEventListener('resize', recalc);
+    return () => window.removeEventListener('resize', recalc);
+  }, [dailyMonthCtx]);
 
   useEffect(() => {
     if (!overtimeMonthCtx || !overtimeMonthCtxRef.current) return;
@@ -813,7 +924,8 @@ export function Sidebar() {
 
   const handleProjectStartRename = () => {
     if (!projectCtx) return;
-    setProjectRenameValue(projectCtx.project);
+    const leaf = projectCtx.project.split('/').pop() ?? projectCtx.project;
+    setProjectRenameValue(leaf);
     setRenamingProject(projectCtx.project);
     setProjectCtx(null);
   };
@@ -823,7 +935,8 @@ export function Sidebar() {
       setRenamingProject(null);
       return;
     }
-    if (projectRenameValue.trim() === renamingProject) {
+    const leaf = renamingProject.split('/').pop() ?? renamingProject;
+    if (projectRenameValue.trim() === leaf) {
       setRenamingProject(null);
       return;
     }
@@ -1104,22 +1217,6 @@ export function Sidebar() {
           title={t(language, 'sidebar', 'search')}
         >
           <Search size={18} />
-        </button>
-        <button
-          onClick={toggleGit}
-          className="relative rounded-lg p-2 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-          title={t(language, 'extras', 'gitTitle')}
-        >
-          <GitCommit size={18} />
-          {gitConfig.enabled && (
-            <span className={`absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full ${
-              gitStatus === 'error'           ? 'bg-red-400'    :
-              gitRemoteStatus === 'behind'    ? 'bg-blue-400'   :
-              gitRemoteStatus === 'diverged'  ? 'bg-purple-400' :
-              gitRemoteStatus === 'offline'   ? 'bg-zinc-500'   :
-              gitStatus === 'synced'          ? 'bg-green-400'  : 'bg-amber-400'
-            }`} />
-          )}
         </button>
         <button
           onClick={toggleSettings}
@@ -1796,6 +1893,19 @@ export function Sidebar() {
                   <button
                     key={ym}
                     onClick={() => setActiveDailyMonth(ym)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDailyMonthCtxReady(false);
+                      setDailyMonthCtxPos(
+                        placeMenuAtPointer(
+                          { x: e.clientX, y: e.clientY },
+                          { width: 200, height: 96 },
+                          { padding: 8 },
+                        ),
+                      );
+                      setDailyMonthCtx({ ym, x: e.clientX, y: e.clientY });
+                    }}
                     className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 transition ${
                       activeDailyMonth === ym
                         ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]'
@@ -1862,22 +1972,6 @@ export function Sidebar() {
       {/* Footer */}
       <div className="mt-auto border-t border-[var(--border)] px-2 py-2 space-y-0.5">
         <button
-          onClick={toggleGit}
-          className="relative flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
-        >
-          <GitCommit size={14} />
-          <span>{t(language, 'extras', 'gitTitle')}</span>
-          {gitConfig.enabled && (
-            <span className={`ml-auto h-1.5 w-1.5 rounded-full ${
-              gitStatus === 'error'           ? 'bg-red-400'    :
-              gitRemoteStatus === 'behind'    ? 'bg-blue-400'   :
-              gitRemoteStatus === 'diverged'  ? 'bg-purple-400' :
-              gitRemoteStatus === 'offline'   ? 'bg-zinc-500'   :
-              gitStatus === 'synced'          ? 'bg-green-400'  : 'bg-amber-400'
-            }`} />
-          )}
-        </button>
-        <button
           onClick={toggleSettings}
           className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
         >
@@ -1941,6 +2035,103 @@ export function Sidebar() {
           </div>
         </div>
       )}
+
+      {/* Menú contextual mes de Dailys */}
+      {dailyMonthCtx && (() => {
+        const label = formatYearMonthLabel(dailyMonthCtx.ym, language, 'short');
+        return (
+          <div
+            ref={dailyMonthCtxRef}
+            style={{
+              position: 'fixed',
+              top: dailyMonthCtxPos?.y ?? 8,
+              left: dailyMonthCtxPos?.x ?? 8,
+              zIndex: 9999,
+              visibility: dailyMonthCtxReady ? 'visible' : 'hidden',
+            }}
+            className="min-w-[210px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-2xl"
+          >
+            <button
+              onClick={() => { setActiveDailyMonth(dailyMonthCtx.ym); setDailyMonthCtx(null); setDailyMonthCtxPos(null); setDailyMonthCtxReady(false); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
+            >
+              <CalendarDays size={13} />
+              {t(language, 'sidebar', 'goToMonth')} {label}
+            </button>
+            <div className="mx-2 my-1 border-t border-[var(--border)]" />
+            <button
+              onClick={() => handleExportDailyMonth(dailyMonthCtx.ym, 'md')}
+              disabled={exportingDailyMonth}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition disabled:opacity-40"
+            >
+              <FileText size={13} />
+              {t(language, 'dailys', 'monthCtxExportMd')}
+            </button>
+            <button
+              onClick={() => handleExportDailyMonth(dailyMonthCtx.ym, 'txt')}
+              disabled={exportingDailyMonth}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition disabled:opacity-40"
+            >
+              <FileDown size={13} />
+              {t(language, 'dailys', 'monthCtxExportTxt')}
+            </button>
+            <button
+              onClick={() => handleExportDailyMonth(dailyMonthCtx.ym, 'pdf')}
+              disabled={exportingDailyMonth}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition disabled:opacity-40"
+            >
+              <FileType2 size={13} />
+              {t(language, 'dailys', 'monthCtxExportPdf')}
+            </button>
+            <div className="mx-2 my-1 border-t border-[var(--border)]" />
+            <button
+              onClick={async () => {
+                if (confirmDestructiveActions) setConfirmDeleteDailyMonth(dailyMonthCtx.ym);
+                else await deleteDailyMonth(dailyMonthCtx.ym);
+                setDailyMonthCtx(null);
+                setDailyMonthCtxPos(null);
+                setDailyMonthCtxReady(false);
+              }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 transition"
+            >
+              <Trash2 size={13} />
+              {t(language, 'sidebar', 'deleteDailyOf')} {label}
+            </button>
+          </div>
+        );
+      })()}
+
+      {/* Confirmación eliminar mes de Dailys */}
+      {confirmDeleteDailyMonth && confirmDestructiveActions && (() => {
+        const label = formatYearMonthLabel(confirmDeleteDailyMonth, language, 'long');
+        return (
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
+            <div className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
+              <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
+                <Trash2 size={15} className="text-red-400" />
+                {t(language, 'sidebar', 'deleteDailyMonthTitle')} {label}
+              </div>
+              <p className="mb-4 text-xs text-[var(--text-secondary)]">
+                {t(language, 'sidebar', 'deleteDailyMonthDescStart')} <span className="font-medium text-[var(--text-primary)]">{t(language, 'sidebar', 'deleteDailyMonthDescAllEntries')}</span> {t(language, 'sidebar', 'deleteDailyMonthDescOfMonth')} <span className="font-medium text-[var(--text-primary)]">{label}</span>. {t(language, 'sidebar', 'deleteDailyMonthDescEnd')}
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setConfirmDeleteDailyMonth(null)}
+                  className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
+                >
+                  {t(language, 'sidebar', 'cancel')}
+                </button>
+                <button
+                  onClick={async () => { await deleteDailyMonth(confirmDeleteDailyMonth); setConfirmDeleteDailyMonth(null); }}
+                  className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600"
+                >
+                  {t(language, 'sidebar', 'deleteAll')}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Menú contextual mes de Extras */}
       {overtimeMonthCtx && (() => {

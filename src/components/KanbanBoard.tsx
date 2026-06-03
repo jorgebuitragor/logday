@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Circle, Clock, CheckCircle2, Calendar, GripVertical, X } from 'lucide-react';
+import { Plus, Circle, Clock, CheckCircle2, Calendar, GripVertical, X, ChevronDown } from 'lucide-react';
 import { Task, TaskStatus } from '../types';
 import { useAppStore } from '../store/appStore';
 import { TaskContextMenu, NewTaskContextMenu } from './TaskContextMenu';
@@ -18,9 +18,10 @@ interface KanbanCardProps {
   task: Task;
   isDragging: boolean;
   onPointerDown: (e: React.PointerEvent, taskId: string) => void;
+  staggerIndex?: number;
 }
 
-function KanbanCard({ task, isDragging, onPointerDown }: KanbanCardProps) {
+function KanbanCard({ task, isDragging, onPointerDown, staggerIndex = 0 }: KanbanCardProps) {
   const { setActiveTask, activeTask } = useAppStore();
   const isActive = activeTask?.id === task.id;
   const today = new Date().toISOString().slice(0, 10);
@@ -31,7 +32,7 @@ function KanbanCard({ task, isDragging, onPointerDown }: KanbanCardProps) {
     <>
     <div
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
-      className={`rounded-xl border p-3.5 transition select-none ${
+      className={`kanban-card-enter kanban-d${Math.min(staggerIndex, 7)} rounded-xl border p-3.5 transition select-none ${
         isDragging
           ? 'opacity-40 border-indigo-400/40 bg-indigo-500/5'
           : isActive
@@ -96,10 +97,90 @@ function DragGhost({ task, x, y }: { task: Task; x: number; y: number }) {
   );
 }
 
+function ProjectSelect({ value, options, onChange, placeholder }: {
+  value: string | null;
+  options: string[];
+  onChange: (v: string | null) => void;
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener('mousedown', handler);
+    return () => window.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const label = value ?? placeholder;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((s) => !s)}
+        className={`flex min-w-[9rem] items-center justify-between gap-2 rounded-lg border px-3 py-1.5 text-left text-xs transition ${
+          open
+            ? 'border-indigo-500/60 bg-indigo-500/10 text-[var(--text-secondary)]'
+            : 'border-[var(--border-card)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--border-high)] hover:bg-[var(--bg-hover)]'
+        }`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="font-medium truncate">{label}</span>
+        <ChevronDown size={12} className={`shrink-0 text-[var(--text-hint)] transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute left-0 z-30 mt-1.5 min-w-full overflow-hidden rounded-lg border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl">
+          <div role="listbox" className="p-1">
+            <button
+              type="button"
+              role="option"
+              aria-selected={value === null}
+              onClick={() => { onChange(null); setOpen(false); }}
+              className={`w-full rounded-md px-3 py-1.5 text-left text-xs font-medium transition ${
+                value === null
+                  ? 'bg-indigo-500/10 text-indigo-400'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+              }`}
+            >
+              {placeholder}
+            </button>
+            {options.map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                role="option"
+                aria-selected={opt === value}
+                onClick={() => { onChange(opt); setOpen(false); }}
+                className={`w-full rounded-md px-3 py-1.5 text-left text-xs font-medium transition ${
+                  opt === value
+                    ? 'bg-indigo-500/10 text-indigo-400'
+                    : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                }`}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function KanbanBoard() {
   const { tasks, currentView, projects, language } = useAppStore();
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
+
+  const [boardKey, setBoardKey] = useState(0);
+  useEffect(() => {
+    if (currentView === 'kanban') setBoardKey((k) => k + 1);
+  }, [currentView]);
 
   const COLUMNS = COLUMN_DEFS.map((col) => ({
     ...col,
@@ -197,16 +278,12 @@ export function KanbanBoard() {
           <div className="flex flex-wrap items-center gap-2">
             {/* Proyecto */}
             {projects.length > 1 && (
-              <select
-                value={filterProject ?? ''}
-                onChange={(e) => setFilterProject(e.target.value || null)}
-                className="rounded-lg border border-[var(--border-card)] bg-[var(--bg-surface)] px-2.5 py-1 text-xs text-[var(--text-secondary)] outline-none cursor-pointer hover:border-[var(--border)]"
-              >
-                <option value="">{t(language, 'tasks', 'allProjects')}</option>
-                {projects.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
+              <ProjectSelect
+                value={filterProject}
+                options={projects}
+                onChange={setFilterProject}
+                placeholder={t(language, 'tasks', 'allProjects')}
+              />
             )}
 
             {/* Tags */}
@@ -237,8 +314,8 @@ export function KanbanBoard() {
         )}
       </div>
 
-      <div className="flex flex-1 gap-4 overflow-x-auto p-5">
-        {COLUMNS.map((col) => {
+      <div key={boardKey} className="flex flex-1 gap-4 overflow-x-auto p-5">
+        {COLUMNS.map((col, colIndex) => {
           const { Icon } = col;
           const colTasks = filteredTasks.filter((t) => t.status === col.status);
           const isTarget = targetStatus === col.status;
@@ -247,7 +324,7 @@ export function KanbanBoard() {
             <div
               key={col.status}
               data-col-status={col.status}
-              className={`flex flex-1 flex-col rounded-2xl border min-w-[240px] transition-colors ${
+              className={`kanban-col-enter kanban-col-d${colIndex} flex flex-1 flex-col rounded-2xl border min-w-[240px] transition-colors ${
                 isTarget
                   ? 'border-indigo-400/60 bg-indigo-500/5'
                   : 'bg-[var(--bg-panel)] border-[var(--border)]'
@@ -265,12 +342,13 @@ export function KanbanBoard() {
 
               {/* Tarjetas */}
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                {colTasks.map((task) => (
+                {colTasks.map((task, cardIndex) => (
                   <KanbanCard
                     key={task.id}
                     task={task}
                     isDragging={draggingId === task.id}
                     onPointerDown={handleCardPointerDown}
+                    staggerIndex={cardIndex}
                   />
                 ))}
                 {colTasks.length === 0 && !draggingTask && (
@@ -324,7 +402,7 @@ function KanbanAddButton({ status }: { status: TaskStatus }) {
       </button>
       {isAdding && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setIsAdding(false); setNewTitle(''); }}>
-          <div className="w-72 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-spring-in w-72 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <p className="mb-2 text-xs font-medium text-[var(--text-secondary)]">{t(language, 'tasks', 'newTask')}</p>
             <input
               autoFocus

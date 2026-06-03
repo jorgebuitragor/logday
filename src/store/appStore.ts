@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Task, Note, AppConfig, ViewMode, Theme, ActiveSection, StartupScreen, Language, Shortcuts, DEFAULT_SHORTCUTS, OvertimeEntry, OvertimeMonthMeta, GitConfig, GitStatus, GitRemoteStatus, AppToast, ToastKind } from '../types';
+import { Task, Note, AppConfig, ViewMode, Theme, ActiveSection, StartupScreen, Language, Shortcuts, DEFAULT_SHORTCUTS, OvertimeEntry, OvertimeMonthMeta, GitConfig, GitStatus, GitRemoteStatus, AppToast, ToastKind, CalendarEvent } from '../types';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
 import { generateOvertimeXlsx } from '../lib/overtimeExcel';
 import { fs, pickFolder, pickFile, saveDialog, SearchResult } from '../lib/invoke';
@@ -51,6 +51,10 @@ interface AppState {
   overtimeMonths: string[];           // YYYY-MM[] con entradas, desc
   overtimeMeta: OvertimeMonthMeta;
 
+  // Calendar Events
+  calendarEvents: CalendarEvent[];
+  activeCalendarEvent: CalendarEvent | null;
+
   // UI
   currentView: ViewMode;
   isSearchOpen: boolean;
@@ -59,6 +63,17 @@ interface AppState {
   isSidebarCollapsed: boolean;
   toasts: AppToast[];
   confirmDestructiveActions: boolean;
+
+  // Notificaciones
+  notificationsEnabled: boolean;
+  defaultReminderMinutes: number;
+
+  // Semana laboral
+  workWeekDays: 5 | 6;
+  holidaysAsNonWork: boolean;
+
+  // Accesibilidad
+  animationsEnabled: boolean;
 
   // Theme + Settings
   theme: Theme;
@@ -89,10 +104,11 @@ interface AppState {
   renameProject: (project: string, newName: string) => Promise<void>;
   deleteProject: (project: string) => Promise<void>;
   moveProject: (project: string, targetParent: string) => Promise<void>;
-  createTask: (title: string, project?: string, content?: string) => Promise<Task>;
+  createTask: (title: string, project?: string, content?: string, taskCode?: string) => Promise<Task>;
   updateTask: (task: Task) => Promise<void>;
   deleteTask: (task: Task) => Promise<void>;
   setActiveTask: (task: Task | null) => void;
+  setActiveCalendarEvent: (event: CalendarEvent | null) => void;
   moveTask: (task: Task, toProject: string) => Promise<void>;
 
   // Notes
@@ -126,6 +142,7 @@ interface AppState {
   createDailyForDate: (date: string) => void;
   copyDailyFormat: (date: string) => Promise<string>;
   deleteDailyEntry: (date: string) => Promise<void>;
+  deleteDailyMonth: (yearMonth: string) => Promise<void>;
 
   // Overtime
   loadOvertimeMonths: () => Promise<void>;
@@ -137,6 +154,11 @@ interface AppState {
   replaceOvertimeMetaSnapshot: (meta: OvertimeMonthMeta) => void;
   exportOvertimeExcel: (yearMonth: string) => Promise<void>;
 
+  // Calendar Events
+  loadCalendarEvents: () => Promise<void>;
+  saveCalendarEvent: (event: CalendarEvent) => Promise<void>;
+  deleteCalendarEvent: (id: string) => Promise<void>;
+
   // UI
   setSection: (section: ActiveSection) => Promise<void>;
   setView: (view: ViewMode) => void;
@@ -146,8 +168,14 @@ interface AppState {
   removeLinkedPath: (task: Task, path: string) => Promise<void>;
   toggleSidebar: () => void;
   showToast: (toast: { kind: ToastKind; title: string; description?: string; durationMs?: number }) => string;
+  preExitToast: (id: string) => void;
   dismissToast: (id: string) => void;
   setConfirmDestructiveActions: (enabled: boolean) => Promise<void>;
+  setNotificationsEnabled: (enabled: boolean) => Promise<void>;
+  setDefaultReminderMinutes: (mins: number) => Promise<void>;
+  setWorkWeekDays: (days: 5 | 6) => Promise<void>;
+  setHolidaysAsNonWork: (enabled: boolean) => Promise<void>;
+  setAnimationsEnabled: (enabled: boolean) => Promise<void>;
   setTheme: (theme: Theme) => void;
   setStartupScreen: (screen: StartupScreen) => Promise<void>;
   setLanguage: (lang: Language) => Promise<void>;
@@ -163,6 +191,7 @@ interface AppState {
   gitPull: () => Promise<void>;
   gitFetch: () => Promise<void>;
   toggleGit: () => void;
+  openSettingsGitTab: () => void;
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -259,6 +288,10 @@ export function applyFontSizeToDOM(size: number) {
   document.documentElement.style.setProperty('--app-font-size', `${size}px`);
 }
 
+export function applyAnimationsToDOM(enabled: boolean) {
+  document.documentElement.classList.toggle('no-animations', !enabled);
+}
+
 export function applyThemeToDOM(theme: Theme, animate = false) {
   const resolved =
     theme === 'system'
@@ -311,6 +344,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   isSidebarCollapsed: false,
   toasts: [],
   confirmDestructiveActions: true,
+  notificationsEnabled: true,
+  defaultReminderMinutes: 5,
+  workWeekDays: 5 as (5 | 6),
+  holidaysAsNonWork: true,
+  animationsEnabled: true,
   theme: (localStorage.getItem('theme') as Theme) || 'system',
   startupScreen: 'dashboard',
   language: (localStorage.getItem('language') as Language) || 'es',
@@ -343,6 +381,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     try { return { colaborador: '', cedula: '', ...JSON.parse(localStorage.getItem('overtimeMeta') || '{}') }; }
     catch { return { colaborador: '', cedula: '' }; }
   })(),
+  calendarEvents: [],
+  activeCalendarEvent: null,
 
   showToast: ({ kind, title, description, durationMs = 3200 }) => {
     const id = uuidv4();
@@ -351,11 +391,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
     if (durationMs > 0) {
       window.setTimeout(() => {
-        get().dismissToast(id);
+        get().preExitToast(id);
       }, durationMs);
     }
     return id;
   },
+
+  preExitToast: (id) => set((state) => ({
+    toasts: state.toasts.map((toast) => toast.id === id ? { ...toast, exiting: true } : toast),
+  })),
 
   dismissToast: (id) => set((state) => ({
     toasts: state.toasts.filter((toast) => toast.id !== id),
@@ -365,6 +409,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ isLoading: true });
     applyThemeToDOM(get().theme);
     applyFontSizeToDOM(get().fontSize);
+    applyAnimationsToDOM(get().animationsEnabled);
     try {
       const configDir = await fs.getAppConfigDir();
       set({ configDir });
@@ -382,6 +427,11 @@ export const useAppStore = create<AppState>((set, get) => ({
             activeSection: startupScreen,
             language,
             confirmDestructiveActions: cfg.confirmDestructiveActions ?? true,
+            notificationsEnabled: cfg.notificationsEnabled ?? true,
+            defaultReminderMinutes: cfg.defaultReminderMinutes ?? 5,
+            workWeekDays: (cfg.workWeekDays as (5 | 6)) ?? 5,
+            holidaysAsNonWork: cfg.holidaysAsNonWork ?? true,
+            animationsEnabled: cfg.animationsEnabled ?? true,
           });
 
           const lastProject = cfg.lastOpenedProject || null;
@@ -396,6 +446,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             get().loadNotes(lastNoteFolder),
             get().loadDailyMonths(),
             get().loadOvertimeMonths(),
+            get().loadCalendarEvents(),
           ]);
 
           if (lastProject) set({ activeProject: lastProject });
@@ -427,7 +478,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await fs.createDir(`${basePath}/dailys`);
 
     if (configDir) {
-      await saveConfig(configDir, { basePath, startupScreen, language: get().language, confirmDestructiveActions });
+      await saveConfig(configDir, { basePath, startupScreen, language: get().language, confirmDestructiveActions, notificationsEnabled: get().notificationsEnabled, defaultReminderMinutes: get().defaultReminderMinutes });
     }
 
     set({ basePath, isConfigured: true });
@@ -449,7 +500,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await fs.createDir(`${basePath}/dailys`);
 
     if (configDir) {
-      await saveConfig(configDir, { basePath, startupScreen, language: get().language, confirmDestructiveActions });
+      await saveConfig(configDir, { basePath, startupScreen, language: get().language, confirmDestructiveActions, notificationsEnabled: get().notificationsEnabled, defaultReminderMinutes: get().defaultReminderMinutes });
     }
 
     set({ basePath, activeProject: null, activeNote: null, activeNoteFolder: null, tasks: [], notes: [] });
@@ -634,12 +685,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadProjects();
   },
 
-  createTask: async (title, project, content = '') => {
+  createTask: async (title, project, content = '', taskCode?: string) => {
     const { basePath, activeProject } = get();
     if (!basePath) throw new Error('No base path');
     const targetProject = project || activeProject || 'inbox';
     const id = uuidv4();
     const today = formatDate(new Date());
+    // Validate taskCode uniqueness
+    if (taskCode) {
+      const duplicate = get().tasks.find((t) => t.taskCode && t.taskCode === taskCode);
+      if (duplicate) {
+        const language = get().language;
+        get().showToast({
+          kind: 'error',
+          title: t(language, 'tasks', 'taskCodeDuplicate'),
+          description: `"${taskCode}"`,
+        });
+        taskCode = undefined;
+      }
+    }
     const task: Task = {
       id,
       title: title.trim() || 'Nueva tarea',
@@ -649,6 +713,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       created: today,
       linked_paths: [],
       content,
+      taskCode: taskCode || undefined,
       filePath: taskFilePath(basePath, targetProject, id),
     };
     await fs.writeFile(task.filePath, serializeTask(task));
@@ -658,6 +723,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   updateTask: async (task) => {
+    // Validate taskCode uniqueness (skip own id)
+    if (task.taskCode) {
+      const duplicate = get().tasks.find(
+        (t) => t.id !== task.id && t.taskCode && t.taskCode === task.taskCode
+      );
+      if (duplicate) {
+        const language = get().language;
+        get().showToast({
+          kind: 'error',
+          title: t(language, 'tasks', 'taskCodeDuplicate'),
+          description: `"${task.taskCode}"`,
+        });
+        return;
+      }
+    }
+
     const prev = get().tasks.find((t) => t.id === task.id);
     const today = formatDate(new Date());
     const normalizedTask: Task = { ...task };
@@ -695,7 +776,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
-  setActiveTask: (task) => set({ activeTask: task }),
+  setActiveTask: (task) => set({ activeTask: task, activeCalendarEvent: null }),
+  setActiveCalendarEvent: (event) => set({ activeCalendarEvent: event, activeTask: null }),
 
   moveTask: async (task, toProject) => {
     const { basePath } = get();
@@ -811,6 +893,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         startupScreen,
         language: get().language,
         confirmDestructiveActions: get().confirmDestructiveActions,
+        notificationsEnabled: get().notificationsEnabled,
+        defaultReminderMinutes: get().defaultReminderMinutes,
         lastOpenedProject: activeProject ?? undefined,
         lastOpenedNoteFolder: folder ?? undefined,
       }).catch(() => {});
@@ -1234,6 +1318,31 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
+  deleteDailyMonth: async (yearMonth) => {
+    const base = get().basePath;
+    if (!base) return;
+    const language = get().language;
+    const [year, month] = yearMonth.split('-');
+    const dir = dailyMonthDir(base, year, month);
+    try { await fs.deleteDir(dir); } catch { /* ya no existe */ }
+    set((s) => {
+      const entries = { ...s.dailyEntries };
+      Object.keys(entries).forEach((d) => { if (d.startsWith(yearMonth)) delete entries[d]; });
+      const newMonths = s.dailyMonths.filter((m) => m !== yearMonth);
+      const newActive = s.activeDailyDate?.startsWith(yearMonth) ? null : s.activeDailyDate;
+      const newActiveMonth = s.activeDailyMonth === yearMonth
+        ? (newMonths[0] ?? yearMonth)
+        : s.activeDailyMonth;
+      return { dailyEntries: entries, dailyMonths: newMonths, activeDailyDate: newActive, activeDailyMonth: newActiveMonth };
+    });
+    get().showToast({
+      kind: 'success',
+      title: t(language, 'toast', 'dailyMonthDeleted'),
+      description: yearMonth,
+    });
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+  },
+
   // ── UI ──────────────────────────────────────────────────────
 
   setSection: async (section) => {
@@ -1453,6 +1562,104 @@ export const useAppStore = create<AppState>((set, get) => ({
         startupScreen,
         language,
         confirmDestructiveActions: enabled,
+        notificationsEnabled: get().notificationsEnabled,
+        defaultReminderMinutes: get().defaultReminderMinutes,
+        lastOpenedProject: activeProject ?? undefined,
+        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
+      });
+    }
+  },
+
+  setNotificationsEnabled: async (enabled) => {
+    set({ notificationsEnabled: enabled });
+    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
+    if (configDir && basePath) {
+      await saveConfig(configDir, {
+        basePath,
+        startupScreen,
+        language,
+        confirmDestructiveActions: get().confirmDestructiveActions,
+        notificationsEnabled: enabled,
+        defaultReminderMinutes: get().defaultReminderMinutes,
+        lastOpenedProject: activeProject ?? undefined,
+        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
+      });
+    }
+  },
+
+  setDefaultReminderMinutes: async (mins) => {
+    set({ defaultReminderMinutes: mins });
+    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
+    if (configDir && basePath) {
+      await saveConfig(configDir, {
+        basePath,
+        startupScreen,
+        language,
+        confirmDestructiveActions: get().confirmDestructiveActions,
+        notificationsEnabled: get().notificationsEnabled,
+        defaultReminderMinutes: mins,
+        workWeekDays: get().workWeekDays,
+        holidaysAsNonWork: get().holidaysAsNonWork,
+        lastOpenedProject: activeProject ?? undefined,
+        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
+      });
+    }
+  },
+
+  setWorkWeekDays: async (days) => {
+    set({ workWeekDays: days });
+    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
+    if (configDir && basePath) {
+      await saveConfig(configDir, {
+        basePath,
+        startupScreen,
+        language,
+        confirmDestructiveActions: get().confirmDestructiveActions,
+        notificationsEnabled: get().notificationsEnabled,
+        defaultReminderMinutes: get().defaultReminderMinutes,
+        workWeekDays: days,
+        holidaysAsNonWork: get().holidaysAsNonWork,
+        lastOpenedProject: activeProject ?? undefined,
+        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
+      });
+    }
+  },
+
+  setHolidaysAsNonWork: async (enabled) => {
+    set({ holidaysAsNonWork: enabled });
+    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
+    if (configDir && basePath) {
+      await saveConfig(configDir, {
+        basePath,
+        startupScreen,
+        language,
+        confirmDestructiveActions: get().confirmDestructiveActions,
+        notificationsEnabled: get().notificationsEnabled,
+        defaultReminderMinutes: get().defaultReminderMinutes,
+        workWeekDays: get().workWeekDays,
+        holidaysAsNonWork: enabled,
+        animationsEnabled: get().animationsEnabled,
+        lastOpenedProject: activeProject ?? undefined,
+        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
+      });
+    }
+  },
+
+  setAnimationsEnabled: async (enabled) => {
+    set({ animationsEnabled: enabled });
+    applyAnimationsToDOM(enabled);
+    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
+    if (configDir && basePath) {
+      await saveConfig(configDir, {
+        basePath,
+        startupScreen,
+        language,
+        confirmDestructiveActions: get().confirmDestructiveActions,
+        notificationsEnabled: get().notificationsEnabled,
+        defaultReminderMinutes: get().defaultReminderMinutes,
+        workWeekDays: get().workWeekDays,
+        holidaysAsNonWork: get().holidaysAsNonWork,
+        animationsEnabled: enabled,
         lastOpenedProject: activeProject ?? undefined,
         lastOpenedNoteFolder: activeNoteFolder ?? undefined,
       });
@@ -1468,6 +1675,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         startupScreen: screen,
         language: get().language,
         confirmDestructiveActions: get().confirmDestructiveActions,
+        notificationsEnabled: get().notificationsEnabled,
+        defaultReminderMinutes: get().defaultReminderMinutes,
         lastOpenedProject: activeProject ?? undefined,
         lastOpenedNoteFolder: activeNoteFolder ?? undefined,
       });
@@ -1484,6 +1693,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         startupScreen,
         language: lang,
         confirmDestructiveActions: get().confirmDestructiveActions,
+        notificationsEnabled: get().notificationsEnabled,
+        defaultReminderMinutes: get().defaultReminderMinutes,
         lastOpenedProject: activeProject ?? undefined,
         lastOpenedNoteFolder: activeNoteFolder ?? undefined,
       });
@@ -1626,4 +1837,46 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   toggleGit: () => set((s) => ({ isGitOpen: !s.isGitOpen })),
+  openSettingsGitTab: () => set({ isGitOpen: true, isSettingsOpen: true }),
+
+  // ── Calendar Events ────────────────────────────────────────────
+
+  loadCalendarEvents: async () => {
+    const base = get().basePath;
+    if (!base) return;
+    const path = `${base}/calendar/events.json`;
+    try {
+      if (await fs.exists(path)) {
+        const raw = await fs.readFile(path);
+        const events: CalendarEvent[] = JSON.parse(raw);
+        set({ calendarEvents: events });
+      }
+    } catch {
+      set({ calendarEvents: [] });
+    }
+  },
+
+  saveCalendarEvent: async (event) => {
+    const base = get().basePath;
+    if (!base) return;
+    const dir = `${base}/calendar`;
+    if (!(await fs.exists(dir))) await fs.createDir(dir);
+    const path = `${dir}/events.json`;
+    const current = get().calendarEvents;
+    const idx = current.findIndex((e) => e.id === event.id);
+    const next = idx >= 0
+      ? current.map((e) => (e.id === event.id ? event : e))
+      : [...current, event];
+    await fs.writeFile(path, JSON.stringify(next, null, 2));
+    set({ calendarEvents: next });
+  },
+
+  deleteCalendarEvent: async (id) => {
+    const base = get().basePath;
+    if (!base) return;
+    const path = `${base}/calendar/events.json`;
+    const next = get().calendarEvents.filter((e) => e.id !== id);
+    await fs.writeFile(path, JSON.stringify(next, null, 2));
+    set({ calendarEvents: next });
+  },
 }));

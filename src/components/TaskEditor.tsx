@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   X,
   Tag,
@@ -8,6 +8,8 @@ import {
   ExternalLink,
   Trash2,
   Plus,
+  AlertTriangle,
+  ChevronDown,
 } from 'lucide-react';
 import { RichTextEditor } from './RichTextEditor';
 import { AppDatePicker } from './AppDatePicker';
@@ -23,7 +25,7 @@ const STATUS_OPTIONS: { value: TaskStatus; color: string }[] = [
 ];
 
 export function TaskEditor() {
-  const { activeTask, updateTask, deleteTask, setActiveTask, projects, addLinkedPath, removeLinkedPath, language, confirmDestructiveActions } =
+  const { activeTask, updateTask, deleteTask, setActiveTask, projects, addLinkedPath, removeLinkedPath, language, confirmDestructiveActions, tasks } =
     useAppStore();
 
   const [title, setTitle] = useState('');
@@ -32,12 +34,25 @@ export function TaskEditor() {
   const [due, setDue] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [project, setProject] = useState('inbox');
+  const [taskCode, setTaskCode] = useState('');
   const [newTag, setNewTag] = useState('');
   const [showTagInput, setShowTagInput] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [showProjectMenu, setShowProjectMenu] = useState(false);
 
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tagInputRef = useRef<HTMLInputElement>(null);
+  const projectMenuRef = useRef<HTMLDivElement>(null);
+
+  // Cerrar menú de proyecto al hacer clic fuera
+  useEffect(() => {
+    if (!showProjectMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (!projectMenuRef.current?.contains(e.target as Node)) setShowProjectMenu(false);
+    };
+    window.addEventListener('mousedown', handler);
+    return () => window.removeEventListener('mousedown', handler);
+  }, [showProjectMenu]);
 
   // Sync state when active task changes
   useEffect(() => {
@@ -48,6 +63,7 @@ export function TaskEditor() {
     setDue(activeTask.due || '');
     setTags([...activeTask.tags]);
     setProject(activeTask.project);
+    setTaskCode(activeTask.taskCode || '');
     setIsDirty(false);
   }, [activeTask?.id]);
 
@@ -97,6 +113,18 @@ export function TaskEditor() {
     save({ project: v });
   };
 
+  const handleTaskCodeChange = (v: string) => {
+    // Allow only URL-safe characters: letters, digits, hyphens, underscores
+    const cleaned = v.replace(/[^a-zA-Z0-9\-_]/g, '').toUpperCase();
+    setTaskCode(cleaned);
+    scheduleSave({ taskCode: cleaned || undefined });
+  };
+
+  const isDuplicateCode = useMemo(
+    () => taskCode.length > 0 && tasks.some((t) => t.id !== activeTask?.id && t.taskCode === taskCode),
+    [taskCode, tasks, activeTask?.id]
+  );
+
   const handleAddTag = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && newTag.trim()) {
       const updated = [...new Set([...tags, newTag.trim()])];
@@ -133,7 +161,7 @@ export function TaskEditor() {
   const localizedStatusLabel = t(language, 'tasks', status === 'todo' ? 'statusTodo' : status === 'in-progress' ? 'statusInProgress' : 'statusDone');
 
   return (
-    <div key={activeTask.id} className="animate-fade-in flex h-full w-[420px] shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-input)]">
+    <div key={activeTask.id} className="task-panel-enter flex h-full w-[420px] shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-input)]">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
         <div className="flex items-center gap-2">
@@ -194,15 +222,38 @@ export function TaskEditor() {
               <FolderOpen size={12} className="inline mr-1" />
               {t(language, 'tasks', 'projectField')}
             </span>
-            <select
-              value={project}
-              onChange={(e) => handleProjectChange(e.target.value)}
-              className="flex-1 bg-transparent text-[var(--text-tertiary)] outline-none text-xs cursor-pointer"
-            >
-              {projects.map((p) => (
-                <option key={p} value={p} className="bg-[var(--bg-surface)]">{p}</option>
-              ))}
-            </select>
+            <div ref={projectMenuRef} className="relative flex-1">
+              <button
+                type="button"
+                onClick={() => setShowProjectMenu((s) => !s)}
+                className={`flex w-full items-center justify-between gap-1.5 rounded-md px-2 py-0.5 text-xs transition ${
+                  showProjectMenu
+                    ? 'bg-[var(--bg-hover)] text-[var(--text-secondary)]'
+                    : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]'
+                }`}
+              >
+                <span className="truncate">{project}</span>
+                <ChevronDown size={11} className={`shrink-0 text-[var(--text-hint)] transition-transform ${showProjectMenu ? 'rotate-180' : ''}`} />
+              </button>
+              {showProjectMenu && (
+                <div className="absolute left-0 z-50 mt-1 min-w-[10rem] overflow-hidden rounded-lg border border-[var(--border-card)] bg-[var(--bg-panel)] py-1 shadow-xl">
+                  {projects.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => { handleProjectChange(p); setShowProjectMenu(false); }}
+                      className={`w-full px-3 py-1.5 text-left text-xs transition ${
+                        p === project
+                          ? 'bg-indigo-500/10 text-indigo-400'
+                          : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Due date */}
@@ -263,6 +314,25 @@ export function TaskEditor() {
           <div className="flex items-center gap-3">
             <span className="w-24 shrink-0 text-xs text-[var(--text-hint)]">{t(language, 'tasks', 'created')}</span>
             <span className="text-xs text-[var(--text-hint)]">{activeTask.created}</span>
+          </div>
+
+          {/* Task Code */}
+          <div className="flex items-center gap-3">
+            <span className="w-24 shrink-0 text-xs text-[var(--text-hint)]">
+              # {t(language, 'tasks', 'taskCodeLabel')}
+            </span>
+            <input
+              value={taskCode}
+              onChange={(e) => handleTaskCodeChange(e.target.value)}
+              className={`flex-1 bg-transparent text-xs outline-none font-mono transition-colors ${
+                isDuplicateCode ? 'text-red-400' : 'text-[var(--text-tertiary)]'
+              }`}
+              maxLength={32}
+              spellCheck={false}
+            />
+            {isDuplicateCode && (
+              <AlertTriangle size={12} className="shrink-0 text-red-400" aria-label={t(language, 'tasks', 'taskCodeDuplicate')} />
+            )}
           </div>
         </div>
 

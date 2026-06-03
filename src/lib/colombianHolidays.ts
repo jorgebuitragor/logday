@@ -89,6 +89,28 @@ export function isWorkingDay(date: Date): boolean {
 }
 
 /**
+ * Devuelve true si la fecha es un festivo colombiano (excluye fines de semana).
+ */
+export function isColombianHoliday(date: Date): boolean {
+  const dow = date.getDay();
+  if (dow === 0 || dow === 6) return false;
+  return getColombianHolidays(date.getFullYear()).has(toISO(date));
+}
+
+/**
+ * Versión con soporte para semana laboral de 5 o 6 días.
+ * Con 6 días el sábado también es laborable (excluye festivos).
+ * @param respectHolidays Si es false, los festivos se tratan como días laborables.
+ */
+export function isWorkDay(date: Date, workWeekDays: 5 | 6 = 5, respectHolidays = true): boolean {
+  const dow = date.getDay();
+  if (dow === 0) return false; // domingo nunca
+  if (dow === 6 && workWeekDays < 6) return false;
+  if (!respectHolidays) return true;
+  return !getColombianHolidays(date.getFullYear()).has(toISO(date));
+}
+
+/**
  * Devuelve el día hábil inmediatamente anterior a `from`,
  * omitiendo fines de semana y festivos colombianos.
  */

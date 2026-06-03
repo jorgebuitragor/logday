@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, Monitor, Sun, Moon, FolderOpen, Minus, Plus, Download, Upload, Type, Keyboard, AlertTriangle, ChevronDown, Eye } from 'lucide-react';
-import { Theme, Shortcuts, StartupScreen, Language, BackupSettings } from '../types';
+import { X, Monitor, Sun, Moon, FolderOpen, Minus, Plus, Download, Upload, Type, Keyboard, AlertTriangle, ChevronDown, Eye, RefreshCw, ExternalLink, GitCommit, CheckCircle2, AlertCircle, Clock, CloudOff, ArrowDown } from 'lucide-react';
+import { Theme, Shortcuts, StartupScreen, Language, BackupSettings, GitConfig } from '../types';
 import { useAppStore } from '../store/appStore';
 import { t } from '../lib/i18n';
-import { fs } from '../lib/invoke';
+import { fs, checkUpdate, ReleaseInfo } from '../lib/invoke';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
 import JSZip from 'jszip';
 
 const BACKUP_SETTINGS_PATH = '__logday/settings.json';
@@ -35,6 +36,22 @@ const LANGUAGE_OPTIONS: { value: Language; label: string }[] = [
 
 // STARTUP_SCREEN_OPTIONS se genera reactivamente dentro del componente con t()
 const STARTUP_SCREEN_VALUES: StartupScreen[] = ['dashboard', 'dailys', 'tasks', 'notes', 'overtime'];
+
+function timeAgo(iso: string, lang: 'es' | 'en'): string {
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (lang === 'en') {
+    if (diff < 60) return 'less than 1 min ago';
+    if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} h ago`;
+    return `${Math.floor(diff / 86400)} days ago`;
+  }
+  if (diff < 60) return 'hace menos de 1 min';
+  if (diff < 3600) return `hace ${Math.floor(diff / 60)} min`;
+  if (diff < 86400) return `hace ${Math.floor(diff / 3600)} h`;
+  return `hace ${Math.floor(diff / 86400)} días`;
+}
+
+type SettingsTab = 'general' | 'work' | 'shortcuts' | 'data' | 'git' | 'about';
 
 async function collectFiles(
   zip: JSZip,
@@ -70,6 +87,11 @@ export function SettingsModal() {
     language, setLanguage,
     fontSize, setFontSize,
     confirmDestructiveActions, setConfirmDestructiveActions,
+    notificationsEnabled, setNotificationsEnabled,
+    defaultReminderMinutes, setDefaultReminderMinutes,
+    workWeekDays, setWorkWeekDays,
+    holidaysAsNonWork, setHolidaysAsNonWork,
+    animationsEnabled, setAnimationsEnabled,
     basePath, changeBasePath,
     shortcuts, setShortcut,
     folderTags, replaceFolderTags,
@@ -79,6 +101,10 @@ export function SettingsModal() {
     loadNoteFolders, loadNotes,
     loadDailyMonths, loadOvertimeMonths,
     showToast,
+    isGitOpen, toggleGit,
+    gitConfig, saveGitConfig,
+    gitStatus, gitRemoteStatus, lastCommitTime,
+    gitInit, gitCommit, gitPush, gitPull, gitFetch,
   } = useAppStore();
 
   const [backupStatus, setBackupStatus] = useState<'idle' | 'exporting' | 'importing' | 'done' | 'error'>('idle');
@@ -86,6 +112,25 @@ export function SettingsModal() {
   const [recordingFor, setRecordingFor] = useState<keyof Shortcuts | null>(null);
   const [isStartupSelectorOpen, setIsStartupSelectorOpen] = useState(false);
   const startupSelectorRef = useRef<HTMLDivElement | null>(null);
+  const [isReminderMenuOpen, setIsReminderMenuOpen] = useState(false);
+  const reminderMenuRef = useRef<HTMLDivElement | null>(null);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
+  const [appVersion, setAppVersion] = useState<string>('1.0.0');
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'upToDate' | 'available' | 'error'>('idle');
+  const [releaseInfo, setReleaseInfo] = useState<ReleaseInfo | null>(null);
+
+  // Git local state
+  const [gitRemote, setGitRemote] = useState(gitConfig.remote);
+  const [gitAutoCommit, setGitAutoCommit] = useState(gitConfig.autoCommitHourly);
+  const [gitAutoPush, setGitAutoPush] = useState(gitConfig.autoPushDaily);
+  const [gitEnabled, setGitEnabled] = useState(gitConfig.enabled);
+  const [gitUserName, setGitUserName] = useState(gitConfig.userName ?? '');
+  const [gitUserEmail, setGitUserEmail] = useState(gitConfig.userEmail ?? '');
+  const [gitBusy, setGitBusy] = useState(false);
+  const [gitFetchBusy, setGitFetchBusy] = useState(false);
+  const [gitErrorMsg, setGitErrorMsg] = useState('');
+  const [gitNow, setGitNow] = useState(Date.now());
+  const gitAutoCommitRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const startupScreenOptions = STARTUP_SCREEN_VALUES.map((value) => ({
     value,
@@ -105,6 +150,38 @@ export function SettingsModal() {
     };
   });
   const activeStartupOption = startupScreenOptions.find((o) => o.value === startupScreen) ?? startupScreenOptions[0];
+
+  // Cargar versión de la app
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => {});
+  }, []);
+
+  // Cerrar dropdown de anticipación al hacer clic fuera
+  useEffect(() => {
+    if (!isReminderMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (!reminderMenuRef.current?.contains(e.target as Node)) setIsReminderMenuOpen(false);
+    };
+    window.addEventListener('mousedown', handler);
+    return () => window.removeEventListener('mousedown', handler);
+  }, [isReminderMenuOpen]);
+
+  async function handleCheckUpdate() {
+    setUpdateStatus('checking');
+    setReleaseInfo(null);
+    try {
+      const info = await checkUpdate();
+      const latest = info.tag_name.replace(/^v/, '');
+      if (latest === appVersion) {
+        setUpdateStatus('upToDate');
+      } else {
+        setReleaseInfo(info);
+        setUpdateStatus('available');
+      }
+    } catch {
+      setUpdateStatus('error');
+    }
+  }
 
   // Cerrar con Escape
   useEffect(() => {
@@ -144,6 +221,128 @@ export function SettingsModal() {
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
   }, [recordingFor, setShortcut]);
+
+  // Navegar al tab git cuando se activa isGitOpen desde el sidebar
+  useEffect(() => {
+    if (isSettingsOpen && isGitOpen) {
+      setSettingsTab('git');
+      toggleGit(); // limpiar la señal
+    }
+  }, [isSettingsOpen, isGitOpen, toggleGit]);
+
+  // Actualizar "hace X min" cada 30 s (git)
+  useEffect(() => {
+    const interval = setInterval(() => setGitNow(Date.now()), 30_000);
+    return () => clearInterval(interval);
+  }, []);
+  void gitNow;
+
+  // Auto-commit horario mientras la app está abierta
+  useEffect(() => {
+    if (gitAutoCommitRef.current) clearInterval(gitAutoCommitRef.current);
+    if (gitEnabled && gitAutoCommit && basePath) {
+      gitAutoCommitRef.current = setInterval(() => {
+        gitCommit().catch(() => {});
+      }, 60 * 60 * 1000);
+    }
+    return () => {
+      if (gitAutoCommitRef.current) clearInterval(gitAutoCommitRef.current);
+    };
+  }, [gitEnabled, gitAutoCommit, basePath, gitCommit]);
+
+  // Sincronizar estado local con gitConfig al entrar al tab git
+  useEffect(() => {
+    if (settingsTab !== 'git') return;
+    setGitRemote(gitConfig.remote);
+    setGitAutoCommit(gitConfig.autoCommitHourly);
+    setGitAutoPush(gitConfig.autoPushDaily);
+    setGitEnabled(gitConfig.enabled);
+    setGitUserName(gitConfig.userName ?? '');
+    setGitUserEmail(gitConfig.userEmail ?? '');
+    setGitErrorMsg('');
+    if (gitConfig.enabled && gitConfig.remote.trim()) {
+      setGitFetchBusy(true);
+      gitFetch().catch(() => {}).finally(() => setGitFetchBusy(false));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsTab]);
+
+  // Fetch periódico cada 30 min
+  useEffect(() => {
+    if (!gitConfig.enabled || !gitConfig.remote.trim()) return;
+    const interval = setInterval(() => {
+      gitFetch().catch(() => {});
+    }, 30 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [gitConfig.enabled, gitConfig.remote, gitFetch]);
+
+  const handleGitSave = async () => {
+    setGitBusy(true);
+    setGitErrorMsg('');
+    try {
+      const newCfg: GitConfig = {
+        enabled: gitEnabled,
+        remote: gitRemote,
+        autoCommitHourly: gitAutoCommit,
+        autoPushDaily: gitAutoPush,
+        userName: gitUserName,
+        userEmail: gitUserEmail,
+      };
+      saveGitConfig(newCfg);
+      if (gitEnabled && basePath) {
+        await gitInit(gitRemote);
+      }
+    } catch (e) {
+      setGitErrorMsg(String(e));
+    } finally {
+      setGitBusy(false);
+    }
+  };
+
+  const handleGitSync = async () => {
+    setGitBusy(true);
+    setGitErrorMsg('');
+    try {
+      if (gitRemote.trim()) {
+        await gitPush();
+      } else {
+        await gitCommit();
+      }
+    } catch (e) {
+      setGitErrorMsg(String(e));
+    } finally {
+      setGitBusy(false);
+    }
+  };
+
+  const handleGitPull = async () => {
+    setGitBusy(true);
+    setGitErrorMsg('');
+    try {
+      await gitPull();
+    } catch (e) {
+      setGitErrorMsg(String(e));
+    } finally {
+      setGitBusy(false);
+    }
+  };
+
+  const handleGitFetch = async () => {
+    setGitFetchBusy(true);
+    setGitErrorMsg('');
+    try {
+      await gitFetch();
+    } catch (e) {
+      setGitErrorMsg(String(e));
+    } finally {
+      setGitFetchBusy(false);
+    }
+  };
+
+  const gitToggleCls = (on: boolean) =>
+    `relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full transition-colors ${
+      on ? 'bg-indigo-500' : 'bg-[var(--border)]'
+    }`;
 
   async function handleExport() {
     if (!basePath) return;
@@ -306,6 +505,15 @@ export function SettingsModal() {
 
   if (!isSettingsOpen) return null;
 
+  const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
+    { id: 'general', label: t(language, 'settings', 'tabGeneral') },
+    { id: 'work',    label: t(language, 'settings', 'tabWork') },
+    { id: 'shortcuts', label: t(language, 'settings', 'tabShortcuts') },
+    { id: 'data',    label: t(language, 'settings', 'tabData') },
+    { id: 'git',     label: t(language, 'settings', 'tabGit') },
+    { id: 'about',   label: t(language, 'settings', 'tabAbout') },
+  ];
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center px-4"
@@ -316,7 +524,7 @@ export function SettingsModal() {
 
       {/* Panel */}
       <div
-        className="relative w-full max-w-sm rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
+        className="relative w-full max-w-xl rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-2xl overflow-hidden h-[90vh] max-h-[720px] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -330,49 +538,28 @@ export function SettingsModal() {
           </button>
         </div>
 
-        {/* Content */}
-        <div className="px-5 py-5 space-y-6 overflow-y-auto">
-
-          {/* Storage section */}
-          <div>
-            <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
-              {t(language, 'settings', 'storage')}
-            </p>
-            <div className="rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 space-y-2">
-              <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'baseFolder')}</p>
-              <p
-                className="truncate text-xs text-[var(--text-secondary)] font-mono"
-                title={basePath || t(language, 'settings', 'notConfigured')}
-              >
-                {basePath || t(language, 'settings', 'notConfigured')}
-              </p>
-              <div className="flex gap-2 pt-1 text-[10px] text-[var(--text-faint)]">
-                <span>{t(language, 'settings', 'storageProjectsHint')}</span>
-                <span>{t(language, 'settings', 'storageNotesHint')}</span>
-              </div>
-            </div>
+        {/* Tab navigation */}
+        <div className="flex shrink-0 border-b border-[var(--border)] px-4">
+          {SETTINGS_TABS.map(({ id, label }) => (
             <button
-              onClick={() => { changeBasePath(); }}
-              className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-2.5 text-xs text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+              key={id}
+              onClick={() => setSettingsTab(id)}
+              className={`-mb-px border-b-2 px-3 py-2.5 text-xs font-medium transition ${
+                settingsTab === id
+                  ? 'border-indigo-500 text-indigo-400'
+                  : 'border-transparent text-[var(--text-hint)] hover:text-[var(--text-secondary)]'
+              }`}
             >
-              <FolderOpen size={13} />
-              {t(language, 'settings', 'changeFolder')}
+              {label}
             </button>
-            <p className="mt-1.5 text-[10px] text-[var(--text-hint)] text-center">
-              {t(language, 'settings', 'filesNotMoved')}
-            </p>
-            {basePath && isICloudPath(basePath) && (
-              <div className="mt-2 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
-                <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-400" />
-                <div>
-                  <p className="text-[11px] font-semibold text-amber-400">{t(language, 'settings', 'icloudTitle')}</p>
-                  <p className="mt-0.5 text-[10px] text-amber-300/80">
-                    {t(language, 'settings', 'icloudDesc')}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-h-0 overflow-y-auto px-5 py-5 space-y-6">
+
+          {/* ── GENERAL: Idioma · Tema · Fuente · Pantalla de inicio ── */}
+          {settingsTab === 'general' && <>
 
           {/* Language section */}
           <div>
@@ -546,6 +733,11 @@ export function SettingsModal() {
             </div>
           </div>
 
+          </>}
+
+          {/* ── WORK: Comportamiento · Notificaciones · Semana laboral · Accesibilidad ── */}
+          {settingsTab === 'work' && <>
+
           <div>
             <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
               {t(language, 'settings', 'behavior')}
@@ -572,6 +764,163 @@ export function SettingsModal() {
               </div>
             </button>
           </div>
+
+          {/* Notificaciones */}
+          <div>
+            <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
+              {t(language, 'settings', 'notificationsSection')}
+            </p>
+            <div className="space-y-2">
+              <button
+                onClick={() => void setNotificationsEnabled(!notificationsEnabled)}
+                className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 text-left transition hover:bg-[var(--bg-hover)]"
+              >
+                <div>
+                  <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'notificationsEnabledTitle')}</p>
+                  <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'notificationsEnabledDesc')}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] font-semibold uppercase tracking-wider ${notificationsEnabled ? 'text-[var(--accent)]' : 'text-[var(--text-hint)]'}`}>
+                    {notificationsEnabled ? t(language, 'settings', 'notificationsOn') : t(language, 'settings', 'notificationsOff')}
+                  </span>
+                  <span className={`relative h-6 w-11 rounded-full transition ${notificationsEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--border-card)]'}`}>
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${notificationsEnabled ? 'left-[22px]' : 'left-0.5'}`} />
+                  </span>
+                </div>
+              </button>
+              {notificationsEnabled && (
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3">
+                  <div>
+                    <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'notificationsDefaultMinutes')}</p>
+                    <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'notificationsDefaultMinutesDesc')}</p>
+                  </div>
+                  <div ref={reminderMenuRef} className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsReminderMenuOpen((s) => !s)}
+                      className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition ${
+                        isReminderMenuOpen
+                          ? 'border-indigo-500/60 bg-indigo-500/10 text-[var(--text-secondary)]'
+                          : 'border-[var(--border)] bg-[var(--bg-input)] text-[var(--text-body)] hover:border-[var(--border-high)]'
+                      }`}
+                    >
+                      <span>{defaultReminderMinutes} min</span>
+                      <ChevronDown size={11} className={`text-[var(--text-hint)] transition-transform ${isReminderMenuOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {isReminderMenuOpen && (
+                      <div className="absolute right-0 z-50 mt-1 min-w-[7rem] overflow-hidden rounded-lg border border-[var(--border-card)] bg-[var(--bg-panel)] py-1 shadow-xl">
+                        {[5, 10, 15, 30, 60, 120].map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => { void setDefaultReminderMinutes(m); setIsReminderMenuOpen(false); }}
+                            className={`w-full px-3 py-1.5 text-left text-xs transition ${
+                              defaultReminderMinutes === m
+                                ? 'bg-indigo-500/10 text-indigo-400'
+                                : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                            }`}
+                          >
+                            {m} min
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Semana laboral */}
+          <div>
+            <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
+              {t(language, 'settings', 'workWeekSection')}
+            </p>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3">
+              <div>
+                <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'workWeekTitle')}</p>
+                <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'workWeekDesc')}</p>
+              </div>
+              <div className="flex gap-1 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-0.5">
+                {([5, 6] as (5 | 6)[]).map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => void setWorkWeekDays(d)}
+                    className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                      workWeekDays === d
+                        ? 'bg-indigo-500/10 text-indigo-400 ring-1 ring-indigo-500/40'
+                        : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                    }`}
+                  >
+                    {t(language, 'settings', d === 5 ? 'workWeek5' : 'workWeek6')}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3">
+              <div>
+                <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'holidaysTitle')}</p>
+                <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'holidaysDesc')}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void setHolidaysAsNonWork(!holidaysAsNonWork)}
+                className="flex shrink-0 items-center gap-2"
+              >
+                <span className={`text-[10px] font-semibold uppercase tracking-wider ${
+                  holidaysAsNonWork ? 'text-[var(--accent)]' : 'text-[var(--text-hint)]'
+                }`}>
+                  {holidaysAsNonWork
+                    ? t(language, 'settings', 'holidaysEnabled')
+                    : t(language, 'settings', 'holidaysDisabled')}
+                </span>
+                <span className={`relative h-6 w-11 rounded-full transition ${
+                  holidaysAsNonWork ? 'bg-[var(--accent)]' : 'bg-[var(--border-card)]'
+                }`}>
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-150 ${
+                    holidaysAsNonWork ? 'left-[22px]' : 'left-0.5'
+                  }`} />
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* Accesibilidad */}
+          <div>
+            <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
+              {t(language, 'settings', 'accessibility')}
+            </p>
+            <button
+              onClick={() => void setAnimationsEnabled(!animationsEnabled)}
+              className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 text-left transition hover:bg-[var(--bg-hover)]"
+            >
+              <div>
+                <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'animationsTitle')}</p>
+                <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'animationsDesc')}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] font-semibold uppercase tracking-wider ${
+                  animationsEnabled ? 'text-[var(--accent)]' : 'text-[var(--text-hint)]'
+                }`}>
+                  {animationsEnabled
+                    ? t(language, 'settings', 'animationsEnabled')
+                    : t(language, 'settings', 'animationsDisabled')}
+                </span>
+                <span className={`relative h-6 w-11 rounded-full transition ${
+                  animationsEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--border-card)]'
+                }`}>
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-150 ${
+                    animationsEnabled ? 'left-[22px]' : 'left-0.5'
+                  }`} />
+                </span>
+              </div>
+            </button>
+          </div>
+
+          </>}
+
+          {/* ── SHORTCUTS: Atajos de teclado ── */}
+          {settingsTab === 'shortcuts' && <>
 
           {/* Atajos de teclado */}
           <div>
@@ -613,6 +962,52 @@ export function SettingsModal() {
             </p>
           </div>
 
+          </>}
+
+          {/* ── DATA: Almacenamiento · Backup ── */}
+          {settingsTab === 'data' && <>
+
+          {/* Storage section */}
+          <div>
+            <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
+              {t(language, 'settings', 'storage')}
+            </p>
+            <div className="rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 space-y-2">
+              <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'baseFolder')}</p>
+              <p
+                className="truncate text-xs text-[var(--text-secondary)] font-mono"
+                title={basePath || t(language, 'settings', 'notConfigured')}
+              >
+                {basePath || t(language, 'settings', 'notConfigured')}
+              </p>
+              <div className="flex gap-2 pt-1 text-[10px] text-[var(--text-faint)]">
+                <span>{t(language, 'settings', 'storageProjectsHint')}</span>
+                <span>{t(language, 'settings', 'storageNotesHint')}</span>
+              </div>
+            </div>
+            <button
+              onClick={() => { changeBasePath(); }}
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-2.5 text-xs text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+            >
+              <FolderOpen size={13} />
+              {t(language, 'settings', 'changeFolder')}
+            </button>
+            <p className="mt-1.5 text-[10px] text-[var(--text-hint)] text-center">
+              {t(language, 'settings', 'filesNotMoved')}
+            </p>
+            {basePath && isICloudPath(basePath) && (
+              <div className="mt-2 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
+                <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-400" />
+                <div>
+                  <p className="text-[11px] font-semibold text-amber-400">{t(language, 'settings', 'icloudTitle')}</p>
+                  <p className="mt-0.5 text-[10px] text-amber-300/80">
+                    {t(language, 'settings', 'icloudDesc')}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Backup section */}
           <div>
             <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
@@ -651,6 +1046,271 @@ export function SettingsModal() {
               </p>
             )}
           </div>
+
+          </>}
+
+          {/* ── GIT: Control de versiones ── */}
+          {settingsTab === 'git' && (() => {
+            const statusIcon = {
+              idle:    <Clock size={12} className="text-[var(--text-hint)]" />,
+              synced:  <CheckCircle2 size={12} className="text-green-400" />,
+              pending: <RefreshCw size={12} className="text-amber-400 animate-spin" />,
+              error:   <AlertCircle size={12} className="text-red-400" />,
+            }[gitStatus];
+
+            const remoteStatusInfo: Record<string, { label: string; cls: string; icon: React.ReactNode }> = {
+              synced:   { label: t(language, 'extras', 'remoteSynced'),   cls: 'text-green-400',  icon: <CheckCircle2 size={12} className="text-green-400" /> },
+              behind:   { label: t(language, 'extras', 'remoteBehind'),   cls: 'text-blue-400',   icon: <ArrowDown size={12} className="text-blue-400" /> },
+              ahead:    { label: t(language, 'extras', 'remoteAhead'),    cls: 'text-amber-400',  icon: <Upload size={12} className="text-amber-400" /> },
+              diverged: { label: t(language, 'extras', 'remoteDiverged'), cls: 'text-purple-400', icon: <AlertCircle size={12} className="text-purple-400" /> },
+              offline:  { label: t(language, 'extras', 'remoteOffline'),  cls: 'text-zinc-400',   icon: <CloudOff size={12} className="text-zinc-400" /> },
+              unknown:  { label: t(language, 'extras', 'remoteUnknown'),  cls: 'text-zinc-400',   icon: <Clock size={12} className="text-zinc-400" /> },
+            };
+
+            return <>
+            {/* Header de sección */}
+            <div className="flex items-center gap-2 mb-1">
+              <GitCommit size={14} className="text-indigo-400" />
+              <p className="text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
+                {t(language, 'extras', 'gitTitle')}
+              </p>
+            </div>
+
+            {/* Activar/desactivar */}
+            <label className="flex items-center justify-between cursor-pointer rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3">
+              <div>
+                <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'extras', 'enableGit')}</p>
+                <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'extras', 'gitRequired')}</p>
+              </div>
+              <button
+                onClick={() => setGitEnabled((v) => !v)}
+                className={gitToggleCls(gitEnabled)}
+                role="switch"
+                aria-checked={gitEnabled}
+              >
+                <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${gitEnabled ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+              </button>
+            </label>
+
+            {/* Remote URL */}
+            <div>
+              <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-widest text-[var(--text-hint)]">
+                {t(language, 'extras', 'remoteUrl')}
+              </label>
+              <input
+                type="text"
+                value={gitRemote}
+                onChange={(e) => setGitRemote(e.target.value)}
+                disabled={!gitEnabled}
+                placeholder={t(language, 'extras', 'remotePlaceholder')}
+                className="w-full rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-primary)] placeholder-[var(--text-hint)] focus:border-indigo-500 focus:outline-none disabled:opacity-40"
+              />
+              <p className="mt-1 text-[10px] text-[var(--text-hint)]">
+                {t(language, 'extras', 'localOnlyHint')}
+              </p>
+            </div>
+
+            {/* Identidad Git */}
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-widest text-[var(--text-hint)]">
+                  {t(language, 'extras', 'userName')}
+                </label>
+                <input
+                  type="text"
+                  value={gitUserName}
+                  onChange={(e) => setGitUserName(e.target.value)}
+                  disabled={!gitEnabled}
+                  placeholder={t(language, 'extras', 'userNamePlaceholder')}
+                  className="w-full rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-primary)] placeholder-[var(--text-hint)] focus:border-indigo-500 focus:outline-none disabled:opacity-40"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-widest text-[var(--text-hint)]">
+                  {t(language, 'extras', 'userEmail')}
+                </label>
+                <input
+                  type="email"
+                  value={gitUserEmail}
+                  onChange={(e) => setGitUserEmail(e.target.value)}
+                  disabled={!gitEnabled}
+                  placeholder={t(language, 'extras', 'userEmailPlaceholder')}
+                  className="w-full rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-primary)] placeholder-[var(--text-hint)] focus:border-indigo-500 focus:outline-none disabled:opacity-40"
+                />
+                <p className="mt-1 text-[10px] text-[var(--text-hint)]">
+                  {t(language, 'extras', 'identityOverrideHint')}
+                </p>
+              </div>
+            </div>
+
+            {/* Opciones automáticas */}
+            <div className="space-y-2">
+              <label className="flex items-center justify-between cursor-pointer rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3">
+                <div>
+                  <p className="text-xs text-[var(--text-secondary)]">{t(language, 'extras', 'autoCommitHourly')}</p>
+                  <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'extras', 'whileOpen')}</p>
+                </div>
+                <button
+                  onClick={() => setGitAutoCommit((v) => !v)}
+                  disabled={!gitEnabled}
+                  className={gitToggleCls(gitAutoCommit && gitEnabled)}
+                  role="switch"
+                  aria-checked={gitAutoCommit}
+                >
+                  <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${gitAutoCommit && gitEnabled ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                </button>
+              </label>
+              <label className="flex items-center justify-between cursor-pointer rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3">
+                <div>
+                  <p className="text-xs text-[var(--text-secondary)]">{t(language, 'extras', 'pushOnSync')}</p>
+                  <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'extras', 'remoteRequired')}</p>
+                </div>
+                <button
+                  onClick={() => setGitAutoPush((v) => !v)}
+                  disabled={!gitEnabled || !gitRemote.trim()}
+                  className={gitToggleCls(gitAutoPush && gitEnabled && !!gitRemote.trim())}
+                  role="switch"
+                  aria-checked={gitAutoPush}
+                >
+                  <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${gitAutoPush && gitEnabled && !!gitRemote.trim() ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                </button>
+              </label>
+            </div>
+
+            {/* Estado último commit + remoto */}
+            {gitConfig.enabled && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-2">
+                  {statusIcon}
+                  <span className="text-[11px] text-[var(--text-secondary)]">
+                    {lastCommitTime
+                      ? `${t(language, 'extras', 'lastCommitPrefix')} ${timeAgo(lastCommitTime, language)}`
+                      : t(language, 'extras', 'noCommitsYet')}
+                  </span>
+                </div>
+                {gitConfig.remote.trim() && (
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      {gitFetchBusy
+                        ? <RefreshCw size={12} className="text-[var(--text-hint)] animate-spin" />
+                        : remoteStatusInfo[gitRemoteStatus]?.icon}
+                      <span className={`text-[11px] ${gitFetchBusy ? 'text-[var(--text-hint)]' : (remoteStatusInfo[gitRemoteStatus]?.cls ?? 'text-[var(--text-hint)]')}`}>
+                        {gitFetchBusy ? t(language, 'extras', 'checkingRemote') : (remoteStatusInfo[gitRemoteStatus]?.label ?? '')}
+                      </span>
+                    </div>
+                    <button
+                      onClick={handleGitFetch}
+                      disabled={gitFetchBusy || gitBusy}
+                      className="rounded-lg p-1 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-40"
+                      title={t(language, 'extras', 'refreshRemote')}
+                    >
+                      <RefreshCw size={11} className={gitFetchBusy ? 'animate-spin' : ''} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Error */}
+            {gitErrorMsg && (
+              <div className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2">
+                <AlertCircle size={13} className="mt-0.5 shrink-0 text-red-400" />
+                <p className="flex-1 text-[11px] text-red-400 break-all">{gitErrorMsg}</p>
+                <button
+                  onClick={() => navigator.clipboard.writeText(gitErrorMsg)}
+                  className="shrink-0 rounded p-0.5 text-red-400/60 transition hover:text-red-400 hover:bg-red-500/20"
+                  title={t(language, 'extras', 'copyError')}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                </button>
+              </div>
+            )}
+
+            {/* Acciones */}
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={handleGitSave}
+                disabled={gitBusy}
+                className="flex-1 rounded-xl bg-indigo-600 py-2 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-60"
+              >
+                {gitBusy ? t(language, 'extras', 'saving') : t(language, 'extras', 'save')}
+              </button>
+              {gitConfig.enabled && (
+                <button
+                  onClick={handleGitSync}
+                  disabled={gitBusy}
+                  className="flex items-center gap-1.5 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] disabled:opacity-60"
+                  title={gitRemote.trim() ? t(language, 'extras', 'commitPushTitle') : t(language, 'extras', 'commitLocalTitle')}
+                >
+                  {gitRemote.trim() ? <Upload size={13} /> : <RefreshCw size={13} />}
+                  {gitRemote.trim() ? t(language, 'extras', 'push') : t(language, 'extras', 'commit')}
+                </button>
+              )}
+              {gitConfig.enabled && gitConfig.remote.trim() && (
+                <button
+                  onClick={handleGitPull}
+                  disabled={gitBusy}
+                  className="flex items-center gap-1.5 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] disabled:opacity-60"
+                  title={t(language, 'extras', 'pullTitle')}
+                >
+                  <Download size={13} />
+                  {t(language, 'extras', 'pull')}
+                </button>
+              )}
+            </div>
+            </>;
+          })()}
+
+          {/* ── ABOUT: Versión · Actualizaciones ── */}
+          {settingsTab === 'about' && <>
+
+          {/* Updates section */}
+          <div>
+            <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
+              {t(language, 'settings', 'updates')}
+            </p>
+            <div className="rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'currentVersion')}</span>
+                <span className="text-xs font-mono font-semibold text-[var(--text-secondary)]">v{appVersion}</span>
+              </div>
+              <button
+                onClick={handleCheckUpdate}
+                disabled={updateStatus === 'checking'}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--border-card)] bg-[var(--bg-elevated)] px-4 py-2 text-xs text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <RefreshCw size={12} className={updateStatus === 'checking' ? 'animate-spin' : ''} />
+                {updateStatus === 'checking'
+                  ? t(language, 'settings', 'checking')
+                  : t(language, 'settings', 'checkUpdates')}
+              </button>
+              {updateStatus === 'upToDate' && (
+                <p className="text-center text-[10px] text-emerald-400">{t(language, 'settings', 'upToDate')}</p>
+              )}
+              {updateStatus === 'error' && (
+                <p className="text-center text-[10px] text-red-400">{t(language, 'settings', 'checkError')}</p>
+              )}
+              {updateStatus === 'available' && releaseInfo && (
+                <div className="space-y-2">
+                  <p className="text-center text-[10px] text-indigo-400 font-semibold">
+                    {t(language, 'settings', 'updateAvailable')}: {releaseInfo.tag_name}
+                  </p>
+                  {releaseInfo.body && (
+                    <p className="text-[10px] text-[var(--text-hint)] line-clamp-3">{releaseInfo.body}</p>
+                  )}
+                  <button
+                    onClick={() => fs.openUrl(releaseInfo.html_url)}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-4 py-2 text-xs text-indigo-400 transition hover:bg-indigo-500/20"
+                  >
+                    <ExternalLink size={12} />
+                    {t(language, 'settings', 'downloadUpdate')} {releaseInfo.tag_name}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          </>}
 
         </div>
       </div>

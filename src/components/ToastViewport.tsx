@@ -4,10 +4,11 @@ import { useAppStore } from '../store/appStore';
 import { t } from '../lib/i18n';
 
 export function ToastViewport() {
-  const { toasts, dismissToast, language } = useAppStore(
+  const { toasts, dismissToast, preExitToast, language } = useAppStore(
     useShallow((state) => ({
       toasts: state.toasts,
       dismissToast: state.dismissToast,
+      preExitToast: state.preExitToast,
       language: state.language,
     })),
   );
@@ -27,7 +28,8 @@ export function ToastViewport() {
         return (
           <div
             key={toast.id}
-            className="toast-card pointer-events-auto flex items-start gap-3 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] px-3 py-3 shadow-2xl backdrop-blur-sm"
+            className={`${toast.exiting ? 'toast-card-exit' : 'toast-card'} pointer-events-auto flex items-start gap-3 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] px-3 py-3 shadow-2xl backdrop-blur-sm`}
+            onAnimationEnd={() => { if (toast.exiting) dismissToast(toast.id); }}
           >
             <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border ${accentClass}`}>
               <Icon size={16} />
@@ -40,7 +42,7 @@ export function ToastViewport() {
             </div>
             <button
               type="button"
-              onClick={() => dismissToast(toast.id)}
+              onClick={() => preExitToast(toast.id)}
               className="rounded-lg p-1 text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
               aria-label={t(language, 'toast', 'dismiss')}
               title={t(language, 'toast', 'dismiss')}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Circle, Clock, CheckCircle2, Copy, Check, Trash2, Pencil, Plus } from 'lucide-react';
+import { Circle, Clock, CheckCircle2, Copy, Check, Trash2, Pencil, Plus, CalendarDays } from 'lucide-react';
 import { Task, TaskStatus } from '../types';
 import { useAppStore } from '../store/appStore';
 import { placeMenuAtPointer } from '../lib/menuPosition';
@@ -189,7 +189,7 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
 }
 
 // ── Menú contextual para espacio vacío (crear nueva tarea) ─────────────────
-export function NewTaskContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => void }) {
+export function NewTaskContextMenu({ x, y, onClose, onNewEvent }: { x: number; y: number; onClose: () => void; onNewEvent?: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState(() => placeMenuAtPointer({ x, y }, ESTIMATED_NEW_TASK_MENU, { padding: 8 }));
   const [ready, setReady] = useState(false);
@@ -239,6 +239,15 @@ export function NewTaskContextMenu({ x, y, onClose }: { x: number; y: number; on
         <Plus size={12} className="text-indigo-400" />
         {t(language, 'tasks', 'newTask')}
       </button>
+      {onNewEvent && (
+        <button
+          onClick={() => { onNewEvent(); onClose(); }}
+          className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+        >
+          <CalendarDays size={12} className="text-emerald-400" />
+          {t(language, 'calendar', 'addEvent')}
+        </button>
+      )}
     </div>,
     document.body
   );

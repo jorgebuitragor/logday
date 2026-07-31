@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Plus, Pin, Search, Copy, CopyPlus, Trash2, FolderInput, FolderOpen, ChevronRight, Download, Pencil, Tag, X, ArrowUpDown } from 'lucide-react';
+import { Plus, Pin, Search, Copy, CopyPlus, Trash2, FolderInput, FolderOpen, ChevronRight, Download, Pencil, Tag, X, ArrowUpDown, Upload } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
 import { Note } from '../types';
 import { ExportModal } from './ExportModal';
 import { placeMenuAtPointer, placeMenuNearAnchor } from '../lib/menuPosition';
 import { t as tFn } from '../lib/i18n';
+import { pickMarkdownFiles } from '../lib/invoke';
 
 type CtxMenu = { note: Note; x: number; y: number } | null;
 type SubMenuPos = { x: number; y: number } | null;
@@ -13,7 +14,7 @@ type SubMenuAnchor = { left: number; top: number; right: number; bottom: number 
 
 const ESTIMATED_MAIN_MENU = { width: 210, height: 380 };
 const ESTIMATED_SUB_MENU = { width: 170, height: 220 };
-const ESTIMATED_EMPTY_MENU = { width: 170, height: 60 };
+const ESTIMATED_EMPTY_MENU = { width: 170, height: 90 };
 
 export function NoteList() {
   const {
@@ -32,6 +33,7 @@ export function NoteList() {
     moveNote,
     renameNote,
     updateNote,
+    importNotesFromPaths,
   } = useAppStore(
     useShallow((s) => ({
       notes: s.notes,
@@ -49,6 +51,7 @@ export function NoteList() {
       moveNote: s.moveNote,
       renameNote: s.renameNote,
       updateNote: s.updateNote,
+      importNotesFromPaths: s.importNotesFromPaths,
     }))
   );
 
@@ -68,6 +71,7 @@ export function NoteList() {
   const [emptyCtxMenu, setEmptyCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [emptyCtxMenuPos, setEmptyCtxMenuPos] = useState<SubMenuPos>(null);
   const [emptyCtxMenuReady, setEmptyCtxMenuReady] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   // Renombrar nota
   const [renamingNote, setRenamingNote] = useState<Note | null>(null);
@@ -372,6 +376,50 @@ export function NoteList() {
     setEditingTagsNote(updated);
   };
 
+  const handleImportFromDialog = async () => {
+    setEmptyCtxMenu(null);
+    setEmptyCtxMenuPos(null);
+    setEmptyCtxMenuReady(false);
+    const paths = await pickMarkdownFiles();
+    if (paths && paths.length > 0) {
+      await importNotesFromPaths(paths);
+    }
+  };
+
+  // Tauri intercepta el drag de archivos desde el SO antes de que llegue al WebView,
+  // por lo que hay que usar onDragDropEvent en lugar de los eventos HTML5.
+  useEffect(() => {
+    if (activeSection !== 'notes') return;
+    let cancelled = false;
+    let unlistenFn: (() => void) | undefined;
+
+    import('@tauri-apps/api/window').then(({ getCurrentWindow }) =>
+      getCurrentWindow().onDragDropEvent((event) => {
+        const payload = event.payload as { type: string; paths?: string[] };
+        if (payload.type === 'enter') {
+          const hasMd = payload.paths?.some((p) => p.endsWith('.md') || p.endsWith('.txt'));
+          if (hasMd) setIsDragOver(true);
+        } else if (payload.type === 'leave') {
+          setIsDragOver(false);
+        } else if (payload.type === 'drop') {
+          setIsDragOver(false);
+          const paths = (payload.paths ?? []).filter(
+            (p) => p.endsWith('.md') || p.endsWith('.txt'),
+          );
+          if (paths.length > 0) importNotesFromPaths(paths);
+        }
+      }),
+    ).then((fn) => {
+      if (cancelled) fn();
+      else unlistenFn = fn;
+    });
+
+    return () => {
+      cancelled = true;
+      unlistenFn?.();
+    };
+  }, [activeSection, importNotesFromPaths]);
+
   if (activeSection !== 'notes') return null;
 
   const sortLabels: Record<typeof sortBy, string> = {
@@ -420,7 +468,7 @@ export function NoteList() {
     : [];
 
   return (
-    <div className="flex h-full w-72 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]">
+    <div className="flex h-full shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]" style={{ width: 'var(--logday-list-w)' }}>
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
         <h2 className="text-sm font-semibold text-[var(--text-primary)]">{tFn(language, 'notes', 'title')}</h2>
@@ -537,7 +585,7 @@ export function NoteList() {
 
       {/* List */}
       <div
-        className="flex-1 overflow-y-auto py-1"
+        className={`relative flex-1 overflow-y-auto py-1 transition-colors ${isDragOver ? 'bg-indigo-500/10' : ''}`}
         onContextMenu={(e) => {
           // Solo si el click es en el contenedor (espacio vacío), no en un item
           if (e.target === e.currentTarget || (e.target as HTMLElement).closest('[data-note-item]') === null) {
@@ -554,6 +602,13 @@ export function NoteList() {
           }
         }}
       >
+        {/* Drag-over overlay */}
+        {isDragOver && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-indigo-400/60">
+            <Upload size={24} className="text-indigo-400" />
+            <span className="text-xs font-medium text-indigo-400">{tFn(language, 'notes', 'dropToImport')}</span>
+          </div>
+        )}
         {sorted.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
             <p className="text-sm text-[var(--text-hint)]">{tFn(language, 'notes', 'emptyNotes')}</p>
@@ -871,6 +926,14 @@ export function NoteList() {
             >
               <Plus size={13} />
               {tFn(language, 'notes', 'newNote')}
+            </button>
+            <div className="my-1 h-px bg-[var(--border)]" />
+            <button
+              onClick={handleImportFromDialog}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
+            >
+              <Upload size={13} />
+              {tFn(language, 'notes', 'importNote')}
             </button>
           </div>
         </>

@@ -131,6 +131,8 @@ interface AppState {
   replaceFolderTags: (tags: Record<string, string[]>) => void;
   moveNoteFolder: (folder: string, targetParent: string) => Promise<void>;
   duplicateNoteFolder: (folder: string, targetParent: string | null) => Promise<void>;
+  importNotesFromPaths: (paths: string[]) => Promise<void>;
+  importNotesFromContent: (files: Array<{ name: string; content: string }>) => Promise<void>;
 
   // Dailys
   loadDailyMonths: () => Promise<void>;
@@ -993,6 +995,106 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({ notes: [note, ...state.notes], activeNote: note }));
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
     return note;
+  },
+
+  importNotesFromPaths: async (paths) => {
+    const { basePath, activeNoteFolder, language } = get();
+    if (!basePath) return;
+    const folder = activeNoteFolder ?? '';
+    const imported: Note[] = [];
+    for (const filePath of paths) {
+      try {
+        const raw = await fs.readFile(filePath);
+        const id = uuidv4();
+        const today = formatDate(new Date());
+        const parsed = parseNote(raw, filePath);
+        let title: string;
+        let content: string;
+        let tags: string[] = [];
+        if (parsed) {
+          title = parsed.title;
+          content = parsed.content;
+          tags = parsed.tags;
+        } else {
+          const headingMatch = raw.match(/^#\s+(.+)$/m);
+          const filename = filePath.split('/').pop()?.split('\\').pop()?.replace(/\.(md|txt)$/i, '') ?? 'Imported';
+          title = headingMatch ? headingMatch[1].trim() : filename;
+          content = raw.trim();
+        }
+        const note: Note = {
+          id,
+          title,
+          folder,
+          tags,
+          created: today,
+          updated: today,
+          pinned: false,
+          content,
+          filePath: noteFilePath(basePath, folder, id),
+        };
+        if (folder) await fs.createDir(noteFolderDir(basePath, folder)).catch(() => {});
+        await fs.writeFile(note.filePath, serializeNote(note));
+        imported.push(note);
+      } catch { /* skip unreadable files */ }
+    }
+    if (imported.length > 0) {
+      set((state) => ({ notes: [...imported, ...state.notes], activeNote: imported[0] }));
+      if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+      get().showToast({
+        kind: 'success',
+        title: t(language, 'toast', 'noteImported'),
+        description: imported.length === 1 ? imported[0].title || t(language, 'notes', 'untitled') : `${imported.length} ${t(language, 'notes', 'title').toLowerCase()}`,
+      });
+    }
+  },
+
+  importNotesFromContent: async (files) => {
+    const { basePath, activeNoteFolder, language } = get();
+    if (!basePath) return;
+    const folder = activeNoteFolder ?? '';
+    const imported: Note[] = [];
+    for (const { name, content: rawContent } of files) {
+      try {
+        const id = uuidv4();
+        const today = formatDate(new Date());
+        const parsed = parseNote(rawContent, '');
+        let title: string;
+        let content: string;
+        let tags: string[] = [];
+        if (parsed) {
+          title = parsed.title;
+          content = parsed.content;
+          tags = parsed.tags;
+        } else {
+          const headingMatch = rawContent.match(/^#\s+(.+)$/m);
+          title = headingMatch ? headingMatch[1].trim() : name.replace(/\.(md|txt)$/i, '');
+          content = rawContent.trim();
+        }
+        const note: Note = {
+          id,
+          title,
+          folder,
+          tags,
+          created: today,
+          updated: today,
+          pinned: false,
+          content,
+          filePath: noteFilePath(basePath, folder, id),
+        };
+        if (folder) await fs.createDir(noteFolderDir(basePath, folder)).catch(() => {});
+        await fs.writeFile(note.filePath, serializeNote(note));
+        imported.push(note);
+      } catch { /* skip unreadable entries */ }
+    }
+    if (imported.length > 0) {
+      set((state) => ({ notes: [...imported, ...state.notes], activeNote: imported[0] }));
+      if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+      get().showToast({
+        kind: 'success',
+        title: t(language, 'toast', 'noteImported'),
+        description: imported.length === 1 ? imported[0].title || t(language, 'notes', 'untitled') : `${imported.length} ${t(language, 'notes', 'title').toLowerCase()}`,
+      });
+    }
   },
 
   updateNote: async (note) => {

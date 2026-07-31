@@ -355,7 +355,7 @@ export function DailyList() {
   };
 
   return (<>
-    <div className="flex h-full w-72 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]">
+    <div className="flex h-full shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]" style={{ width: 'var(--logday-list-w)' }}>
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
         <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'dailys', 'title')}</h2>

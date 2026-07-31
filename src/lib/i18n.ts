@@ -338,6 +338,7 @@ const dict = {
       // Confirmación eliminar (NoteList)
       importNote: 'Importar nota',
       dropToImport: 'Suelta aquí para importar',
+      importing: 'Importando…',
       // Link preview card
       linkPreviewGoToNote: 'Ir a la nota',
       linkPreviewEdit: 'Editar',
@@ -1098,6 +1099,7 @@ const dict = {
       // Confirm delete (NoteList)
       importNote: 'Import note',
       dropToImport: 'Drop here to import',
+      importing: 'Importing…',
       // Link preview card
       linkPreviewGoToNote: 'Go to note',
       linkPreviewEdit: 'Edit',

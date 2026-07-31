@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Plus, Pin, Search, Copy, CopyPlus, Trash2, FolderInput, FolderOpen, ChevronRight, Download, Pencil, Tag, X, ArrowUpDown, Upload } from 'lucide-react';
+import { Plus, Pin, Search, Copy, CopyPlus, Trash2, FolderInput, FolderOpen, ChevronRight, Download, Pencil, Tag, X, ArrowUpDown, Upload, Loader2 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
 import { Note } from '../types';
@@ -72,6 +72,7 @@ export function NoteList() {
   const [emptyCtxMenuPos, setEmptyCtxMenuPos] = useState<SubMenuPos>(null);
   const [emptyCtxMenuReady, setEmptyCtxMenuReady] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   // Renombrar nota
   const [renamingNote, setRenamingNote] = useState<Note | null>(null);
@@ -380,9 +381,14 @@ export function NoteList() {
     setEmptyCtxMenu(null);
     setEmptyCtxMenuPos(null);
     setEmptyCtxMenuReady(false);
-    const paths = await pickMarkdownFiles();
-    if (paths && paths.length > 0) {
-      await importNotesFromPaths(paths);
+    setIsImporting(true);
+    try {
+      const paths = await pickMarkdownFiles();
+      if (paths && paths.length > 0) {
+        await importNotesFromPaths(paths);
+      }
+    } finally {
+      setIsImporting(false);
     }
   };
 
@@ -406,7 +412,10 @@ export function NoteList() {
           const paths = (payload.paths ?? []).filter(
             (p) => p.endsWith('.md') || p.endsWith('.txt'),
           );
-          if (paths.length > 0) importNotesFromPaths(paths);
+          if (paths.length > 0) {
+            setIsImporting(true);
+            importNotesFromPaths(paths).finally(() => setIsImporting(false));
+          }
         }
       }),
     ).then((fn) => {
@@ -472,15 +481,25 @@ export function NoteList() {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
         <h2 className="text-sm font-semibold text-[var(--text-primary)]">{tFn(language, 'notes', 'title')}</h2>
-        <button
-          onClick={() => createNote()}
-          disabled={isNewEmptyNote}
-          className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-indigo-400 transition hover:bg-indigo-500/10 disabled:opacity-40 disabled:cursor-not-allowed"
-          title={tFn(language, 'notes', 'newNote')}
-        >
-          <Plus size={14} />
-          {tFn(language, 'notes', 'newBtn')}
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleImportFromDialog}
+            disabled={isImporting}
+            className="flex items-center gap-1 rounded-lg p-1.5 text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed"
+            title={tFn(language, 'notes', 'importNote')}
+          >
+            {isImporting ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+          </button>
+          <button
+            onClick={() => createNote()}
+            disabled={isNewEmptyNote}
+            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-indigo-400 transition hover:bg-indigo-500/10 disabled:opacity-40 disabled:cursor-not-allowed"
+            title={tFn(language, 'notes', 'newNote')}
+          >
+            <Plus size={14} />
+            {tFn(language, 'notes', 'newBtn')}
+          </button>
+        </div>
       </div>
 
       {/* Search + Sort */}
@@ -603,10 +622,18 @@ export function NoteList() {
         }}
       >
         {/* Drag-over overlay */}
-        {isDragOver && (
+        {isDragOver && !isImporting && (
           <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-indigo-400/60">
             <Upload size={24} className="text-indigo-400" />
             <span className="text-xs font-medium text-indigo-400">{tFn(language, 'notes', 'dropToImport')}</span>
+          </div>
+        )}
+
+        {/* Importing overlay */}
+        {isImporting && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-[var(--bg-panel)]/80 backdrop-blur-[1px]">
+            <Loader2 size={22} className="animate-spin text-indigo-400" />
+            <span className="text-xs font-medium text-indigo-400">{tFn(language, 'notes', 'importing')}</span>
           </div>
         )}
         {sorted.length === 0 ? (

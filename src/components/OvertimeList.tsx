@@ -165,7 +165,7 @@ export function OvertimeList({ onEdit, activeEntryId }: Props) {
                 key={entry.id}
                 className={`group flex cursor-pointer items-start gap-2 px-3 py-2.5 transition-colors ${
                   isActive
-                    ? 'border-l-2 border-l-indigo-500 bg-indigo-500/10 pl-[10px]'
+                    ? 'border-l-2 border-l-[var(--accent)] bg-[var(--accent-soft)] pl-[10px]'
                     : 'border-l-2 border-l-transparent hover:bg-[var(--bg-hover)]'
                 }`}
                 onClick={() => onEdit(isActive ? undefined : entry)}

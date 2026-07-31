@@ -1,7 +1,7 @@
 # Requirements — Consistencia visual de temas
 
-Estado: en diseño. Describe el comportamiento deseado; nada de esto está
-implementado todavía. Motivado por un bug real encontrado y arreglado en
+Estado: implementado. Verificado visualmente en los 4 temas. Motivado por
+un bug real encontrado y arreglado en
 `src/components/OvertimeList.tsx` (commit `5f23e73`, ver §1) y por la
 auditoría de código hardcodeado documentada en este spec a fecha
 2026-07-31.

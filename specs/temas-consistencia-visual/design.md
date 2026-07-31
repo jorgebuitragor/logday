@@ -1,6 +1,6 @@
 # Design — Consistencia visual de temas
 
-Estado: en diseño. Ver [`requirements.md`](./requirements.md) para el
+Estado: implementado. Ver [`requirements.md`](./requirements.md) para el
 contrato de comportamiento.
 
 ## 1. Componentes involucrados

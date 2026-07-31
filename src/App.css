@@ -13,6 +13,7 @@
   --bg-base:     #0f0f0f;
   --bg-panel:    #141414;
   --bg-surface:  #1c1c1c;
+  --bg-secondary: var(--bg-surface);
   --bg-hover:    #242424;
   --bg-elevated: #181818;
   --bg-input:    #161616;
@@ -42,6 +43,7 @@
   --bg-base:     #f4f4f5;
   --bg-panel:    #ffffff;
   --bg-surface:  #f9f9fb;
+  --bg-secondary: var(--bg-surface);
   --bg-hover:    #f0f0f2;
   --bg-elevated: #ffffff;
   --bg-input:    #fafafa;
@@ -71,6 +73,7 @@
   --bg-base:     #000000;
   --bg-panel:    #050505;
   --bg-surface:  #0a0a0a;
+  --bg-secondary: var(--bg-surface);
   --bg-hover:    #141414;
   --bg-elevated: #0f0f0f;
   --bg-input:    #0a0a0a;
@@ -100,6 +103,7 @@
   --bg-base:     #0f1513;
   --bg-panel:    #141d1a;
   --bg-surface:  #1a2521;
+  --bg-secondary: var(--bg-surface);
   --bg-hover:    #22312b;
   --bg-elevated: #16201d;
   --bg-input:    #1a2521;
@@ -370,14 +374,14 @@ html.theme-animating body * {
 
 /* ── Task code reference links in notes (WYSIWYG, display-only) ────────── */
 .task-code-link {
-  color: rgb(129 140 248);
+  color: var(--accent-link);
   font-weight: 500;
   cursor: pointer;
-  border-bottom: 1px dotted rgb(129 140 248 / 0.5);
+  border-bottom: 1px dotted color-mix(in srgb, var(--accent-link) 50%, transparent);
   transition: color 0.12s, border-color 0.12s;
 }
 .task-code-link:hover {
-  color: rgb(165 180 252);
+  color: var(--accent);
   border-bottom-style: solid;
 }
 
@@ -774,26 +778,26 @@ html.theme-animating body * {
 }
 
 .drag-handle:hover {
-  background-color: rgba(129, 140, 248, 0.10);
-  border-color: rgba(129, 140, 248, 0.25);
+  background-color: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 .drag-handle:active,
 .drag-handle[data-dragging='true'] {
   cursor: grabbing;
-  background-color: rgba(129, 140, 248, 0.16);
-  border-color: rgba(129, 140, 248, 0.32);
+  background-color: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
 }
 
 .ProseMirror.dragging > * {
-  outline: 1px solid rgba(129, 140, 248, 0.10);
+  outline: 1px solid color-mix(in srgb, var(--accent) 10%, transparent);
   border-radius: 4px;
 }
 
 /* Bloque resaltado mientras se arrastra (la extensión añade esta clase) */
 .ProseMirror [data-drag-handle-selected],
 .ProseMirror .drag-handle-active-node {
-  outline: 1px solid rgba(129, 140, 248, 0.3);
+  outline: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
   border-radius: 4px;
 }
 
@@ -801,7 +805,7 @@ html.theme-animating body * {
 .drag-drop-indicator,
 .tiptap-drag-drop-indicator {
   height: 1.5px;
-  background: linear-gradient(90deg, transparent 0%, rgba(129, 140, 248, 0.7) 8%, rgba(129, 140, 248, 0.7) 92%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--accent) 70%, transparent) 8%, color-mix(in srgb, var(--accent) 70%, transparent) 92%, transparent 100%);
   border-radius: 1px;
   margin: 1px 0;
   pointer-events: none;
@@ -818,11 +822,11 @@ html.theme-animating body * {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: rgba(129, 140, 248, 0.8);
+  background: color-mix(in srgb, var(--accent) 80%, transparent);
 }
 
 .block-drop-flash {
-  background: rgba(129, 140, 248, 0.85);
+  background: color-mix(in srgb, var(--accent) 85%, transparent);
   animation: block-drop-flash 220ms ease-out;
 }
 

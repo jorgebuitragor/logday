@@ -522,7 +522,7 @@ export function NoteEditor() {
       TableHeader,
       TableCell,
       Dropcursor.configure({
-        color: 'rgba(129, 140, 248, 0.55)',
+        color: 'color-mix(in srgb, var(--accent) 55%, transparent)',
         width: 2,
         class: 'tiptap-drag-drop-indicator',
       }),

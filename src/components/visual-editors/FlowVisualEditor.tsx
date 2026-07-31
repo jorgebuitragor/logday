@@ -62,15 +62,15 @@ function useEditableLabel(id: string, initialLabel: string) {
 const baseStyle = (selected: boolean): React.CSSProperties => ({
   background: 'var(--bg-elevated)',
   color: 'var(--text-primary)',
-  border: `2px solid ${selected ? '#6366f1' : 'var(--border-high)'}`,
-  boxShadow: selected ? '0 0 0 3px rgba(99,102,241,0.2)' : 'none',
+  border: `2px solid ${selected ? 'var(--accent)' : 'var(--border-high)'}`,
+  boxShadow: selected ? '0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent)' : 'none',
   fontSize: 13,
   fontWeight: 500,
   cursor: 'default',
   userSelect: 'none',
 });
 
-const handleStyle: React.CSSProperties = { background: '#6366f1', width: 10, height: 10 };
+const handleStyle: React.CSSProperties = { background: 'var(--accent)', width: 10, height: 10 };
 
 function EditInput({ draft, setDraft, onKeyDown, onBlur }: { draft: string; setDraft: (v: string) => void; onKeyDown: (e: React.KeyboardEvent) => void; onBlur: () => void }) {
   return (
@@ -124,7 +124,7 @@ const DecisionNode = memo(({ id, data, selected }: NodeProps) => {
   const size = 96;
   return (
     <div onDoubleClick={startEdit} style={{ width: size, height: size, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'default' }}>
-      <div style={{ position: 'absolute', inset: 10, background: 'var(--bg-elevated)', border: `2px solid ${selected ? '#6366f1' : 'var(--border-high)'}`, transform: 'rotate(45deg)', borderRadius: 3, boxShadow: selected ? '0 0 0 3px rgba(99,102,241,0.2)' : 'none' }} />
+      <div style={{ position: 'absolute', inset: 10, background: 'var(--bg-elevated)', border: `2px solid ${selected ? 'var(--accent)' : 'var(--border-high)'}`, transform: 'rotate(45deg)', borderRadius: 3, boxShadow: selected ? '0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent)' : 'none' }} />
       <div style={{ position: 'relative', zIndex: 1, fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', textAlign: 'center', padding: '0 6px', maxWidth: '90%', wordBreak: 'break-word' }}>
         {editing
           ? <EditInput draft={draft} setDraft={setDraft} onKeyDown={onKeyDown} onBlur={commit} />
@@ -174,7 +174,7 @@ StateNodeComp.displayName = 'StateNodeComp';
 // ==================== Start/End node (filled circle) ====================
 
 const StartEndNode = memo(({ selected }: NodeProps) => (
-  <div style={{ width: 28, height: 28, borderRadius: '50%', background: selected ? '#6366f1' : 'var(--text-secondary)', border: `2px solid ${selected ? '#818cf8' : 'var(--border-high)'}`, boxShadow: selected ? '0 0 0 3px rgba(99,102,241,0.2)' : 'none' }}>
+  <div style={{ width: 28, height: 28, borderRadius: '50%', background: selected ? 'var(--accent-strong)' : 'var(--text-secondary)', border: `2px solid ${selected ? 'var(--accent)' : 'var(--border-high)'}`, boxShadow: selected ? '0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent)' : 'none' }}>
     <Handle type="target" position={Position.Top} style={{ ...handleStyle, opacity: 0.7 }} />
     <Handle type="source" position={Position.Bottom} style={{ ...handleStyle, opacity: 0.7 }} />
   </div>
@@ -198,8 +198,8 @@ const STATE_NODE_TYPES: NodeTypes = {
 
 const DEFAULT_EDGE = {
   type: 'smoothstep',
-  markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: '#6366f1' },
-  style: { stroke: '#6366f1', strokeWidth: 1.5 },
+  markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: 'var(--accent-strong)' },
+  style: { stroke: 'var(--accent-strong)', strokeWidth: 1.5 },
   labelStyle: { fontSize: 11, fill: 'var(--text-secondary)' },
   labelBgStyle: { fill: 'var(--bg-panel)', fillOpacity: 0.85 },
 };

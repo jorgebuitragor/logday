@@ -142,7 +142,7 @@ const STATUS_DOT: Record<string, string> = {
 };
 
 const EVENT_COLOR_DOT: Record<string, string> = {
-  indigo:  'bg-indigo-400',
+  indigo:  'bg-[#818cf8]',
   amber:   'bg-amber-400',
   emerald: 'bg-emerald-400',
   rose:    'bg-rose-400',
@@ -230,7 +230,7 @@ function WeeklyMiniCalendar({
                 key={ev.id}
                 className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-[var(--text-secondary)]"
               >
-                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${EVENT_COLOR_DOT[ev.color] ?? 'bg-indigo-400'}`} />
+                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${EVENT_COLOR_DOT[ev.color] ?? 'bg-[#818cf8]'}`} />
                 <span className="truncate flex-1">{ev.title}</span>
                 {ev.time && <span className="shrink-0 text-[var(--text-hint)]">{ev.time}</span>}
               </div>

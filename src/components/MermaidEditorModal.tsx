@@ -173,7 +173,7 @@ export function MermaidEditorModal({ initialCode, mode, onClose, onSave }: Props
                     disabled={!canVisual}
                     title={canVisual ? (editorMode === 'code' ? t(language, 'extras', 'switchToVisual') : t(language, 'extras', 'switchToCode')) : t(language, 'extras', 'visualUnsupported')}
                     className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1 text-[10px] font-medium transition hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-40"
-                    style={{ color: editorMode === 'visual' ? '#6366f1' : 'var(--text-secondary)', borderColor: editorMode === 'visual' ? '#6366f1' : undefined }}
+                    style={{ color: editorMode === 'visual' ? 'var(--accent)' : 'var(--text-secondary)', borderColor: editorMode === 'visual' ? 'var(--accent)' : undefined }}
                   >
                     {editorMode === 'code' ? <LayoutTemplate size={11} /> : <Code2 size={11} />}
                     {editorMode === 'code' ? t(language, 'extras', 'visual') : t(language, 'extras', 'code')}

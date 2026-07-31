@@ -16,7 +16,7 @@ const STATUS_DOT: Record<TaskStatus, string> = {
 };
 
 const EVENT_COLOR_DOT: Record<EventColor, string> = {
-  indigo:  'bg-indigo-400',
+  indigo:  'bg-[#818cf8]',
   amber:   'bg-amber-400',
   emerald: 'bg-emerald-400',
   rose:    'bg-rose-400',
@@ -25,7 +25,7 @@ const EVENT_COLOR_DOT: Record<EventColor, string> = {
 };
 
 const EVENT_COLOR_BADGE: Record<EventColor, string> = {
-  indigo:  'border-indigo-500/40 bg-indigo-500/10 text-indigo-300',
+  indigo:  'border-[#6366f1]/40 bg-[#6366f1]/10 text-[#818cf8]',
   amber:   'border-amber-500/40 bg-amber-500/10 text-amber-300',
   emerald: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300',
   rose:    'border-rose-500/40 bg-rose-500/10 text-rose-300',

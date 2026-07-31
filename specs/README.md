@@ -34,3 +34,4 @@ tres archivos:
 |---|---|---|
 | Notas + Link Preview | implementado (baseline) | [`notas-link-preview/`](./notas-link-preview/requirements.md) |
 | Consistencia visual de temas | implementado | [`temas-consistencia-visual/`](./temas-consistencia-visual/requirements.md) |
+| Personalización y expansión de temas | en diseño | [`temas-personalizacion/`](./temas-personalizacion/requirements.md) |

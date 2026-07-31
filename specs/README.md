@@ -33,3 +33,4 @@ tres archivos:
 | Feature | Estado | Carpeta |
 |---|---|---|
 | Notas + Link Preview | implementado (baseline) | [`notas-link-preview/`](./notas-link-preview/requirements.md) |
+| Consistencia visual de temas | en diseño | [`temas-consistencia-visual/`](./temas-consistencia-visual/requirements.md) |

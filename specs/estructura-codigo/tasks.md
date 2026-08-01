@@ -240,6 +240,11 @@ para todos: un pase de QA visual manual en `pnpm tauri dev`.
         `GitSettingsTab.tsx` una vez separado, y hacerlo dos veces
         (ahora y otra vez en la Fase 4) sería el tipo de trabajo
         duplicado que este spec busca evitar.
+      - **Actualización (2026-08-01, al implementar la tarea 4.2.2)**:
+        el plan de arriba no se ejecutó — se descubrió que `GitModal.tsx`
+        es código muerto sin importadores, así que se eliminó
+        directamente en vez de crear el `GitSettingsForm` compartido.
+        Ver el detalle en la tarea 4.2.2.
 - [x] 2.3 Eliminado `DailyEntry` de `types/index.ts` (2026-08-01,
       confirmado sin uso — ningún import lo referenciaba)
 - [x] 2.4 Eliminada la copia duplicada de `SearchResult` en
@@ -311,11 +316,30 @@ para todos: un pase de QA visual manual en `pnpm tauri dev`.
       volumen son los modales inline (nueva carpeta, nuevo proyecto,
       subcarpeta, tags, menús de mes) que `design.md` no listó
       explícitamente para extracción en esta fase; se dejan tal cual.
-- [ ] 4.2 `SettingsModal.tsx`
+- [ ] 4.2 `SettingsModal.tsx` (en progreso)
   - [ ] 4.2.1 Extraer `GeneralSettingsTab`, `WorkSettingsTab`,
         `ShortcutsSettingsTab`, `DataSettingsTab`, `AboutSettingsTab`
-  - [ ] 4.2.2 Extraer `GitSettingsTab` resolviendo la duplicación con
-        `GitModal.tsx` (tarea 2.2)
+  - [x] 4.2.2 Extraído `GitSettingsTab` (2026-08-01). **Cambio de plan
+        respecto a la tarea 2.2**: la investigación de esa tarea asumía
+        que había que crear un `GitSettingsForm` compartido entre
+        `GitModal.tsx` y la pestaña Git. Al ir a implementarlo se
+        descubrió que **`GitModal.tsx` no tenía ningún importador en
+        toda la base de código** — código completamente muerto, nunca
+        renderizado (las señales `isGitOpen`/`toggleGit` que lo abrían
+        ya no llegan a ningún componente que lo use). Se eliminó
+        `GitModal.tsx` directamente en vez de crear el componente
+        compartido, y `GitSettingsTab.tsx` es una extracción simple del
+        contenido de la pestaña. `isGitOpen`/`toggleGit` se dejan (son
+        del store, fuera de alcance de esta fase) aunque hoy no los usa
+        ningún flujo real de apertura.
+        **Detalle de diseño preservado**: `GitSettingsTab` recibe una
+        prop `active` pero SIEMPRE está montado (no
+        `{settingsTab==='git' && <GitSettingsTab/>}`) — así sus efectos
+        en segundo plano (auto-commit horario, fetch cada 30 min) siguen
+        corriendo aunque el usuario esté en otra pestaña, igual que el
+        comportamiento original.
+        Verificado con `tsc --noEmit`, `eslint` (sin errores nuevos) y
+        `vite build` limpio. `SettingsModal.tsx`: 1492 → 1157 líneas.
 - [ ] 4.3 `NoteEditor.tsx`
   - [ ] 4.3.1 Mover catálogo de emojis a `src/lib/emojiCatalog.ts`
   - [ ] 4.3.2 Mover `normalizeEditorMarkdown` y `createTaskCodePlugin`

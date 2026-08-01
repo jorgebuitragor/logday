@@ -10,6 +10,7 @@ import InlineRenameInput from '../shared/InlineRenameInput';
 import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { ThemeTile } from './ThemeTile';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
+import { Z_MODAL_NESTED } from '../../lib/zIndex';
 
 const THEME_VALUES: { value: Theme; Icon: React.ElementType }[] = [
   { value: 'system', Icon: Monitor },
@@ -319,6 +320,7 @@ export function GeneralSettingsTab({ isStartupSelectorOpen, setIsStartupSelector
       confirmLabel={t(language, 'settings', 'customThemeDelete')}
       onCancel={confirmDeleteThemeDialog.cancel}
       onConfirm={() => { deleteCustomTheme(confirmDeleteThemeDialog.pending!.id); confirmDeleteThemeDialog.cancel(); }}
+      zIndex={Z_MODAL_NESTED}
     />
   )}
 

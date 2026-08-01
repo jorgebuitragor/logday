@@ -1,6 +1,9 @@
 import { createPortal } from 'react-dom';
 import { Trash2 } from 'lucide-react';
 import { usePositionedMenu } from '../../hooks/usePositionedMenu';
+import { ModalOverlay } from './ModalOverlay';
+import { ModalPanel } from './ModalPanel';
+import { Z_MODAL } from '../../lib/zIndex';
 
 interface ConfirmDeleteModalProps {
   title: React.ReactNode;
@@ -34,7 +37,7 @@ export function ConfirmDeleteModal({
   // tokens de color distinto al resto (bg-panel/border planos en vez de
   // bg-elevated/border-card) — no es un descuido, así estaban ambas
   // ocurrencias originales, así que se preserva atado a la variante.
-  const resolvedZIndex = zIndex ?? (isSoft && !position ? 500 : 10000);
+  const resolvedZIndex = zIndex ?? Z_MODAL;
 
   const confirmButtonClass = isSoft
     ? 'rounded-lg bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition hover:bg-red-500/20'
@@ -97,12 +100,9 @@ export function ConfirmDeleteModal({
   }
 
   return (
-    <div
-      className={`fixed inset-0 flex items-center justify-center ${isSoft ? 'bg-black/50' : 'bg-black/40'}`}
-      style={{ zIndex: resolvedZIndex }}
-    >
-      {panel}
-    </div>
+    <ModalOverlay zIndex={resolvedZIndex}>
+      <ModalPanel>{panel}</ModalPanel>
+    </ModalOverlay>
   );
 }
 

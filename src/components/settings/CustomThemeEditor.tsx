@@ -7,6 +7,9 @@ import { deriveCustomThemeVars } from '../../lib/themeColor';
 import { ColorPicker } from './ColorPicker';
 import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
+import { ModalOverlay } from '../shared/ModalOverlay';
+import { ModalPanel } from '../shared/ModalPanel';
+import { Z_MODAL_NESTED, Z_MODAL_NESTED_2 } from '../../lib/zIndex';
 
 interface Props {
   initial: CustomTheme | null; // null = crear nuevo
@@ -70,8 +73,8 @@ export function CustomThemeEditor({ initial, onClose }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-md rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
+    <ModalOverlay zIndex={Z_MODAL_NESTED} className="px-4">
+      <ModalPanel className="w-full max-w-md rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">
             {initial ? t(language, 'settings', 'customThemeEditTitle') : t(language, 'settings', 'customThemeCreateTitle')}
@@ -199,24 +202,24 @@ export function CustomThemeEditor({ initial, onClose }: Props) {
             </button>
           </div>
         </div>
-      </div>
+      </ModalPanel>
 
       {confirmDeleteDialog.isOpen && initial && (
         <ConfirmDeleteModal
           title={t(language, 'settings', 'customThemeConfirmDeleteTitle')}
           message={
             <>
-              {t(language, 'settings', 'customThemeConfirmDeleteMsg')} "{initial.name}"?{' '}
+              {t(language, 'settings', 'customThemeConfirmDeleteMsg')} &quot;{initial.name}&quot;?{' '}
               {t(language, 'settings', 'customThemeConfirmDeleteDesc')}
             </>
           }
           cancelLabel={t(language, 'settings', 'customThemeCancel')}
           confirmLabel={t(language, 'settings', 'customThemeDelete')}
-          zIndex={10002}
+          zIndex={Z_MODAL_NESTED_2}
           onCancel={confirmDeleteDialog.cancel}
           onConfirm={() => { deleteCustomTheme(initial.id); onClose(); }}
         />
       )}
-    </div>
+    </ModalOverlay>
   );
 }

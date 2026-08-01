@@ -1,6 +1,6 @@
 # Design — Estructura de código y buenas prácticas React
 
-Estado: en progreso (Fase 0 implementada, ver `tasks.md`). Ver
+Estado: implementado (Fases 0-6 completas, ver `tasks.md`). Ver
 [`requirements.md`](./requirements.md) para el contrato de comportamiento
 y el diagnóstico completo con conteos.
 

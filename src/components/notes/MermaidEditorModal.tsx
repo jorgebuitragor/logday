@@ -7,6 +7,8 @@ import { SequenceVisualEditor } from './visual-editors/SequenceVisualEditor';
 import { ERVisualEditor } from './visual-editors/ERVisualEditor';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
+import { ModalOverlay } from '../shared/ModalOverlay';
+import { ModalPanel } from '../shared/ModalPanel';
 
 interface Props {
   initialCode: string;
@@ -119,8 +121,8 @@ export function MermaidEditorModal({ initialCode, mode, onClose, onSave }: Props
   }
 
   return (
-    <div className="fixed inset-0 z-[10010] flex items-center justify-center bg-black/45 px-2 py-2">
-      <div
+    <ModalOverlay className="px-2 py-2">
+      <ModalPanel
         className="flex h-[96vh] w-[calc(100vw-1rem)] max-w-none flex-col overflow-hidden rounded-3xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-2xl"
         style={{ scrollbarGutter: 'stable' }}
       >
@@ -239,7 +241,7 @@ export function MermaidEditorModal({ initialCode, mode, onClose, onSave }: Props
             </button>
           </div>
         </div>
-      </div>
-    </div>
+      </ModalPanel>
+    </ModalOverlay>
   );
 }

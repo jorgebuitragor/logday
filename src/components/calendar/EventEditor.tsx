@@ -8,6 +8,8 @@ import { AppSelect, AppSelectOption } from './AppSelect';
 import { v4 as uuidv4 } from 'uuid';
 import { t } from '../../lib/i18n';
 import { EVENT_COLOR_DOT, EVENT_COLORS, REMINDER_OPTIONS, reminderLabel } from '../../lib/calendarEventPresentation';
+import { ModalOverlay } from '../shared/ModalOverlay';
+import { ModalPanel } from '../shared/ModalPanel';
 
 export interface EventEditorProps {
   initial: Partial<CalendarEvent> & { date: string };
@@ -71,11 +73,8 @@ export function EventEditor({ initial, language, onSave, onDelete, onClose }: Ev
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="w-full max-w-md rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-2xl flex flex-col overflow-hidden max-h-[90vh]">
+    <ModalOverlay onClose={onClose}>
+      <ModalPanel className="w-full max-w-md rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-2xl flex flex-col overflow-hidden max-h-[90vh]">
         {/* Header */}
         <div className="border-b border-[var(--border)] px-5 py-4 shrink-0">
           <h2 className="text-base font-semibold text-[var(--text-primary)]">
@@ -280,7 +279,7 @@ export function EventEditor({ initial, language, onSave, onDelete, onClose }: Ev
             </button>
           </div>
         </div>
-      </div>
-    </div>
+      </ModalPanel>
+    </ModalOverlay>
   );
 }

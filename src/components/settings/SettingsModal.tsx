@@ -8,6 +8,8 @@ import { WorkSettingsTab } from './WorkSettingsTab';
 import { ShortcutsSettingsTab } from './ShortcutsSettingsTab';
 import { DataSettingsTab } from './DataSettingsTab';
 import { AboutSettingsTab } from './AboutSettingsTab';
+import { ModalOverlay } from '../shared/ModalOverlay';
+import { ModalPanel } from '../shared/ModalPanel';
 
 type SettingsTab = 'general' | 'work' | 'shortcuts' | 'data' | 'git' | 'about';
 
@@ -66,18 +68,8 @@ export function SettingsModal() {
   ];
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4"
-      onClick={toggleSettings}
-    >
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-
-      {/* Panel */}
-      <div
-        className="relative w-full max-w-xl rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-2xl overflow-hidden h-[90vh] max-h-[720px] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <ModalOverlay onClose={toggleSettings} className="px-4">
+      <ModalPanel className="w-full max-w-xl rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-2xl overflow-hidden h-[90vh] max-h-[720px] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4 shrink-0">
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'settings', 'title')}</h2>
@@ -134,8 +126,8 @@ export function SettingsModal() {
           {settingsTab === 'about' && <AboutSettingsTab />}
 
         </div>
-      </div>
-    </div>
+      </ModalPanel>
+    </ModalOverlay>
   );
 }
 

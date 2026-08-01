@@ -5,6 +5,8 @@ import { Note } from '../../types/note';
 import { exportNote } from '../../lib/exportNote';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
+import { ModalOverlay } from '../shared/ModalOverlay';
+import { ModalPanel } from '../shared/ModalPanel';
 
 type Format = 'md' | 'txt' | 'pdf';
 
@@ -60,14 +62,8 @@ export function ExportModal({ note, onClose }: Props) {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <ModalOverlay onClose={onClose}>
+      <ModalPanel className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'extras', 'exportTitle')}</h3>
@@ -134,7 +130,7 @@ export function ExportModal({ note, onClose }: Props) {
             <span className="inline-block min-w-[90px] text-center">{t(language, 'extras', 'saveFile')}</span>
           </button>
         </div>
-      </div>
-    </div>
+      </ModalPanel>
+    </ModalOverlay>
   );
 }

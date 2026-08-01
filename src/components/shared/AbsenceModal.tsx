@@ -8,6 +8,9 @@ import { toISO } from '../../lib/colombianHolidays';
 import { AppDatePicker } from './AppDatePicker';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
+import { ModalOverlay } from './ModalOverlay';
+import { ModalPanel } from './ModalPanel';
+import { Z_MODAL_NESTED } from '../../lib/zIndex';
 
 interface Props {
   initialDate?: string; // YYYY-MM-DD, default hoy
@@ -52,8 +55,8 @@ export function AbsenceModal({ initialDate, onClose }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
+    <ModalOverlay onClose={onClose} className="px-4">
+      <ModalPanel className="w-full max-w-sm rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">
             {existing ? t(language, 'absence', 'modalTitleEdit') : t(language, 'absence', 'modalTitleNew')}
@@ -123,18 +126,18 @@ export function AbsenceModal({ initialDate, onClose }: Props) {
             </button>
           </div>
         </div>
-      </div>
+      </ModalPanel>
 
       {confirmDeleteDialog.isOpen && existing && (
         <ConfirmDeleteModal
           title={t(language, 'absence', 'delete')}
           cancelLabel={t(language, 'absence', 'cancel')}
           confirmLabel={t(language, 'absence', 'delete')}
-          zIndex={10002}
+          zIndex={Z_MODAL_NESTED}
           onCancel={confirmDeleteDialog.cancel}
           onConfirm={() => { confirmDeleteDialog.cancel(); void doDelete(); }}
         />
       )}
-    </div>
+    </ModalOverlay>
   );
 }

@@ -2,6 +2,8 @@ import { X, Download } from 'lucide-react';
 import { OvertimeEntry, OvertimeMonthMeta } from '../../types/overtime';
 import { MONTHS_TITLE, t } from '../../lib/i18n';
 import type { Language } from '../../lib/i18n';
+import { ModalOverlay } from '../shared/ModalOverlay';
+import { ModalPanel } from '../shared/ModalPanel';
 
 interface Props {
   entries: OvertimeEntry[];
@@ -51,14 +53,8 @@ export function OvertimePreviewModal({ entries, meta, month, language, onClose, 
   ];
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-6"
-      onClick={onClose}
-    >
-      <div
-        className="modal-spring-in flex max-h-[85vh] w-full max-w-6xl flex-col rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <ModalOverlay onClose={onClose} className="p-6">
+      <ModalPanel className="modal-spring-in flex max-h-[85vh] w-full max-w-6xl flex-col rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-2xl">
         {/* ── Cabecera del modal ───────────────────────────────────────── */}
         <div className="flex items-start justify-between border-b border-[var(--border)] px-5 py-4">
           <div>
@@ -173,7 +169,7 @@ export function OvertimePreviewModal({ entries, meta, month, language, onClose, 
             {t(language, 'overtime', 'exportExcel')}
           </button>
         </div>
-      </div>
-    </div>
+      </ModalPanel>
+    </ModalOverlay>
   );
 }

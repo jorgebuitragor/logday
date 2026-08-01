@@ -14,6 +14,8 @@ import { usePositionedMenu } from '../../hooks/usePositionedMenu';
 import { t } from '../../lib/i18n';
 import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
+import { ModalOverlay } from '../shared/ModalOverlay';
+import { ModalPanel } from '../shared/ModalPanel';
 
 const ESTIMATED_ACTIVITY_CTX_MENU = { width: 172, height: 84 };
 
@@ -470,8 +472,8 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
 
       {/* Modal confirmación de promoción */}
       {pendingPromoteText && (
-        <div className="fixed inset-0 z-[600] flex items-center justify-center bg-black/50">
-          <div className="modal-spring-in w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
+        <ModalOverlay onClose={() => setPendingPromoteText(null)}>
+          <ModalPanel className="modal-spring-in w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
             <div className="mb-3 flex items-center gap-2 text-indigo-400">
               <ListTodo size={16} />
               <h3 className="text-sm font-semibold">{t(language, 'dailys', 'promoteModalTitle')}</h3>
@@ -499,8 +501,8 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
                 {t(language, 'dailys', 'createTask')}
               </button>
             </div>
-          </div>
-        </div>
+          </ModalPanel>
+        </ModalOverlay>
       )}
 
       {/* Menú contextual de actividad */}

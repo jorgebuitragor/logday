@@ -8,6 +8,8 @@ import InlineRenameInput from '../shared/InlineRenameInput';
 import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
 import { usePositionedMenu } from '../../hooks/usePositionedMenu';
+import { ModalOverlay } from '../shared/ModalOverlay';
+import { ModalPanel } from '../shared/ModalPanel';
 import { t as tFn } from '../../lib/i18n';
 import { pickMarkdownFiles } from '../../lib/invoke';
 
@@ -696,14 +698,8 @@ export function NoteList() {
 
       {/* Modal editar tags */}
       {editingTagsNote && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          onMouseDown={() => setEditingTagsNote(null)}
-        >
-          <div
-            className="w-72 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
+        <ModalOverlay onClose={() => setEditingTagsNote(null)}>
+          <ModalPanel className="w-72 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-[var(--text-primary)]">{tFn(language, 'notes', 'tagsModalTitle')}</h3>
               <button onClick={() => setEditingTagsNote(null)} className="text-[var(--text-hint)] hover:text-[var(--text-muted)]">
@@ -745,8 +741,8 @@ export function NoteList() {
                 {tFn(language, 'notes', 'addTag')}
               </button>
             </div>
-          </div>
-        </div>
+          </ModalPanel>
+        </ModalOverlay>
       )}
 
       {/* Modal confirmación eliminar */}

@@ -4,6 +4,8 @@ import { Task, TaskStatus } from '../../types/task';
 import { useAppStore } from '../../store/appStore';
 import { TaskContextMenu, NewTaskContextMenu } from './TaskContextMenu';
 import { t } from '../../lib/i18n';
+import { ModalOverlay } from '../shared/ModalOverlay';
+import { ModalPanel } from '../shared/ModalPanel';
 
 const COLUMN_DEFS: { status: TaskStatus; color: string; border: string; Icon: React.ElementType }[] = [
   { status: 'todo',        color: 'text-zinc-400',  border: 'border-zinc-600/30',  Icon: Circle },
@@ -401,8 +403,8 @@ function KanbanAddButton({ status }: { status: TaskStatus }) {
         <Plus size={14} />
       </button>
       {isAdding && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setIsAdding(false); setNewTitle(''); }}>
-          <div className="modal-spring-in w-72 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <ModalOverlay onClose={() => { setIsAdding(false); setNewTitle(''); }}>
+          <ModalPanel className="modal-spring-in w-72 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-4 shadow-2xl">
             <p className="mb-2 text-xs font-medium text-[var(--text-secondary)]">{t(language, 'tasks', 'newTask')}</p>
             <input
               autoFocus
@@ -413,8 +415,8 @@ function KanbanAddButton({ status }: { status: TaskStatus }) {
               className="w-full rounded-xl border border-indigo-500/40 bg-[var(--bg-surface)] px-3 py-2.5 text-sm text-[var(--text-primary)] outline-none placeholder-[var(--text-hint)]"
             />
             <p className="mt-1.5 text-[10px] text-[var(--text-faint)]">{t(language, 'tasks', 'enterToCreate')}</p>
-          </div>
-        </div>
+          </ModalPanel>
+        </ModalOverlay>
       )}
     </>
   );

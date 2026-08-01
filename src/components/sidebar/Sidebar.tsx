@@ -41,6 +41,8 @@ import { exportDailyMonthEntries } from '../../lib/dailyMonthExport';
 import { FolderTreeItem } from './FolderTreeItem';
 import { ProjectTreeItem } from './ProjectTreeItem';
 import { RootDropLine } from './RootDropLine';
+import { ModalOverlay } from '../shared/ModalOverlay';
+import { ModalPanel } from '../shared/ModalPanel';
 import logoImg from '../../assets/logo.png';
 import iconSquareNoBg from '../../../icon_square_wiout_background.png';
 
@@ -790,8 +792,8 @@ export function Sidebar() {
 
       {/* Modal nueva subcarpeta de proyecto */}
       {projectSubfolderParent !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="w-72 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
+        <ModalOverlay onClose={() => { setProjectSubfolderParent(null); setNewProjectSubfolderName(''); }}>
+          <ModalPanel className="w-72 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
             <h3 className="mb-1 text-sm font-semibold text-[var(--text-primary)]">{t(language, 'sidebar', 'projectSubfolderTitle')}</h3>
             <p className="mb-3 text-xs text-[var(--text-hint)]">{t(language, 'sidebar', 'inFolder')} <span className="text-indigo-400">{projectSubfolderParent}</span></p>
             <input
@@ -820,8 +822,8 @@ export function Sidebar() {
                 {t(language, 'sidebar', 'create')}
               </button>
             </div>
-          </div>
-        </div>
+          </ModalPanel>
+        </ModalOverlay>
       )}
 
       {/* NOTES SECTION */}
@@ -940,8 +942,8 @@ export function Sidebar() {
 
       {/* Modal crear carpeta */}
       {showCreateFolderModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="w-72 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
+        <ModalOverlay onClose={() => { setShowCreateFolderModal(false); setNewFolderName(''); }}>
+          <ModalPanel className="w-72 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
             <h3 className="mb-3 text-sm font-semibold text-[var(--text-primary)]">{t(language, 'sidebar', 'newFolderTitle')}</h3>
             <input
               ref={createFolderInputRef}
@@ -969,8 +971,8 @@ export function Sidebar() {
                 {t(language, 'sidebar', 'create')}
               </button>
             </div>
-          </div>
-        </div>
+          </ModalPanel>
+        </ModalOverlay>
       )}
 
       {/* Ctx menú de carpeta */}
@@ -1069,8 +1071,8 @@ export function Sidebar() {
 
       {/* Modal nueva subcarpeta */}
       {subfolderParent !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="w-72 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
+        <ModalOverlay onClose={() => { setSubfolderParent(null); setNewSubfolderName(''); }}>
+          <ModalPanel className="w-72 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
             <h3 className="mb-1 text-sm font-semibold text-[var(--text-primary)]">{t(language, 'sidebar', 'newSubfolder')}</h3>
             <p className="mb-3 text-xs text-[var(--text-hint)]">{t(language, 'sidebar', 'inFolder')} <span className="text-indigo-400">{subfolderParent}</span></p>
             <input
@@ -1099,20 +1101,14 @@ export function Sidebar() {
                 {t(language, 'sidebar', 'create')}
               </button>
             </div>
-          </div>
-        </div>
+          </ModalPanel>
+        </ModalOverlay>
       )}
 
       {/* Modal editar tags de carpeta */}
       {editingTagsFolder !== null && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          onMouseDown={() => setEditingTagsFolder(null)}
-        >
-          <div
-            className="w-72 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
+        <ModalOverlay onClose={() => setEditingTagsFolder(null)}>
+          <ModalPanel className="w-72 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'sidebar', 'folderTagsTitle')}</h3>
@@ -1155,8 +1151,8 @@ export function Sidebar() {
                 {t(language, 'notes', 'addTag')}
               </button>
             </div>
-          </div>
-        </div>
+          </ModalPanel>
+        </ModalOverlay>
       )}
 
       {/* DAILYS SECTION */}
@@ -1263,15 +1259,8 @@ export function Sidebar() {
 
       {/* Modal nuevo proyecto */}
       {showNewProject && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center px-4"
-          onClick={() => { setShowNewProject(false); setNewProjectName(''); }}
-        >
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div
-            className="relative w-full max-w-xs rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <ModalOverlay onClose={() => { setShowNewProject(false); setNewProjectName(''); }} className="px-4">
+          <ModalPanel className="w-full max-w-xs rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
             <div className="mb-4 flex items-center gap-2">
               <FolderOpen size={16} className="text-indigo-400" />
               <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'sidebar', 'newProjectTitle')}</h3>
@@ -1308,8 +1297,8 @@ export function Sidebar() {
                 {t(language, 'sidebar', 'createProjectBtn')}
               </button>
             </div>
-          </div>
-        </div>
+          </ModalPanel>
+        </ModalOverlay>
       )}
 
       {/* Menú contextual mes de Dailys */}

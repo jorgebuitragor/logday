@@ -6,6 +6,8 @@ import { calcOvertimeBreakdown } from '../../lib/overtimeCalc';
 import { AppDatePicker } from '../shared/AppDatePicker';
 import { t, MONTHS_TITLE } from '../../lib/i18n';
 import { toISO } from '../../lib/colombianHolidays';
+import { ModalOverlay } from '../shared/ModalOverlay';
+import { ModalPanel } from '../shared/ModalPanel';
 
 function toMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number);
@@ -128,8 +130,8 @@ export function OvertimeEditor({ entry, onClose }: Props) {
     <div key={animKey} className="flex h-full flex-1 flex-col overflow-hidden bg-[var(--bg-base)]">
       {/* Modal de conflicto de horario */}
       {conflicts.length > 0 && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
-          <div className="modal-spring-in w-96 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
+        <ModalOverlay>
+          <ModalPanel className="modal-spring-in w-96 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
             <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-400">
               <AlertTriangle size={15} />
               {t(language, 'overtime', 'conflictTitle')}
@@ -164,8 +166,8 @@ export function OvertimeEditor({ entry, onClose }: Props) {
                 {saving ? t(language, 'overtime', 'saving') : t(language, 'overtime', 'saveAnyway')}
               </button>
             </div>
-          </div>
-        </div>
+          </ModalPanel>
+        </ModalOverlay>
       )}
       {/* Barra superior */}
       <div className={`flex items-center justify-between border-b px-4 py-2.5 ${

@@ -1,8 +1,7 @@
 # Tasks — Estructura de código y buenas prácticas React
 
-Estado: en progreso. Fases 0-4 implementadas; Fase 5 sigue en diseño
-(requiere QA manual dedicado, ver sección de esa fase); Fase 6 (organizar
-`src/components/` por feature) en progreso.
+Estado: implementado. Fases 0-6 completas, incluida la Fase 5
+(`ModalOverlay`/`ModalPanel`) con su pase de QA manual dedicado.
 Es la lista de trabajo fase por fase. Cada fase es independiente:
 se puede implementar y comitear por separado sin depender de que las
 demás estén hechas (salvo donde se indica).
@@ -462,19 +461,79 @@ para todos: un pase de QA visual manual en `pnpm tauri dev`.
 
 ## Fase 5 — `ModalOverlay`/`ModalPanel` (req. §7 — issue/PR separado, QA manual)
 
-- [ ] 5.1 Definir la escala de z-index (`Z_MODAL`, `Z_MODAL_NESTED`,
-      `Z_MENU`, etc.) en un solo lugar
-- [ ] 5.2 Crear `ModalOverlay`/`ModalPanel`
-- [ ] 5.3 Para cada uno de los ~19 modales, decidir y documentar si debe
-      cerrar en click-afuera, luego migrar uno por uno:
-      `AbsenceModal`, `ExportModal`, `GitModal`, `ImageLinkModal`,
-      `MermaidEditorModal`, `OvertimePreviewModal`, `SearchModal`,
-      `SettingsModal`, `TaskList` (modal de nueva tarea),
-      `OvertimeEditor` (modal de conflicto de horario), y los modales de
-      `ConfirmDeleteModal` de la Fase 1 (para que también usen el mismo
-      wrapper y hereden la escala de z-index)
-- [ ] 5.4 Pase de QA manual: abrir cada modal migrado y confirmar visual
-      y funcionalmente que el comportamiento de cierre es el esperado
+- [x] 5.1 Definida la escala de z-index en `src/lib/zIndex.ts`
+      (2026-08-01): `Z_MODAL = 1000` (modal de nivel superior, no
+      anidado), `Z_MODAL_NESTED = 1010` (abierto sobre otro modal),
+      `Z_MODAL_NESTED_2 = 1020` (abierto sobre un modal ya anidado —
+      caso `ConfirmDeleteModal` dentro de `CustomThemeEditor` dentro de
+      `SettingsModal`). Reemplaza los 6 valores dispersos encontrados en
+      la auditoría (`50`, `600`, `10000`, `10001`, `10002`, `10010`).
+      `Z_MENU` no se creó — los dismiss-catchers de menús contextuales
+      (`fixed inset-0 z-10`/`z-40`) ya están resueltos por
+      `usePositionedMenu` (Fase 1) y quedan fuera del alcance de esta
+      fase (son menús, no modales).
+- [x] 5.2 Creados `src/components/shared/ModalOverlay.tsx` (backdrop +
+      centrado + z-index + cierre opcional en click-afuera vía prop
+      `onClose`, con variante `align="start"` para `SearchModal`) y
+      `src/components/shared/ModalPanel.tsx` (detiene la propagación
+      del click para que el overlay no lo interprete como click en el
+      fondo).
+- [x] 5.3 Auditados los ~19 modales existentes (backdrop, z-index,
+      cierre en click-afuera, anidamiento — ver detalle completo más
+      abajo) y migrados todos a `ModalOverlay`/`ModalPanel`. Decisión
+      acordada con el usuario: los modales de **formulario simple y
+      rápido** pasan a cerrar siempre en click-afuera (aunque algunos
+      no lo hacían antes, por inconsistencia sin criterio, no por
+      diseño deliberado); los de **edición compleja o confirmación
+      destructiva** nunca cierran en click-afuera (riesgo real de
+      perder trabajo o decisión no querida). Tabla de decisión final:
+
+      | Modal | Cierra en click-afuera | z-index | Cambio de comportamiento |
+      |---|---|---|---|
+      | `SearchModal` | Sí | `Z_MODAL` | No (ya cerraba) |
+      | `SettingsModal` | Sí | `Z_MODAL` | No |
+      | `TaskList` (nueva tarea) | **Sí** | `Z_MODAL` | **Sí** — antes no cerraba |
+      | `EventEditor` | Sí | `Z_MODAL` | No |
+      | `ExportModal` | Sí | `Z_MODAL` | No |
+      | `ImageLinkModal` | Sí | `Z_MODAL` | No (migrado de backdrop+panel hermanos a `ModalOverlay`/`ModalPanel` anidados, mismo resultado visual) |
+      | `MermaidEditorModal` | No | `Z_MODAL` | No |
+      | `OvertimePreviewModal` | Sí | `Z_MODAL` | No |
+      | `OvertimeEditor` (conflicto de horario) | No | `Z_MODAL` | No |
+      | `CustomThemeEditor` | No | `Z_MODAL_NESTED` | No |
+      | `AbsenceModal` | **Sí** | `Z_MODAL` | **Sí** — antes no cerraba |
+      | `DailyEditor` (promover a tarea) | **Sí** | `Z_MODAL` | **Sí** — antes no cerraba |
+      | `KanbanBoard` (nueva tarjeta) | Sí | `Z_MODAL` | No |
+      | `NoteList` (editar tags) | Sí | `Z_MODAL` | No (mecanismo unificado de `onMouseDown` a `onClick`, mismo resultado) |
+      | `Sidebar` — nueva subcarpeta de proyecto | **Sí** | `Z_MODAL` | **Sí** — antes no cerraba |
+      | `Sidebar` — crear carpeta | **Sí** | `Z_MODAL` | **Sí** — antes no cerraba |
+      | `Sidebar` — nueva subcarpeta | **Sí** | `Z_MODAL` | **Sí** — antes no cerraba |
+      | `Sidebar` — editar tags de carpeta | Sí | `Z_MODAL` | No (mecanismo unificado de `onMouseDown` a `onClick`) |
+      | `Sidebar` — nuevo proyecto | Sí | `Z_MODAL` | No |
+      | `ConfirmDeleteModal` (primitivo compartido, ~12 sitios de uso) | No, nunca (deliberado) | `Z_MODAL` por defecto; `Z_MODAL_NESTED`/`Z_MODAL_NESTED_2` cuando se abre anidado (pasado explícito por el caller: `GeneralSettingsTab`, `CustomThemeEditor`, `AbsenceModal`) | No |
+
+      **Bug encontrado y corregido de paso**: la auditoría detectó que
+      `ConfirmDeleteModal` (z-index 10000 por defecto) podía renderizar
+      **detrás** de `CustomThemeEditor` (z-index 10001) al abrirse
+      anidado ahí — en la práctica no llegaba a ocurrir porque
+      `CustomThemeEditor.tsx` ya pasaba `zIndex={10002}` manualmente en
+      ese caso, pero era frágil (dependía de que cada caller recordara
+      hacerlo). Con la escala nueva, `CustomThemeEditor` usa
+      `Z_MODAL_NESTED` (1010) y su `ConfirmDeleteModal` interno usa
+      `Z_MODAL_NESTED_2` (1020) — la relación queda expresada en las
+      constantes en vez de en números mágicos coordinados a mano.
+      También se corrigieron 2 casos preexistentes de
+      `react/no-unescaped-entities` encontrados de paso en
+      `SearchModal.tsx` y `CustomThemeEditor.tsx` (mismo patrón ya
+      corregido en la Fase 4.2 para `GeneralSettingsTab.tsx`).
+      Verificado con `tsc --noEmit` y `eslint` (44 problemas vs. 48 en
+      baseline — 4 menos por los unescaped-entities corregidos, ningún
+      problema nuevo) y `vite build` limpio.
+- [x] 5.4 Pase de QA manual (2026-08-01): app probada en
+      `pnpm tauri dev`, confirmado por el usuario que los modales se ven
+      y comportan como se esperaba, incluidos los 6 con cambio de
+      comportamiento (nueva tarea, ausencia, promover a tarea, y los 3
+      de creación de carpeta en el Sidebar) y los que debían seguir sin
+      cerrar (Mermaid, tema personalizado, conflicto de horario).
 
 ## Fase 6 — Organizar `src/components/` por feature (req. §8, ver `design.md` §Fase 6)
 

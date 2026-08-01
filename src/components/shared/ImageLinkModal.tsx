@@ -3,6 +3,8 @@ import { X, Link, Image as ImageIcon, Upload, Check } from 'lucide-react';
 import { fs, pickFile } from '../../lib/invoke';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
+import { ModalOverlay } from './ModalOverlay';
+import { ModalPanel } from './ModalPanel';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -296,14 +298,8 @@ export function ImageLinkModal(props: ImageLinkModalProps) {
   const Icon = props.mode === 'image' ? ImageIcon : Link;
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm"
-        onClick={props.onClose}
-      />
-      {/* Modal */}
-      <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-6 shadow-2xl">
+    <ModalOverlay onClose={props.onClose}>
+      <ModalPanel className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-6 shadow-2xl">
         {/* Header */}
         <div className="mb-5 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -330,7 +326,7 @@ export function ImageLinkModal(props: ImageLinkModalProps) {
             onClose={props.onClose}
           />
         )}
-      </div>
-    </>
+      </ModalPanel>
+    </ModalOverlay>
   );
 }

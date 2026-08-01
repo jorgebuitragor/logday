@@ -6,6 +6,8 @@ import { useAppStore } from '../../store/appStore';
 import { TaskContextMenu, NewTaskContextMenu } from './TaskContextMenu';
 import { RichTextEditor } from './RichTextEditor';
 import { t } from '../../lib/i18n';
+import { ModalOverlay } from '../shared/ModalOverlay';
+import { ModalPanel } from '../shared/ModalPanel';
 
 const STATUS_ICONS: Record<TaskStatus, React.ReactNode> = {
   todo: <Circle size={14} className="text-zinc-500" />,
@@ -216,14 +218,16 @@ export function TaskList() {
     setShowNewTaskModal(false);
   };
 
+  const closeNewTaskModal = () => { setNewTaskTitle(''); setNewTaskContent(''); setNewTaskCode(''); setShowNewTaskModal(false); };
+
   const handleCreateTaskKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleCreateTask();
-    if (e.key === 'Escape') { setNewTaskTitle(''); setNewTaskContent(''); setNewTaskCode(''); setShowNewTaskModal(false); }
+    if (e.key === 'Escape') closeNewTaskModal();
   };
 
   const newTaskModal = showNewTaskModal ? (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 animate-fade-in">
-      <div className="modal-spring-in w-[680px] max-w-[92vw] rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
+    <ModalOverlay onClose={closeNewTaskModal} className="animate-fade-in">
+      <ModalPanel className="modal-spring-in w-[680px] max-w-[92vw] rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
         <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
           <Plus size={15} className="text-indigo-400" />
           {t(language, 'tasks', 'modalTitle')}
@@ -265,7 +269,7 @@ export function TaskList() {
         </div>
         <div className="flex justify-end gap-2">
           <button
-            onClick={() => { setNewTaskTitle(''); setNewTaskContent(''); setNewTaskCode(''); setShowNewTaskModal(false); }}
+            onClick={closeNewTaskModal}
             className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
           >
             {t(language, 'tasks', 'cancel')}
@@ -278,8 +282,8 @@ export function TaskList() {
             {t(language, 'tasks', 'createTask')}
           </button>
         </div>
-      </div>
-    </div>
+      </ModalPanel>
+    </ModalOverlay>
   ) : null;
 
   if (currentView !== 'list') return newTaskModal;

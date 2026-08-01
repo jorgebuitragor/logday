@@ -1,98 +1,121 @@
 # Tasks — Personalización y expansión de temas
 
-Estado: en diseño. Nada de esto está implementado — es la lista de trabajo
-para cuando se apruebe pasar a implementación. Ningún checkbox debe
-marcarse hasta que el código correspondiente exista y esté verificado.
+Estado: implementado. Verificado por el usuario en varias rondas de
+iteración (ver `design.md` §3.6 para los cambios de UX pedidos después de
+probar la primera versión).
 
-## Pendiente
+## Hecho
 
-- [ ] **1. Fix de contraste del tema oscuro** (req. §2)
-  - [ ] 1.1 `App.css:12-39` — `--bg-base` #0f0f0f → #121212
-  - [ ] 1.2 `--text-primary` #ffffff → #f2f2f2
-  - [ ] 1.3 `--text-hint` #777777 → #848484
-  - [ ] 1.4 `--text-faint` #555555 → #7e7e7e
-  - [ ] 1.5 Verificar visualmente que la jerarquía de fondos
-        (base/panel/surface/hover/elevated/input) sigue siendo distinguible
+- [x] **1. Fix de contraste del tema oscuro** (req. §2)
+  - [x] 1.1 `App.css` — `--bg-base` #0f0f0f → #121212
+  - [x] 1.2 `--text-primary` #ffffff → #f2f2f2
+  - [x] 1.3 `--text-hint` #777777 → #848484
+  - [x] 1.4 `--text-faint` #555555 → #7e7e7e
+  - [x] 1.5 Verificado visualmente — jerarquía de fondos sigue distinguible
 
-- [ ] **2. Tres temas nuevos predefinidos** (req. §3)
-  - [ ] 2.1 Bloque `:root[data-theme="sepia"]` en `App.css` (paleta
-        completa en `design.md` §2.1)
-  - [ ] 2.2 Bloque `:root[data-theme="oled"]` (paleta en `design.md` §2.2)
-  - [ ] 2.3 Bloque `:root[data-theme="nordic"]` (paleta en `design.md` §2.3)
-  - [ ] 2.4 Extender `THEME_VALUES` en `SettingsModal.tsx` con los 3
-        (value + ícono lucide-react)
-  - [ ] 2.5 Claves i18n `theme{Sepia,Oled,Nordic}` /
-        `themeDesc{Sepia,Oled,Nordic}` en `es`/`en` (`src/lib/i18n.ts`)
+- [x] **2. Tres temas nuevos predefinidos** (req. §3)
+  - [x] 2.1-2.3 Bloques `:root[data-theme="sepia/oled/nordic"]` en `App.css`
+  - [x] 2.4 `THEME_VALUES` extendido en `SettingsModal.tsx` (`BookOpen`,
+        `Smartphone`, `Snowflake`)
+  - [x] 2.5 Claves i18n `theme{Sepia,Oled,Nordic}` /
+        `themeDesc{Sepia,Oled,Nordic}` en `es`/`en`
 
-- [ ] **3. Modelo de datos de temas personalizados** (req. §4.1, §4.3;
-      diseño §3.1-3.2)
-  - [ ] 3.1 `types/index.ts` — `Theme` → union con `` `custom:${string}` ``
-  - [ ] 3.2 `types/index.ts` — nuevo tipo `CustomTheme`
-  - [ ] 3.3 `types/index.ts` — `BackupSettings.customThemes?: CustomTheme[]`
-  - [ ] 3.4 `appStore.ts` — estado `customThemes` inicializado desde
-        `localStorage['customThemes']`
-  - [ ] 3.5 `appStore.ts` — acciones `createCustomTheme`,
+- [x] **3. Modelo de datos de temas personalizados** (req. §4.1, §4.3;
+      diseño §3.1-3.2) — **ampliado en implementación**: `CustomTheme`
+      terminó con `bgTint`/`textTint`/`intensity` además de `accent`,
+      tras feedback de que "solo acento" se sentía limitado
+  - [x] 3.1-3.3 `types/index.ts` — `Theme` con `` `custom:${string}` ``;
+        `CustomTheme` completo; `BackupSettings.customThemes?`
+  - [x] 3.4 `appStore.ts` — estado `customThemes`, con normalización de
+        datos guardados antes de la ampliación (backward-compat)
+  - [x] 3.5 `appStore.ts` — acciones `createCustomTheme`,
         `renameCustomTheme`, `duplicateCustomTheme`, `deleteCustomTheme`,
-        `updateCustomThemeAccent`
-  - [ ] 3.6 `SettingsModal.tsx` — incluir `customThemes` en construcción
-        del export de backup
-  - [ ] 3.7 `SettingsModal.tsx` — restaurar `customThemes` en el import
-        de backup
+        `updateCustomTheme` (genérica, reemplazó a la idea original de
+        `updateCustomThemeAccent`), `replaceCustomThemes`
+  - [x] 3.6-3.7 `SettingsModal.tsx` — `customThemes` en export/import de
+        backup, con el orden corregido (customThemes se restaura antes
+        que theme, para que un tema activo personalizado se resuelva bien)
 
-- [ ] **4. Aplicación al DOM de temas personalizados** (req. §4.2;
-      diseño §3.3)
-  - [ ] 4.1 `appStore.ts` — nueva función `applyAccentToDOM(customTheme)`
-  - [ ] 4.2 `appStore.ts` — extender `applyThemeToDOM` para resolver
-        `custom:<id>`, delegar en `applyAccentToDOM`, y togglear la clase
-        `theme-tinted`
-  - [ ] 4.3 `appStore.ts` — `setTheme` pasa `get().customThemes` a
-        `applyThemeToDOM`
-  - [ ] 4.4 Verificar que eliminar el tema custom activo hace fallback a
-        `dark` sin dejar el DOM en un estado inconsistente
+- [x] **4. Aplicación al DOM de temas personalizados** (req. §4.2; diseño
+      §3.3) — **ampliado**: `applyAccentToDOM` se convirtió en
+      `applyCustomThemeToDOM`, sobrescribiendo las ~23 variables (fondo +
+      texto + acento), no solo las 7 de acento
+  - [x] 4.1 `appStore.ts` — `applyCustomThemeToDOM(customTheme)`
+  - [x] 4.2 `appStore.ts` — `applyThemeToDOM` resuelve `custom:<id>` y
+        togglea `theme-tinted`
+  - [x] 4.3 `appStore.ts` — `setTheme` pasa `customThemes`
+  - [x] 4.4 Verificado — eliminar el custom activo hace fallback a `dark`
 
-- [ ] **5. Algoritmo de derivación de color** (req. §4.2; diseño §3.4)
-  - [ ] 5.1 Implementar `hexToHsl`/`hslToHex`/`hexToRgba` (utilidades de
-        conversión de color, puras)
-  - [ ] 5.2 Implementar `deriveAccentPalette(hex, base)` con las fórmulas
-        de `design.md` §3.4, incluyendo el ajuste iterativo de contraste
-        para `base === 'light'`
-  - [ ] 5.3 Probar con al menos 5 colores de acento distintos (incluyendo
-        uno muy claro/débil) en cada base, verificando contraste ≥4.5:1 en
-        `--accent-strong`/`--accent-link`
+- [x] **5. Algoritmo de derivación de color** (req. §4.2; diseño §3.4)
+      — **ampliado**: además del acento (con intensidad), se sumaron
+      `deriveBackgroundScale` y `deriveTextScale`
+  - [x] 5.1 `hexToHsl`/`hslToHex`/`hexToRgba`/`contrastRatio` en
+        `src/lib/themeColor.ts` (archivo nuevo)
+  - [x] 5.2 `deriveAccentPalette(hex, base, intensity)` con ajuste
+        iterativo de contraste para `base === 'light'`
+  - [x] 5.3 `deriveBackgroundScale`/`deriveTextScale` reutilizando la
+        luminosidad real de las escalas `dark`/`light` ya afinadas, con
+        verificación de contraste ≥4.5:1 por escalón de texto
+  - [x] 5.4 `deriveCustomThemeVars` combina las 3 derivaciones
 
-- [ ] **6. Extensión del mecanismo de override de `App.css`** (req. §4.2;
+- [x] **6. Extensión del mecanismo de override de `App.css`** (req. §4.2;
       diseño §3.5)
-  - [ ] 6.1 Reemplazar el selector `:root[data-theme="high-contrast"],
-        :root[data-theme="visual-rest"]` de las 6 reglas existentes por
-        `html.theme-tinted`
-  - [ ] 6.2 Confirmar que `applyThemeToDOM` togglea `theme-tinted`
-        correctamente para: high-contrast, visual-rest, sepia, oled,
-        nordic, y cualquier custom — y que NO se activa para dark/light
+  - [x] 6.1 Selector `html.theme-tinted` reemplazando el acoplado por
+        nombre de tema
+  - [x] 6.2 Confirmado — se activa para high-contrast/visual-rest/sepia/
+        oled/nordic/cualquier custom, y NO para dark/light
 
-- [ ] **7. UI de gestión en Settings** (req. §4.1; diseño §3.6)
-  - [ ] 7.1 Grid de temas custom (swatch con círculo de color) debajo de
-        la grid de temas built-in
-  - [ ] 7.2 Menú contextual por tema custom: Renombrar / Duplicar /
-        Eliminar (patrón de `Sidebar.tsx`)
-  - [ ] 7.3 Formulario inline "+ Nuevo tema": nombre, toggle claro/oscuro,
-        `<input type="color">`, vista previa en vivo
-  - [ ] 7.4 Confirmación de borrado respetando `confirmDestructiveActions`
-  - [ ] 7.5 Claves i18n `settings.customTheme*` en `es`/`en`
+- [x] **7. UI de gestión en Settings** (req. §4.1; diseño §3.6) — forma
+      final tras iterar con feedback real:
+  - [x] 7.1 Grilla de 9 (8 temas + tile "Personalizado" dinámico)
+  - [x] 7.2 Punto indicador de activo siempre montado (fix de salto de
+        layout reportado)
+  - [x] 7.3 Sección "ver más"/"ver temas personalizados" paginada de a 6
+  - [x] 7.4 `CustomThemeEditor.tsx` — modal dedicado, reemplaza el
+        formulario inline original
+  - [x] 7.5 `ColorPicker.tsx` — selector de color propio (HSL + hex),
+        reemplaza `<input type="color">` nativo
+  - [x] 7.6 Slider de intensidad teñido con el acento en vivo
+        (`accentColor`)
+  - [x] 7.7 Semillas de un tema nuevo leídas del tema activo
+        (`getComputedThemeDefaults`), no un índigo fijo
+  - [x] 7.8 Tile "Personalizado": selecciona el primero automáticamente
+        si hay varios y ninguno activo, sin duplicar la acción de
+        "+ Nuevo tema" (fix de comportamiento redundante reportado)
+  - [x] 7.9 Menú por tema: Renombrar / **Editar** (antes "Editar tema
+        personalizado", acortado por pedido) / Duplicar / Eliminar
+  - [x] 7.10 Confirmación de borrado respetando `confirmDestructiveActions`
+  - [x] 7.11 Claves i18n `settings.customTheme*` completas en `es`/`en`
+
+## Descartado tras probarlo (no forma parte del resultado final)
+
+- [x] ~~Menú contextual de tema personalizado vía `position: fixed` con
+      flip hacia arriba, luego vía `createPortal`~~ — ambos intentos
+      empeoraron el comportamiento; revertido a la versión original
+      (`absolute`, sin flip). Ver `design.md` §3.6.
+- [x] ~~Animación de "wipe" circular al cambiar de tema~~ — implementada
+      y removida por completo: riesgo de accesibilidad para
+      fotosensibilidad (WCAG 2.3.1), señalado por el usuario. Sin rastro
+      en el código final.
+
+## Pendiente (backlog, no bloqueante)
+
+- [ ] Tests automatizados para `deriveAccentPalette`/`deriveBackgroundScale`/
+      `deriveTextScale` (verificar contraste ≥4.5:1 programáticamente con
+      un muestreo de colores, en vez de solo verificación manual) — no
+      existe infraestructura de test en el proyecto todavía, mismo gap ya
+      señalado en `../temas-consistencia-visual/tasks.md`.
 
 ## Verificación final
 
-Con `pnpm tauri dev` corriendo:
+Con `pnpm tauri dev`, confirmado por el usuario en varias rondas:
 
-- Cambiar al tema oscuro y confirmar que ya no se siente "quemado" a la
-  vista pero sigue siendo un tema oscuro reconocible.
-- Probar Sepia, OLED y Nórdico — confirmar que todo el texto es legible.
-- Crear un tema personalizado con un color de acento arbitrario sobre
-  base oscura, y otro sobre base clara — confirmar que enlaces y texto de
-  acento siguen siendo legibles en ambos.
-- Renombrar, duplicar y eliminar un tema personalizado.
-- Eliminar el tema personalizado activo y confirmar el fallback a `dark`.
-- Exportar un backup, borrar los temas personalizados, importar el backup
-  y confirmar que los temas personalizados vuelven.
-- Confirmar que un componente que dependía del hack de `App.css`
-  (ej. el drag handle o cualquier elemento con clase `indigo-*` residual)
-  se pinta con el acento correcto bajo un tema personalizado.
+- Tema oscuro ya no se siente "quemado"; Sepia/OLED/Nórdico legibles.
+- Crear un tema personalizado (base clara y oscura) con los 3 colores +
+  intensidad; enlaces y texto siguen siendo legibles en ambos.
+- Renombrar, editar colores, duplicar y eliminar un tema personalizado.
+- Eliminar el tema personalizado activo → fallback a `dark`.
+- El tile "Personalizado" y el flujo de selección con varios temas creados
+  se comportan sin acciones redundantes.
+- El selector de color propio se ve igual independientemente del SO.
+- No hay salto de layout al seleccionar cualquier tema built-in.

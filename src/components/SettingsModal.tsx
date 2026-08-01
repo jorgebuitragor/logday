@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, Monitor, Sun, Moon, FolderOpen, Minus, Plus, Download, Upload, Type, Keyboard, AlertTriangle, ChevronDown, Eye, RefreshCw, ExternalLink, GitCommit, CheckCircle2, AlertCircle, Clock, CloudOff, ArrowDown } from 'lucide-react';
-import { Theme, Shortcuts, StartupScreen, Language, BackupSettings, GitConfig } from '../types';
+import { X, Monitor, Sun, Moon, FolderOpen, Minus, Plus, Download, Upload, Type, Keyboard, AlertTriangle, ChevronDown, Eye, RefreshCw, ExternalLink, GitCommit, CheckCircle2, AlertCircle, Clock, CloudOff, ArrowDown, BookOpen, Smartphone, Snowflake, MoreVertical, Pencil, Copy, Trash2, Palette } from 'lucide-react';
+import { Theme, CustomTheme, Shortcuts, StartupScreen, Language, BackupSettings, GitConfig } from '../types';
 import { useAppStore } from '../store/appStore';
 import { t } from '../lib/i18n';
+import { CustomThemeEditor } from './CustomThemeEditor';
 import { fs, checkUpdate, ReleaseInfo } from '../lib/invoke';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
@@ -25,6 +26,9 @@ const THEME_VALUES: { value: Theme; Icon: React.ElementType }[] = [
   { value: 'dark', Icon: Moon },
   { value: 'high-contrast', Icon: AlertTriangle },
   { value: 'visual-rest', Icon: Eye },
+  { value: 'sepia', Icon: BookOpen },
+  { value: 'oled', Icon: Smartphone },
+  { value: 'nordic', Icon: Snowflake },
 ];
 
 const FONT_SIZES = [11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
@@ -83,6 +87,7 @@ export function SettingsModal() {
   const {
     isSettingsOpen, toggleSettings,
     theme, setTheme,
+    customThemes, renameCustomTheme, duplicateCustomTheme, deleteCustomTheme, replaceCustomThemes,
     startupScreen, setStartupScreen,
     language, setLanguage,
     fontSize, setFontSize,
@@ -115,6 +120,13 @@ export function SettingsModal() {
   const [isReminderMenuOpen, setIsReminderMenuOpen] = useState(false);
   const reminderMenuRef = useRef<HTMLDivElement | null>(null);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
+  const [editingCustomTheme, setEditingCustomTheme] = useState<CustomTheme | 'new' | null>(null);
+  const [showAllCustomThemes, setShowAllCustomThemes] = useState(false);
+  const [visibleCustomCount, setVisibleCustomCount] = useState(6);
+  const [openThemeMenuId, setOpenThemeMenuId] = useState<string | null>(null);
+  const [renamingThemeId, setRenamingThemeId] = useState<string | null>(null);
+  const [renamingThemeValue, setRenamingThemeValue] = useState('');
+  const [confirmDeleteTheme, setConfirmDeleteTheme] = useState<CustomTheme | null>(null);
   const [appVersion, setAppVersion] = useState<string>('1.0.0');
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'upToDate' | 'available' | 'error'>('idle');
   const [releaseInfo, setReleaseInfo] = useState<ReleaseInfo | null>(null);
@@ -150,6 +162,28 @@ export function SettingsModal() {
     };
   });
   const activeStartupOption = startupScreenOptions.find((o) => o.value === startupScreen) ?? startupScreenOptions[0];
+
+  const handleStartRenameTheme = (ct: CustomTheme) => {
+    setOpenThemeMenuId(null);
+    setRenamingThemeValue(ct.name);
+    setRenamingThemeId(ct.id);
+  };
+
+  const handleConfirmRenameTheme = () => {
+    if (renamingThemeId) renameCustomTheme(renamingThemeId, renamingThemeValue);
+    setRenamingThemeId(null);
+  };
+
+  const handleDuplicateTheme = (id: string) => {
+    setOpenThemeMenuId(null);
+    duplicateCustomTheme(id);
+  };
+
+  const handleDeleteThemeClick = (ct: CustomTheme) => {
+    setOpenThemeMenuId(null);
+    if (confirmDestructiveActions) setConfirmDeleteTheme(ct);
+    else deleteCustomTheme(ct.id);
+  };
 
   // Cargar versión de la app
   useEffect(() => {
@@ -361,6 +395,7 @@ export function SettingsModal() {
         shortcuts,
         folderTags,
         overtimeMeta,
+        customThemes,
       };
       zip.file(BACKUP_SETTINGS_PATH, JSON.stringify(backupSettings, null, 2));
 
@@ -447,6 +482,9 @@ export function SettingsModal() {
       await Promise.all(tasks);
       const importedSettings = importedSettingsRef.value;
 
+      if (importedSettings?.customThemes) {
+        replaceCustomThemes(importedSettings.customThemes);
+      }
       if (importedSettings?.theme) {
         setTheme(importedSettings.theme);
       }
@@ -604,17 +642,223 @@ export function SettingsModal() {
                   >
                     <Icon size={20} />
                     <span className="text-xs font-medium">{label}</span>
-                    {isActive && (
-                      <span className="h-1.5 w-1.5 rounded-full bg-indigo-400" />
-                    )}
+                    <span className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-indigo-400' : 'bg-transparent'}`} />
                   </button>
                 );
               })}
+
+              {/* Tile de tema personalizado: muestra el activo si existe, o un
+                  acceso genérico para crear el primero. Siempre ocupa el 9º
+                  espacio de la grilla 3x3 (8 temas built-in + este). */}
+              {(() => {
+                const activeCustom = customThemes.find((ct) => theme === `custom:${ct.id}`);
+                const hasAny = customThemes.length > 0;
+                const handleClick = () => {
+                  if (activeCustom) {
+                    setEditingCustomTheme(activeCustom);
+                    return;
+                  }
+                  if (!hasAny) {
+                    setEditingCustomTheme('new');
+                    return;
+                  }
+                  // Ninguno activo pero ya existen: selecciona el primero de
+                  // la lista automáticamente. Si hay más de uno, despliega
+                  // el resto para que el usuario pueda elegir otro.
+                  setTheme(`custom:${customThemes[0].id}`);
+                  if (customThemes.length > 1) {
+                    setShowAllCustomThemes(true);
+                    setVisibleCustomCount(6);
+                  }
+                };
+                return (
+                  <button
+                    type="button"
+                    onClick={handleClick}
+                    className={`flex flex-col items-center gap-2 rounded-xl border px-3 py-4 text-center transition ${
+                      activeCustom
+                        ? 'border-indigo-500/60 bg-indigo-500/10 text-indigo-400'
+                        : 'border-dashed border-[var(--border-card)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:border-[var(--border-high)] hover:text-[var(--text-secondary)]'
+                    }`}
+                    title={activeCustom ? activeCustom.name : t(language, 'settings', 'customThemePersonalizedTile')}
+                  >
+                    {activeCustom ? (
+                      <span className="h-5 w-5 rounded-full border border-[var(--border-card)]" style={{ background: activeCustom.accent }} />
+                    ) : (
+                      <Palette size={20} />
+                    )}
+                    <span className="w-full truncate text-xs font-medium">
+                      {activeCustom ? activeCustom.name : t(language, 'settings', 'customThemePersonalizedTile')}
+                    </span>
+                    <span className={`h-1.5 w-1.5 rounded-full ${activeCustom ? 'bg-indigo-400' : 'bg-transparent'}`} />
+                  </button>
+                );
+              })()}
             </div>
             <p className="mt-2 text-center text-[10px] text-[var(--text-hint)]">
-              {themeOptions.find((o) => o.value === theme)?.desc}
+              {theme.startsWith('custom:')
+                ? customThemes.find((ct) => theme === `custom:${ct.id}`)?.name
+                : themeOptions.find((o) => o.value === theme)?.desc}
             </p>
+
+            {customThemes.length > 0 && (
+              <div className="mt-2 text-center">
+                <button
+                  onClick={() => {
+                    setShowAllCustomThemes((v) => !v);
+                    setVisibleCustomCount(6);
+                  }}
+                  className="text-[10px] font-medium text-[var(--text-hint)] hover:text-indigo-400"
+                >
+                  {showAllCustomThemes
+                    ? t(language, 'settings', 'customThemesSeeLess')
+                    : customThemes.length > 6
+                      ? t(language, 'settings', 'customThemesSeeMore')
+                      : t(language, 'settings', 'customThemesSeeCustom')}
+                </button>
+              </div>
+            )}
+
+            {showAllCustomThemes && (
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                {customThemes.slice(0, visibleCustomCount).map((ct) => {
+                  const isActive = theme === `custom:${ct.id}`;
+                  const isRenaming = renamingThemeId === ct.id;
+                  return (
+                    <div
+                      key={ct.id}
+                      className={`relative flex flex-col items-center gap-2 rounded-xl border px-3 py-4 text-center transition ${
+                        isActive
+                          ? 'border-indigo-500/60 bg-indigo-500/10 text-indigo-400'
+                          : 'border-[var(--border-card)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:border-[var(--border-high)] hover:text-[var(--text-secondary)]'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setOpenThemeMenuId(openThemeMenuId === ct.id ? null : ct.id)}
+                        className="absolute right-1 top-1 rounded p-0.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                      >
+                        <MoreVertical size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTheme(`custom:${ct.id}`)}
+                        className="flex w-full flex-col items-center gap-2"
+                      >
+                        <span
+                          className="h-5 w-5 rounded-full border border-[var(--border-card)]"
+                          style={{ background: ct.accent }}
+                        />
+                        {isRenaming ? (
+                          <input
+                            autoFocus
+                            value={renamingThemeValue}
+                            onChange={(e) => setRenamingThemeValue(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            onBlur={handleConfirmRenameTheme}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleConfirmRenameTheme();
+                              if (e.key === 'Escape') setRenamingThemeId(null);
+                            }}
+                            className="w-full rounded border border-indigo-500/40 bg-[var(--bg-input)] px-1 py-0.5 text-center text-xs text-[var(--text-primary)] outline-none"
+                          />
+                        ) : (
+                          <span className="w-full truncate text-xs font-medium">{ct.name}</span>
+                        )}
+                      </button>
+                      {openThemeMenuId === ct.id && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={() => setOpenThemeMenuId(null)} />
+                          <div className="absolute right-1 top-6 z-20 min-w-[130px] rounded-lg border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 text-left shadow-xl">
+                            <button
+                              onClick={() => handleStartRenameTheme(ct)}
+                              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                            >
+                              <Pencil size={12} /> {t(language, 'settings', 'customThemeRename')}
+                            </button>
+                            <button
+                              onClick={() => { setOpenThemeMenuId(null); setEditingCustomTheme(ct); }}
+                              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                            >
+                              <Palette size={12} /> {t(language, 'settings', 'customThemeEditTitle')}
+                            </button>
+                            <button
+                              onClick={() => handleDuplicateTheme(ct.id)}
+                              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                            >
+                              <Copy size={12} /> {t(language, 'settings', 'customThemeDuplicate')}
+                            </button>
+                            <button
+                              onClick={() => handleDeleteThemeClick(ct)}
+                              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-xs text-red-400 hover:bg-red-400/10"
+                            >
+                              <Trash2 size={12} /> {t(language, 'settings', 'customThemeDelete')}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+
+                <button
+                  type="button"
+                  onClick={() => setEditingCustomTheme('new')}
+                  className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--border-card)] px-3 py-4 text-center text-[var(--text-muted)] transition hover:border-[var(--border-high)] hover:text-[var(--text-secondary)]"
+                >
+                  <Plus size={20} />
+                  <span className="text-xs font-medium">{t(language, 'settings', 'customThemeCreate')}</span>
+                </button>
+
+                {customThemes.length > visibleCustomCount && (
+                  <button
+                    onClick={() => setVisibleCustomCount((v) => v + 6)}
+                    className="col-span-3 mt-1 rounded-lg py-1.5 text-[10px] font-medium text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-indigo-400"
+                  >
+                    {t(language, 'settings', 'customThemesLoadMore')}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
+
+          {/* Editor de tema personalizado (crear/editar) */}
+          {editingCustomTheme && (
+            <CustomThemeEditor
+              initial={editingCustomTheme === 'new' ? null : editingCustomTheme}
+              onClose={() => setEditingCustomTheme(null)}
+            />
+          )}
+
+          {/* Modal confirmación eliminar tema personalizado (desde el menú ⋮) */}
+          {confirmDeleteTheme && (
+            <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
+              <div className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
+                <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
+                  <Trash2 size={15} className="text-red-400" />
+                  {t(language, 'settings', 'customThemeConfirmDeleteTitle')}
+                </div>
+                <p className="mb-4 text-xs text-[var(--text-secondary)]">
+                  {t(language, 'settings', 'customThemeConfirmDeleteMsg')} "{confirmDeleteTheme.name}"?{' '}
+                  {t(language, 'settings', 'customThemeConfirmDeleteDesc')}
+                </p>
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => setConfirmDeleteTheme(null)}
+                    className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
+                  >
+                    {t(language, 'settings', 'customThemeCancel')}
+                  </button>
+                  <button
+                    onClick={() => { deleteCustomTheme(confirmDeleteTheme.id); setConfirmDeleteTheme(null); }}
+                    className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600"
+                  >
+                    {t(language, 'settings', 'customThemeDelete')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Startup screen section */}
           <div>

@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Task, Note, AppConfig, ViewMode, Theme, ActiveSection, StartupScreen, Language, Shortcuts, DEFAULT_SHORTCUTS, OvertimeEntry, OvertimeMonthMeta, GitConfig, GitStatus, GitRemoteStatus, AppToast, ToastKind, CalendarEvent } from '../types';
+import { Task, Note, AppConfig, ViewMode, Theme, BuiltInTheme, CustomTheme, ActiveSection, StartupScreen, Language, Shortcuts, DEFAULT_SHORTCUTS, OvertimeEntry, OvertimeMonthMeta, GitConfig, GitStatus, GitRemoteStatus, AppToast, ToastKind, CalendarEvent } from '../types';
+import { deriveCustomThemeVars } from '../lib/themeColor';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
 import { generateOvertimeXlsx } from '../lib/overtimeExcel';
 import { fs, pickFolder, pickFile, saveDialog, SearchResult } from '../lib/invoke';
@@ -77,6 +78,7 @@ interface AppState {
 
   // Theme + Settings
   theme: Theme;
+  customThemes: CustomTheme[];
   startupScreen: StartupScreen;
   language: Language;
   fontSize: number;
@@ -179,6 +181,12 @@ interface AppState {
   setHolidaysAsNonWork: (enabled: boolean) => Promise<void>;
   setAnimationsEnabled: (enabled: boolean) => Promise<void>;
   setTheme: (theme: Theme) => void;
+  createCustomTheme: (input: { name: string; base: 'dark' | 'light'; accent: string; bgTint: string; textTint: string; intensity: number }) => CustomTheme;
+  renameCustomTheme: (id: string, name: string) => void;
+  duplicateCustomTheme: (id: string) => void;
+  deleteCustomTheme: (id: string) => void;
+  updateCustomTheme: (id: string, patch: Partial<Omit<CustomTheme, 'id' | 'createdAt'>>) => void;
+  replaceCustomThemes: (customThemes: CustomTheme[]) => void;
   setStartupScreen: (screen: StartupScreen) => Promise<void>;
   setLanguage: (lang: Language) => Promise<void>;
   setFontSize: (size: number) => void;
@@ -294,13 +302,37 @@ export function applyAnimationsToDOM(enabled: boolean) {
   document.documentElement.classList.toggle('no-animations', !enabled);
 }
 
-export function applyThemeToDOM(theme: Theme, animate = false) {
-  const resolved =
-    theme === 'system'
-      ? window.matchMedia('(prefers-color-scheme: dark)').matches
-        ? 'dark'
-        : 'light'
-      : theme;
+const CUSTOM_THEME_VARS = [
+  '--bg-base', '--bg-panel', '--bg-surface', '--bg-secondary', '--bg-hover', '--bg-elevated', '--bg-input',
+  '--border', '--border-card', '--border-high',
+  '--text-primary', '--text-body', '--text-secondary', '--text-tertiary', '--text-muted', '--text-hint', '--text-faint',
+  '--accent', '--accent-strong', '--accent-soft', '--accent-ink', '--accent-inline', '--accent-link', '--accent-code',
+] as const;
+
+const TINTED_BUILTIN_THEMES: BuiltInTheme[] = ['high-contrast', 'visual-rest', 'sepia', 'oled', 'nordic'];
+
+export function applyCustomThemeToDOM(customTheme: CustomTheme | null) {
+  const root = document.documentElement.style;
+  if (!customTheme) {
+    CUSTOM_THEME_VARS.forEach((v) => root.removeProperty(v));
+    return;
+  }
+  const vars = deriveCustomThemeVars(customTheme);
+  Object.entries(vars).forEach(([k, v]) => root.setProperty(k, v));
+}
+
+export function applyThemeToDOM(theme: Theme, animate = false, customThemes: CustomTheme[] = []) {
+  let resolved: BuiltInTheme;
+  let custom: CustomTheme | null = null;
+
+  if (theme.startsWith('custom:')) {
+    custom = customThemes.find((t) => `custom:${t.id}` === theme) ?? null;
+    resolved = custom?.base ?? 'dark';
+  } else {
+    resolved = theme === 'system'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : (theme as BuiltInTheme);
+  }
 
   if (animate) {
     document.documentElement.classList.add('theme-animating');
@@ -310,6 +342,11 @@ export function applyThemeToDOM(theme: Theme, animate = false) {
   }
 
   document.documentElement.dataset.theme = resolved;
+  applyCustomThemeToDOM(custom);
+  document.documentElement.classList.toggle(
+    'theme-tinted',
+    custom !== null || TINTED_BUILTIN_THEMES.includes(resolved),
+  );
 
   try {
     const nativeTheme = theme === 'system' ? null : (resolved === 'dark' ? 'dark' : 'light');
@@ -352,6 +389,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   holidaysAsNonWork: true,
   animationsEnabled: true,
   theme: (localStorage.getItem('theme') as Theme) || 'system',
+  customThemes: (() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('customThemes') || '[]') as CustomTheme[];
+      // Normaliza temas creados antes de añadir bgTint/textTint/intensity.
+      return parsed.map((ct) => ({
+        ...ct,
+        bgTint: ct.bgTint ?? (ct.base === 'light' ? '#f4f4f5' : '#1c1c1c'),
+        textTint: ct.textTint ?? '#888888',
+        intensity: ct.intensity ?? 50,
+      }));
+    } catch { return []; }
+  })(),
   startupScreen: 'dashboard',
   language: (localStorage.getItem('language') as Language) || 'es',
   fontSize: Number(localStorage.getItem('fontSize')) || 17,
@@ -409,7 +458,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   init: async () => {
     set({ isLoading: true });
-    applyThemeToDOM(get().theme);
+    applyThemeToDOM(get().theme, false, get().customThemes);
     applyFontSizeToDOM(get().fontSize);
     applyAnimationsToDOM(get().animationsEnabled);
     try {
@@ -1651,10 +1700,72 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  setTheme: (theme: Theme) => {
+  setTheme: (theme) => {
     localStorage.setItem('theme', theme);
-    applyThemeToDOM(theme, true);
+    applyThemeToDOM(theme, true, get().customThemes);
     set({ theme });
+  },
+
+  createCustomTheme: ({ name, base, accent, bgTint, textTint, intensity }) => {
+    const newTheme: CustomTheme = {
+      id: uuidv4(),
+      name: name.trim() || t(get().language, 'settings', 'customThemeDefaultName'),
+      base,
+      accent,
+      bgTint,
+      textTint,
+      intensity,
+      createdAt: new Date().toISOString(),
+    };
+    const customThemes = [...get().customThemes, newTheme];
+    localStorage.setItem('customThemes', JSON.stringify(customThemes));
+    set({ customThemes });
+    get().setTheme(`custom:${newTheme.id}`);
+    return newTheme;
+  },
+
+  renameCustomTheme: (id, name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const customThemes = get().customThemes.map((th) => th.id === id ? { ...th, name: trimmed } : th);
+    localStorage.setItem('customThemes', JSON.stringify(customThemes));
+    set({ customThemes });
+  },
+
+  duplicateCustomTheme: (id) => {
+    const source = get().customThemes.find((th) => th.id === id);
+    if (!source) return;
+    const newTheme: CustomTheme = {
+      ...source,
+      id: uuidv4(),
+      name: `${source.name} ${t(get().language, 'settings', 'customThemeCopySuffix')}`,
+      createdAt: new Date().toISOString(),
+    };
+    const customThemes = [...get().customThemes, newTheme];
+    localStorage.setItem('customThemes', JSON.stringify(customThemes));
+    set({ customThemes });
+  },
+
+  deleteCustomTheme: (id) => {
+    const wasActive = get().theme === `custom:${id}`;
+    const customThemes = get().customThemes.filter((th) => th.id !== id);
+    localStorage.setItem('customThemes', JSON.stringify(customThemes));
+    set({ customThemes });
+    if (wasActive) get().setTheme('dark');
+  },
+
+  updateCustomTheme: (id, patch) => {
+    const customThemes = get().customThemes.map((th) => th.id === id ? { ...th, ...patch } : th);
+    localStorage.setItem('customThemes', JSON.stringify(customThemes));
+    set({ customThemes });
+    if (get().theme === `custom:${id}`) {
+      applyThemeToDOM(get().theme, false, customThemes);
+    }
+  },
+
+  replaceCustomThemes: (customThemes) => {
+    localStorage.setItem('customThemes', JSON.stringify(customThemes));
+    set({ customThemes });
   },
 
   setConfirmDestructiveActions: async (enabled) => {

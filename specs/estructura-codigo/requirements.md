@@ -1,7 +1,8 @@
 # Requirements — Estructura de código y buenas prácticas React
 
-Estado: en diseño. Describe el comportamiento y la organización
-deseados; nada de esto está implementado todavía. Motivado por
+Estado: en progreso (Fase 0 implementada, ver `tasks.md`). Describe el
+comportamiento y la organización deseados para las fases restantes.
+Motivado por
 observación directa del usuario (archivos que superan las 2000 líneas,
 tipos concentrados en un solo archivo, componentes con patrones
 repetidos) y confirmado con una auditoría exhaustiva del código a fecha

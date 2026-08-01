@@ -429,14 +429,6 @@ export function NoteList() {
     };
   }, [activeSection, importNotesFromPaths]);
 
-  if (activeSection !== 'notes') return null;
-
-  const sortLabels: Record<typeof sortBy, string> = {
-    updated: tFn(language, 'notes', 'sortUpdated'),
-    created: tFn(language, 'notes', 'sortCreated'),
-    title: tFn(language, 'notes', 'sortTitle'),
-  };
-
   // Todos los tags disponibles
   const allTags = useMemo(() => {
     const set = new Set<string>();
@@ -470,6 +462,14 @@ export function NoteList() {
     }),
     [filtered, sortBy, sortDir]
   );
+
+  if (activeSection !== 'notes') return null;
+
+  const sortLabels: Record<typeof sortBy, string> = {
+    updated: tFn(language, 'notes', 'sortUpdated'),
+    created: tFn(language, 'notes', 'sortCreated'),
+    title: tFn(language, 'notes', 'sortTitle'),
+  };
 
   // Carpetas destino (excluir la carpeta actual de la nota del menú)
   const moveFolders = ctxMenu

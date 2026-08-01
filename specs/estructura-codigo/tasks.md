@@ -1,21 +1,41 @@
 # Tasks — Estructura de código y buenas prácticas React
 
-Estado: en diseño. Nada de esto está implementado — es la lista de
-trabajo para cuando se apruebe pasar a implementación, fase por fase.
-Cada fase es independiente: se puede implementar y comitear por separado
-sin depender de que las demás estén hechas (salvo donde se indica).
+Estado: en progreso. Fase 0 implementada; el resto sigue en diseño. Es la
+lista de trabajo fase por fase. Cada fase es independiente: se puede
+implementar y comitear por separado sin depender de que las demás estén
+hechas (salvo donde se indica).
 
-## Fase 0 — ESLint
+## Fase 0 — ESLint ✅ implementada (2026-07-31)
 
-- [ ] 0.1 Instalar `eslint`, `typescript-eslint`, `eslint-plugin-react`,
-      `eslint-plugin-react-hooks`, `@eslint/js` como devDependencies
-- [ ] 0.2 Crear `eslint.config.js` (flat config) con las reglas de
-      `design.md` §Fase 0
-- [ ] 0.3 Añadir script `"lint": "eslint src"` a `package.json`
-- [ ] 0.4 Correr `pnpm lint` una vez y revisar el volumen de warnings
-      preexistentes (esperado: muchos `max-lines` en los archivos ya
-      identificados — no se corrigen aquí, solo se confirma que la regla
-      funciona)
+- [x] 0.1 Instalar `eslint`, `typescript-eslint`, `eslint-plugin-react`,
+      `eslint-plugin-react-hooks`, `@eslint/js`, `globals` como
+      devDependencies
+- [x] 0.2 Crear `eslint.config.js` (flat config) con las reglas de
+      `design.md` §Fase 0 — con un ajuste no previsto en el diseño: hubo
+      que fijar `settings.react.version` a `'19.1.0'` en vez de
+      `'detect'`, porque la auto-detección de `eslint-plugin-react`
+      llama a `context.getFilename()`, removido en ESLint 10, y crashea
+      el linter por completo
+- [x] 0.3 Añadir script `"lint": "eslint src"` a `package.json`
+- [x] 0.4 Correr `pnpm lint` — resultado: **58 problemas (32 errores, 26
+      warnings)**. Más ruido del anticipado en el diseño (que solo
+      esperaba `max-lines`): sí aparece `max-lines` en los 9 archivos ya
+      identificados en `requirements.md` §1.1, pero también errores reales
+      de `eslint-plugin-react`/`typescript-eslint` preexistentes —
+      **el más relevante: `react-hooks/rules-of-hooks` detectó 3 hooks
+      (`useMemo`) llamados condicionalmente en `NoteList.tsx` (líneas
+      441, 447, 462, después de un `return null` temprano en la línea
+      432) — es un bug real de orden de hooks, no solo estilo. **Corregido
+      de inmediato** (fuera del alcance original de la Fase 0, pero a
+      petición explícita del usuario al encontrarlo): se movieron los tres
+      `useMemo` antes del `return null` temprano. Verificado con
+      `tsc --noEmit` (exit 0) y un `eslint` puntual sobre el archivo (el
+      error `rules-of-hooks` ya no aparece; quedan 3 issues preexistentes
+      sin relación — `no-useless-assignment`, 2x
+      `react/no-unescaped-entities` y el warning de `max-lines` — que se
+      dejan para sus fases correspondientes). No se corrigió nada más en
+      esta fase — el objetivo era solo confirmar que la herramienta
+      funciona.
 
 ## Fase 1 — Primitivos de UI compartidos (req. §3)
 

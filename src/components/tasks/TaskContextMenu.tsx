@@ -56,9 +56,6 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
   if (confirmDeleteDialog.isOpen) {
     return (
       <ConfirmDeleteModal
-        variant="soft"
-        position={anchor}
-        zIndex={9999}
         title={t(language, 'tasks', 'deleteTask')}
         message={
           <>

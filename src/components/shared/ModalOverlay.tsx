@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Z_MODAL } from '../../lib/zIndex';
 
 interface ModalOverlayProps {
@@ -14,13 +15,18 @@ interface ModalOverlayProps {
 
 export function ModalOverlay({ onClose, blur = true, zIndex = Z_MODAL, align = 'center', className, children }: ModalOverlayProps) {
   const alignClass = align === 'start' ? 'items-start justify-center' : 'items-center justify-center';
-  return (
+  // Portal a document.body: si el modal se dispara desde un componente anidado
+  // dentro de un ancestro con transform/filter (p. ej. una fila de lista
+  // animada), "fixed" quedaría atrapado dentro de ese ancestro en vez de
+  // cubrir todo el viewport.
+  return createPortal(
     <div
       className={`fixed inset-0 flex ${alignClass} bg-black/60 ${blur ? 'backdrop-blur-sm' : ''} ${className ?? ''}`}
       style={{ zIndex }}
       onClick={onClose}
     >
       {children}
-    </div>
+    </div>,
+    document.body,
   );
 }

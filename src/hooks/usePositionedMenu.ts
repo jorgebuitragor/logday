@@ -66,7 +66,12 @@ export function usePositionedMenu(
   useEffect(() => {
     if (!anchor) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
+      // Si el ref no está montado (p. ej. el componente reemplazó su
+      // render habitual por otro árbol, como un ConfirmDeleteModal
+      // anclado), no hay nada que cerrar — tratarlo como "afuera" cerraría
+      // ese otro árbol antes de que su propio click llegue a procesarse.
+      if (!ref.current) return;
+      if (!ref.current.contains(e.target as Node)) onClose();
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);

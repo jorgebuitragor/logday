@@ -1,7 +1,7 @@
 # Tasks — Estructura de código y buenas prácticas React
 
-Estado: en progreso. Fases 0-3 implementadas; Fase 4 en progreso
-(4.1-4.4 completas; 4.5 pendiente); Fase 5 sigue en diseño.
+Estado: en progreso. Fases 0-4 implementadas; Fase 5 sigue en diseño
+(requiere QA manual dedicado, ver sección de esa fase).
 Es la lista de trabajo fase por fase. Cada fase es independiente:
 se puede implementar y comitear por separado sin depender de que las
 demás estén hechas (salvo donde se indica).
@@ -441,7 +441,23 @@ para todos: un pase de QA visual manual en `pnpm tauri dev`.
         Verificado con `tsc --noEmit`, `eslint` (mismo único warning
         preexistente de `max-lines`, ningún problema nuevo) y
         `vite build` limpio. `CalendarView.tsx`: 1141 → 768 líneas.
-- [ ] 4.5 `DashboardView.tsx` — mover `WeeklyMiniCalendar` a archivo propio
+- [x] 4.5 `DashboardView.tsx` — movido `WeeklyMiniCalendar` a
+      `src/components/WeeklyMiniCalendar.tsx` (2026-08-01). De paso se
+      encontraron y resolvieron 2 duplicaciones no documentadas en
+      `requirements.md`: (1) `toISODate()` en `DashboardView.tsx` era
+      idéntica a `toISO()`, ya existente y ya importada en el mismo
+      archivo desde `lib/colombianHolidays.ts` — se eliminó la copia
+      local y se reemplazaron los 6 usos por `toISO()`; (2)
+      `EVENT_COLOR_DOT` estaba duplicada entre `DashboardView.tsx` y
+      `CalendarView.tsx`/`EventEditor.tsx` — `WeeklyMiniCalendar.tsx`
+      ahora importa la versión compartida de
+      `lib/calendarEventPresentation.ts` (creada en la tarea 4.4.1) en
+      vez de redeclararla. `STATUS_DOT` se movió tal cual (solo se usa
+      dentro de `WeeklyMiniCalendar`, no se comparte con el resto de
+      `DashboardView.tsx`).
+      Verificado con `tsc --noEmit`, `eslint` (mismos 2 warnings
+      preexistentes, ningún problema nuevo) y `vite build` limpio.
+      `DashboardView.tsx`: 758 → 633 líneas.
 
 ## Fase 5 — `ModalOverlay`/`ModalPanel` (req. §7 — issue/PR separado, QA manual)
 

@@ -157,8 +157,11 @@ export function RichTextEditor({ value, onChange, placeholder, minHeight = '200p
       },
     },
     onUpdate({ editor: ed }) {
+      if (ed.isDestroyed) return;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const md = normalizeEditorMarkdown((ed.storage as any).markdown.getMarkdown() as string);
+      const markdownStorage = (ed.storage as any).markdown;
+      if (!markdownStorage) return;
+      const md = normalizeEditorMarkdown(markdownStorage.getMarkdown() as string);
       setMdContent(md);
       onChange(md);
     },
@@ -178,9 +181,11 @@ export function RichTextEditor({ value, onChange, placeholder, minHeight = '200p
 
   // Sync content when value changes externally (e.g. task switch)
   useEffect(() => {
-    if (!editor) return;
+    if (!editor || editor.isDestroyed) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const current = (editor.storage as any).markdown.getMarkdown() as string;
+    const markdownStorage = (editor.storage as any).markdown;
+    if (!markdownStorage) return;
+    const current = markdownStorage.getMarkdown() as string;
     if (current !== value) {
       editor.commands.setContent(value || '');
       setMdContent(value || '');

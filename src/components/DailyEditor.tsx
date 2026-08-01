@@ -10,10 +10,12 @@ import {
   getPreviousWorkingDay,
   buildDailyCopyText,
 } from '../lib/colombianHolidays';
-import { placeMenuAtPointer } from '../lib/menuPosition';
+import { usePositionedMenu } from '../hooks/usePositionedMenu';
 import { t } from '../lib/i18n';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
+
+const ESTIMATED_ACTIVITY_CTX_MENU = { width: 172, height: 84 };
 
 function formatShortDate(iso: string, language: 'es' | 'en'): string {
   const locale = language === 'es' ? 'es-CO' : 'en-US';
@@ -99,12 +101,15 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
   const [cursorPos, setCursorPos] = useState(0);
   const [editCursorPos, setEditCursorPos] = useState(0);
   const [activityCtxMenu, setActivityCtxMenu] = useState<{ idx: number; x: number; y: number } | null>(null);
+  const activityCtxMenuLayout = usePositionedMenu(activityCtxMenu, {
+    estimatedSize: ESTIMATED_ACTIVITY_CTX_MENU,
+    onClose: () => setActivityCtxMenu(null),
+  });
   const dragSrcIdx = useRef<number | null>(null);
   const itemsRef = useRef<string[]>([]);
   const onChangeRef = useRef(onChange);
   const inputRef = useRef<HTMLInputElement>(null);
   const editInputRef = useRef<HTMLTextAreaElement>(null);
-  const ctxMenuRef = useRef<HTMLDivElement>(null);
 
   const items = useMemo(() => parseItems(value), [value]);
   itemsRef.current = items;
@@ -250,21 +255,6 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
     el.style.height = 'auto';
     el.style.height = el.scrollHeight + 'px';
   }, [editVal, editingIdx]);
-
-  // Cerrar menú contextual al hacer clic fuera o Escape
-  useEffect(() => {
-    if (!activityCtxMenu) return;
-    const onMouse = (e: MouseEvent) => {
-      if (!ctxMenuRef.current?.contains(e.target as Node)) setActivityCtxMenu(null);
-    };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setActivityCtxMenu(null); };
-    document.addEventListener('mousedown', onMouse);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onMouse);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [activityCtxMenu]);
 
   const handleSelectSuggestion = (task: Task) => {
     if (isHashMode && task.taskCode && hashFragment) {
@@ -514,42 +504,36 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
       )}
 
       {/* Menú contextual de actividad */}
-      {activityCtxMenu && createPortal((() => {
-        const ctxPos = placeMenuAtPointer(
-          { x: activityCtxMenu.x, y: activityCtxMenu.y },
-          { width: 172, height: 84 },
-          { padding: 8 },
-        );
-        return (
-          <div
-            ref={ctxMenuRef}
-            style={{ position: 'fixed', top: ctxPos.y, left: ctxPos.x, zIndex: 9999 }}
-            className="min-w-[172px] overflow-hidden rounded-lg border border-[var(--border-card)] bg-[var(--bg-panel)] py-1 shadow-2xl"
+      {activityCtxMenu && createPortal(
+        <div
+          ref={activityCtxMenuLayout.ref}
+          style={{ ...activityCtxMenuLayout.style, zIndex: 9999 }}
+          className="min-w-[172px] overflow-hidden rounded-lg border border-[var(--border-card)] bg-[var(--bg-panel)] py-1 shadow-2xl"
+        >
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(items[activityCtxMenu.idx]);
+              setActivityCtxMenu(null);
+            }}
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs text-[var(--text-body)] transition hover:bg-[var(--bg-hover)]"
           >
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(items[activityCtxMenu.idx]);
-                setActivityCtxMenu(null);
-              }}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs text-[var(--text-body)] transition hover:bg-[var(--bg-hover)]"
-            >
-              <Copy size={11} className="shrink-0 text-[var(--text-hint)]" />
-              {t(language, 'dailys', 'activityCtxCopy')}
-            </button>
-            <div className="mx-2 border-t border-[var(--border)]" />
-            <button
-              onClick={() => {
-                removeItem(activityCtxMenu.idx);
-                setActivityCtxMenu(null);
-              }}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs text-red-400 transition hover:bg-red-500/10"
-            >
-              <Trash2 size={11} className="shrink-0" />
-              {t(language, 'dailys', 'activityCtxDelete')}
-            </button>
-          </div>
-        );
-      })(), document.body)}
+            <Copy size={11} className="shrink-0 text-[var(--text-hint)]" />
+            {t(language, 'dailys', 'activityCtxCopy')}
+          </button>
+          <div className="mx-2 border-t border-[var(--border)]" />
+          <button
+            onClick={() => {
+              removeItem(activityCtxMenu.idx);
+              setActivityCtxMenu(null);
+            }}
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs text-red-400 transition hover:bg-red-500/10"
+          >
+            <Trash2 size={11} className="shrink-0" />
+            {t(language, 'dailys', 'activityCtxDelete')}
+          </button>
+        </div>,
+        document.body,
+      )}
     </>
   );
 }

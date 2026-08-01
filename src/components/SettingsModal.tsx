@@ -7,6 +7,7 @@ import { CustomThemeEditor } from './CustomThemeEditor';
 import ToggleSwitch from './ToggleSwitch';
 import InlineRenameInput from './InlineRenameInput';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
+import { ThemeTile } from './ThemeTile';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { fs, checkUpdate, ReleaseInfo } from '../lib/invoke';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
@@ -623,25 +624,16 @@ export function SettingsModal() {
               {t(language, 'settings', 'theme')}
             </p>
             <div className="grid grid-cols-3 gap-2">
-              {themeOptions.map(({ value, label, Icon, desc }) => {
-                const isActive = theme === value;
-                return (
-                  <button
-                    key={value}
-                    onClick={() => setTheme(value)}
-                    className={`flex flex-col items-center gap-2 rounded-xl border px-3 py-4 text-center transition ${
-                      isActive
-                        ? 'border-indigo-500/60 bg-indigo-500/10 text-indigo-400'
-                        : 'border-[var(--border-card)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:border-[var(--border-high)] hover:text-[var(--text-secondary)]'
-                    }`}
-                    title={desc}
-                  >
-                    <Icon size={20} />
-                    <span className="text-xs font-medium">{label}</span>
-                    <span className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-indigo-400' : 'bg-transparent'}`} />
-                  </button>
-                );
-              })}
+              {themeOptions.map(({ value, label, Icon, desc }) => (
+                <ThemeTile
+                  key={value}
+                  active={theme === value}
+                  onClick={() => setTheme(value)}
+                  icon={<Icon size={20} />}
+                  label={label}
+                  title={desc}
+                />
+              ))}
 
               {/* Tile de tema personalizado: muestra el activo si existe, o un
                   acceso genérico para crear el primero. Siempre ocupa el 9º
@@ -668,26 +660,15 @@ export function SettingsModal() {
                   }
                 };
                 return (
-                  <button
-                    type="button"
+                  <ThemeTile
+                    active={!!activeCustom}
+                    dashed={!activeCustom}
                     onClick={handleClick}
-                    className={`flex flex-col items-center gap-2 rounded-xl border px-3 py-4 text-center transition ${
-                      activeCustom
-                        ? 'border-indigo-500/60 bg-indigo-500/10 text-indigo-400'
-                        : 'border-dashed border-[var(--border-card)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:border-[var(--border-high)] hover:text-[var(--text-secondary)]'
-                    }`}
+                    icon={<Palette size={20} />}
+                    colorDot={activeCustom?.accent}
+                    label={activeCustom ? activeCustom.name : t(language, 'settings', 'customThemePersonalizedTile')}
                     title={activeCustom ? activeCustom.name : t(language, 'settings', 'customThemePersonalizedTile')}
-                  >
-                    {activeCustom ? (
-                      <span className="h-5 w-5 rounded-full border border-[var(--border-card)]" style={{ background: activeCustom.accent }} />
-                    ) : (
-                      <Palette size={20} />
-                    )}
-                    <span className="w-full truncate text-xs font-medium">
-                      {activeCustom ? activeCustom.name : t(language, 'settings', 'customThemePersonalizedTile')}
-                    </span>
-                    <span className={`h-1.5 w-1.5 rounded-full ${activeCustom ? 'bg-indigo-400' : 'bg-transparent'}`} />
-                  </button>
+                  />
                 );
               })()}
             </div>
@@ -793,14 +774,13 @@ export function SettingsModal() {
                   );
                 })}
 
-                <button
-                  type="button"
+                <ThemeTile
+                  active={false}
+                  dashed
                   onClick={() => setEditingCustomTheme('new')}
-                  className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--border-card)] px-3 py-4 text-center text-[var(--text-muted)] transition hover:border-[var(--border-high)] hover:text-[var(--text-secondary)]"
-                >
-                  <Plus size={20} />
-                  <span className="text-xs font-medium">{t(language, 'settings', 'customThemeCreate')}</span>
-                </button>
+                  icon={<Plus size={20} />}
+                  label={t(language, 'settings', 'customThemeCreate')}
+                />
 
                 {customThemes.length > visibleCustomCount && (
                   <button

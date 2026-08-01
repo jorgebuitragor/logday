@@ -7,12 +7,11 @@ import { ExportModal } from './ExportModal';
 import InlineRenameInput from './InlineRenameInput';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
-import { placeMenuAtPointer, placeMenuNearAnchor } from '../lib/menuPosition';
+import { usePositionedMenu } from '../hooks/usePositionedMenu';
 import { t as tFn } from '../lib/i18n';
 import { pickMarkdownFiles } from '../lib/invoke';
 
 type CtxMenu = { note: Note; x: number; y: number } | null;
-type SubMenuPos = { x: number; y: number } | null;
 type SubMenuAnchor = { left: number; top: number; right: number; bottom: number } | null;
 
 const ESTIMATED_MAIN_MENU = { width: 210, height: 380 };
@@ -65,15 +64,9 @@ export function NoteList() {
   const [showSortMenu, setShowSortMenu] = useState(false);
   const sortMenuRef = useRef<HTMLDivElement>(null);
   const [ctxMenu, setCtxMenu] = useState<CtxMenu>(null);
-  const [ctxMenuPos, setCtxMenuPos] = useState<SubMenuPos>(null);
-  const [ctxMenuReady, setCtxMenuReady] = useState(false);
-  const [subMenuPos, setSubMenuPos] = useState<SubMenuPos>(null);
   const [subMenuAnchor, setSubMenuAnchor] = useState<SubMenuAnchor>(null);
-  const [subMenuReady, setSubMenuReady] = useState(false);
   const [exportModalNote, setExportModalNote] = useState<Note | null>(null);
   const [emptyCtxMenu, setEmptyCtxMenu] = useState<{ x: number; y: number } | null>(null);
-  const [emptyCtxMenuPos, setEmptyCtxMenuPos] = useState<SubMenuPos>(null);
-  const [emptyCtxMenuReady, setEmptyCtxMenuReady] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
 
@@ -88,9 +81,6 @@ export function NoteList() {
   // Animación de eliminación
   const [removingNoteId] = useState<string | null>(null);
 
-  const menuRef = useRef<HTMLDivElement>(null);
-  const subMenuRef = useRef<HTMLDivElement>(null);
-  const emptyMenuRef = useRef<HTMLDivElement>(null);
   const moveButtonRef = useRef<HTMLButtonElement>(null);
 
   // Nota vacía recién creada (sin título ni contenido)
@@ -139,151 +129,38 @@ export function NoteList() {
     if (editingTagsNote) setTimeout(() => tagInputRef.current?.focus(), 50);
   }, [editingTagsNote]);
 
-  // Cerrar menú al hacer click fuera
-  useEffect(() => {
-    if (!ctxMenu) return;
-    const handler = (e: MouseEvent) => {
-      const inMain = menuRef.current?.contains(e.target as Node);
-      const inSub = subMenuRef.current?.contains(e.target as Node);
-      if (!inMain && !inSub) {
-        setCtxMenu(null);
-        setCtxMenuPos(null);
-        setCtxMenuReady(false);
-        setSubMenuPos(null);
-        setSubMenuAnchor(null);
-        setSubMenuReady(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [ctxMenu]);
-
-  useEffect(() => {
-    if (!ctxMenu || !menuRef.current) return;
-
-    const recalc = () => {
-      if (!ctxMenu || !menuRef.current) return;
-      const rect = menuRef.current.getBoundingClientRect();
-      setCtxMenuPos(
-        placeMenuAtPointer(
-          { x: ctxMenu.x, y: ctxMenu.y },
-          { width: rect.width, height: rect.height },
-          { padding: 8 },
-        ),
-      );
-      setCtxMenuReady(true);
-    };
-
-    recalc();
-    window.addEventListener('resize', recalc);
-    return () => window.removeEventListener('resize', recalc);
-  }, [ctxMenu]);
-
-  useEffect(() => {
-    if (!subMenuAnchor || !subMenuRef.current) return;
-
-    const recalc = () => {
-      if (!subMenuAnchor || !subMenuRef.current) return;
-      const rect = subMenuRef.current.getBoundingClientRect();
-      setSubMenuPos(
-        placeMenuNearAnchor(
-          subMenuAnchor,
-          { width: rect.width, height: rect.height },
-          { sideX: 'right', alignY: 'start', gap: 4, padding: 8, flip: true },
-        ),
-      );
-      setSubMenuReady(true);
-    };
-
-    recalc();
-    window.addEventListener('resize', recalc);
-    return () => window.removeEventListener('resize', recalc);
-  }, [subMenuAnchor]);
-
-  useEffect(() => {
-    if (!emptyCtxMenu || !emptyMenuRef.current) return;
-
-    const recalc = () => {
-      if (!emptyCtxMenu || !emptyMenuRef.current) return;
-      const rect = emptyMenuRef.current.getBoundingClientRect();
-      setEmptyCtxMenuPos(
-        placeMenuAtPointer(
-          { x: emptyCtxMenu.x, y: emptyCtxMenu.y },
-          { width: rect.width, height: rect.height },
-          { padding: 8 },
-        ),
-      );
-      setEmptyCtxMenuReady(true);
-    };
-
-    recalc();
-    window.addEventListener('resize', recalc);
-    return () => window.removeEventListener('resize', recalc);
-  }, [emptyCtxMenu]);
-
-  // Cerrar menú con Escape
-  useEffect(() => {
-    if (!ctxMenu) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setCtxMenu(null);
-        setCtxMenuPos(null);
-        setCtxMenuReady(false);
-        setSubMenuPos(null);
-        setSubMenuAnchor(null);
-        setSubMenuReady(false);
-      }
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [ctxMenu]);
-
   const closeMenu = () => {
     setCtxMenu(null);
-    setCtxMenuPos(null);
-    setCtxMenuReady(false);
-    setSubMenuPos(null);
     setSubMenuAnchor(null);
-    setSubMenuReady(false);
   };
+
+  const mainMenu = usePositionedMenu(ctxMenu, { estimatedSize: ESTIMATED_MAIN_MENU, onClose: closeMenu });
+  const subMenu = usePositionedMenu(subMenuAnchor, {
+    estimatedSize: ESTIMATED_SUB_MENU,
+    anchorOptions: { sideX: 'right', alignY: 'start', gap: 4, flip: true },
+    onClose: () => setSubMenuAnchor(null),
+  });
+  const emptyMenu = usePositionedMenu(emptyCtxMenu, {
+    estimatedSize: ESTIMATED_EMPTY_MENU,
+    onClose: () => setEmptyCtxMenu(null),
+  });
 
   const handleContextMenu = (e: React.MouseEvent, note: Note) => {
     e.preventDefault();
     e.stopPropagation();
     setSubMenuAnchor(null);
-    setSubMenuPos(null);
-    setSubMenuReady(false);
-    setCtxMenuReady(false);
-    setCtxMenuPos(
-      placeMenuAtPointer(
-        { x: e.clientX, y: e.clientY },
-        ESTIMATED_MAIN_MENU,
-        { padding: 8 },
-      ),
-    );
     setCtxMenu({ note, x: e.clientX, y: e.clientY });
   };
 
   const handleToggleMoveSubmenu = () => {
     if (subMenuAnchor) {
       setSubMenuAnchor(null);
-      setSubMenuPos(null);
-      setSubMenuReady(false);
       return;
     }
     const btn = moveButtonRef.current;
     if (!btn) return;
     const rect = btn.getBoundingClientRect();
-    const anchor = { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
-    setSubMenuAnchor(anchor);
-    setSubMenuReady(false);
-    setSubMenuPos(
-      placeMenuNearAnchor(
-        anchor,
-        ESTIMATED_SUB_MENU,
-        { sideX: 'right', alignY: 'start', gap: 4, padding: 8, flip: true },
-      ),
-    );
+    setSubMenuAnchor({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom });
   };
 
   const handleCopy = () => {
@@ -375,8 +252,6 @@ export function NoteList() {
 
   const handleImportFromDialog = async () => {
     setEmptyCtxMenu(null);
-    setEmptyCtxMenuPos(null);
-    setEmptyCtxMenuReady(false);
     setIsImporting(true);
     try {
       const paths = await pickMarkdownFiles();
@@ -605,15 +480,7 @@ export function NoteList() {
           // Solo si el click es en el contenedor (espacio vacío), no en un item
           if (e.target === e.currentTarget || (e.target as HTMLElement).closest('[data-note-item]') === null) {
             e.preventDefault();
-            setEmptyCtxMenuReady(false);
             setEmptyCtxMenu({ x: e.clientX, y: e.clientY });
-            setEmptyCtxMenuPos(
-              placeMenuAtPointer(
-                { x: e.clientX, y: e.clientY },
-                ESTIMATED_EMPTY_MENU,
-                { padding: 8 },
-              ),
-            );
           }
         }}
       >
@@ -712,9 +579,9 @@ export function NoteList() {
         <>
           <div className="fixed inset-0 z-40" onMouseDown={closeMenu} />
           <div
-            ref={menuRef}
+            ref={mainMenu.ref}
             className="fixed z-50 min-w-[180px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl py-1"
-            style={{ left: ctxMenuPos?.x ?? 8, top: ctxMenuPos?.y ?? 8, visibility: ctxMenuReady ? 'visible' : 'hidden' }}
+            style={mainMenu.style}
             onMouseDown={(e) => e.stopPropagation()}
           >
             <button
@@ -808,9 +675,9 @@ export function NoteList() {
           {/* Submenú Mover a */}
           {subMenuAnchor && moveFolders.length > 0 && (
             <div
-              ref={subMenuRef}
+              ref={subMenu.ref}
               className="fixed z-50 min-w-[150px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl py-1"
-              style={{ left: subMenuPos?.x ?? 8, top: subMenuPos?.y ?? 8, visibility: subMenuReady ? 'visible' : 'hidden' }}
+              style={subMenu.style}
               onMouseDown={(e) => e.stopPropagation()}
             >
               {moveFolders.map((f) => (
@@ -907,27 +774,21 @@ export function NoteList() {
         <>
           <div
             className="fixed inset-0 z-40"
-            onMouseDown={() => {
-              setEmptyCtxMenu(null);
-              setEmptyCtxMenuPos(null);
-            }}
+            onMouseDown={() => setEmptyCtxMenu(null)}
             onContextMenu={(e) => {
               e.preventDefault();
               setEmptyCtxMenu(null);
-              setEmptyCtxMenuPos(null);
             }}
           />
           <div
-            ref={emptyMenuRef}
+            ref={emptyMenu.ref}
             className="fixed z-50 min-w-[160px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl py-1"
-            style={{ left: emptyCtxMenuPos?.x ?? 8, top: emptyCtxMenuPos?.y ?? 8, visibility: emptyCtxMenuReady ? 'visible' : 'hidden' }}
+            style={emptyMenu.style}
             onMouseDown={(e) => e.stopPropagation()}
           >
             <button
               onClick={() => {
                 setEmptyCtxMenu(null);
-                setEmptyCtxMenuPos(null);
-                setEmptyCtxMenuReady(false);
                 createNote();
               }}
               disabled={isNewEmptyNote}

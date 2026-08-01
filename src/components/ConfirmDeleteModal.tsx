@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Trash2 } from 'lucide-react';
-import { placeMenuAtPointer } from '../lib/menuPosition';
+import { usePositionedMenu } from '../hooks/usePositionedMenu';
 
 interface ConfirmDeleteModalProps {
   title: React.ReactNode;
@@ -90,7 +89,11 @@ export function ConfirmDeleteModal({
   );
 
   if (position) {
-    return <PositionedPanel position={position} zIndex={resolvedZIndex}>{panel}</PositionedPanel>;
+    return (
+      <PositionedPanel position={position} zIndex={resolvedZIndex} onCancel={onCancel}>
+        {panel}
+      </PositionedPanel>
+    );
   }
 
   return (
@@ -106,35 +109,21 @@ export function ConfirmDeleteModal({
 function PositionedPanel({
   position,
   zIndex,
+  onCancel,
   children,
 }: {
   position: { x: number; y: number };
   zIndex: number;
+  onCancel: () => void;
   children: React.ReactNode;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState(() => placeMenuAtPointer(position, ESTIMATED_POSITIONED_SIZE, { padding: 8 }));
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    if (!ref.current) return;
-    const recalc = () => {
-      if (!ref.current) return;
-      const rect = ref.current.getBoundingClientRect();
-      setPos(placeMenuAtPointer(position, { width: rect.width, height: rect.height }, { padding: 8 }));
-      setReady(true);
-    };
-    recalc();
-    window.addEventListener('resize', recalc);
-    return () => window.removeEventListener('resize', recalc);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [position.x, position.y]);
+  const { ref, style } = usePositionedMenu(position, {
+    estimatedSize: ESTIMATED_POSITIONED_SIZE,
+    onClose: onCancel,
+  });
 
   return createPortal(
-    <div
-      ref={ref}
-      style={{ position: 'fixed', top: pos.y, left: pos.x, zIndex, visibility: ready ? 'visible' : 'hidden' }}
-    >
+    <div ref={ref} style={{ ...style, zIndex }}>
       {children}
     </div>,
     document.body,

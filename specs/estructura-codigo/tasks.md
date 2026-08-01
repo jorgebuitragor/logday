@@ -1,9 +1,9 @@
 # Tasks — Estructura de código y buenas prácticas React
 
-Estado: en progreso. Fase 0 implementada; el resto sigue en diseño. Es la
-lista de trabajo fase por fase. Cada fase es independiente: se puede
-implementar y comitear por separado sin depender de que las demás estén
-hechas (salvo donde se indica).
+Estado: en progreso. Fases 0 y 1 implementadas; Fases 2-5 siguen en
+diseño. Es la lista de trabajo fase por fase. Cada fase es independiente:
+se puede implementar y comitear por separado sin depender de que las
+demás estén hechas (salvo donde se indica).
 
 ## Fase 0 — ESLint ✅ implementada (2026-07-31)
 
@@ -132,17 +132,70 @@ hechas (salvo donde se indica).
         `exhaustive-deps`) y `vite build` limpio. Pendiente QA visual
         manual en `pnpm tauri dev` (los 3 tamaños de switch, los 4
         renombrados, y los 13 modales de confirmación).
-- [ ] 1.4 `usePositionedMenu` (`src/hooks/usePositionedMenu.ts`)
-  - [ ] 1.4.1 Migrar `TaskContextMenu.tsx` primero (caso más pequeño y
-        con la duplicación interna más obvia — buen piloto de la migración)
-  - [ ] 1.4.2 Migrar `NoteList.tsx` (3 menús), `DailyList.tsx` (2),
-        `OvertimeList.tsx` (2), `CalendarView.tsx` (2), `MermaidBlock.tsx`,
-        `DailyEditor.tsx`
-  - [ ] 1.4.3 Migrar las 7 ocurrencias de `Sidebar.tsx` (dejarlo para el
-        final de esta tarea — es el mayor volumen, mejor con el patrón
-        ya probado en los sitios anteriores)
-- [ ] 1.5 `ThemeTile` (`src/components/ThemeTile.tsx`), migrar las 3
-      ocurrencias en `SettingsModal.tsx`
+- [x] 1.4 `usePositionedMenu` (`src/hooks/usePositionedMenu.ts`) (2026-08-01).
+      Firma: `usePositionedMenu(anchor, { estimatedSize, onClose,
+      closeOnEscape?, padding?, anchorOptions? })` → `{ ref, style,
+      isReady }`. `anchor` acepta `MenuPoint` o `AnchorRect` (para
+      `placeMenuNearAnchor`, submenús anclados a un botón). **Requisito
+      del hook**: `anchor` debe tener identidad estable (viene de
+      estado, no un objeto literal recreado cada render) — igual que ya
+      hacían todos los call sites originales.
+      Desviaciones/hallazgos sobre el diseño original:
+  - **Añade cierre con Escape por defecto** a los menús que no lo
+        tenían (la mayoría) — mejora de accesibilidad intencional, ya
+        prevista en `design.md`, no un efecto secundario accidental.
+  - **Se migraron más de "~15+"**: la auditoría original no contaba
+        `OvertimeList.tsx` (×2) ni el menú de actividad de
+        `DailyEditor.tsx` como parte de este patrón porque no tenían el
+        ciclo completo de medición en dos pasadas (solo posición fija
+        sin protección de overflow de viewport) — se migraron de todas
+        formas porque `usePositionedMenu` les añade esa protección
+        gratis, further reduciendo inconsistencia.
+  - **`ConfirmDeleteModal`'s `PositionedPanel`** (Fase 1.3) se
+        refactorizó para usar este hook internamente en vez de su
+        implementación inline duplicada — sin cambios en su API pública.
+  - **`monthCtx` de `DailyList.tsx` y `entryCtx`/`ctxMenu` simples sin
+        overflow-protection quedaron FUERA** cuando genuinamente no usan
+        ningún patrón de medición (solo un `placeMenuAtPointer` de una
+        sola pasada sin ref/resize) — no forzado a encajar en el hook
+        sin necesidad real.
+  - [x] 1.4.1 Migrado `TaskContextMenu.tsx` (piloto) — `TaskContextMenu`
+        y `NewTaskContextMenu`
+  - [x] 1.4.2 Migrados `NoteList.tsx` (3 menús: principal, submenú
+        "mover a" anclado, espacio vacío), `DailyList.tsx` (2: entrada,
+        espacio vacío), `OvertimeList.tsx` (2: ctx menú, entrada),
+        `CalendarView.tsx` (2: día, evento), `MermaidBlock.tsx` (1),
+        `DailyEditor.tsx` (1: menú de actividad)
+  - [x] 1.4.3 Migradas las 7 ocurrencias de `Sidebar.tsx` (folderCtx,
+        areaCtx, projectCtx, projectAreaCtx, viewCtx, dailyMonthCtx,
+        overtimeMonthCtx) — 1975 → 1710 líneas
+      Verificado con `tsc --noEmit`, `eslint` (sin errores/warnings
+      nuevos en ningún archivo) y `vite build` limpio tras cada archivo
+      y al final del conjunto completo. Pendiente QA visual manual en
+      `pnpm tauri dev` (abrir cada menú, confirmar posicionamiento,
+      click-afuera, y Escape).
+- [x] 1.5 `ThemeTile` (`src/components/ThemeTile.tsx`) (2026-08-01).
+      Migradas las 3 ocurrencias: tile de tema built-in (icon), tile
+      resumen de tema personalizado (colorDot o icon Palette, dashed
+      cuando no hay ninguno activo), y tile "crear tema" (siempre
+      dashed, sin ítem activo). **Fuera de alcance intencional**: la
+      grilla expandida de temas personalizados (`showAllCustomThemes`)
+      NO se migró — cada tile ahí es un wrapper con un botón de menú
+      kebab superpuesto (renombrar/editar/duplicar/eliminar) e
+      `InlineRenameInput` inline, estructuralmente distinto del
+      `ThemeTileProps` simple (`active`/`icon`/`colorDot`/`label`/
+      `onClick`/`dashed`) — forzarlo ahí habría requerido props
+      condicionales que le habrían quitado el valor de ser "compartido"
+      (mismo criterio que la alternativa descartada en `design.md` para
+      los puntos de color de `CalendarView.tsx`).
+      Verificado con `tsc --noEmit`, `eslint` (sin errores nuevos) y
+      `vite build` limpio.
+
+**Fase 1 completa** (2026-08-01): los 5 primitivos (`ToggleSwitch`,
+`InlineRenameInput`, `ConfirmDeleteModal`+`useConfirmDelete`,
+`usePositionedMenu`, `ThemeTile`) están implementados y migrados en
+todos sus call sites identificados en `requirements.md` §1.3. Pendiente
+para todos: un pase de QA visual manual en `pnpm tauri dev`.
 
 ## Fase 2 — Deduplicación puntual (req. §4)
 

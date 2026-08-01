@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, ArrowDown, ArrowUp, CopyPlus, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { renderMermaidSvg } from '../lib/mermaid';
-import { placeMenuAtPointer } from '../lib/menuPosition';
+import { usePositionedMenu } from '../hooks/usePositionedMenu';
 import { useAppStore } from '../store/appStore';
 import { t } from '../lib/i18n';
 
@@ -26,9 +26,10 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onHe
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
-  const [menuPosAdjusted, setMenuPosAdjusted] = useState<{ x: number; y: number } | null>(null);
-  const [menuReady, setMenuReady] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const menu = usePositionedMenu(menuPosition, {
+    estimatedSize: ESTIMATED_MERMAID_MENU,
+    onClose: () => setMenuPosition(null),
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -55,41 +56,6 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onHe
       cancelled = true;
     };
   }, [code, language]);
-
-  useEffect(() => {
-    if (!menuPosition) return;
-
-    const handleOutside = (event: MouseEvent) => {
-      if (!blockRef.current?.contains(event.target as Node)) {
-        setMenuPosition(null);
-        setMenuReady(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleOutside);
-    return () => document.removeEventListener('mousedown', handleOutside);
-  }, [menuPosition]);
-
-  useEffect(() => {
-    if (!menuPosition || !menuRef.current) return;
-
-    const recalc = () => {
-      if (!menuRef.current || !menuPosition) return;
-      const rect = menuRef.current.getBoundingClientRect();
-      setMenuPosAdjusted(
-        placeMenuAtPointer(
-          { x: menuPosition.x, y: menuPosition.y },
-          { width: rect.width, height: rect.height },
-          { padding: 8 },
-        ),
-      );
-      setMenuReady(true);
-    };
-
-    recalc();
-    window.addEventListener('resize', recalc);
-    return () => window.removeEventListener('resize', recalc);
-  }, [menuPosition]);
 
   useEffect(() => {
     if (!onHeightChange || !blockRef.current) return;
@@ -131,8 +97,6 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onHe
   const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
     if (!hasActions) return;
     event.preventDefault();
-    setMenuReady(false);
-    setMenuPosAdjusted(placeMenuAtPointer({ x: event.clientX, y: event.clientY }, ESTIMATED_MERMAID_MENU, { padding: 8 }));
     setMenuPosition({
       x: event.clientX,
       y: event.clientY,
@@ -237,16 +201,15 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onHe
         <div className="relative">
           {menuPosition && hasActions && (
             <div
-              ref={menuRef}
+              ref={menu.ref}
               className="fixed z-[10020] min-w-[180px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] py-1 shadow-xl"
-              style={{ left: menuPosAdjusted?.x ?? 8, top: menuPosAdjusted?.y ?? 8, visibility: menuReady ? 'visible' : 'hidden' }}
+              style={menu.style}
               onClick={(event) => event.stopPropagation()}
             >
               {onEdit && (
                 <button
                   onClick={() => {
                     setMenuPosition(null);
-                    setMenuReady(false);
                     onEdit();
                   }}
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
@@ -259,7 +222,6 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onHe
                 <button
                   onClick={() => {
                     setMenuPosition(null);
-                    setMenuReady(false);
                     onDuplicate();
                   }}
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
@@ -272,7 +234,6 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onHe
                 <button
                   onClick={() => {
                     setMenuPosition(null);
-                    setMenuReady(false);
                     onDelete();
                   }}
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-red-300 transition hover:bg-red-500/10 hover:text-red-400"

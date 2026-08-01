@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Download, Trash2, X, User, Pencil, Eye, Loader2 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
@@ -7,6 +7,10 @@ import { MONTHS_TITLE, t } from '../lib/i18n';
 import { OvertimePreviewModal } from './OvertimePreviewModal';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
+import { usePositionedMenu } from '../hooks/usePositionedMenu';
+
+const ESTIMATED_OVERTIME_CTX_MENU = { width: 180, height: 44 };
+const ESTIMATED_OVERTIME_ENTRY_MENU = { width: 180, height: 90 };
 
 interface Props {
   activeEntryId?: string | null;
@@ -63,28 +67,16 @@ export function OvertimeList({ onEdit, activeEntryId }: Props) {
   }
   const confirmDeleteDialog = useConfirmDelete<OvertimeEntry>(confirmDestructiveActions);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
-  const ctxMenuRef = useRef<HTMLDivElement>(null);
+  const ctxMenuLayout = usePositionedMenu(ctxMenu, {
+    estimatedSize: ESTIMATED_OVERTIME_CTX_MENU,
+    onClose: () => setCtxMenu(null),
+  });
   const [entryCtx, setEntryCtx] = useState<{ entry: OvertimeEntry; x: number; y: number } | null>(null);
-  const entryCtxRef = useRef<HTMLDivElement>(null);
+  const entryCtxLayout = usePositionedMenu(entryCtx, {
+    estimatedSize: ESTIMATED_OVERTIME_ENTRY_MENU,
+    onClose: () => setEntryCtx(null),
+  });
   const [listKey, setListKey] = useState(0);
-
-  useEffect(() => {
-    if (!ctxMenu) return;
-    const handler = (e: MouseEvent) => {
-      if (!ctxMenuRef.current?.contains(e.target as Node)) setCtxMenu(null);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [ctxMenu]);
-
-  useEffect(() => {
-    if (!entryCtx) return;
-    const handler = (e: MouseEvent) => {
-      if (!entryCtxRef.current?.contains(e.target as Node)) setEntryCtx(null);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [entryCtx]);
 
   // Cargar entradas del mes al montar
   useEffect(() => {
@@ -292,8 +284,8 @@ export function OvertimeList({ onEdit, activeEntryId }: Props) {
 
     {ctxMenu && (
       <div
-        ref={ctxMenuRef}
-        style={{ position: 'fixed', top: ctxMenu.y, left: ctxMenu.x, zIndex: 9999 }}
+        ref={ctxMenuLayout.ref}
+        style={{ ...ctxMenuLayout.style, zIndex: 9999 }}
         className="min-w-[180px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-2xl"
       >
         <button
@@ -308,8 +300,8 @@ export function OvertimeList({ onEdit, activeEntryId }: Props) {
 
     {entryCtx && (
       <div
-        ref={entryCtxRef}
-        style={{ position: 'fixed', top: entryCtx.y, left: entryCtx.x, zIndex: 9999 }}
+        ref={entryCtxLayout.ref}
+        style={{ ...entryCtxLayout.style, zIndex: 9999 }}
         className="min-w-[180px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-2xl"
       >
         <button

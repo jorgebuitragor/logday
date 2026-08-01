@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Circle, Clock, CheckCircle2, Copy, Check, Trash2, Pencil, Plus, CalendarDays } from 'lucide-react';
 import { Task, TaskStatus } from '../types';
 import { useAppStore } from '../store/appStore';
-import { placeMenuAtPointer } from '../lib/menuPosition';
 import { t } from '../lib/i18n';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
+import { usePositionedMenu } from '../hooks/usePositionedMenu';
 
 const ESTIMATED_TASK_MENU = { width: 220, height: 330 };
 const ESTIMATED_NEW_TASK_MENU = { width: 190, height: 56 };
@@ -21,40 +21,10 @@ interface Props {
 
 export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) {
   const { updateTask, deleteTask, setActiveTask, language, confirmDestructiveActions } = useAppStore();
-  const ref = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
   const confirmDeleteDialog = useConfirmDelete<true>(confirmDestructiveActions);
-  // Adjust position after mount to avoid overflow
-  const [pos, setPos] = useState(() => placeMenuAtPointer({ x, y }, ESTIMATED_TASK_MENU, { padding: 8 }));
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    setReady(false);
-    setPos(placeMenuAtPointer({ x, y }, ESTIMATED_TASK_MENU, { padding: 8 }));
-  }, [x, y]);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [onClose]);
-
-  useEffect(() => {
-    if (!ref.current) return;
-
-    const recalc = () => {
-      if (!ref.current) return;
-      const rect = ref.current.getBoundingClientRect();
-      setPos(placeMenuAtPointer({ x, y }, { width: rect.width, height: rect.height }, { padding: 8 }));
-      setReady(true);
-    };
-
-    recalc();
-    window.addEventListener('resize', recalc);
-    return () => window.removeEventListener('resize', recalc);
-  }, [x, y]);
+  const anchor = useMemo(() => ({ x, y }), [x, y]);
+  const { ref, style } = usePositionedMenu(anchor, { estimatedSize: ESTIMATED_TASK_MENU, onClose });
 
   const handleStatusChange = async (status: TaskStatus) => {
     await updateTask({ ...task, status });
@@ -87,7 +57,7 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
     return (
       <ConfirmDeleteModal
         variant="soft"
-        position={{ x, y }}
+        position={anchor}
         zIndex={9999}
         title={t(language, 'tasks', 'deleteTask')}
         message={
@@ -108,7 +78,7 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
   return createPortal(
     <div
       ref={ref}
-      style={{ position: 'fixed', top: pos.y, left: pos.x, zIndex: 9999, visibility: ready ? 'visible' : 'hidden' }}
+      style={{ ...style, zIndex: 9999 }}
       className="min-w-[200px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-2xl"
     >
       {/* Preview del título */}
@@ -175,43 +145,14 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
 
 // ── Menú contextual para espacio vacío (crear nueva tarea) ─────────────────
 export function NewTaskContextMenu({ x, y, onClose, onNewEvent }: { x: number; y: number; onClose: () => void; onNewEvent?: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState(() => placeMenuAtPointer({ x, y }, ESTIMATED_NEW_TASK_MENU, { padding: 8 }));
-  const [ready, setReady] = useState(false);
   const language = useAppStore((s) => s.language);
-
-  useEffect(() => {
-    setReady(false);
-    setPos(placeMenuAtPointer({ x, y }, ESTIMATED_NEW_TASK_MENU, { padding: 8 }));
-  }, [x, y]);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [onClose]);
-
-  useEffect(() => {
-    if (!ref.current) return;
-
-    const recalc = () => {
-      if (!ref.current) return;
-      const rect = ref.current.getBoundingClientRect();
-      setPos(placeMenuAtPointer({ x, y }, { width: rect.width, height: rect.height }, { padding: 8 }));
-      setReady(true);
-    };
-
-    recalc();
-    window.addEventListener('resize', recalc);
-    return () => window.removeEventListener('resize', recalc);
-  }, [x, y]);
+  const anchor = useMemo(() => ({ x, y }), [x, y]);
+  const { ref, style } = usePositionedMenu(anchor, { estimatedSize: ESTIMATED_NEW_TASK_MENU, onClose });
 
   return createPortal(
     <div
       ref={ref}
-      style={{ position: 'fixed', top: pos.y, left: pos.x, zIndex: 9999, visibility: ready ? 'visible' : 'hidden' }}
+      style={{ ...style, zIndex: 9999 }}
       className="min-w-[180px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-2xl"
     >
       <button

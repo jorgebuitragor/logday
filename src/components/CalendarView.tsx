@@ -8,9 +8,12 @@ import { AppDatePicker } from './AppDatePicker';
 import ToggleSwitch from './ToggleSwitch';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
-import { placeMenuAtPointer } from '../lib/menuPosition';
+import { usePositionedMenu } from '../hooks/usePositionedMenu';
 import { v4 as uuidv4 } from 'uuid';
 import { t, MONTHS_TITLE, WEEKDAYS_SHORT } from '../lib/i18n';
+
+const ESTIMATED_DAY_CTX_MENU = { width: 190, height: 88 };
+const ESTIMATED_EVENT_CTX_MENU = { width: 190, height: 128 };
 
 const STATUS_DOT: Record<TaskStatus, string> = {
   todo: 'bg-zinc-500',
@@ -425,15 +428,17 @@ export function CalendarView() {
   // Event editor modal
   const [eventEditor, setEventEditor] = useState<{ event: Partial<CalendarEvent> & { date: string } } | null>(null);
   // Day context menu (right-click on a specific day cell)
-  const dayCtxRef = useRef<HTMLDivElement>(null);
   const [dayCtxMenu, setDayCtxMenu] = useState<{ x: number; y: number; date: string } | null>(null);
-  const [dayCtxPos, setDayCtxPos] = useState({ x: 0, y: 0 });
-  const [dayCtxReady, setDayCtxReady] = useState(false);
+  const dayCtxLayout = usePositionedMenu(dayCtxMenu, {
+    estimatedSize: ESTIMATED_DAY_CTX_MENU,
+    onClose: () => setDayCtxMenu(null),
+  });
   // Event context menu (right-click on an event card)
-  const evCtxRef = useRef<HTMLDivElement>(null);
   const [evCtxMenu, setEvCtxMenu] = useState<{ event: CalendarEvent; x: number; y: number } | null>(null);
-  const [evCtxPos, setEvCtxPos] = useState({ x: 0, y: 0 });
-  const [evCtxReady, setEvCtxReady] = useState(false);
+  const evCtxLayout = usePositionedMenu(evCtxMenu, {
+    estimatedSize: ESTIMATED_EVENT_CTX_MENU,
+    onClose: () => setEvCtxMenu(null),
+  });
   // Active event detail panel - managed in store (mutual exclusion with activeTask)
   const confirmDeleteEventDialog = useConfirmDelete<CalendarEvent>(confirmDestructiveActions);
   // Inline-editing state for the event detail panel
@@ -448,46 +453,6 @@ export function CalendarView() {
   const [evRepeatEnabled, setEvRepeatEnabled] = useState(false);
   const [evRepeat, setEvRepeat] = useState<Exclude<EventRepeat, 'none'>>('weekly');
   const [evDirty, setEvDirty] = useState(false);
-
-  useEffect(() => {
-    if (!dayCtxMenu) return;
-    const handler = (e: MouseEvent) => {
-      if (!dayCtxRef.current?.contains(e.target as Node)) setDayCtxMenu(null);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [dayCtxMenu]);
-
-  useEffect(() => {
-    if (!evCtxMenu) return;
-    const handler = (e: MouseEvent) => {
-      if (!evCtxRef.current?.contains(e.target as Node)) { setEvCtxMenu(null); }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [evCtxMenu]);
-
-  useEffect(() => {
-    if (!evCtxMenu || !evCtxRef.current) return;
-    const rect = evCtxRef.current.getBoundingClientRect();
-    setEvCtxPos(placeMenuAtPointer(
-      { x: evCtxMenu.x, y: evCtxMenu.y },
-      { width: rect.width, height: rect.height },
-      { padding: 8 },
-    ));
-    setEvCtxReady(true);
-  }, [evCtxMenu]);
-
-  useEffect(() => {
-    if (!dayCtxMenu || !dayCtxRef.current) return;
-    const rect = dayCtxRef.current.getBoundingClientRect();
-    setDayCtxPos(placeMenuAtPointer(
-      { x: dayCtxMenu.x, y: dayCtxMenu.y },
-      { width: rect.width, height: rect.height },
-      { padding: 8 },
-    ));
-    setDayCtxReady(true);
-  }, [dayCtxMenu]);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -674,8 +639,6 @@ export function CalendarView() {
                   onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    setDayCtxReady(false);
-                    setDayCtxPos(placeMenuAtPointer({ x: e.clientX, y: e.clientY }, { width: 190, height: 88 }, { padding: 8 }));
                     setDayCtxMenu({ x: e.clientX, y: e.clientY, date: dateStr });
                   }}
                   className={`flex flex-col items-center rounded-xl p-2 transition min-h-[60px] ${
@@ -751,8 +714,6 @@ export function CalendarView() {
                           e.preventDefault();
                           e.stopPropagation();
                           setActiveCalendarEvent(null);
-                            setEvCtxReady(false);
-                          setEvCtxPos(placeMenuAtPointer({ x: e.clientX, y: e.clientY }, { width: 190, height: 128 }, { padding: 8 }));
                           setEvCtxMenu({ event: ev, x: e.clientX, y: e.clientY });
                         }}
                         className={`rounded-xl border px-3 py-2 flex items-start justify-between gap-2 cursor-pointer select-none transition hover:brightness-110 ${activeCalendarEvent?.id === ev.id ? 'ring-1 ring-white/20' : ''} ${EVENT_COLOR_BADGE[ev.color]}`}
@@ -1062,8 +1023,8 @@ export function CalendarView() {
       {/* Event context menu */}
       {evCtxMenu && createPortal(
         <div
-          ref={evCtxRef}
-          style={{ position: 'fixed', top: evCtxPos.y, left: evCtxPos.x, zIndex: 9999, visibility: evCtxReady ? 'visible' : 'hidden' }}
+          ref={evCtxLayout.ref}
+          style={{ ...evCtxLayout.style, zIndex: 9999 }}
           className="min-w-[190px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-2xl"
         >
           <div className="border-b border-[var(--border)] px-3 pb-2 pt-1.5">
@@ -1135,8 +1096,8 @@ export function CalendarView() {
       {/* Day cell context menu */}
       {dayCtxMenu && createPortal(
         <div
-          ref={dayCtxRef}
-          style={{ position: 'fixed', top: dayCtxPos.y, left: dayCtxPos.x, zIndex: 9999, visibility: dayCtxReady ? 'visible' : 'hidden' }}
+          ref={dayCtxLayout.ref}
+          style={{ ...dayCtxLayout.style, zIndex: 9999 }}
           className="min-w-[190px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-2xl"
         >
           <button

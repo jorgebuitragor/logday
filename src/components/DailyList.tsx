@@ -6,6 +6,7 @@ import { toISO } from '../lib/colombianHolidays';
 import { AppCalendarGrid } from './AppDatePicker';
 import { AbsenceModal } from './AbsenceModal';
 import { placeMenuAtPointer } from '../lib/menuPosition';
+import { usePositionedMenu } from '../hooks/usePositionedMenu';
 import { MONTHS_TITLE, t } from '../lib/i18n';
 import { save } from '@tauri-apps/plugin-dialog';
 import { fs } from '../lib/invoke';
@@ -84,49 +85,23 @@ export function DailyList() {
 
   // ── Estado del menú contextual (sobre una entrada) ────────────────────────
   const [contextMenu, setContextMenu] = useState<{ date: string; x: number; y: number } | null>(null);
-  const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
-  const [contextMenuReady, setContextMenuReady] = useState(false);
   const [copied, setCopied] = useState(false);
-  const contextMenuRef = useRef<HTMLDivElement>(null);
+  const contextMenuLayout = usePositionedMenu(contextMenu, {
+    estimatedSize: ESTIMATED_DAILY_ENTRY_MENU,
+    onClose: () => setContextMenu(null),
+  });
 
   // ── Estado del menú contextual (espacio vacío) ───────────────────────────
   const [emptyCtx, setEmptyCtx] = useState<{ x: number; y: number } | null>(null);
-  const [emptyCtxPos, setEmptyCtxPos] = useState<{ x: number; y: number } | null>(null);
-  const [emptyCtxReady, setEmptyCtxReady] = useState(false);
-  const emptyCtxRef = useRef<HTMLDivElement>(null);
+  const emptyCtxLayout = usePositionedMenu(emptyCtx, {
+    estimatedSize: ESTIMATED_DAILY_EMPTY_MENU,
+    onClose: () => setEmptyCtx(null),
+  });
 
   // ── Estado del menú contextual (mes) ─────────────────────────────────────
   const [monthCtx, setMonthCtx] = useState<{ x: number; y: number } | null>(null);
   const [deleteMonthConfirm, setDeleteMonthConfirm] = useState(false);
   const [exportingMonth, setExportingMonth] = useState(false);
-
-  // Cierra el menú contextual al hacer clic fuera
-  useEffect(() => {
-    if (!contextMenu) return;
-    const handler = (e: MouseEvent) => {
-      if (!contextMenuRef.current?.contains(e.target as Node)) {
-        setContextMenu(null);
-        setContextMenuPos(null);
-        setContextMenuReady(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [contextMenu]);
-
-  // Cierra el menú de espacio vacío al hacer clic fuera
-  useEffect(() => {
-    if (!emptyCtx) return;
-    const handler = (e: MouseEvent) => {
-      if (!emptyCtxRef.current?.contains(e.target as Node)) {
-        setEmptyCtx(null);
-        setEmptyCtxPos(null);
-        setEmptyCtxReady(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [emptyCtx]);
 
   // Cierra el menú del mes al hacer clic fuera
   useEffect(() => {
@@ -135,50 +110,6 @@ export function DailyList() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [monthCtx]);
-
-  useEffect(() => {
-    if (!contextMenu || !contextMenuRef.current) return;
-
-    const recalc = () => {
-      if (!contextMenu || !contextMenuRef.current) return;
-      const rect = contextMenuRef.current.getBoundingClientRect();
-      setContextMenuPos(
-        placeMenuAtPointer(
-          { x: contextMenu.x, y: contextMenu.y },
-          { width: rect.width, height: rect.height },
-          { padding: 8 },
-        ),
-      );
-      setContextMenuReady(true);
-    };
-
-    recalc();
-    window.addEventListener('resize', recalc);
-    return () => window.removeEventListener('resize', recalc);
-  }, [contextMenu]);
-
-  useEffect(() => {
-    if (!emptyCtx || !emptyCtxRef.current) return;
-
-    const recalc = () => {
-      if (!emptyCtx || !emptyCtxRef.current) return;
-      const rect = emptyCtxRef.current.getBoundingClientRect();
-      setEmptyCtxPos(
-        placeMenuAtPointer(
-          { x: emptyCtx.x, y: emptyCtx.y },
-          { width: rect.width, height: rect.height },
-          { padding: 8 },
-        ),
-      );
-      setEmptyCtxReady(true);
-    };
-
-    recalc();
-    window.addEventListener('resize', recalc);
-    return () => window.removeEventListener('resize', recalc);
-  }, [emptyCtx]);
-
-
 
   // Cierra el picker al hacer clic fuera
   useEffect(() => {
@@ -213,14 +144,6 @@ export function DailyList() {
   const handleContextMenu = (e: React.MouseEvent, date: string) => {
     e.preventDefault();
     e.stopPropagation();
-    setContextMenuReady(false);
-    setContextMenuPos(
-      placeMenuAtPointer(
-        { x: e.clientX, y: e.clientY },
-        ESTIMATED_DAILY_ENTRY_MENU,
-        { padding: 8 },
-      ),
-    );
     setContextMenu({ date, x: e.clientX, y: e.clientY });
   };
 
@@ -233,8 +156,6 @@ export function DailyList() {
     setTimeout(() => {
       setCopied(false);
       setContextMenu(null);
-      setContextMenuPos(null);
-      setContextMenuReady(false);
     }, 1200);
   };
 
@@ -242,8 +163,6 @@ export function DailyList() {
     if (!contextMenu) return;
     confirmDeleteDateDialog.request(contextMenu.date, (d: string) => void deleteDailyEntry(d));
     setContextMenu(null);
-    setContextMenuPos(null);
-    setContextMenuReady(false);
   };
 
   const closeMonthCtx = () => setMonthCtx(null);
@@ -456,14 +375,6 @@ export function DailyList() {
         className="flex-1 overflow-y-auto p-3"
         onContextMenu={(e) => {
           e.preventDefault();
-          setEmptyCtxReady(false);
-          setEmptyCtxPos(
-            placeMenuAtPointer(
-              { x: e.clientX, y: e.clientY },
-              ESTIMATED_DAILY_EMPTY_MENU,
-              { padding: 8 },
-            ),
-          );
           setEmptyCtx({ x: e.clientX, y: e.clientY });
         }}
       >
@@ -604,16 +515,14 @@ export function DailyList() {
     {/* Menú contextual – espacio vacío */}
     {emptyCtx && (
       <div
-        ref={emptyCtxRef}
-        style={{ position: 'fixed', top: emptyCtxPos?.y ?? 8, left: emptyCtxPos?.x ?? 8, zIndex: 9999, visibility: emptyCtxReady ? 'visible' : 'hidden' }}
+        ref={emptyCtxLayout.ref}
+        style={{ ...emptyCtxLayout.style, zIndex: 9999 }}
         className="min-w-[190px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-2xl"
       >
         <button
           onClick={() => {
             createTodayDaily();
             setEmptyCtx(null);
-            setEmptyCtxPos(null);
-            setEmptyCtxReady(false);
           }}
           className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
         >
@@ -624,8 +533,6 @@ export function DailyList() {
           onClick={() => {
             setShowDatePicker(true);
             setEmptyCtx(null);
-            setEmptyCtxPos(null);
-            setEmptyCtxReady(false);
           }}
           className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
         >
@@ -638,8 +545,6 @@ export function DailyList() {
             setActiveDailyMonth(todayYM);
             setActiveDailyDate(todayISO);
             setEmptyCtx(null);
-            setEmptyCtxPos(null);
-            setEmptyCtxReady(false);
           }}
           className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
         >
@@ -652,8 +557,8 @@ export function DailyList() {
     {/* Menú contextual – entrada específica */}
     {contextMenu && (
       <div
-        ref={contextMenuRef}
-        style={{ position: 'fixed', top: contextMenuPos?.y ?? 8, left: contextMenuPos?.x ?? 8, zIndex: 9999, visibility: contextMenuReady ? 'visible' : 'hidden' }}
+        ref={contextMenuLayout.ref}
+        style={{ ...contextMenuLayout.style, zIndex: 9999 }}
         className="min-w-[180px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-2xl"
       >
         <button

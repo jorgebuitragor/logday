@@ -10,6 +10,7 @@ import { Task } from '../../types/task';
 import { Note } from '../../types/note';
 import { t as tFn } from '../../lib/i18n';
 import { isWorkDay, isColombianHoliday, toISO } from '../../lib/colombianHolidays';
+import { absenceTypeLabel } from '../../lib/absenceLabel';
 import { TaskContextMenu } from '../tasks/TaskContextMenu';
 import { AbsenceModal } from '../shared/AbsenceModal';
 import { WeeklyMiniCalendar } from './WeeklyMiniCalendar';
@@ -271,9 +272,7 @@ export function DashboardView() {
   const todayIsWorkDay = isWorkDay(today, workWeekDays, holidaysAsNonWork);
   const isHoliday = isColombianHoliday(today);
   const todayAbsence = absenceDays.find((a) => a.date === toISO(today)) ?? null;
-  const todayAbsenceLabel = todayAbsence
-    ? tFn(language, 'absence', `type${todayAbsence.type.charAt(0).toUpperCase()}${todayAbsence.type.slice(1)}` as 'typeIncapacidad' | 'typeVacaciones' | 'typeOtro')
-    : null;
+  const todayAbsenceLabel = todayAbsence ? absenceTypeLabel(language, todayAbsence.type) : null;
 
   const hour = today.getHours();
   const greetingKey = hour < 12 ? 'greetingMorning' : hour < 19 ? 'greetingAfternoon' : 'greetingEvening';

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { Fragment, useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Copy, Check, X, Plus, GripVertical, Trash2, ListTodo } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
@@ -16,6 +16,7 @@ import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
 import { ModalOverlay } from '../shared/ModalOverlay';
 import { ModalPanel } from '../shared/ModalPanel';
+import { absenceTypeLabel } from '../../lib/absenceLabel';
 
 const ESTIMATED_ACTIVITY_CTX_MENU = { width: 172, height: 84 };
 
@@ -66,16 +67,85 @@ async function writeToClipboard(text: string): Promise<void> {
 
 // ── Helpers para convertir entre string almacenado y array de items ───────────
 
+// Una actividad = una línea física en el string guardado. Un salto de línea
+// interno (Shift+Enter al editar) se escapa para no romper ese invariante.
+function escapeItemText(text: string): string {
+  return text.replace(/\\/g, '\\\\').replace(/\n/g, '\\n');
+}
+
+function unescapeItemText(text: string): string {
+  return text.replace(/\\(\\|n)/g, (_, c: string) => (c === 'n' ? '\n' : '\\'));
+}
+
 function parseItems(stored: string): string[] {
   return stored
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l.startsWith('- '))
-    .map((l) => l.slice(2));
+    .map((l) => unescapeItemText(l.slice(2)));
 }
 
 function serializeItems(items: string[]): string {
-  return items.map((i) => `- ${i}`).join('\n');
+  return items.map((i) => `- ${escapeItemText(i)}`).join('\n');
+}
+
+// ── Drag & drop entre paneles ──────────────────────────────────────────────
+
+/** Punto de inserción actual: en qué lista y en qué "hueco" entre actividades
+ * (gapIdx null = al final de la lista). Vive en DailyEditor() para que ambos
+ * paneles puedan dibujar la línea de inserción, sin importar cuál de los dos
+ * inició el arrastre. */
+interface DropTarget {
+  listId: string;
+  gapIdx: number | null;
+}
+
+// Margen de histéresis (px) alrededor de la mitad de una fila: una vez
+// decidido un lado, hace falta cruzar claramente al otro lado del margen
+// para cambiar — evita que micro-movimientos del mouse cerca del centro
+// hagan parpadear la línea de inserción entre "antes" y "después".
+const DROP_HYSTERESIS_PX = 6;
+
+// Distancia mínima que debe moverse el puntero desde que se presiona el
+// grip antes de considerar que el arrastre realmente empezó.
+const DRAG_START_THRESHOLD_PX = 4;
+
+/** Resuelve, a partir de coordenadas de puntero, en qué lista (`data-list-id`)
+ * y en qué hueco entre filas (según la mitad de la fila sobre la que está el
+ * cursor) caería el elemento si se soltara ahí. `prevTarget` es el último
+ * resultado de esta misma sesión de arrastre, usado para aplicar histéresis
+ * cuando el cursor sigue sobre la misma fila. */
+function resolveDropTarget(ev: PointerEvent, prevTarget: DropTarget | null): DropTarget | null {
+  const el = document.elementFromPoint(ev.clientX, ev.clientY);
+  const itemEl = el?.closest('[data-item-idx]') as HTMLElement | null;
+  const containerEl = el?.closest('[data-list-id]') as HTMLElement | null;
+  const listId = itemEl?.getAttribute('data-list-id') ?? containerEl?.getAttribute('data-list-id') ?? null;
+  if (!listId) return null;
+  if (itemEl && itemEl.getAttribute('data-list-id') === listId) {
+    const idx = Number(itemEl.getAttribute('data-item-idx'));
+    const rect = itemEl.getBoundingClientRect();
+    const mid = rect.top + rect.height / 2;
+    const onSameRow = prevTarget?.listId === listId && (prevTarget.gapIdx === idx || prevTarget.gapIdx === idx + 1);
+    const gapIdx = onSameRow
+      ? (ev.clientY < mid - DROP_HYSTERESIS_PX ? idx : ev.clientY > mid + DROP_HYSTERESIS_PX ? idx + 1 : prevTarget!.gapIdx)
+      : (ev.clientY < mid ? idx : idx + 1);
+    return { listId, gapIdx };
+  }
+  return { listId, gapIdx: null };
+}
+
+/** Línea delgada que marca el punto exacto de inserción entre dos actividades
+ * (o al inicio/final de la lista) — mismo patrón que RootDropLine.tsx en el
+ * Sidebar, siempre montada para que el espacio se anime al abrirse/cerrarse
+ * en vez de aparecer de golpe. */
+function DropLine({ active }: { active: boolean }) {
+  return (
+    <div
+      className={`rounded-full transition-all duration-150 ${
+        active ? 'my-1 h-1.5 bg-indigo-500' : 'my-[3px] h-0 bg-transparent'
+      }`}
+    />
+  );
 }
 
 // ── Componente ActivityList ───────────────────────────────────────────────────
@@ -84,6 +154,11 @@ interface ActivityListProps {
   /** Contenido almacenado como "- item1\n- item2\n..." */
   value: string;
   onChange: (v: string) => void;
+  /** Identifica este panel ("prev" | "today") para el drag & drop entre paneles. */
+  listId: string;
+  dropTarget: DropTarget | null;
+  onDragHover?: (target: DropTarget | null) => void;
+  onCrossListDrop?: (fromIdx: number, toListId: string, toIdx: number | null) => void;
   accent?: boolean;
   autoFocus?: boolean;
   onPromoteToTask?: (text: string) => void;
@@ -91,12 +166,12 @@ interface ActivityListProps {
   language: 'es' | 'en';
 }
 
-function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, taskSuggestions, language }: ActivityListProps) {
+function ActivityList({ value, onChange, listId, dropTarget, onDragHover, onCrossListDrop, accent, autoFocus, onPromoteToTask, taskSuggestions, language }: ActivityListProps) {
   const [inputVal, setInputVal] = useState('');
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [editVal, setEditVal] = useState('');
-  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const [draggingIdx, setDraggingIdx] = useState<number | null>(null);
+  const [ghostPos, setGhostPos] = useState<{ x: number; y: number } | null>(null);
   const [promotedIdx, setPromotedIdx] = useState<number | null>(null);
   const [pendingPromoteText, setPendingPromoteText] = useState<string | null>(null);
   const [suggestIdx, setSuggestIdx] = useState(-1);
@@ -110,12 +185,16 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
   const dragSrcIdx = useRef<number | null>(null);
   const itemsRef = useRef<string[]>([]);
   const onChangeRef = useRef(onChange);
+  const onDragHoverRef = useRef(onDragHover);
+  const onCrossListDropRef = useRef(onCrossListDrop);
   const inputRef = useRef<HTMLInputElement>(null);
   const editInputRef = useRef<HTMLTextAreaElement>(null);
 
   const items = useMemo(() => parseItems(value), [value]);
   itemsRef.current = items;
   onChangeRef.current = onChange;
+  onDragHoverRef.current = onDragHover;
+  onCrossListDropRef.current = onCrossListDrop;
 
   // ── Añadir ─────────────────────────────────────────────────────────────────
   const addItem = (text: string) => {
@@ -152,6 +231,7 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
   };
 
   const handleEditKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && e.shiftKey) return; // deja que el textarea inserte el salto de línea
     if (filteredSuggestions.length > 0) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setSuggestIdx((i) => Math.min(i + 1, filteredSuggestions.length - 1)); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); setSuggestIdx((i) => Math.max(i - 1, -1)); return; }
@@ -170,14 +250,24 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
       return;
     }
     e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
     dragSrcIdx.current = idx;
-    setDraggingIdx(idx);
+    let active = false;
+    let lastTarget: DropTarget | null = null;
 
     const handlePointerMove = (ev: PointerEvent) => {
-      const el = document.elementFromPoint(ev.clientX, ev.clientY);
-      const itemEl = el?.closest('[data-item-idx]');
-      const targetIdx = itemEl ? Number(itemEl.getAttribute('data-item-idx')) : null;
-      setDragOverIdx(targetIdx !== dragSrcIdx.current ? targetIdx : null);
+      if (!active) {
+        // Umbral mínimo antes de "tomar" la actividad: evita que un
+        // micro-temblor del mouse justo al presionar el grip ya dispare
+        // el fantasma/línea de inserción.
+        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < DRAG_START_THRESHOLD_PX) return;
+        active = true;
+        setDraggingIdx(idx);
+      }
+      setGhostPos({ x: ev.clientX, y: ev.clientY });
+      lastTarget = resolveDropTarget(ev, lastTarget);
+      onDragHoverRef.current?.(lastTarget);
     };
 
     const handlePointerUp = (ev: PointerEvent) => {
@@ -186,17 +276,24 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
       const src = dragSrcIdx.current;
       dragSrcIdx.current = null;
       setDraggingIdx(null);
-      setDragOverIdx(null);
+      setGhostPos(null);
+      onDragHoverRef.current?.(null);
 
-      const el = document.elementFromPoint(ev.clientX, ev.clientY);
-      const itemEl = el?.closest('[data-item-idx]');
-      const tgt = itemEl ? Number(itemEl.getAttribute('data-item-idx')) : null;
+      if (!active || src === null) return;
+      const target = resolveDropTarget(ev, lastTarget);
+      if (!target) return;
 
-      if (src !== null && tgt !== null && src !== tgt) {
-        const updated = [...itemsRef.current];
-        const [moved] = updated.splice(src, 1);
-        updated.splice(tgt, 0, moved);
-        onChangeRef.current(serializeItems(updated));
+      if (target.listId === listId) {
+        const gapIdx = target.gapIdx ?? itemsRef.current.length;
+        const insertAt = gapIdx > src ? gapIdx - 1 : gapIdx;
+        if (insertAt !== src) {
+          const updated = [...itemsRef.current];
+          const [moved] = updated.splice(src, 1);
+          updated.splice(insertAt, 0, moved);
+          onChangeRef.current(serializeItems(updated));
+        }
+      } else {
+        onCrossListDropRef.current?.(src, target.listId, target.gapIdx);
       }
     };
 
@@ -296,16 +393,20 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
   const itemNormal = accent
     ? `${itemBase} border-indigo-500/20 bg-indigo-500/5 text-[var(--text-body)]`
     : `${itemBase} border-[var(--border-card)] bg-[var(--bg-base)] text-[var(--text-body)]`;
-  const itemDragOver = 'border-indigo-400/60 bg-indigo-500/10 scale-[1.01]';
+
+  const isOwnGapActive = (gap: number) =>
+    dropTarget?.listId === listId && (dropTarget.gapIdx ?? items.length) === gap;
 
   return (
     <>
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col" data-list-id={listId}>
+      <DropLine active={isOwnGapActive(0)} />
       {items.map((item, idx) => (
+        <Fragment key={idx}>
         <div
-          key={idx}
           data-item-idx={idx}
-          className={`${itemNormal} ${dragOverIdx === idx ? itemDragOver : ''} ${draggingIdx === idx ? 'opacity-40' : ''}`}
+          data-list-id={listId}
+          className={`${itemNormal} ${draggingIdx === idx ? 'opacity-40' : ''}`}
         >
           {/* Handle de arrastre */}
           <GripVertical
@@ -367,7 +468,7 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
             </div>
           ) : (
             <span
-              className="flex-1 cursor-text select-none"
+              className="flex-1 cursor-text select-none whitespace-pre-wrap"
               onClick={() => startEdit(idx)}
               title={t(language, 'dailys', 'clickEditDrag')}
             >
@@ -402,10 +503,12 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
             </div>
           )}
         </div>
+        <DropLine active={isOwnGapActive(idx + 1)} />
+        </Fragment>
       ))}
 
       {/* Input para añadir nueva actividad + sugerencias */}
-      <div className="relative">
+      <div className="relative mt-1">
         <div
           className={`flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 ${
             accent ? 'border-indigo-500/30 bg-indigo-500/5' : 'border-[var(--border-card)]'
@@ -536,6 +639,17 @@ function ActivityList({ value, onChange, accent, autoFocus, onPromoteToTask, tas
         </div>,
         document.body,
       )}
+
+      {/* Fantasma que sigue el cursor mientras se arrastra una actividad */}
+      {draggingIdx !== null && ghostPos && createPortal(
+        <div
+          style={{ left: ghostPos.x + 14, top: ghostPos.y + 6, pointerEvents: 'none', position: 'fixed', zIndex: 9999, maxWidth: 260 }}
+          className="rounded-lg border border-indigo-400/60 bg-[var(--bg-panel)] px-3 py-2 text-xs text-[var(--text-body)] shadow-2xl opacity-90"
+        >
+          <p className="truncate">{items[draggingIdx]?.replace(/\n/g, ' ')}</p>
+        </div>,
+        document.body,
+      )}
     </>
   );
 }
@@ -573,6 +687,9 @@ export function DailyEditor() {
   }, [activeDailyDate, absenceDays]);
 
   const prevISO = useMemo(() => (prevDate ? toISO(prevDate) : null), [prevDate]);
+
+  const prevAbsence = prevISO ? absenceDays.find((a) => a.date === prevISO) ?? null : null;
+  const activeAbsence = activeDailyDate ? absenceDays.find((a) => a.date === activeDailyDate) ?? null : null;
 
   // Cargar mes del día anterior si es distinto
   useEffect(() => {
@@ -624,6 +741,24 @@ export function DailyEditor() {
       }, 800);
     },
     [prevISO, saveDailyEntry]
+  );
+
+  // ── Arrastrar actividades entre el panel "anterior" y el de "hoy" ──────────
+  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
+
+  const handleCrossListDrop = useCallback(
+    (fromListId: 'prev' | 'today', fromIdx: number, toListId: string, toIdx: number | null) => {
+      const srcActs = fromListId === 'today' ? todayActs : prevActs;
+      const tgtActs = toListId === 'today' ? todayActs : prevActs;
+      const srcArr = parseItems(srcActs);
+      const tgtArr = fromListId === toListId ? srcArr : parseItems(tgtActs);
+      const [moved] = srcArr.splice(fromIdx, 1);
+      if (moved === undefined) return;
+      tgtArr.splice(toIdx ?? tgtArr.length, 0, moved);
+      (fromListId === 'today' ? handleTodayChange : handlePrevChange)(serializeItems(srcArr));
+      (toListId === 'today' ? handleTodayChange : handlePrevChange)(serializeItems(tgtArr));
+    },
+    [todayActs, prevActs, handleTodayChange, handlePrevChange]
   );
 
   const handleCopy = async () => {
@@ -727,11 +862,20 @@ export function DailyEditor() {
               <span className="text-xs font-medium text-[var(--text-secondary)]">
                 {formatShortDate(prevISO, language)}
               </span>
+              {prevAbsence && (
+                <span className="ml-auto rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[9px] font-medium text-amber-400">
+                  {absenceTypeLabel(language, prevAbsence.type)}
+                </span>
+              )}
             </div>
             <div className="px-4 py-3">
               <ActivityList
                 value={prevActs}
                 onChange={handlePrevChange}
+                listId="prev"
+                dropTarget={dropTarget}
+                onDragHover={setDropTarget}
+                onCrossListDrop={(fromIdx, toListId, toIdx) => handleCrossListDrop('prev', fromIdx, toListId, toIdx)}
                 onPromoteToTask={handlePromoteToTask}
                 taskSuggestions={tasks}
                 language={language}
@@ -749,11 +893,20 @@ export function DailyEditor() {
             <span className="text-xs font-medium text-[var(--text-secondary)]">
               {formatShortDate(activeDailyDate, language)}
             </span>
+            {activeAbsence && (
+              <span className="ml-auto rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[9px] font-medium text-amber-400">
+                {absenceTypeLabel(language, activeAbsence.type)}
+              </span>
+            )}
           </div>
           <div className="px-4 py-3">
             <ActivityList
               value={todayActs}
               onChange={handleTodayChange}
+              listId="today"
+              dropTarget={dropTarget}
+              onDragHover={setDropTarget}
+              onCrossListDrop={(fromIdx, toListId, toIdx) => handleCrossListDrop('today', fromIdx, toListId, toIdx)}
               accent
               autoFocus
               onPromoteToTask={handlePromoteToTask}

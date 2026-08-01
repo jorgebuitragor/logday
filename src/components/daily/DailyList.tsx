@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, ChevronLeft, ChevronRight, CalendarPlus, CalendarOff, Trash2, Copy, Check, FileText, FileDown, FileType2 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../store/appStore';
@@ -11,6 +11,7 @@ import { MONTHS_TITLE, t } from '../../lib/i18n';
 import { exportDailyMonthEntries } from '../../lib/dailyMonthExport';
 import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
+import { absenceTypeLabel } from '../../lib/absenceLabel';
 
 const ESTIMATED_DAILY_ENTRY_MENU = { width: 190, height: 96 };
 const ESTIMATED_DAILY_EMPTY_MENU = { width: 200, height: 130 };
@@ -48,6 +49,7 @@ export function DailyList() {
     language,
     confirmDestructiveActions,
     deleteDailyMonth,
+    absenceDays,
   } = useAppStore(
     useShallow((s) => ({
       activeSection: s.activeSection,
@@ -63,7 +65,13 @@ export function DailyList() {
       setActiveDailyMonth: s.setActiveDailyMonth,
       language: s.language,
       confirmDestructiveActions: s.confirmDestructiveActions,
+      absenceDays: s.absenceDays,
     }))
+  );
+
+  const absenceByDate = useMemo(
+    () => new Map(absenceDays.map((a) => [a.date, a])),
+    [absenceDays]
   );
 
   // ── Estado del picker de fecha ────────────────────────────────────────────
@@ -345,6 +353,7 @@ export function DailyList() {
             const lines = (dailyEntries[date] ?? '').split('\n').filter((l) => l.trim().startsWith('-'));
             const taskCount = lines.length;
             const preview = lines[0]?.replace(/^-\s*/, '').slice(0, 45) ?? '';
+            const absence = absenceByDate.get(date);
 
             return (
               <div key={date} className={`task-row-enter task-d${Math.min(idx, 10)} group relative`}>
@@ -383,6 +392,11 @@ export function DailyList() {
                         )}
                       </div>
                     </div>
+                    {absence && (
+                      <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[9px] font-medium text-amber-400">
+                        {absenceTypeLabel(language, absence.type)}
+                      </span>
+                    )}
                   </div>
                   {preview && (
                     <p className="mt-1.5 truncate text-[11px] text-[var(--text-hint)]">{preview}</p>

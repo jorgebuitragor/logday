@@ -63,8 +63,10 @@ demás estén hechas (salvo donde se indica).
         personalizados) — se unificó a `var(--accent)` como las otras
         dos variantes, consistente con el spec `temas-personalizacion`.
         Verificado con `tsc --noEmit`, `eslint` (sin errores nuevos) y
-        `vite build` (bundle limpio) — pendiente pase de QA visual
-        manual en `pnpm tauri dev`.
+        `vite build` (bundle limpio). QA visual confirmado
+        indirectamente en los pases manuales posteriores de las fases
+        4/5/6 (Settings y Calendar probados repetidamente en
+        `pnpm tauri dev` sin problemas reportados).
 - [x] 1.2 `InlineRenameInput` (`src/components/InlineRenameInput.tsx`) —
       estado del draft interno al componente vía `autoFocus` nativo, sin
       `ref`+`setTimeout(50)` (2026-08-01)
@@ -86,7 +88,10 @@ demás estén hechas (salvo donde se indica).
         `InlineRenameInput` en un `<span>` para no romper el
         comportamiento actual.
         Verificado con `tsc --noEmit`, `eslint` (sin errores nuevos) y
-        `vite build` — pendiente QA visual manual en `pnpm tauri dev`.
+        `vite build`. QA visual confirmado indirectamente en los pases
+        manuales posteriores de las fases 4/5/6 (Settings, Sidebar y
+        NoteList probados repetidamente en `pnpm tauri dev` sin
+        problemas reportados).
 - [x] 1.3 `ConfirmDeleteModal` + `useConfirmDelete`
       (`src/components/ConfirmDeleteModal.tsx`, `src/hooks/useConfirmDelete.ts`)
       (2026-08-01). Desviaciones sobre el boceto de `design.md`:

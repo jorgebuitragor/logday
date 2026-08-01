@@ -42,8 +42,7 @@ import {
   Smile,
 } from 'lucide-react';
 import { useEditor, EditorContent } from '@tiptap/react';
-import { TextSelection, Plugin, PluginKey } from '@tiptap/pm/state';
-import { DecorationSet, Decoration } from '@tiptap/pm/view';
+import { TextSelection } from '@tiptap/pm/state';
 import { Extension } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
@@ -63,7 +62,6 @@ import Dropcursor from '@tiptap/extension-dropcursor';
 import { Markdown } from 'tiptap-markdown';
 import Paragraph from '@tiptap/extension-paragraph';
 import { common, createLowlight } from 'lowlight';
-import { gemoji } from 'gemoji';
 import { useAppStore } from '../store/appStore';
 import { Note } from '../types/note';
 import { ExportModal } from './ExportModal';
@@ -78,52 +76,13 @@ import { CODE_LANGUAGE_OPTIONS, normalizeCodeLanguage } from '../lib/codeHighlig
 import { placeMenuNearAnchor } from '../lib/menuPosition';
 import { t as tFn } from '../lib/i18n';
 import { LinkPreviewCard } from './LinkPreviewCard';
-import type { InternalNoteMeta, ExternalMetaState, AnchorPos } from './LinkPreviewCard';
-import { fs, fetchUrlMetadata } from '../lib/invoke';
+import { fs } from '../lib/invoke';
+import { EMOJI_CATALOG, normalizeEmojiSearchTerm } from '../lib/emojiCatalog';
+import { createTaskCodePlugin, normalizeEditorMarkdown } from '../lib/noteEditorMarkdown';
+import { useLinkPreview } from '../hooks/useLinkPreview';
 
 const lowlight = createLowlight(common);
 const BLOCK_MENU_ESTIMATED_SIZE = { width: 220, height: 260 };
-const GAP_LINK_CARD = 8; // px between anchor bottom and preview card top
-
-// ── Task-code decoration plugin (display-only, no toca el markdown) ────────
-const taskCodePluginKey = new PluginKey<DecorationSet>('taskCodeDecorations');
-const TASK_CODE_RE = /#([A-Z0-9\-_]+)/gi;
-
-function createTaskCodePlugin(tasksRef: React.MutableRefObject<import('../types/task').Task[]>): Plugin {
-  return new Plugin({
-    key: taskCodePluginKey,
-    props: {
-      decorations(state) {
-        const tasksByCode = new Map(
-          (tasksRef.current ?? [])
-            .filter((t) => t.taskCode)
-            .map((t) => [t.taskCode!.toUpperCase(), t])
-        );
-        if (tasksByCode.size === 0) return DecorationSet.empty;
-        const decorations: Decoration[] = [];
-        state.doc.descendants((node, pos) => {
-          if (!node.isText || !node.text) return;
-          TASK_CODE_RE.lastIndex = 0;
-          let match: RegExpExecArray | null;
-          while ((match = TASK_CODE_RE.exec(node.text)) !== null) {
-            const code = match[1].toUpperCase();
-            if (!tasksByCode.has(code)) continue;
-            const from = pos + match.index;
-            const to = from + match[0].length;
-            decorations.push(
-              Decoration.inline(from, to, {
-                class: 'task-code-link',
-                'data-task-code': code,
-                title: tasksByCode.get(code)!.title,
-              })
-            );
-          }
-        });
-        return DecorationSet.create(state.doc, decorations);
-      },
-    },
-  });
-}
 
 type BlockMenuType =
   | 'paragraph'
@@ -163,165 +122,6 @@ const CompactParagraph = Paragraph.extend({
     };
   },
 });
-
-function normalizeEditorMarkdown(raw: string): string {
-  if (!raw) return raw;
-
-  const lines = raw.split('\n');
-  let inFence = false;
-
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-    if (/^```/.test(line.trim())) {
-      inFence = !inFence;
-      continue;
-    }
-
-    if (inFence || i === lines.length - 1) continue;
-
-    const match = line.match(/(\\+)$/);
-    if (!match) continue;
-
-    // tiptap-markdown serializa hard breaks como "\\\n".
-    // Si hay un numero impar de barras al final de la linea, quitamos una.
-    const trailing = match[1];
-    if (trailing.length % 2 === 1) {
-      lines[i] = line.slice(0, -1);
-    }
-  }
-
-  const normalized = lines.join('\n');
-
-  // Fuerza enlaces autolink (<https://...>) a formato explicito [url](url)
-  // para mantener consistencia con la vista markdown solicitada.
-  return normalized.replace(/<((?:https?:\/\/)[^\s<>]+)>/g, '[$1]($1)');
-}
-
-type EmojiOption = {
-  emoji: string;
-  nameEs: string;
-  nameEn: string;
-  keywords: string[];
-};
-
-const ES_TOKEN_MAP: Record<string, string[]> = {
-  smile: ['sonrisa'],
-  happy: ['feliz', 'alegre'],
-  laugh: ['risa'],
-  joy: ['alegria'],
-  wink: ['guino'],
-  heart: ['corazon', 'amor'],
-  fire: ['fuego'],
-  rocket: ['cohete', 'lanzamiento'],
-  target: ['objetivo', 'meta'],
-  pin: ['fijar'],
-  note: ['nota'],
-  memo: ['memo', 'nota'],
-  warning: ['advertencia', 'alerta'],
-  check: ['check', 'completo', 'listo'],
-  cross: ['error', 'cerrar'],
-  attachment: ['adjunto'],
-  file: ['archivo'],
-  idea: ['idea'],
-  think: ['pensar'],
-  thinking: ['pensando'],
-  pray: ['rezar', 'gracias'],
-  clap: ['aplauso'],
-  cool: ['genial'],
-  star: ['estrella'],
-  sun: ['sol'],
-  moon: ['luna'],
-  party: ['fiesta'],
-  celebration: ['celebracion'],
-  bug: ['error', 'bug'],
-  fix: ['arreglo'],
-  lock: ['candado', 'seguridad'],
-  key: ['llave'],
-  money: ['dinero'],
-  time: ['tiempo'],
-  clock: ['reloj'],
-  calendar: ['calendario'],
-  phone: ['telefono'],
-  email: ['correo'],
-  work: ['trabajo'],
-  task: ['tarea'],
-};
-
-const ES_CATEGORY_MAP: Record<string, string[]> = {
-  smileys: ['caras', 'emociones'],
-  emotion: ['emocion'],
-  people: ['personas'],
-  body: ['cuerpo'],
-  animals: ['animales'],
-  nature: ['naturaleza'],
-  food: ['comida'],
-  drink: ['bebida'],
-  travel: ['viaje'],
-  places: ['lugares'],
-  activities: ['actividades'],
-  objects: ['objetos'],
-  symbols: ['simbolos'],
-  flags: ['banderas'],
-};
-
-function tokenizeWords(value: string): string[] {
-  return value
-    .toLowerCase()
-    .replace(/_/g, ' ')
-    .split(/[^a-z0-9]+/)
-    .filter(Boolean);
-}
-
-function buildSpanishName(nameEn: string): string {
-  const words = tokenizeWords(nameEn);
-  const translated = words.map((w) => ES_TOKEN_MAP[w]?.[0] || w);
-  if (translated.length === 0) return 'Emoji';
-  const sentence = translated.join(' ');
-  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
-}
-
-function buildEmojiCatalog(): EmojiOption[] {
-  const out: EmojiOption[] = [];
-  const seenEmoji = new Set<string>();
-
-  for (const item of gemoji) {
-    if (!item?.emoji || seenEmoji.has(item.emoji)) continue;
-    seenEmoji.add(item.emoji);
-
-    const englishBaseName = (item.names?.[0] || item.description || 'emoji').replace(/_/g, ' ');
-    const tokens = new Set<string>();
-
-    for (const n of item.names || []) tokenizeWords(n).forEach((w) => tokens.add(w));
-    for (const t of item.tags || []) tokenizeWords(t).forEach((w) => tokens.add(w));
-    tokenizeWords(item.description || '').forEach((w) => tokens.add(w));
-    tokenizeWords(item.category || '').forEach((w) => tokens.add(w));
-
-    const esTokens = new Set<string>();
-    for (const token of tokens) {
-      (ES_TOKEN_MAP[token] || []).forEach((w) => esTokens.add(w));
-      (ES_CATEGORY_MAP[token] || []).forEach((w) => esTokens.add(w));
-    }
-
-    out.push({
-      emoji: item.emoji,
-      nameEs: buildSpanishName(englishBaseName),
-      nameEn: englishBaseName,
-      keywords: Array.from(new Set([...tokens, ...esTokens])),
-    });
-  }
-
-  return out;
-}
-
-const EMOJI_CATALOG: EmojiOption[] = buildEmojiCatalog();
-
-function normalizeEmojiSearchTerm(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
-}
 
 export function NoteEditor() {
   const {
@@ -363,20 +163,6 @@ export function NoteEditor() {
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [isDroppingFile, setIsDroppingFile] = useState(false);
 
-  // ── Link preview card ────────────────────────────────────────────────────
-  interface LinkPreviewState {
-    id: string;
-    href: string;
-    isInternal: boolean;
-    internalNote: InternalNoteMeta | null;
-    externalMeta: ExternalMetaState | null;
-    anchorPos: AnchorPos;
-    anchorEl: HTMLAnchorElement;
-  }
-  const [linkPreview, setLinkPreview] = useState<LinkPreviewState | null>(null);
-  const externalMetaCacheRef = useRef<Map<string, ExternalMetaState>>(new Map());
-  // ─────────────────────────────────────────────────────────────────────────
-
   // ── Task-code reference popup (#code autocomplete) ──────────────────────────
   const [taskRefQuery, setTaskRefQuery] = useState<string | null>(null);
   const [taskRefAnchor, setTaskRefAnchor] = useState<{ top: number; left: number } | null>(null);
@@ -417,6 +203,7 @@ export function NoteEditor() {
   const sourceTextareaRef = useRef<HTMLTextAreaElement>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const editorPaneRef = useRef<HTMLDivElement>(null);
+  const { linkPreview, setLinkPreview } = useLinkPreview(editorPaneRef, activeNote?.id);
   const codeLangSelectionRef = useRef<{ from: number; to: number; scrollTop: number } | null>(null);
   const blockMenuRef = useRef<HTMLDivElement>(null);
   const caseMenuRef = useRef<HTMLDivElement>(null);
@@ -1197,211 +984,6 @@ export function NoteEditor() {
     });
   };
   // ────────────────────────────────────────────────────────────────────────
-
-  // ── Link preview — delegated listener helpers ──────────────────────────
-  // Handler refs updated each render to avoid stale closures.
-  const linkPreviewHandlerRef = useRef<{
-    open: (anchor: HTMLAnchorElement) => void;
-    close: () => void;
-    navigateLink: (href: string, isInternal: boolean, internalNoteId?: string) => void;
-  }>({
-    open: () => {},
-    close: () => {},
-    navigateLink: () => {},
-  });
-
-  linkPreviewHandlerRef.current = {
-    open(anchor: HTMLAnchorElement) {
-      const href = anchor.getAttribute('href') ?? '';
-      if (!href) return;
-
-      const isInternal =
-        !href.startsWith('http://') &&
-        !href.startsWith('https://') &&
-        !href.startsWith('//') &&
-        !href.startsWith('mailto:') &&
-        !href.startsWith('tel:') &&
-        !href.startsWith('ftp:');
-
-      // Resolve internal note
-      let internalNote: InternalNoteMeta | null = null;
-      if (isInternal) {
-        const allNotes = useAppStore.getState().notes;
-        const decoded = decodeURIComponent(href).toLowerCase();
-        const found = allNotes.find(
-          (n) =>
-            n.id === href ||
-            n.title.toLowerCase() === decoded ||
-            n.title.toLowerCase() === href.toLowerCase()
-        );
-        if (found) {
-          const plainBody = found.content
-            .replace(/^#{1,6}\s+.*/gm, '')   // strip headings
-            .replace(/[*_~`\[\]()]/g, ' ')   // strip most markdown symbols
-            .replace(/\s+/g, ' ')
-            .trim();
-          internalNote = {
-            id: found.id,
-            title: found.title,
-            updated: found.updated,
-            preview: plainBody.slice(0, 120),
-            tags: found.tags,
-          };
-        }
-      }
-
-      // Compute anchor position in scroll-container coordinates
-      const pane = editorPaneRef.current;
-      if (!pane) return;
-      const paneRect = pane.getBoundingClientRect();
-      const anchorRect = anchor.getBoundingClientRect();
-      const anchorPos: AnchorPos = {
-        top: anchorRect.bottom - paneRect.top + pane.scrollTop + GAP_LINK_CARD,
-        linkTop: anchorRect.top - paneRect.top + pane.scrollTop,
-        left: anchorRect.left - paneRect.left,
-        right: anchorRect.right - paneRect.left,
-      };
-
-      const cardId = `lpc-${Date.now()}`;
-
-      setLinkPreview({
-        id: cardId,
-        href,
-        isInternal,
-        internalNote,
-        externalMeta: null,
-        anchorPos,
-        anchorEl: anchor,
-      });
-
-      // Add aria-describedby on the anchor
-      anchor.setAttribute('aria-describedby', cardId);
-
-      // Fetch external metadata lazily
-      if (!isInternal) {
-        const cached = externalMetaCacheRef.current.get(href);
-        if (cached) {
-          setLinkPreview((prev) => prev ? { ...prev, externalMeta: cached } : prev);
-        } else {
-          setLinkPreview((prev) => prev ? { ...prev, externalMeta: { status: 'loading' } } : prev);
-          fetchUrlMetadata(href)
-            .then((meta) => {
-              const result: ExternalMetaState = {
-                status: 'ok',
-                title: meta.title,
-                domain: meta.domain,
-                description: meta.description,
-              };
-              externalMetaCacheRef.current.set(href, result);
-              setLinkPreview((prev) =>
-                prev?.href === href ? { ...prev, externalMeta: result } : prev
-              );
-            })
-            .catch(() => {
-              const result: ExternalMetaState = { status: 'error' };
-              externalMetaCacheRef.current.set(href, result);
-              setLinkPreview((prev) =>
-                prev?.href === href ? { ...prev, externalMeta: result } : prev
-              );
-            });
-        }
-      }
-    },
-
-    close() {
-      setLinkPreview((prev) => {
-        if (prev) prev.anchorEl.removeAttribute('aria-describedby');
-        return null;
-      });
-    },
-
-    navigateLink(href: string, isInternal: boolean, internalNoteId?: string) {
-      if (isInternal && internalNoteId) {
-        const note = useAppStore.getState().notes.find((n) => n.id === internalNoteId);
-        if (note) {
-          setSection('notes');
-          useAppStore.getState().setActiveNote(note);
-        }
-      } else if (!isInternal) {
-        fs.openUrl(href).catch(() => {});
-      }
-    },
-  };
-
-  // Attach delegated listeners for link preview. Depends on activeNote?.id so the effect
-  // re-runs when the pane first becomes available (the component returns early when there
-  // is no active note, so editorPaneRef is null on initial mount).
-  useEffect(() => {
-    const pane = editorPaneRef.current;
-    if (!pane) return;
-
-    const getLinkAnchor = (target: EventTarget | null): HTMLAnchorElement | null => {
-      if (!(target instanceof Element)) return null;
-      return target.closest('a[href]') as HTMLAnchorElement | null;
-    };
-
-    const onClick = (e: MouseEvent) => {
-      const anchor = getLinkAnchor(e.target);
-      if (!anchor) return;
-      const href = anchor.getAttribute('href') ?? '';
-      if (!href) return;
-
-      e.preventDefault();
-      e.stopPropagation();
-
-      // Ctrl / Cmd: navigate immediately
-      if (e.ctrlKey || e.metaKey) {
-        const isInternal =
-          !href.startsWith('http') && !href.startsWith('//') &&
-          !href.startsWith('mailto:') && !href.startsWith('tel:');
-        const internalId = isInternal
-          ? useAppStore.getState().notes.find(
-              (n) => n.id === href || n.title.toLowerCase() === decodeURIComponent(href).toLowerCase()
-            )?.id
-          : undefined;
-        linkPreviewHandlerRef.current.close();
-        linkPreviewHandlerRef.current.navigateLink(href, isInternal, internalId);
-        return;
-      }
-
-      // Plain click: show card
-      linkPreviewHandlerRef.current.open(anchor);
-    };
-
-    // Touch: single tap shows card
-    const onTouchEnd = (e: TouchEvent) => {
-      const anchor = getLinkAnchor(e.target);
-      if (!anchor) return;
-      e.preventDefault();
-      linkPreviewHandlerRef.current.open(anchor);
-    };
-
-    pane.addEventListener('click', onClick, true);
-    pane.addEventListener('touchend', onTouchEnd, { passive: false });
-
-    return () => {
-      pane.removeEventListener('click', onClick, true);
-      pane.removeEventListener('touchend', onTouchEnd);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeNote?.id]);
-
-  // Close link preview on note change (card becomes stale)
-  useEffect(() => {
-    linkPreviewHandlerRef.current.close();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeNote?.id]);
-
-  // Close on container scroll (same pattern as block context menu)
-  useEffect(() => {
-    if (!linkPreview) return;
-    const pane = editorPaneRef.current;
-    if (!pane) return;
-    const handler = () => linkPreviewHandlerRef.current.close();
-    pane.addEventListener('scroll', handler);
-    return () => pane.removeEventListener('scroll', handler);
-  }, [linkPreview]);
-  // ── end link preview ───────────────────────────────────────────────────
 
   useEffect(() => {
     if (!activeNote || !editor) return;

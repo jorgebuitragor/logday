@@ -1,7 +1,7 @@
 # Tasks — Estructura de código y buenas prácticas React
 
 Estado: en progreso. Fases 0-3 implementadas; Fase 4 en progreso
-(4.1 y 4.2 completas; 4.3-4.5 pendientes); Fase 5 sigue en diseño.
+(4.1-4.3 completas; 4.4-4.5 pendientes); Fase 5 sigue en diseño.
 Es la lista de trabajo fase por fase. Cada fase es independiente:
 se puede implementar y comitear por separado sin depender de que las
 demás estén hechas (salvo donde se indica).
@@ -359,15 +359,59 @@ para todos: un pase de QA visual manual en `pnpm tauri dev`.
         comportamiento original.
         Verificado con `tsc --noEmit`, `eslint` (sin errores nuevos) y
         `vite build` limpio. `SettingsModal.tsx`: 1492 → 1157 líneas.
-- [ ] 4.3 `NoteEditor.tsx`
-  - [ ] 4.3.1 Mover catálogo de emojis a `src/lib/emojiCatalog.ts`
-  - [ ] 4.3.2 Mover `normalizeEditorMarkdown` y `createTaskCodePlugin`
-        a `src/lib/`
-  - [ ] 4.3.3 Extraer el subsistema de vista previa de enlaces a
-        `useLinkPreview`
-  - [ ] 4.3.4 Evaluar extracción del menú contextual de bloque y del
-        editor de diagramas Mermaid (forma exacta a decidir al
-        implementar, ver `design.md`)
+- [x] 4.3 `NoteEditor.tsx` (2026-08-01)
+  - [x] 4.3.1 Movido catálogo de emojis a `src/lib/emojiCatalog.ts`
+        (`EmojiOption`, `buildEmojiCatalog`, `EMOJI_CATALOG`,
+        `normalizeEmojiSearchTerm`, ~125 líneas puras). Eliminado el
+        import ahora muerto de `gemoji` en `NoteEditor.tsx`.
+  - [x] 4.3.2 Movidos `normalizeEditorMarkdown` y `createTaskCodePlugin`
+        a `src/lib/noteEditorMarkdown.ts` (cero JSX/hooks, lógica pura
+        de ProseMirror/markdown). Limpiados los imports de
+        `Plugin`/`PluginKey`/`DecorationSet`/`Decoration` de
+        `@tiptap/pm/*` en `NoteEditor.tsx` (ya no se usan directo ahí).
+  - [x] 4.3.3 Extraído el subsistema de vista previa de enlaces a
+        `src/hooks/useLinkPreview.ts` (estado `linkPreview`, cache de
+        metadata externa, los 3 handlers `open`/`close`/`navigateLink`
+        vía ref, y los 3 efectos de listeners delegados/cierre-por-nota/
+        cierre-por-scroll). El hook recibe `editorPaneRef` y
+        `activeNoteId` como parámetros — `editorPaneRef` sigue siendo
+        propiedad de `NoteEditor` porque lo usan ~10 sitios más del
+        componente ajenos al link preview. Devuelve `{ linkPreview,
+        setLinkPreview }`; el JSX de `LinkPreviewCard` y sus callbacks
+        de navegación quedan en `NoteEditor.tsx` sin cambios porque
+        tocan `editor` (instancia Tiptap) para reescribir enlaces, que
+        es responsabilidad del propio editor, no del subsistema de
+        preview. Se corrigió de paso un warning nuevo de
+        `react-hooks/exhaustive-deps` (falta `editorPaneRef` en el
+        array de deps del efecto de cierre-por-scroll) que no existía
+        en el componente original porque ahí `editorPaneRef` era un
+        `useRef` local (identidad estable reconocida automáticamente
+        por la regla); al pasar la misma ref como parámetro del hook,
+        ESLint deja de asumir esa estabilidad y hay que declararla
+        explícitamente — comportamiento idéntico, solo silencia el
+        lint.
+        Verificado con `tsc --noEmit`, `eslint` (16 problemas vs. 17 en
+        baseline — una advertencia menos, ninguna nueva) y `vite build`
+        limpio. `NoteEditor.tsx`: 2841 → 2423 líneas.
+  - [x] 4.3.4 Evaluado el menú contextual de bloque
+        (`BlockContextMenuState`, `getBlockContextMeta`,
+        `closeBlockContextMenu` y ~10 handlers más) y el editor de
+        diagramas Mermaid (`editingDiagramIndex` + `MermaidEditorModal`).
+        **Decisión: no extraer.** A diferencia de emojis/markdown/link-
+        preview, ambos subsistemas están construidos directamente sobre
+        la instancia viva de `editor` (Tiptap/ProseMirror) que posee
+        `NoteEditor`: cada handler manipula `editor.state.doc`
+        directamente (mover/duplicar/convertir/eliminar bloques,
+        indexar bloques Mermaid dentro del documento). Extraerlos
+        exigiría pasar `editor`, `mermaidBlocks`, `insertBlockAtSelection`,
+        `syncMarkdownToEditor`, `mdContent`, `viewMode` y
+        `topLevelPosAtIndex` como dependencias — no reduce acoplamiento
+        real, solo mueve el JSX a otro archivo con casi la misma lista
+        de parámetros, con el riesgo añadido de introducir un bug de
+        posicionamiento/sincronización sin un pase de QA manual
+        dedicado. Se deja documentado como candidato futuro si
+        `NoteEditor.tsx` vuelve a crecer, pero no se ejecuta en esta
+        fase.
 - [ ] 4.4 `CalendarView.tsx`
   - [ ] 4.4.1 Resolver la duplicación de estado de formulario de evento
         entre `CalendarView`/`EventEditor` antes de mover archivos

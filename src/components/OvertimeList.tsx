@@ -5,6 +5,8 @@ import { useAppStore } from '../store/appStore';
 import { OvertimeEntry } from '../types';
 import { MONTHS_TITLE, t } from '../lib/i18n';
 import { OvertimePreviewModal } from './OvertimePreviewModal';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 
 interface Props {
   activeEntryId?: string | null;
@@ -59,7 +61,7 @@ export function OvertimeList({ onEdit, activeEntryId }: Props) {
       setExporting(false);
     }
   }
-  const [confirmDelete, setConfirmDelete] = useState<OvertimeEntry | null>(null);
+  const confirmDeleteDialog = useConfirmDelete<OvertimeEntry>(confirmDestructiveActions);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const ctxMenuRef = useRef<HTMLDivElement>(null);
   const [entryCtx, setEntryCtx] = useState<{ entry: OvertimeEntry; x: number; y: number } | null>(null);
@@ -192,8 +194,7 @@ export function OvertimeList({ onEdit, activeEntryId }: Props) {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (confirmDestructiveActions) setConfirmDelete(entry);
-                    else void deleteOvertimeEntry(entry.id);
+                    confirmDeleteDialog.request(entry, (en) => void deleteOvertimeEntry(en.id));
                   }}
                   className="mt-0.5 hidden shrink-0 rounded p-1 text-[var(--text-hint)] hover:text-red-400 hover:bg-red-500/10 group-hover:flex"
                   title={t(language, 'overtime', 'deleteTitle')}
@@ -321,8 +322,7 @@ export function OvertimeList({ onEdit, activeEntryId }: Props) {
         <div className="mx-2 my-1 border-t border-[var(--border)]" />
         <button
           onClick={() => {
-            if (confirmDestructiveActions) setConfirmDelete(entryCtx.entry);
-            else void deleteOvertimeEntry(entryCtx.entry.id);
+            confirmDeleteDialog.request(entryCtx.entry, (en) => void deleteOvertimeEntry(en.id));
             setEntryCtx(null);
           }}
           className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-red-400 transition hover:bg-red-500/10"
@@ -342,32 +342,21 @@ export function OvertimeList({ onEdit, activeEntryId }: Props) {
         onExport={() => { void handleExport(overtimeMonth); setShowPreview(false); }}
       />
     )}
-    {confirmDelete && confirmDestructiveActions && (
-      <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
-        <div className="modal-spring-in w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
-          <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-            <Trash2 size={15} className="text-red-400" />
-            {t(language, 'overtime', 'deleteExtra')}
-          </div>
-          <p className="mb-4 text-xs text-[var(--text-secondary)]">
-            {t(language, 'overtime', 'deleteExtraAskPrefix')} <span className="font-medium text-[var(--text-primary)]">{formatFecha(confirmDelete.fecha, language)}</span>? {t(language, 'overtime', 'deleteExtraAskSuffix')}
-          </p>
-          <div className="flex justify-end gap-2">
-            <button
-              onClick={() => setConfirmDelete(null)}
-              className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
-            >
-              {t(language, 'overtime', 'cancel')}
-            </button>
-            <button
-              onClick={() => { deleteOvertimeEntry(confirmDelete.id); setConfirmDelete(null); }}
-              className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600"
-            >
-              {t(language, 'overtime', 'delete')}
-            </button>
-          </div>
-        </div>
-      </div>
+    {confirmDeleteDialog.isOpen && confirmDeleteDialog.pending && (
+      <ConfirmDeleteModal
+        title={t(language, 'overtime', 'deleteExtra')}
+        message={
+          <>
+            {t(language, 'overtime', 'deleteExtraAskPrefix')}{' '}
+            <span className="font-medium text-[var(--text-primary)]">{formatFecha(confirmDeleteDialog.pending.fecha, language)}</span>
+            ? {t(language, 'overtime', 'deleteExtraAskSuffix')}
+          </>
+        }
+        cancelLabel={t(language, 'overtime', 'cancel')}
+        confirmLabel={t(language, 'overtime', 'delete')}
+        onCancel={confirmDeleteDialog.cancel}
+        onConfirm={() => { deleteOvertimeEntry(confirmDeleteDialog.pending!.id); confirmDeleteDialog.cancel(); }}
+      />
     )}
   </>);
 }

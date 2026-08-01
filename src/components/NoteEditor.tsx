@@ -69,6 +69,8 @@ import { Note } from '../types';
 import { ExportModal } from './ExportModal';
 import { MarkdownPreview } from './MarkdownPreview';
 import { MermaidEditorModal } from './MermaidEditorModal';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { MermaidBlock } from './MermaidBlock';
 import { formatMermaidFence, parseMermaidBlocks } from '../lib/mermaid';
 import { ImageLinkModal } from './ImageLinkModal';
@@ -1790,7 +1792,7 @@ export function NoteEditor() {
     updateNote({ ...activeNote, tags: activeNote.tags.filter((t) => t !== tag) });
   };
 
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const confirmDeleteDialog = useConfirmDelete<true>(confirmDestructiveActions);
 
   const handleDelete = async () => {
     if (!activeNote) return;
@@ -1857,32 +1859,23 @@ export function NoteEditor() {
   return (
     <div key={activeNote.id} className="animate-fade-in flex flex-1 flex-col overflow-hidden bg-[var(--bg-base)]">
       {/* Modal confirmación eliminar */}
-      {showDeleteConfirm && confirmDestructiveActions && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
-          <div className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
-            <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-              <Trash2 size={15} className="text-red-400" />
-              {tFn(language, 'notes', 'confirmDeleteTitle')}
-            </div>
-            <p className="mb-4 text-xs text-[var(--text-secondary)]">
-              {tFn(language, 'notes', 'confirmDeleteMsg')} <span className="font-medium text-[var(--text-primary)]">"{activeNote.title || tFn(language, 'notes', 'untitled')}"</span>? {tFn(language, 'notes', 'confirmDeleteDesc')}
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
-              >
-                {tFn(language, 'notes', 'cancel')}
-              </button>
-              <button
-                onClick={() => { setShowDeleteConfirm(false); handleDelete(); }}
-                className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600"
-              >
-                {tFn(language, 'notes', 'delete')}
-              </button>
-            </div>
-          </div>
-        </div>
+      {confirmDeleteDialog.isOpen && (
+        <ConfirmDeleteModal
+          title={tFn(language, 'notes', 'confirmDeleteTitle')}
+          message={
+            <>
+              {tFn(language, 'notes', 'confirmDeleteMsg')}{' '}
+              <span className="font-medium text-[var(--text-primary)]">
+                "{activeNote.title || tFn(language, 'notes', 'untitled')}"
+              </span>
+              ? {tFn(language, 'notes', 'confirmDeleteDesc')}
+            </>
+          }
+          cancelLabel={tFn(language, 'notes', 'cancel')}
+          confirmLabel={tFn(language, 'notes', 'delete')}
+          onCancel={confirmDeleteDialog.cancel}
+          onConfirm={() => { confirmDeleteDialog.cancel(); void handleDelete(); }}
+        />
       )}
       {/* Toolbar */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-2.5">
@@ -1975,10 +1968,7 @@ export function NoteEditor() {
             <Download size={13} />
           </button>
           <button
-            onClick={() => {
-              if (confirmDestructiveActions) setShowDeleteConfirm(true);
-              else void handleDelete();
-            }}
+            onClick={() => confirmDeleteDialog.request(true, () => void handleDelete())}
             className="rounded-lg p-1.5 text-[var(--text-hint)] transition hover:text-red-400 hover:bg-red-400/10"
             title={tFn(language, 'notes', 'deleteNote')}
           >

@@ -6,6 +6,8 @@ import { AbsenceType } from '../types';
 import { t } from '../lib/i18n';
 import { toISO } from '../lib/colombianHolidays';
 import { AppDatePicker } from './AppDatePicker';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 
 interface Props {
   initialDate?: string; // YYYY-MM-DD, default hoy
@@ -21,7 +23,7 @@ export function AbsenceModal({ initialDate, onClose }: Props) {
   const existing = absenceDays.find((a) => a.date === date) ?? null;
   const [type, setType] = useState<AbsenceType>(existing?.type ?? 'incapacidad');
   const [note, setNote] = useState(existing?.note ?? '');
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const confirmDeleteDialog = useConfirmDelete<true>(confirmDestructiveActions);
 
   // Al cambiar la fecha, si ya existe una ausencia registrada ese día,
   // se cargan sus valores para editarla en vez de crear una duplicada.
@@ -39,8 +41,7 @@ export function AbsenceModal({ initialDate, onClose }: Props) {
 
   const handleDeleteClick = () => {
     if (!existing) return;
-    if (confirmDestructiveActions) setConfirmDelete(true);
-    else void doDelete();
+    confirmDeleteDialog.request(true, () => void doDelete());
   };
 
   const doDelete = async () => {
@@ -124,26 +125,15 @@ export function AbsenceModal({ initialDate, onClose }: Props) {
         </div>
       </div>
 
-      {confirmDelete && existing && (
-        <div className="fixed inset-0 z-[10002] flex items-center justify-center bg-black/40">
-          <div className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
-            <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-              <Trash2 size={15} className="text-red-400" />
-              {t(language, 'absence', 'delete')}
-            </div>
-            <div className="flex justify-end gap-2 mt-4">
-              <button onClick={() => setConfirmDelete(false)} className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]">
-                {t(language, 'absence', 'cancel')}
-              </button>
-              <button
-                onClick={() => { setConfirmDelete(false); void doDelete(); }}
-                className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600"
-              >
-                {t(language, 'absence', 'delete')}
-              </button>
-            </div>
-          </div>
-        </div>
+      {confirmDeleteDialog.isOpen && existing && (
+        <ConfirmDeleteModal
+          title={t(language, 'absence', 'delete')}
+          cancelLabel={t(language, 'absence', 'cancel')}
+          confirmLabel={t(language, 'absence', 'delete')}
+          zIndex={10002}
+          onCancel={confirmDeleteDialog.cancel}
+          onConfirm={() => { confirmDeleteDialog.cancel(); void doDelete(); }}
+        />
       )}
     </div>
   );

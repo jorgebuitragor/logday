@@ -34,6 +34,9 @@ import {
 import { useAppStore } from '../store/appStore';
 import { ViewMode } from '../types';
 import { placeMenuAtPointer } from '../lib/menuPosition';
+import InlineRenameInput from './InlineRenameInput';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { t, MONTHS_TITLE } from '../lib/i18n';
 import { save } from '@tauri-apps/plugin-dialog';
 import { fs } from '../lib/invoke';
@@ -163,11 +166,8 @@ interface FolderTreeItemProps {
   depth: number;
   activeNoteFolder: string | null;
   renamingFolder: string | null;
-  renameValue: string;
-  renameInputRef: React.RefObject<HTMLInputElement | null>;
-  setRenameValue: (v: string) => void;
   setRenamingFolder: (f: string | null) => void;
-  handleRenameConfirm: () => void;
+  handleRenameConfirm: (newValue: string) => void;
   handleFolderContextMenu: (e: React.MouseEvent, folder: string) => void;
   selectNoteFolder: (f: string | null) => void;
   folderTags: Record<string, string[]>;
@@ -177,8 +177,8 @@ interface FolderTreeItemProps {
 }
 
 function FolderTreeItem({
-  node, depth, activeNoteFolder, renamingFolder, renameValue, renameInputRef,
-  setRenameValue, setRenamingFolder, handleRenameConfirm, handleFolderContextMenu,
+  node, depth, activeNoteFolder, renamingFolder,
+  setRenamingFolder, handleRenameConfirm, handleFolderContextMenu,
   selectNoteFolder, folderTags, expandedFolders, setExpandedFolders, moveNoteFolder,
 }: FolderTreeItemProps) {
   const hasChildren = node.children.length > 0;
@@ -249,15 +249,10 @@ function FolderTreeItem({
         </button>
 
         {renamingFolder === node.path ? (
-          <input
-            ref={renameInputRef}
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleRenameConfirm();
-              if (e.key === 'Escape') setRenamingFolder(null);
-            }}
-            onBlur={handleRenameConfirm}
+          <InlineRenameInput
+            value={node.path}
+            onCommit={handleRenameConfirm}
+            onCancel={() => setRenamingFolder(null)}
             className="flex-1 rounded border border-indigo-500/40 bg-[var(--bg-surface)] px-1 py-0.5 text-xs text-[var(--text-primary)] outline-none"
           />
         ) : (
@@ -293,9 +288,6 @@ function FolderTreeItem({
               depth={depth + 1}
               activeNoteFolder={activeNoteFolder}
               renamingFolder={renamingFolder}
-              renameValue={renameValue}
-              renameInputRef={renameInputRef}
-              setRenameValue={setRenameValue}
               setRenamingFolder={setRenamingFolder}
               handleRenameConfirm={handleRenameConfirm}
               handleFolderContextMenu={handleFolderContextMenu}
@@ -317,11 +309,8 @@ interface ProjectTreeItemProps {
   depth: number;
   activeProject: string | null;
   renamingProject: string | null;
-  projectRenameValue: string;
-  projectRenameInputRef: React.RefObject<HTMLInputElement | null>;
-  setProjectRenameValue: (v: string) => void;
   setRenamingProject: (f: string | null) => void;
-  handleProjectRenameConfirm: () => void;
+  handleProjectRenameConfirm: (newValue: string) => void;
   handleProjectContextMenu: (e: React.MouseEvent, project: string) => void;
   selectProject: (p: string | null) => void;
   expandedProjects: Set<string>;
@@ -334,9 +323,6 @@ function ProjectTreeItem({
   depth,
   activeProject,
   renamingProject,
-  projectRenameValue,
-  projectRenameInputRef,
-  setProjectRenameValue,
   setRenamingProject,
   handleProjectRenameConfirm,
   handleProjectContextMenu,
@@ -404,15 +390,10 @@ function ProjectTreeItem({
         </button>
 
         {renamingProject === node.path ? (
-          <input
-            ref={projectRenameInputRef}
-            value={projectRenameValue}
-            onChange={(e) => setProjectRenameValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleProjectRenameConfirm();
-              if (e.key === 'Escape') setRenamingProject(null);
-            }}
-            onBlur={handleProjectRenameConfirm}
+          <InlineRenameInput
+            value={node.name}
+            onCommit={handleProjectRenameConfirm}
+            onCancel={() => setRenamingProject(null)}
             className="flex-1 rounded border border-indigo-500/40 bg-[var(--bg-surface)] px-1 py-0.5 text-xs text-[var(--text-primary)] outline-none"
           />
         ) : (
@@ -436,9 +417,6 @@ function ProjectTreeItem({
               depth={depth + 1}
               activeProject={activeProject}
               renamingProject={renamingProject}
-              projectRenameValue={projectRenameValue}
-              projectRenameInputRef={projectRenameInputRef}
-              setProjectRenameValue={setProjectRenameValue}
               setRenamingProject={setRenamingProject}
               handleProjectRenameConfirm={handleProjectRenameConfirm}
               handleProjectContextMenu={handleProjectContextMenu}
@@ -522,8 +500,6 @@ export function Sidebar() {
   const [projectCtxReady, setProjectCtxReady] = useState(false);
   const projectCtxRef = useRef<HTMLDivElement>(null);
   const [renamingProject, setRenamingProject] = useState<string | null>(null);
-  const [projectRenameValue, setProjectRenameValue] = useState('');
-  const projectRenameInputRef = useRef<HTMLInputElement>(null);
 
   const [projectAreaCtx, setProjectAreaCtx] = useState<{ x: number; y: number } | null>(null);
   const [projectAreaCtxPos, setProjectAreaCtxPos] = useState<{ x: number; y: number } | null>(null);
@@ -537,8 +513,6 @@ export function Sidebar() {
 
   // Modal renombrar carpeta
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState('');
-  const renameInputRef = useRef<HTMLInputElement>(null);
 
   // Menú contextual en carpetas
   const [folderCtx, setFolderCtx] = useState<FolderCtxMenu>(null);
@@ -573,7 +547,7 @@ export function Sidebar() {
   const [dailyMonthCtxPos, setDailyMonthCtxPos] = useState<{ x: number; y: number } | null>(null);
   const [dailyMonthCtxReady, setDailyMonthCtxReady] = useState(false);
   const dailyMonthCtxRef = useRef<HTMLDivElement>(null);
-  const [confirmDeleteDailyMonth, setConfirmDeleteDailyMonth] = useState<string | null>(null);
+  const confirmDeleteDailyMonthDialog = useConfirmDelete<string>(confirmDestructiveActions);
   const [exportingDailyMonth, setExportingDailyMonth] = useState(false);
 
   const handleExportDailyMonth = async (ym: string, format: 'pdf' | 'md' | 'txt') => {
@@ -657,7 +631,7 @@ export function Sidebar() {
   const [overtimeMonthCtxPos, setOvertimeMonthCtxPos] = useState<{ x: number; y: number } | null>(null);
   const [overtimeMonthCtxReady, setOvertimeMonthCtxReady] = useState(false);
   const overtimeMonthCtxRef = useRef<HTMLDivElement>(null);
-  const [confirmDeleteOvertimeMonth, setConfirmDeleteOvertimeMonth] = useState<string | null>(null);
+  const confirmDeleteOvertimeMonthDialog = useConfirmDelete<string>(confirmDestructiveActions);
 
   useEffect(() => {
     if (!overtimeMonthCtx) return;
@@ -833,14 +807,6 @@ export function Sidebar() {
     if (editingTagsFolder !== null) setTimeout(() => folderTagInputRef.current?.focus(), 50);
   }, [editingTagsFolder]);
 
-  useEffect(() => {
-    if (renamingFolder !== null) setTimeout(() => renameInputRef.current?.focus(), 50);
-  }, [renamingFolder]);
-
-  useEffect(() => {
-    if (renamingProject !== null) setTimeout(() => projectRenameInputRef.current?.focus(), 50);
-  }, [renamingProject]);
-
   // Cerrar ctx menú de carpeta al click fuera
   useEffect(() => {
     if (!folderCtx) return;
@@ -924,23 +890,21 @@ export function Sidebar() {
 
   const handleProjectStartRename = () => {
     if (!projectCtx) return;
-    const leaf = projectCtx.project.split('/').pop() ?? projectCtx.project;
-    setProjectRenameValue(leaf);
     setRenamingProject(projectCtx.project);
     setProjectCtx(null);
   };
 
-  const handleProjectRenameConfirm = async () => {
-    if (!renamingProject || !projectRenameValue.trim()) {
+  const handleProjectRenameConfirm = async (newValue: string) => {
+    if (!renamingProject || !newValue.trim()) {
       setRenamingProject(null);
       return;
     }
     const leaf = renamingProject.split('/').pop() ?? renamingProject;
-    if (projectRenameValue.trim() === leaf) {
+    if (newValue.trim() === leaf) {
       setRenamingProject(null);
       return;
     }
-    await renameProject(renamingProject, projectRenameValue.trim());
+    await renameProject(renamingProject, newValue.trim());
     setRenamingProject(null);
   };
 
@@ -1025,7 +989,6 @@ export function Sidebar() {
 
   const handleStartRename = () => {
     if (!folderCtx) return;
-    setRenameValue(folderCtx.folder);
     setRenamingFolder(folderCtx.folder);
     setFolderCtx(null);
   };
@@ -1053,12 +1016,12 @@ export function Sidebar() {
     await moveNoteFolder(folder, grandParent);
   };
 
-  const handleRenameConfirm = async () => {
-    if (!renamingFolder || !renameValue.trim() || renameValue.trim() === renamingFolder) {
+  const handleRenameConfirm = async (newValue: string) => {
+    if (!renamingFolder || !newValue.trim() || newValue.trim() === renamingFolder) {
       setRenamingFolder(null);
       return;
     }
-    await renameNoteFolder(renamingFolder, renameValue.trim());
+    await renameNoteFolder(renamingFolder, newValue.trim());
     setRenamingFolder(null);
   };
 
@@ -1379,9 +1342,6 @@ export function Sidebar() {
                     depth={0}
                     activeProject={activeProject}
                     renamingProject={renamingProject}
-                    projectRenameValue={projectRenameValue}
-                    projectRenameInputRef={projectRenameInputRef}
-                    setProjectRenameValue={setProjectRenameValue}
                     setRenamingProject={setRenamingProject}
                     handleProjectRenameConfirm={handleProjectRenameConfirm}
                     handleProjectContextMenu={handleProjectContextMenu}
@@ -1596,9 +1556,6 @@ export function Sidebar() {
                   depth={0}
                   activeNoteFolder={activeNoteFolder}
                   renamingFolder={renamingFolder}
-                  renameValue={renameValue}
-                  renameInputRef={renameInputRef}
-                  setRenameValue={setRenameValue}
                   setRenamingFolder={setRenamingFolder}
                   handleRenameConfirm={handleRenameConfirm}
                   handleFolderContextMenu={handleFolderContextMenu}
@@ -2085,9 +2042,8 @@ export function Sidebar() {
             </button>
             <div className="mx-2 my-1 border-t border-[var(--border)]" />
             <button
-              onClick={async () => {
-                if (confirmDestructiveActions) setConfirmDeleteDailyMonth(dailyMonthCtx.ym);
-                else await deleteDailyMonth(dailyMonthCtx.ym);
+              onClick={() => {
+                confirmDeleteDailyMonthDialog.request(dailyMonthCtx.ym, (ym) => void deleteDailyMonth(ym));
                 setDailyMonthCtx(null);
                 setDailyMonthCtxPos(null);
                 setDailyMonthCtxReady(false);
@@ -2102,34 +2058,22 @@ export function Sidebar() {
       })()}
 
       {/* Confirmación eliminar mes de Dailys */}
-      {confirmDeleteDailyMonth && confirmDestructiveActions && (() => {
-        const label = formatYearMonthLabel(confirmDeleteDailyMonth, language, 'long');
+      {confirmDeleteDailyMonthDialog.isOpen && confirmDeleteDailyMonthDialog.pending && (() => {
+        const ym = confirmDeleteDailyMonthDialog.pending;
+        const label = formatYearMonthLabel(ym, language, 'long');
         return (
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
-            <div className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
-              <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-                <Trash2 size={15} className="text-red-400" />
-                {t(language, 'sidebar', 'deleteDailyMonthTitle')} {label}
-              </div>
-              <p className="mb-4 text-xs text-[var(--text-secondary)]">
+          <ConfirmDeleteModal
+            title={<>{t(language, 'sidebar', 'deleteDailyMonthTitle')} {label}</>}
+            message={
+              <>
                 {t(language, 'sidebar', 'deleteDailyMonthDescStart')} <span className="font-medium text-[var(--text-primary)]">{t(language, 'sidebar', 'deleteDailyMonthDescAllEntries')}</span> {t(language, 'sidebar', 'deleteDailyMonthDescOfMonth')} <span className="font-medium text-[var(--text-primary)]">{label}</span>. {t(language, 'sidebar', 'deleteDailyMonthDescEnd')}
-              </p>
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => setConfirmDeleteDailyMonth(null)}
-                  className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
-                >
-                  {t(language, 'sidebar', 'cancel')}
-                </button>
-                <button
-                  onClick={async () => { await deleteDailyMonth(confirmDeleteDailyMonth); setConfirmDeleteDailyMonth(null); }}
-                  className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600"
-                >
-                  {t(language, 'sidebar', 'deleteAll')}
-                </button>
-              </div>
-            </div>
-          </div>
+              </>
+            }
+            cancelLabel={t(language, 'sidebar', 'cancel')}
+            confirmLabel={t(language, 'sidebar', 'deleteAll')}
+            onCancel={confirmDeleteDailyMonthDialog.cancel}
+            onConfirm={async () => { await deleteDailyMonth(ym); confirmDeleteDailyMonthDialog.cancel(); }}
+          />
         );
       })()}
 
@@ -2157,9 +2101,8 @@ export function Sidebar() {
             </button>
             <div className="mx-2 my-1 border-t border-[var(--border)]" />
             <button
-              onClick={async () => {
-                if (confirmDestructiveActions) setConfirmDeleteOvertimeMonth(overtimeMonthCtx.ym);
-                else await deleteOvertimeMonth(overtimeMonthCtx.ym);
+              onClick={() => {
+                confirmDeleteOvertimeMonthDialog.request(overtimeMonthCtx.ym, (ym) => void deleteOvertimeMonth(ym));
                 setOvertimeMonthCtx(null);
                 setOvertimeMonthCtxPos(null);
                 setOvertimeMonthCtxReady(false);
@@ -2174,34 +2117,22 @@ export function Sidebar() {
       })()}
 
       {/* Confirmación eliminar mes de Extras */}
-      {confirmDeleteOvertimeMonth && confirmDestructiveActions && (() => {
-        const label = formatYearMonthLabel(confirmDeleteOvertimeMonth, language, 'long');
+      {confirmDeleteOvertimeMonthDialog.isOpen && confirmDeleteOvertimeMonthDialog.pending && (() => {
+        const ym = confirmDeleteOvertimeMonthDialog.pending;
+        const label = formatYearMonthLabel(ym, language, 'long');
         return (
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
-            <div className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
-              <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-                <Trash2 size={15} className="text-red-400" />
-                {t(language, 'sidebar', 'deleteOvertimeMonthTitle')} {label}
-              </div>
-              <p className="mb-4 text-xs text-[var(--text-secondary)]">
+          <ConfirmDeleteModal
+            title={<>{t(language, 'sidebar', 'deleteOvertimeMonthTitle')} {label}</>}
+            message={
+              <>
                 {t(language, 'sidebar', 'deleteOvertimeMonthDescStart')} <span className="font-medium text-[var(--text-primary)]">{t(language, 'sidebar', 'deleteOvertimeMonthDescAllEntries')}</span> {t(language, 'sidebar', 'deleteOvertimeMonthDescOfMonth')} <span className="font-medium text-[var(--text-primary)]">{label}</span>. {t(language, 'sidebar', 'deleteOvertimeMonthDescEnd')}
-              </p>
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => setConfirmDeleteOvertimeMonth(null)}
-                  className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
-                >
-                  {t(language, 'sidebar', 'cancel')}
-                </button>
-                <button
-                  onClick={async () => { await deleteOvertimeMonth(confirmDeleteOvertimeMonth); setConfirmDeleteOvertimeMonth(null); }}
-                  className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600"
-                >
-                  {t(language, 'sidebar', 'deleteAll')}
-                </button>
-              </div>
-            </div>
-          </div>
+              </>
+            }
+            cancelLabel={t(language, 'sidebar', 'cancel')}
+            confirmLabel={t(language, 'sidebar', 'deleteAll')}
+            onCancel={confirmDeleteOvertimeMonthDialog.cancel}
+            onConfirm={async () => { await deleteOvertimeMonth(ym); confirmDeleteOvertimeMonthDialog.cancel(); }}
+          />
         );
       })()}
     </div>

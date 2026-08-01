@@ -4,6 +4,9 @@ import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
 import { Note } from '../types';
 import { ExportModal } from './ExportModal';
+import InlineRenameInput from './InlineRenameInput';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { placeMenuAtPointer, placeMenuNearAnchor } from '../lib/menuPosition';
 import { t as tFn } from '../lib/i18n';
 import { pickMarkdownFiles } from '../lib/invoke';
@@ -76,8 +79,6 @@ export function NoteList() {
 
   // Renombrar nota
   const [renamingNote, setRenamingNote] = useState<Note | null>(null);
-  const [renameValue, setRenameValue] = useState('');
-  const renameInputRef = useRef<HTMLInputElement>(null);
 
   // Editar tags
   const [editingTagsNote, setEditingTagsNote] = useState<Note | null>(null);
@@ -97,7 +98,7 @@ export function NoteList() {
 
   // id de la nota siendo descartada (animación)
   const [discardingNoteId, setDiscardingNoteId] = useState<string | null>(null);
-  const [confirmDeleteNote, setConfirmDeleteNote] = useState<Note | null>(null);
+  const confirmDeleteNoteDialog = useConfirmDelete<Note>(confirmDestructiveActions);
 
   const doDeleteNote = async (note: Note) => {
     setDiscardingNoteId(note.id);
@@ -133,9 +134,6 @@ export function NoteList() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showSortMenu]);
-
-  useEffect(() => {
-  }, [renamingNote]);
 
   useEffect(() => {
     if (editingTagsNote) setTimeout(() => tagInputRef.current?.focus(), 50);
@@ -306,8 +304,7 @@ export function NoteList() {
     if (!ctxMenu) return;
     const note = ctxMenu.note;
     closeMenu();
-    if (confirmDestructiveActions) setConfirmDeleteNote(note);
-    else void doDeleteNote(note);
+    confirmDeleteNoteDialog.request(note, (n) => void doDeleteNote(n));
   };
 
   const handlePin = async () => {
@@ -339,13 +336,12 @@ export function NoteList() {
     if (!ctxMenu) return;
     const note = ctxMenu.note;
     closeMenu();
-    setRenameValue(note.title);
     setRenamingNote(note);
   };
 
-  const handleRenameConfirm = async () => {
+  const handleRenameConfirm = async (value: string) => {
     if (!renamingNote) return;
-    const newTitle = renameValue.trim();
+    const newTitle = value.trim();
     if (newTitle && newTitle !== renamingNote.title) {
       await renameNote(renamingNote, newTitle);
     }
@@ -663,15 +659,10 @@ export function NoteList() {
               >
                 {isRenaming ? (
                   <div className="px-4 py-3">
-                    <input
-                      ref={renameInputRef}
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleRenameConfirm();
-                        if (e.key === 'Escape') setRenamingNote(null);
-                      }}
-                      onBlur={handleRenameConfirm}
+                    <InlineRenameInput
+                      value={note.title}
+                      onCommit={handleRenameConfirm}
+                      onCancel={() => setRenamingNote(null)}
                       className="w-full rounded border border-indigo-500/40 bg-[var(--bg-surface)] px-2 py-1 text-sm text-[var(--text-primary)] outline-none"
                     />
                   </div>
@@ -892,32 +883,23 @@ export function NoteList() {
       )}
 
       {/* Modal confirmación eliminar */}
-      {confirmDeleteNote && confirmDestructiveActions && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
-          <div className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
-            <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-              <Trash2 size={15} className="text-red-400" />
-              {tFn(language, 'notes', 'confirmDeleteTitle')}
-            </div>
-            <p className="mb-4 text-xs text-[var(--text-secondary)]">
-              {tFn(language, 'notes', 'confirmDeleteMsg')} <span className="font-medium text-[var(--text-primary)]">"{confirmDeleteNote.title || tFn(language, 'notes', 'untitled')}"</span>? {tFn(language, 'notes', 'confirmDeleteDesc')}
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setConfirmDeleteNote(null)}
-                className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
-              >
-                {tFn(language, 'notes', 'cancel')}
-              </button>
-              <button
-                onClick={() => { doDeleteNote(confirmDeleteNote); setConfirmDeleteNote(null); }}
-                className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600"
-              >
-                {tFn(language, 'notes', 'delete')}
-              </button>
-            </div>
-          </div>
-        </div>
+      {confirmDeleteNoteDialog.isOpen && confirmDeleteNoteDialog.pending && (
+        <ConfirmDeleteModal
+          title={tFn(language, 'notes', 'confirmDeleteTitle')}
+          message={
+            <>
+              {tFn(language, 'notes', 'confirmDeleteMsg')}{' '}
+              <span className="font-medium text-[var(--text-primary)]">
+                "{confirmDeleteNoteDialog.pending.title || tFn(language, 'notes', 'untitled')}"
+              </span>
+              ? {tFn(language, 'notes', 'confirmDeleteDesc')}
+            </>
+          }
+          cancelLabel={tFn(language, 'notes', 'cancel')}
+          confirmLabel={tFn(language, 'notes', 'delete')}
+          onCancel={confirmDeleteNoteDialog.cancel}
+          onConfirm={() => { void doDeleteNote(confirmDeleteNoteDialog.pending!); confirmDeleteNoteDialog.cancel(); }}
+        />
       )}
 
       {/* Menú contextual espacio vacío */}

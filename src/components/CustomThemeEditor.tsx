@@ -5,6 +5,8 @@ import { CustomTheme } from '../types';
 import { t } from '../lib/i18n';
 import { deriveCustomThemeVars } from '../lib/themeColor';
 import { ColorPicker } from './ColorPicker';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 
 interface Props {
   initial: CustomTheme | null; // null = crear nuevo
@@ -46,7 +48,7 @@ export function CustomThemeEditor({ initial, onClose }: Props) {
   const [bgTint, setBgTint] = useState(initial?.bgTint ?? currentDefaults?.bgTint ?? '#1c1c1c');
   const [textTint, setTextTint] = useState(initial?.textTint ?? currentDefaults?.textTint ?? '#888888');
   const [intensity, setIntensity] = useState(initial?.intensity ?? 50);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const confirmDeleteDialog = useConfirmDelete<true>(confirmDestructiveActions);
 
   const previewVars = useMemo(
     () => deriveCustomThemeVars({ base, accent, bgTint, textTint, intensity }),
@@ -63,8 +65,8 @@ export function CustomThemeEditor({ initial, onClose }: Props) {
   };
 
   const handleDeleteClick = () => {
-    if (confirmDestructiveActions) setConfirmDelete(true);
-    else if (initial) { deleteCustomTheme(initial.id); onClose(); }
+    if (!initial) return;
+    confirmDeleteDialog.request(true, () => { deleteCustomTheme(initial.id); onClose(); });
   };
 
   return (
@@ -199,30 +201,21 @@ export function CustomThemeEditor({ initial, onClose }: Props) {
         </div>
       </div>
 
-      {confirmDelete && initial && (
-        <div className="fixed inset-0 z-[10002] flex items-center justify-center bg-black/40">
-          <div className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
-            <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-              <Trash2 size={15} className="text-red-400" />
-              {t(language, 'settings', 'customThemeConfirmDeleteTitle')}
-            </div>
-            <p className="mb-4 text-xs text-[var(--text-secondary)]">
+      {confirmDeleteDialog.isOpen && initial && (
+        <ConfirmDeleteModal
+          title={t(language, 'settings', 'customThemeConfirmDeleteTitle')}
+          message={
+            <>
               {t(language, 'settings', 'customThemeConfirmDeleteMsg')} "{initial.name}"?{' '}
               {t(language, 'settings', 'customThemeConfirmDeleteDesc')}
-            </p>
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setConfirmDelete(false)} className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]">
-                {t(language, 'settings', 'customThemeCancel')}
-              </button>
-              <button
-                onClick={() => { deleteCustomTheme(initial.id); onClose(); }}
-                className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600"
-              >
-                {t(language, 'settings', 'customThemeDelete')}
-              </button>
-            </div>
-          </div>
-        </div>
+            </>
+          }
+          cancelLabel={t(language, 'settings', 'customThemeCancel')}
+          confirmLabel={t(language, 'settings', 'customThemeDelete')}
+          zIndex={10002}
+          onCancel={confirmDeleteDialog.cancel}
+          onConfirm={() => { deleteCustomTheme(initial.id); onClose(); }}
+        />
       )}
     </div>
   );

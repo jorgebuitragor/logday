@@ -12,6 +12,8 @@ import {
 } from '../lib/colombianHolidays';
 import { placeMenuAtPointer } from '../lib/menuPosition';
 import { t } from '../lib/i18n';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 
 function formatShortDate(iso: string, language: 'es' | 'en'): string {
   const locale = language === 'es' ? 'es-CO' : 'en-US';
@@ -574,7 +576,7 @@ export function DailyEditor() {
   const [prevActs, setPrevActs] = useState('');
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const confirmDeleteDialog = useConfirmDelete<true>(confirmDestructiveActions);
   const todaySave = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevSave = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -662,7 +664,6 @@ export function DailyEditor() {
     if (todaySave.current) clearTimeout(todaySave.current);
     if (prevSave.current) clearTimeout(prevSave.current);
     await deleteDailyEntry(activeDailyDate);
-    setShowDeleteConfirm(false);
   };
 
   if (activeSection !== 'dailys') return null;
@@ -711,10 +712,7 @@ export function DailyEditor() {
             {copied ? <Check size={14} /> : <Copy size={14} />}
           </button>
           <button
-            onClick={() => {
-              if (confirmDestructiveActions) setShowDeleteConfirm(true);
-              else void handleDelete();
-            }}
+            onClick={() => confirmDeleteDialog.request(true, () => void handleDelete())}
             className="rounded-lg p-1.5 text-[var(--text-hint)] transition hover:bg-red-500/10 hover:text-red-400"
             title={t(language, 'dailys', 'deleteThisDailyTitle')}
           >
@@ -811,34 +809,22 @@ export function DailyEditor() {
     </div>
 
     {/* Modal de confirmación de borrado */}
-    {showDeleteConfirm && confirmDestructiveActions && activeDailyDate && (
-      <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/50">
-        <div className="modal-spring-in w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
-          <div className="mb-3 flex items-center gap-2 text-red-400">
-            <Trash2 size={16} />
-            <h3 className="text-sm font-semibold">{t(language, 'dailys', 'deleteDailyTitle')}</h3>
-          </div>
-          <p className="text-xs leading-relaxed text-[var(--text-hint)]">
+    {confirmDeleteDialog.isOpen && activeDailyDate && (
+      <ConfirmDeleteModal
+        variant="soft"
+        title={t(language, 'dailys', 'deleteDailyTitle')}
+        message={
+          <>
             {t(language, 'dailys', 'deleteConfirmPrefix')}{' '}
             <span className="font-medium text-[var(--text-body)]">{formatLongDate(activeDailyDate, language)}</span>.
             {' '}{t(language, 'dailys', 'deleteConfirmSuffix')}
-          </p>
-          <div className="mt-4 flex justify-end gap-2">
-            <button
-              onClick={() => setShowDeleteConfirm(false)}
-              className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
-            >
-              {t(language, 'dailys', 'cancel')}
-            </button>
-            <button
-              onClick={handleDelete}
-              className="rounded-lg bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition hover:bg-red-500/20"
-            >
-              {t(language, 'dailys', 'delete')}
-            </button>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+        cancelLabel={t(language, 'dailys', 'cancel')}
+        confirmLabel={t(language, 'dailys', 'delete')}
+        onCancel={confirmDeleteDialog.cancel}
+        onConfirm={() => { confirmDeleteDialog.cancel(); void handleDelete(); }}
+      />
     )}
     </>
   );

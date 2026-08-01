@@ -4,6 +4,10 @@ import { Theme, CustomTheme, Shortcuts, StartupScreen, Language, BackupSettings,
 import { useAppStore } from '../store/appStore';
 import { t } from '../lib/i18n';
 import { CustomThemeEditor } from './CustomThemeEditor';
+import ToggleSwitch from './ToggleSwitch';
+import InlineRenameInput from './InlineRenameInput';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { fs, checkUpdate, ReleaseInfo } from '../lib/invoke';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
@@ -125,8 +129,7 @@ export function SettingsModal() {
   const [visibleCustomCount, setVisibleCustomCount] = useState(6);
   const [openThemeMenuId, setOpenThemeMenuId] = useState<string | null>(null);
   const [renamingThemeId, setRenamingThemeId] = useState<string | null>(null);
-  const [renamingThemeValue, setRenamingThemeValue] = useState('');
-  const [confirmDeleteTheme, setConfirmDeleteTheme] = useState<CustomTheme | null>(null);
+  const confirmDeleteThemeDialog = useConfirmDelete<CustomTheme>(confirmDestructiveActions);
   const [appVersion, setAppVersion] = useState<string>('1.0.0');
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'upToDate' | 'available' | 'error'>('idle');
   const [releaseInfo, setReleaseInfo] = useState<ReleaseInfo | null>(null);
@@ -165,12 +168,11 @@ export function SettingsModal() {
 
   const handleStartRenameTheme = (ct: CustomTheme) => {
     setOpenThemeMenuId(null);
-    setRenamingThemeValue(ct.name);
     setRenamingThemeId(ct.id);
   };
 
-  const handleConfirmRenameTheme = () => {
-    if (renamingThemeId) renameCustomTheme(renamingThemeId, renamingThemeValue);
+  const handleConfirmRenameTheme = (value: string) => {
+    if (renamingThemeId) renameCustomTheme(renamingThemeId, value);
     setRenamingThemeId(null);
   };
 
@@ -181,8 +183,7 @@ export function SettingsModal() {
 
   const handleDeleteThemeClick = (ct: CustomTheme) => {
     setOpenThemeMenuId(null);
-    if (confirmDestructiveActions) setConfirmDeleteTheme(ct);
-    else deleteCustomTheme(ct.id);
+    confirmDeleteThemeDialog.request(ct, (theme) => deleteCustomTheme(theme.id));
   };
 
   // Cargar versión de la app
@@ -372,11 +373,6 @@ export function SettingsModal() {
       setGitFetchBusy(false);
     }
   };
-
-  const gitToggleCls = (on: boolean) =>
-    `relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full transition-colors ${
-      on ? 'bg-indigo-500' : 'bg-[var(--border)]'
-    }`;
 
   async function handleExport() {
     if (!basePath) return;
@@ -750,18 +746,14 @@ export function SettingsModal() {
                           style={{ background: ct.accent }}
                         />
                         {isRenaming ? (
-                          <input
-                            autoFocus
-                            value={renamingThemeValue}
-                            onChange={(e) => setRenamingThemeValue(e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            onBlur={handleConfirmRenameTheme}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleConfirmRenameTheme();
-                              if (e.key === 'Escape') setRenamingThemeId(null);
-                            }}
-                            className="w-full rounded border border-indigo-500/40 bg-[var(--bg-input)] px-1 py-0.5 text-center text-xs text-[var(--text-primary)] outline-none"
-                          />
+                          <span className="w-full" onClick={(e) => e.stopPropagation()}>
+                            <InlineRenameInput
+                              value={ct.name}
+                              onCommit={handleConfirmRenameTheme}
+                              onCancel={() => setRenamingThemeId(null)}
+                              className="w-full rounded border border-indigo-500/40 bg-[var(--bg-input)] px-1 py-0.5 text-center text-xs text-[var(--text-primary)] outline-none"
+                            />
+                          </span>
                         ) : (
                           <span className="w-full truncate text-xs font-medium">{ct.name}</span>
                         )}
@@ -831,33 +823,20 @@ export function SettingsModal() {
           )}
 
           {/* Modal confirmación eliminar tema personalizado (desde el menú ⋮) */}
-          {confirmDeleteTheme && (
-            <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
-              <div className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
-                <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-                  <Trash2 size={15} className="text-red-400" />
-                  {t(language, 'settings', 'customThemeConfirmDeleteTitle')}
-                </div>
-                <p className="mb-4 text-xs text-[var(--text-secondary)]">
-                  {t(language, 'settings', 'customThemeConfirmDeleteMsg')} "{confirmDeleteTheme.name}"?{' '}
+          {confirmDeleteThemeDialog.isOpen && confirmDeleteThemeDialog.pending && (
+            <ConfirmDeleteModal
+              title={t(language, 'settings', 'customThemeConfirmDeleteTitle')}
+              message={
+                <>
+                  {t(language, 'settings', 'customThemeConfirmDeleteMsg')} "{confirmDeleteThemeDialog.pending.name}"?{' '}
                   {t(language, 'settings', 'customThemeConfirmDeleteDesc')}
-                </p>
-                <div className="flex justify-end gap-2">
-                  <button
-                    onClick={() => setConfirmDeleteTheme(null)}
-                    className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
-                  >
-                    {t(language, 'settings', 'customThemeCancel')}
-                  </button>
-                  <button
-                    onClick={() => { deleteCustomTheme(confirmDeleteTheme.id); setConfirmDeleteTheme(null); }}
-                    className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600"
-                  >
-                    {t(language, 'settings', 'customThemeDelete')}
-                  </button>
-                </div>
-              </div>
-            </div>
+                </>
+              }
+              cancelLabel={t(language, 'settings', 'customThemeCancel')}
+              confirmLabel={t(language, 'settings', 'customThemeDelete')}
+              onCancel={confirmDeleteThemeDialog.cancel}
+              onConfirm={() => { deleteCustomTheme(confirmDeleteThemeDialog.pending!.id); confirmDeleteThemeDialog.cancel(); }}
+            />
           )}
 
           {/* Startup screen section */}
@@ -986,9 +965,9 @@ export function SettingsModal() {
             <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
               {t(language, 'settings', 'behavior')}
             </p>
-            <button
+            <div
               onClick={() => void setConfirmDestructiveActions(!confirmDestructiveActions)}
-              className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 text-left transition hover:bg-[var(--bg-hover)]"
+              className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 text-left transition hover:bg-[var(--bg-hover)] cursor-pointer"
             >
               <div>
                 <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'confirmDeleteTitle')}</p>
@@ -998,15 +977,9 @@ export function SettingsModal() {
                 <span className={`text-[10px] font-semibold uppercase tracking-wider ${confirmDestructiveActions ? 'text-[var(--accent)]' : 'text-[var(--text-hint)]'}`}>
                   {confirmDestructiveActions ? t(language, 'settings', 'confirmDeleteEnabled') : t(language, 'settings', 'confirmDeleteDisabled')}
                 </span>
-                <span
-                  className={`relative h-6 w-11 rounded-full transition ${confirmDestructiveActions ? 'bg-[var(--accent)]' : 'bg-[var(--border-card)]'}`}
-                >
-                  <span
-                    className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${confirmDestructiveActions ? 'left-[22px]' : 'left-0.5'}`}
-                  />
-                </span>
+                <ToggleSwitch checked={confirmDestructiveActions} onChange={setConfirmDestructiveActions} size="lg" />
               </div>
-            </button>
+            </div>
           </div>
 
           {/* Notificaciones */}
@@ -1015,9 +988,9 @@ export function SettingsModal() {
               {t(language, 'settings', 'notificationsSection')}
             </p>
             <div className="space-y-2">
-              <button
+              <div
                 onClick={() => void setNotificationsEnabled(!notificationsEnabled)}
-                className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 text-left transition hover:bg-[var(--bg-hover)]"
+                className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 text-left transition hover:bg-[var(--bg-hover)] cursor-pointer"
               >
                 <div>
                   <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'notificationsEnabledTitle')}</p>
@@ -1027,11 +1000,9 @@ export function SettingsModal() {
                   <span className={`text-[10px] font-semibold uppercase tracking-wider ${notificationsEnabled ? 'text-[var(--accent)]' : 'text-[var(--text-hint)]'}`}>
                     {notificationsEnabled ? t(language, 'settings', 'notificationsOn') : t(language, 'settings', 'notificationsOff')}
                   </span>
-                  <span className={`relative h-6 w-11 rounded-full transition ${notificationsEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--border-card)]'}`}>
-                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${notificationsEnabled ? 'left-[22px]' : 'left-0.5'}`} />
-                  </span>
+                  <ToggleSwitch checked={notificationsEnabled} onChange={setNotificationsEnabled} size="lg" />
                 </div>
-              </button>
+              </div>
               {notificationsEnabled && (
                 <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3">
                   <div>
@@ -1106,10 +1077,9 @@ export function SettingsModal() {
                 <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'holidaysTitle')}</p>
                 <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'holidaysDesc')}</p>
               </div>
-              <button
-                type="button"
+              <div
                 onClick={() => void setHolidaysAsNonWork(!holidaysAsNonWork)}
-                className="flex shrink-0 items-center gap-2"
+                className="flex shrink-0 cursor-pointer items-center gap-2"
               >
                 <span className={`text-[10px] font-semibold uppercase tracking-wider ${
                   holidaysAsNonWork ? 'text-[var(--accent)]' : 'text-[var(--text-hint)]'
@@ -1118,14 +1088,8 @@ export function SettingsModal() {
                     ? t(language, 'settings', 'holidaysEnabled')
                     : t(language, 'settings', 'holidaysDisabled')}
                 </span>
-                <span className={`relative h-6 w-11 rounded-full transition ${
-                  holidaysAsNonWork ? 'bg-[var(--accent)]' : 'bg-[var(--border-card)]'
-                }`}>
-                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-150 ${
-                    holidaysAsNonWork ? 'left-[22px]' : 'left-0.5'
-                  }`} />
-                </span>
-              </button>
+                <ToggleSwitch checked={holidaysAsNonWork} onChange={setHolidaysAsNonWork} size="lg" />
+              </div>
             </div>
           </div>
 
@@ -1134,9 +1098,9 @@ export function SettingsModal() {
             <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
               {t(language, 'settings', 'accessibility')}
             </p>
-            <button
+            <div
               onClick={() => void setAnimationsEnabled(!animationsEnabled)}
-              className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 text-left transition hover:bg-[var(--bg-hover)]"
+              className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 text-left transition hover:bg-[var(--bg-hover)] cursor-pointer"
             >
               <div>
                 <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'animationsTitle')}</p>
@@ -1150,15 +1114,9 @@ export function SettingsModal() {
                     ? t(language, 'settings', 'animationsEnabled')
                     : t(language, 'settings', 'animationsDisabled')}
                 </span>
-                <span className={`relative h-6 w-11 rounded-full transition ${
-                  animationsEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--border-card)]'
-                }`}>
-                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-150 ${
-                    animationsEnabled ? 'left-[22px]' : 'left-0.5'
-                  }`} />
-                </span>
+                <ToggleSwitch checked={animationsEnabled} onChange={setAnimationsEnabled} size="lg" />
               </div>
-            </button>
+            </div>
           </div>
 
           </>}
@@ -1326,14 +1284,7 @@ export function SettingsModal() {
                 <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'extras', 'enableGit')}</p>
                 <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'extras', 'gitRequired')}</p>
               </div>
-              <button
-                onClick={() => setGitEnabled((v) => !v)}
-                className={gitToggleCls(gitEnabled)}
-                role="switch"
-                aria-checked={gitEnabled}
-              >
-                <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${gitEnabled ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
-              </button>
+              <ToggleSwitch checked={gitEnabled} onChange={setGitEnabled} size="sm" />
             </label>
 
             {/* Remote URL */}
@@ -1394,30 +1345,24 @@ export function SettingsModal() {
                   <p className="text-xs text-[var(--text-secondary)]">{t(language, 'extras', 'autoCommitHourly')}</p>
                   <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'extras', 'whileOpen')}</p>
                 </div>
-                <button
-                  onClick={() => setGitAutoCommit((v) => !v)}
+                <ToggleSwitch
+                  checked={gitAutoCommit && gitEnabled}
+                  onChange={setGitAutoCommit}
                   disabled={!gitEnabled}
-                  className={gitToggleCls(gitAutoCommit && gitEnabled)}
-                  role="switch"
-                  aria-checked={gitAutoCommit}
-                >
-                  <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${gitAutoCommit && gitEnabled ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
-                </button>
+                  size="sm"
+                />
               </label>
               <label className="flex items-center justify-between cursor-pointer rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3">
                 <div>
                   <p className="text-xs text-[var(--text-secondary)]">{t(language, 'extras', 'pushOnSync')}</p>
                   <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'extras', 'remoteRequired')}</p>
                 </div>
-                <button
-                  onClick={() => setGitAutoPush((v) => !v)}
+                <ToggleSwitch
+                  checked={gitAutoPush && gitEnabled && !!gitRemote.trim()}
+                  onChange={setGitAutoPush}
                   disabled={!gitEnabled || !gitRemote.trim()}
-                  className={gitToggleCls(gitAutoPush && gitEnabled && !!gitRemote.trim())}
-                  role="switch"
-                  aria-checked={gitAutoPush}
-                >
-                  <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${gitAutoPush && gitEnabled && !!gitRemote.trim() ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
-                </button>
+                  size="sm"
+                />
               </label>
             </div>
 

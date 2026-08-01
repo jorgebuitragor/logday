@@ -39,23 +39,99 @@ hechas (salvo donde se indica).
 
 ## Fase 1 — Primitivos de UI compartidos (req. §3)
 
-- [ ] 1.1 `ToggleSwitch` (`src/components/ToggleSwitch.tsx`) — 3 tamaños,
-      `role="switch"` + `aria-checked` siempre
-  - [ ] 1.1.1 Migrar las 6 ocurrencias "grande" (`CalendarView.tsx` ×2,
-        `SettingsModal.tsx` ×4)
-  - [ ] 1.1.2 Migrar las 2 ocurrencias "mediana" (`CalendarView.tsx`)
-  - [ ] 1.1.3 Migrar las 6 ocurrencias "pequeña" (`GitModal.tsx` ×3,
-        `SettingsModal.tsx` ×3) y eliminar `toggleCls`/`gitToggleCls`
-- [ ] 1.2 `InlineRenameInput` (`src/components/InlineRenameInput.tsx`)
-  - [ ] 1.2.1 Migrar `Sidebar.tsx` (folder rename, project rename)
-  - [ ] 1.2.2 Migrar `NoteList.tsx` (note rename)
-  - [ ] 1.2.3 Migrar `SettingsModal.tsx` (custom theme rename)
-- [ ] 1.3 `ConfirmDeleteModal` + `useConfirmDelete`
+- [x] 1.1 `ToggleSwitch` (`src/components/ToggleSwitch.tsx`) — 3 tamaños,
+      `role="switch"` + `aria-checked` siempre (2026-08-01)
+  - [x] 1.1.1 Migradas las 6 ocurrencias "grande" (`CalendarView.tsx` ×2,
+        `SettingsModal.tsx` ×4). Nota de implementación: en este patrón
+        el `<button>` externo envolvía toda la fila (label + switch
+        decorativo); como `ToggleSwitch` ya es su propio `<button
+        role="switch">`, anidar un botón dentro de otro habría sido HTML
+        inválido. Se cambió el `<button>` externo por un `<div
+        onClick>` (con `cursor-pointer`), y `ToggleSwitch` hace
+        `stopPropagation` en su click interno para no disparar el
+        `onClick` de la fila dos veces al pulsar justo sobre el switch.
+        Resultado: mismo comportamiento visible, pero ahora sí con
+        `role="switch"`/`aria-checked` real (antes solo lo tenía la
+        variante pequeña).
+  - [x] 1.1.2 Migradas las 2 ocurrencias "mediana" (`CalendarView.tsx`)
+  - [x] 1.1.3 Migradas las 6 ocurrencias "pequeña" (`GitModal.tsx` ×3,
+        `SettingsModal.tsx` ×3), eliminados `toggleCls`/`gitToggleCls`.
+        Desviación menor no prevista en el diseño: el color "encendido"
+        de la variante pequeña estaba hardcodeado a `bg-indigo-500` en
+        vez de `bg-[var(--accent)]` (no respetaba temas
+        personalizados) — se unificó a `var(--accent)` como las otras
+        dos variantes, consistente con el spec `temas-personalizacion`.
+        Verificado con `tsc --noEmit`, `eslint` (sin errores nuevos) y
+        `vite build` (bundle limpio) — pendiente pase de QA visual
+        manual en `pnpm tauri dev`.
+- [x] 1.2 `InlineRenameInput` (`src/components/InlineRenameInput.tsx`) —
+      estado del draft interno al componente vía `autoFocus` nativo, sin
+      `ref`+`setTimeout(50)` (2026-08-01)
+  - [x] 1.2.1 Migrado `Sidebar.tsx` (folder rename, project rename).
+        Nota: se preservó el comportamiento exacto de cada uno aunque son
+        distintos entre sí — folder rename usa la ruta completa como
+        valor inicial (`node.path`, tal como hacía el código anterior;
+        no se "arregló" para nested folders, fuera de alcance de este
+        refactor), project rename usa solo el nombre hoja (`node.name`).
+        Se eliminaron los 2 `useEffect` con `setTimeout(...,50)` que
+        enfocaban los inputs manualmente.
+  - [x] 1.2.2 Migrado `NoteList.tsx` (note rename). De paso se eliminó
+        un `useEffect(() => {}, [renamingNote])` vacío (código muerto,
+        residuo de una versión anterior del enfoque manual).
+  - [x] 1.2.3 Migrado `SettingsModal.tsx` (custom theme rename). El
+        input queda anidado dentro de un `<button>` (selector de tema) —
+        problema preexistente de HTML inválido no introducido por este
+        cambio; se preservó el `stopPropagation` envolviendo
+        `InlineRenameInput` en un `<span>` para no romper el
+        comportamiento actual.
+        Verificado con `tsc --noEmit`, `eslint` (sin errores nuevos) y
+        `vite build` — pendiente QA visual manual en `pnpm tauri dev`.
+- [x] 1.3 `ConfirmDeleteModal` + `useConfirmDelete`
       (`src/components/ConfirmDeleteModal.tsx`, `src/hooks/useConfirmDelete.ts`)
-  - [ ] 1.3.1 Migrar las 12 ocurrencias existentes (ver req. §1.3 tabla
-        patrón 1 para la lista completa de archivos)
-  - [ ] 1.3.2 Migrar `TaskEditor.tsx:150` de `window.confirm()` a este
-        componente (requisito explícito, no opcional)
+      (2026-08-01). Desviaciones sobre el boceto de `design.md`:
+  - **`useConfirmDelete<T>` carga el ítem, no solo un booleano.** El
+        boceto original (`pending: (() => void) | null`) no permite
+        interpolar el nombre del ítem en el mensaje (la mayoría de los
+        12 usos lo necesitan). Firma final:
+        `request(item: T, directAction: (item: T) => void)`, retorna
+        `{ pending, isOpen, request, cancel }` — el `onConfirm` de cada
+        call site cierra sobre `pending` directamente en vez de que el
+        hook guarde la acción.
+  - **`ConfirmDeleteModal` añade `cancelLabel`/`confirmLabel` como
+        props de string** (no estaban en el boceto) — los textos de
+        botón varían por namespace de i18n en cada archivo, no se
+        pueden hardcodear en el componente compartido.
+  - **El caso posicionado (`TaskContextMenu.tsx`) implementa su propio
+        posicionamiento inline** (mide vía `ref` + `placeMenuAtPointer`
+        + listener de `resize`, igual que el código original) en vez
+        de reusar `usePositionedMenu` como sugiere `design.md` — ese
+        hook todavía no existe (es la tarea 1.4). Cuando se implemente,
+        se evaluará refactorizar `ConfirmDeleteModal` para reusarlo
+        internamente sin cambiar su API pública.
+  - **Fondo/borde ligados a la variante**: se confirmó que los 2 casos
+        "soft" (`DailyEditor.tsx`, `DailyList.tsx`) usaban
+        consistentemente `bg-[var(--bg-panel)]`/`border-[var(--border)]`
+        y backdrop `/50`, mientras que todos los "solid" usaban
+        `bg-[var(--bg-elevated)]`/`border-card` y backdrop `/40` — no
+        era ruido, así que quedó parametrizado por `variant` en vez de
+        forzar un único juego de tokens.
+  - [x] 1.3.1 Migradas las 12 ocurrencias: `AbsenceModal`,
+        `CustomThemeEditor`, `NoteList`, `NoteEditor`, `DailyEditor`,
+        `DailyList` (día — el de "eliminar mes" es un 13º caso
+        encontrado durante la implementación, siempre obligatorio,
+        sin pasar por `useConfirmDelete`, usa `ConfirmDeleteModal`
+        directo), `CalendarView` (con `createPortal`, como el original),
+        `OvertimeList`, `Sidebar` (×2: mes de Dailys y mes de Extras),
+        `SettingsModal` (tema personalizado), `TaskContextMenu`
+        (posicionado)
+  - [x] 1.3.2 Migrado `TaskEditor.tsx:150` de `window.confirm()` a
+        `ConfirmDeleteModal` (variant soft)
+  - Verificado con `tsc --noEmit`, `eslint` (sin errores/warnings
+        nuevos en ningún archivo — todo lo reportado es preexistente:
+        `no-unescaped-entities`, `no-explicit-any`, `max-lines`,
+        `exhaustive-deps`) y `vite build` limpio. Pendiente QA visual
+        manual en `pnpm tauri dev` (los 3 tamaños de switch, los 4
+        renombrados, y los 13 modales de confirmación).
 - [ ] 1.4 `usePositionedMenu` (`src/hooks/usePositionedMenu.ts`)
   - [ ] 1.4.1 Migrar `TaskContextMenu.tsx` primero (caso más pequeño y
         con la duplicación interna más obvia — buen piloto de la migración)

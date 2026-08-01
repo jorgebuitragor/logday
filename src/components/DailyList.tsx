@@ -10,6 +10,8 @@ import { MONTHS_TITLE, t } from '../lib/i18n';
 import { save } from '@tauri-apps/plugin-dialog';
 import { fs } from '../lib/invoke';
 import jsPDF from 'jspdf';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 
 const ESTIMATED_DAILY_ENTRY_MENU = { width: 190, height: 96 };
 const ESTIMATED_DAILY_EMPTY_MENU = { width: 200, height: 130 };
@@ -73,7 +75,7 @@ export function DailyList() {
   const pickerBtnRef = useRef<HTMLButtonElement>(null);
 
   // ── Estado de confirmación de borrado ────────────────────────────────────
-  const [deleteConfirmDate, setDeleteConfirmDate] = useState<string | null>(null);
+  const confirmDeleteDateDialog = useConfirmDelete<string>(confirmDestructiveActions);
 
   const [listKey, setListKey] = useState(0);
   useEffect(() => {
@@ -204,10 +206,8 @@ export function DailyList() {
     setShowDatePicker((v) => !v);
   };
 
-  const handleConfirmDelete = async () => {
-    if (!deleteConfirmDate) return;
-    await deleteDailyEntry(deleteConfirmDate);
-    setDeleteConfirmDate(null);
+  const handleConfirmDelete = async (date: string) => {
+    await deleteDailyEntry(date);
   };
 
   const handleContextMenu = (e: React.MouseEvent, date: string) => {
@@ -240,8 +240,7 @@ export function DailyList() {
 
   const handleDeleteFromMenu = () => {
     if (!contextMenu) return;
-    if (confirmDestructiveActions) setDeleteConfirmDate(contextMenu.date);
-    else void deleteDailyEntry(contextMenu.date);
+    confirmDeleteDateDialog.request(contextMenu.date, (d: string) => void deleteDailyEntry(d));
     setContextMenu(null);
     setContextMenuPos(null);
     setContextMenuReady(false);
@@ -541,8 +540,7 @@ export function DailyList() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (confirmDestructiveActions) setDeleteConfirmDate(date);
-                    else void deleteDailyEntry(date);
+                    confirmDeleteDateDialog.request(date, (d: string) => void deleteDailyEntry(d));
                   }}
                   className="absolute right-2 top-2 rounded-md p-1 text-[var(--text-faint)] opacity-0 transition group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-400"
                   title={t(language, 'dailys', 'deleteDailyTitle')}
@@ -678,64 +676,41 @@ export function DailyList() {
 
     {/* Modal confirmación eliminar mes (siempre obligatorio) */}
     {deleteMonthConfirm && (
-      <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/50">
-        <div className="modal-spring-in w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
-          <div className="mb-3 flex items-center gap-2 text-red-400">
-            <Trash2 size={16} />
-            <h3 className="text-sm font-semibold">{t(language, 'dailys', 'deleteMonthTitle')}</h3>
-          </div>
-          <p className="text-xs leading-relaxed text-[var(--text-hint)]">
+      <ConfirmDeleteModal
+        variant="soft"
+        title={t(language, 'dailys', 'deleteMonthTitle')}
+        message={
+          <>
             {t(language, 'dailys', 'deleteMonthConfirm')}{' '}
             <span className="font-semibold text-[var(--text-body)]">{monthLabel}</span>?
-          </p>
-          <p className="mt-1 text-[10px] text-red-400/80">{t(language, 'dailys', 'deleteMonthWarn')}</p>
-          <div className="mt-4 flex justify-end gap-2">
-            <button
-              onClick={() => setDeleteMonthConfirm(false)}
-              className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
-            >
-              {t(language, 'dailys', 'cancel')}
-            </button>
-            <button
-              onClick={async () => { setDeleteMonthConfirm(false); await deleteDailyMonth(activeDailyMonth); }}
-              className="rounded-lg bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition hover:bg-red-500/20"
-            >
-              {t(language, 'dailys', 'deleteMonth')}
-            </button>
-          </div>
-        </div>
-      </div>
+            <br />
+            <span className="mt-1 inline-block text-[10px] text-red-400/80">{t(language, 'dailys', 'deleteMonthWarn')}</span>
+          </>
+        }
+        cancelLabel={t(language, 'dailys', 'cancel')}
+        confirmLabel={t(language, 'dailys', 'deleteMonth')}
+        onCancel={() => setDeleteMonthConfirm(false)}
+        onConfirm={async () => { setDeleteMonthConfirm(false); await deleteDailyMonth(activeDailyMonth); }}
+      />
     )}
 
     {/* Modal de confirmación de borrado */}
-    {deleteConfirmDate && confirmDestructiveActions && (
-      <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/50">
-        <div className="modal-spring-in w-80 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-5 shadow-2xl">
-          <div className="mb-3 flex items-center gap-2 text-red-400">
-            <Trash2 size={16} />
-            <h3 className="text-sm font-semibold">{t(language, 'dailys', 'deleteDailyTitle')}</h3>
-          </div>
-          <p className="text-xs leading-relaxed text-[var(--text-hint)]">
+    {confirmDeleteDateDialog.isOpen && confirmDeleteDateDialog.pending && (
+      <ConfirmDeleteModal
+        variant="soft"
+        title={t(language, 'dailys', 'deleteDailyTitle')}
+        message={
+          <>
             {t(language, 'dailys', 'deleteConfirmPrefix')}{' '}
-            <span className="font-medium text-[var(--text-body)]">{formatDayLabel(deleteConfirmDate, language)}</span>.
+            <span className="font-medium text-[var(--text-body)]">{formatDayLabel(confirmDeleteDateDialog.pending, language)}</span>.
             {' '}{t(language, 'dailys', 'deleteConfirmSuffix')}
-          </p>
-          <div className="mt-4 flex justify-end gap-2">
-            <button
-              onClick={() => setDeleteConfirmDate(null)}
-              className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
-            >
-              {t(language, 'dailys', 'cancel')}
-            </button>
-            <button
-              onClick={handleConfirmDelete}
-              className="rounded-lg bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition hover:bg-red-500/20"
-            >
-              {t(language, 'dailys', 'delete')}
-            </button>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+        cancelLabel={t(language, 'dailys', 'cancel')}
+        confirmLabel={t(language, 'dailys', 'delete')}
+        onCancel={confirmDeleteDateDialog.cancel}
+        onConfirm={() => { void handleConfirmDelete(confirmDeleteDateDialog.pending!); confirmDeleteDateDialog.cancel(); }}
+      />
     )}
   </>);
 }

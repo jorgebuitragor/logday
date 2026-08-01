@@ -5,9 +5,10 @@ import { Task, TaskStatus } from '../types';
 import { useAppStore } from '../store/appStore';
 import { placeMenuAtPointer } from '../lib/menuPosition';
 import { t } from '../lib/i18n';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 
 const ESTIMATED_TASK_MENU = { width: 220, height: 330 };
-const ESTIMATED_TASK_CONFIRM = { width: 260, height: 170 };
 const ESTIMATED_NEW_TASK_MENU = { width: 190, height: 56 };
 
 interface Props {
@@ -22,15 +23,15 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
   const { updateTask, deleteTask, setActiveTask, language, confirmDestructiveActions } = useAppStore();
   const ref = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const confirmDeleteDialog = useConfirmDelete<true>(confirmDestructiveActions);
   // Adjust position after mount to avoid overflow
   const [pos, setPos] = useState(() => placeMenuAtPointer({ x, y }, ESTIMATED_TASK_MENU, { padding: 8 }));
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     setReady(false);
-    setPos(placeMenuAtPointer({ x, y }, confirmDelete ? ESTIMATED_TASK_CONFIRM : ESTIMATED_TASK_MENU, { padding: 8 }));
-  }, [x, y, confirmDelete]);
+    setPos(placeMenuAtPointer({ x, y }, ESTIMATED_TASK_MENU, { padding: 8 }));
+  }, [x, y]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -53,7 +54,7 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
     recalc();
     window.addEventListener('resize', recalc);
     return () => window.removeEventListener('resize', recalc);
-  }, [x, y, confirmDelete]);
+  }, [x, y]);
 
   const handleStatusChange = async (status: TaskStatus) => {
     await updateTask({ ...task, status });
@@ -82,38 +83,25 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
     { status: 'done',        label: t(language, 'tasks', 'statusDone'),        Icon: CheckCircle2, color: 'text-green-400' },
   ];
 
-  if (confirmDelete && confirmDestructiveActions) {
-    return createPortal(
-      <div
-        ref={ref}
-        style={{ position: 'fixed', top: pos.y, left: pos.x, zIndex: 9999, visibility: ready ? 'visible' : 'hidden' }}
-        className="w-64 rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-4 shadow-2xl"
-      >
-        <div className="mb-3 flex items-center gap-2 text-red-400">
-          <Trash2 size={14} />
-          <p className="text-xs font-semibold">{t(language, 'tasks', 'deleteTask')}</p>
-        </div>
-        <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-3">
-          {t(language, 'tasks', 'confirmDeleteMsg')}{' '}
-          <span className="font-medium text-[var(--text-primary)]">&#34;{task.title}&#34;</span>.{' '}
-          {t(language, 'tasks', 'confirmDeleteDesc')}
-        </p>
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={() => setConfirmDelete(false)}
-            className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
-          >
-            {t(language, 'tasks', 'cancel')}
-          </button>
-          <button
-            onClick={handleDelete}
-            className="rounded-lg bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition hover:bg-red-500/20"
-          >
-            {t(language, 'tasks', 'delete')}
-          </button>
-        </div>
-      </div>,
-      document.body
+  if (confirmDeleteDialog.isOpen) {
+    return (
+      <ConfirmDeleteModal
+        variant="soft"
+        position={{ x, y }}
+        zIndex={9999}
+        title={t(language, 'tasks', 'deleteTask')}
+        message={
+          <>
+            {t(language, 'tasks', 'confirmDeleteMsg')}{' '}
+            <span className="font-medium text-[var(--text-primary)]">&#34;{task.title}&#34;</span>.{' '}
+            {t(language, 'tasks', 'confirmDeleteDesc')}
+          </>
+        }
+        cancelLabel={t(language, 'tasks', 'cancel')}
+        confirmLabel={t(language, 'tasks', 'delete')}
+        onCancel={confirmDeleteDialog.cancel}
+        onConfirm={() => void handleDelete()}
+      />
     );
   }
 
@@ -174,10 +162,7 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
       {/* Eliminar */}
       <div className="mx-2 my-1 border-t border-[var(--border)]" />
       <button
-        onClick={() => {
-          if (confirmDestructiveActions) setConfirmDelete(true);
-          else void handleDelete();
-        }}
+        onClick={() => confirmDeleteDialog.request(true, () => void handleDelete())}
         className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-red-400 transition hover:bg-red-500/10"
       >
         <Trash2 size={12} />

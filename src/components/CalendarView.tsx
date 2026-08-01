@@ -5,6 +5,9 @@ import { Task, TaskStatus, CalendarEvent, EventColor, EventRepeat } from '../typ
 import { useAppStore } from '../store/appStore';
 import { TaskContextMenu, NewTaskContextMenu } from './TaskContextMenu';
 import { AppDatePicker } from './AppDatePicker';
+import ToggleSwitch from './ToggleSwitch';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { placeMenuAtPointer } from '../lib/menuPosition';
 import { v4 as uuidv4 } from 'uuid';
 import { t, MONTHS_TITLE, WEEKDAYS_SHORT } from '../lib/i18n';
@@ -264,10 +267,9 @@ function EventEditor({ initial, language, onSave, onDelete, onClose }: EventEdit
           {/* Recordatorio (solo si hora específica) */}
           {!allDay && (
             <div className="space-y-1.5">
-              <button
-                type="button"
+              <div
                 onClick={() => setReminderEnabled(!reminderEnabled)}
-                className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 text-left transition hover:bg-[var(--bg-hover)]"
+                className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 text-left transition hover:bg-[var(--bg-hover)] cursor-pointer"
               >
                 <div className="min-w-0">
                   <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'calendar', 'reminderLabel')}</p>
@@ -277,11 +279,9 @@ function EventEditor({ initial, language, onSave, onDelete, onClose }: EventEdit
                   <span className={`text-[10px] font-semibold uppercase tracking-wider ${reminderEnabled ? 'text-[var(--accent)]' : 'text-[var(--text-hint)]'}`}>
                     {reminderEnabled ? t(language, 'calendar', 'reminderOn') : t(language, 'calendar', 'reminderOff')}
                   </span>
-                  <span className={`relative h-6 w-11 rounded-full transition ${reminderEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--border-card)]'}`}>
-                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-150 ${reminderEnabled ? 'left-[22px]' : 'left-0.5'}`} />
-                  </span>
+                  <ToggleSwitch checked={reminderEnabled} onChange={setReminderEnabled} size="lg" />
                 </div>
-              </button>
+              </div>
               {reminderEnabled && (
                 <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3">
                   <p className="text-xs font-medium text-[var(--text-secondary)]">
@@ -299,10 +299,9 @@ function EventEditor({ initial, language, onSave, onDelete, onClose }: EventEdit
 
           {/* Repetir */}
           <div className="space-y-1.5">
-            <button
-              type="button"
+            <div
               onClick={() => setRepeatEnabled(!repeatEnabled)}
-              className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 text-left transition hover:bg-[var(--bg-hover)]"
+              className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 text-left transition hover:bg-[var(--bg-hover)] cursor-pointer"
             >
               <div className="min-w-0">
                 <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'calendar', 'repeatToggleLabel')}</p>
@@ -312,11 +311,9 @@ function EventEditor({ initial, language, onSave, onDelete, onClose }: EventEdit
                 <span className={`text-[10px] font-semibold uppercase tracking-wider ${repeatEnabled ? 'text-[var(--accent)]' : 'text-[var(--text-hint)]'}`}>
                   {repeatEnabled ? t(language, 'calendar', 'reminderOn') : t(language, 'calendar', 'reminderOff')}
                 </span>
-                <span className={`relative h-6 w-11 rounded-full transition ${repeatEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--border-card)]'}`}>
-                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] duration-150 ${repeatEnabled ? 'left-[22px]' : 'left-0.5'}`} />
-                </span>
+                <ToggleSwitch checked={repeatEnabled} onChange={setRepeatEnabled} size="lg" />
               </div>
-            </button>
+            </div>
             {repeatEnabled && (
               <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3">
                 <p className="text-xs font-medium text-[var(--text-secondary)]">
@@ -438,7 +435,7 @@ export function CalendarView() {
   const [evCtxPos, setEvCtxPos] = useState({ x: 0, y: 0 });
   const [evCtxReady, setEvCtxReady] = useState(false);
   // Active event detail panel - managed in store (mutual exclusion with activeTask)
-  const [confirmDeleteEvent, setConfirmDeleteEvent] = useState<CalendarEvent | null>(null);
+  const confirmDeleteEventDialog = useConfirmDelete<CalendarEvent>(confirmDestructiveActions);
   // Inline-editing state for the event detail panel
   const [evTitle, setEvTitle] = useState('');
   const [evDate, setEvDate] = useState('');
@@ -863,8 +860,7 @@ export function CalendarView() {
                   onClick={() => {
                     const ev = activeCalendarEvent;
                     setActiveCalendarEvent(null);
-                    if (confirmDestructiveActions) setConfirmDeleteEvent(ev);
-                    else handleDeleteEvent(ev.id!);
+                    confirmDeleteEventDialog.request(ev, (e) => void handleDeleteEvent(e.id!));
                   }}
                   className="rounded-lg p-1.5 text-[var(--text-hint)] transition hover:text-red-400 hover:bg-red-400/10"
                 >
@@ -955,13 +951,11 @@ export function CalendarView() {
                       {t(language, 'calendar', 'reminderLabel')}
                     </span>
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => { setEvReminderEnabled(!evReminderEnabled); setEvDirty(true); }}
-                        className={`relative h-5 w-9 rounded-full transition ${evReminderEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--border-card)]'}`}
-                      >
-                        <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-[left] duration-150 ${evReminderEnabled ? 'left-[18px]' : 'left-0.5'}`} />
-                      </button>
+                      <ToggleSwitch
+                        checked={evReminderEnabled}
+                        onChange={(v) => { setEvReminderEnabled(v); setEvDirty(true); }}
+                        size="md"
+                      />
                       {evReminderEnabled && (
                         <AppSelect
                           value={evReminder}
@@ -980,13 +974,11 @@ export function CalendarView() {
                     {t(language, 'calendar', 'repeatToggleLabel')}
                   </span>
                   <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => { setEvRepeatEnabled(!evRepeatEnabled); setEvDirty(true); }}
-                      className={`relative h-5 w-9 rounded-full transition ${evRepeatEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--border-card)]'}`}
-                    >
-                      <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-[left] duration-150 ${evRepeatEnabled ? 'left-[18px]' : 'left-0.5'}`} />
-                    </button>
+                    <ToggleSwitch
+                      checked={evRepeatEnabled}
+                      onChange={(v) => { setEvRepeatEnabled(v); setEvDirty(true); }}
+                      size="md"
+                    />
                     {evRepeatEnabled && (
                       <AppSelect
                         value={evRepeat}
@@ -1094,13 +1086,8 @@ export function CalendarView() {
           <div className="my-1 border-t border-[var(--border)]" />
           <button
             onClick={() => {
-              if (confirmDestructiveActions) {
-                setConfirmDeleteEvent(evCtxMenu.event);
-                setEvCtxMenu(null);
-              } else {
-                handleDeleteEvent(evCtxMenu.event.id!);
-                setEvCtxMenu(null);
-              }
+              confirmDeleteEventDialog.request(evCtxMenu.event, (ev) => void handleDeleteEvent(ev.id!));
+              setEvCtxMenu(null);
             }}
             className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-red-400"
           >
@@ -1112,32 +1099,15 @@ export function CalendarView() {
       )}
 
       {/* Modal confirmación eliminar evento */}
-      {confirmDeleteEvent && confirmDestructiveActions && createPortal(
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
-          <div className="w-80 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
-            <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-              <Trash2 size={15} className="text-red-400" />
-              {t(language, 'calendar', 'deleteEvent')}
-            </div>
-            <p className="mb-4 text-xs text-[var(--text-secondary)]">
-              {t(language, 'calendar', 'deleteEventConfirm')}
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setConfirmDeleteEvent(null)}
-                className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
-              >
-                {t(language, 'calendar', 'cancel')}
-              </button>
-              <button
-                onClick={() => { handleDeleteEvent(confirmDeleteEvent.id!); setConfirmDeleteEvent(null); }}
-                className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600"
-              >
-                {t(language, 'calendar', 'deleteEvent')}
-              </button>
-            </div>
-          </div>
-        </div>,
+      {confirmDeleteEventDialog.isOpen && confirmDeleteEventDialog.pending && createPortal(
+        <ConfirmDeleteModal
+          title={t(language, 'calendar', 'deleteEvent')}
+          message={t(language, 'calendar', 'deleteEventConfirm')}
+          cancelLabel={t(language, 'calendar', 'cancel')}
+          confirmLabel={t(language, 'calendar', 'deleteEvent')}
+          onCancel={confirmDeleteEventDialog.cancel}
+          onConfirm={() => { void handleDeleteEvent(confirmDeleteEventDialog.pending!.id!); confirmDeleteEventDialog.cancel(); }}
+        />,
         document.body
       )}
 

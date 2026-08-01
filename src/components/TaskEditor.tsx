@@ -17,6 +17,8 @@ import { Task, TaskStatus } from '../types';
 import { useAppStore } from '../store/appStore';
 import { fs } from '../lib/invoke';
 import { t } from '../lib/i18n';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
+import { useConfirmDelete } from '../hooks/useConfirmDelete';
 
 const STATUS_OPTIONS: { value: TaskStatus; color: string }[] = [
   { value: 'todo', color: 'text-zinc-400 bg-zinc-400/10' },
@@ -39,6 +41,7 @@ export function TaskEditor() {
   const [showTagInput, setShowTagInput] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [showProjectMenu, setShowProjectMenu] = useState(false);
+  const confirmDeleteDialog = useConfirmDelete<true>(confirmDestructiveActions);
 
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tagInputRef = useRef<HTMLInputElement>(null);
@@ -147,8 +150,12 @@ export function TaskEditor() {
 
   const handleDelete = async () => {
     if (!activeTask) return;
-    if (confirmDestructiveActions && !confirm(t(language, 'tasks', 'confirmDeleteMsg') + ` "${activeTask.title}"`)) return;
     await deleteTask(activeTask);
+  };
+
+  const handleDeleteClick = () => {
+    if (!activeTask) return;
+    confirmDeleteDialog.request(true, () => void handleDelete());
   };
 
   const handleOpenLinkedPath = (path: string) => {
@@ -162,6 +169,23 @@ export function TaskEditor() {
 
   return (
     <div key={activeTask.id} className="task-panel-enter flex h-full w-[420px] shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-input)]">
+      {/* Modal confirmación eliminar */}
+      {confirmDeleteDialog.isOpen && (
+        <ConfirmDeleteModal
+          variant="soft"
+          title={t(language, 'tasks', 'deleteTask')}
+          message={
+            <>
+              {t(language, 'tasks', 'confirmDeleteMsg')}{' '}
+              <span className="font-medium text-[var(--text-primary)]">"{activeTask.title}"</span>
+            </>
+          }
+          cancelLabel={t(language, 'tasks', 'cancel')}
+          confirmLabel={t(language, 'tasks', 'delete')}
+          onCancel={confirmDeleteDialog.cancel}
+          onConfirm={() => { confirmDeleteDialog.cancel(); void handleDelete(); }}
+        />
+      )}
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
         <div className="flex items-center gap-2">
@@ -180,7 +204,7 @@ export function TaskEditor() {
         </div>
         <div className="flex items-center gap-1">
           <button
-            onClick={handleDelete}
+            onClick={handleDeleteClick}
             className="rounded-lg p-1.5 text-[var(--text-hint)] transition hover:text-red-400 hover:bg-red-400/10"
             title={t(language, 'tasks', 'deleteTitleTooltip')}
           >

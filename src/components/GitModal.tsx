@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
 import { GitConfig } from '../types';
 import { t } from '../lib/i18n';
+import ToggleSwitch from './ToggleSwitch';
 
 function timeAgo(iso: string, lang: 'es' | 'en'): string {
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -196,11 +197,6 @@ export function GitModal() {
     unknown:  { label: t(language, 'extras', 'remoteUnknown'),  cls: 'text-zinc-400',   icon: <Clock size={12} className="text-zinc-400" /> },
   };
 
-  const toggleCls = (on: boolean) =>
-    `relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full transition-colors ${
-      on ? 'bg-indigo-500' : 'bg-[var(--border)]'
-    }`;
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center px-4"
@@ -232,14 +228,7 @@ export function GitModal() {
               <p className="text-sm text-[var(--text-primary)]">{t(language, 'extras', 'enableGit')}</p>
               <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'extras', 'gitRequired')}</p>
             </div>
-            <button
-              onClick={() => setEnabled((v) => !v)}
-              className={toggleCls(enabled)}
-              role="switch"
-              aria-checked={enabled}
-            >
-              <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
-            </button>
+            <ToggleSwitch checked={enabled} onChange={setEnabled} size="sm" />
           </label>
 
           {/* Remote URL */}
@@ -300,15 +289,12 @@ export function GitModal() {
                 <p className="text-xs text-[var(--text-secondary)]">{t(language, 'extras', 'autoCommitHourly')}</p>
                 <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'extras', 'whileOpen')}</p>
               </div>
-              <button
-                onClick={() => setAutoCommit((v) => !v)}
+              <ToggleSwitch
+                checked={autoCommit && enabled}
+                onChange={setAutoCommit}
                 disabled={!enabled}
-                className={toggleCls(autoCommit && enabled)}
-                role="switch"
-                aria-checked={autoCommit}
-              >
-                <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${autoCommit && enabled ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
-              </button>
+                size="sm"
+              />
             </label>
 
             <label className="flex items-center justify-between cursor-pointer">
@@ -316,15 +302,12 @@ export function GitModal() {
                 <p className="text-xs text-[var(--text-secondary)]">{t(language, 'extras', 'pushOnSync')}</p>
                 <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'extras', 'remoteRequired')}</p>
               </div>
-              <button
-                onClick={() => setAutoPush((v) => !v)}
+              <ToggleSwitch
+                checked={autoPush && enabled && !!remote.trim()}
+                onChange={setAutoPush}
                 disabled={!enabled || !remote.trim()}
-                className={toggleCls(autoPush && enabled && !!remote.trim())}
-                role="switch"
-                aria-checked={autoPush}
-              >
-                <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${autoPush && enabled && !!remote.trim() ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
-              </button>
+                size="sm"
+              />
             </label>
           </div>
 

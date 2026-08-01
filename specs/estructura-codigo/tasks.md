@@ -537,38 +537,47 @@ para todos: un pase de QA visual manual en `pnpm tauri dev`.
 
 ## Fase 6 — Organizar `src/components/` por feature (req. §8, ver `design.md` §Fase 6)
 
-- [ ] 6.1 Mover con `git mv` los 10 archivos de `settings/`:
-      `SettingsModal.tsx`, `AboutSettingsTab.tsx`, `DataSettingsTab.tsx`,
-      `GeneralSettingsTab.tsx`, `GitSettingsTab.tsx`,
-      `ShortcutsSettingsTab.tsx`, `WorkSettingsTab.tsx`,
-      `CustomThemeEditor.tsx`, `ColorPicker.tsx`, `ThemeTile.tsx`
-- [ ] 6.2 Mover los 3 archivos de `calendar/`: `CalendarView.tsx`,
+- [x] 6.1 Movidos con `git mv` los 10 archivos de `settings/`
+      (2026-08-01): `SettingsModal.tsx`, `AboutSettingsTab.tsx`,
+      `DataSettingsTab.tsx`, `GeneralSettingsTab.tsx`,
+      `GitSettingsTab.tsx`, `ShortcutsSettingsTab.tsx`,
+      `WorkSettingsTab.tsx`, `CustomThemeEditor.tsx`, `ColorPicker.tsx`,
+      `ThemeTile.tsx`
+- [x] 6.2 Movidos los 3 archivos de `calendar/`: `CalendarView.tsx`,
       `EventEditor.tsx`, `AppSelect.tsx`
-- [ ] 6.3 Mover los 2 archivos de `dashboard/`: `DashboardView.tsx`,
+- [x] 6.3 Movidos los 2 archivos de `dashboard/`: `DashboardView.tsx`,
       `WeeklyMiniCalendar.tsx`
-- [ ] 6.4 Mover los 4 archivos de `sidebar/`: `Sidebar.tsx`,
+- [x] 6.4 Movidos los 4 archivos de `sidebar/`: `Sidebar.tsx`,
       `FolderTreeItem.tsx`, `ProjectTreeItem.tsx`, `RootDropLine.tsx`
-- [ ] 6.5 Mover los 7 archivos de `notes/` (`NoteEditor.tsx`,
+- [x] 6.5 Movidos los 7 archivos de `notes/` (`NoteEditor.tsx`,
       `NoteList.tsx`, `MermaidEditorModal.tsx`, `MermaidBlock.tsx`,
       `MarkdownPreview.tsx`, `LinkPreviewCard.tsx`, `ExportModal.tsx`) y
-      anidar `visual-editors/` como `notes/visual-editors/`
-- [ ] 6.6 Mover los 5 archivos de `tasks/`: `TaskList.tsx`,
+      anidado `visual-editors/` como `notes/visual-editors/`
+- [x] 6.6 Movidos los 5 archivos de `tasks/`: `TaskList.tsx`,
       `TaskEditor.tsx`, `KanbanBoard.tsx`, `RichTextEditor.tsx`,
       `TaskContextMenu.tsx`
-- [ ] 6.7 Mover los 3 archivos de `overtime/`: `OvertimeList.tsx`,
+- [x] 6.7 Movidos los 3 archivos de `overtime/`: `OvertimeList.tsx`,
       `OvertimeEditor.tsx`, `OvertimePreviewModal.tsx`
-- [ ] 6.8 Mover los 2 archivos de `daily/`: `DailyList.tsx`,
+- [x] 6.8 Movidos los 2 archivos de `daily/`: `DailyList.tsx`,
       `DailyEditor.tsx`
-- [ ] 6.9 Mover los 6 archivos de `shared/`: `ConfirmDeleteModal.tsx`,
+- [x] 6.9 Movidos los 6 archivos de `shared/`: `ConfirmDeleteModal.tsx`,
       `AppDatePicker.tsx`, `InlineRenameInput.tsx`, `ToggleSwitch.tsx`,
       `AbsenceModal.tsx`, `ImageLinkModal.tsx`
-- [ ] 6.10 Reescribir todos los imports relativos afectados (script,
-       no edición manual archivo por archivo) y actualizar
-       `src/App.tsx` (imports estáticos y `lazy()`) y
-       `src/hooks/useLinkPreview.ts` (import de `LinkPreviewCard`)
-- [ ] 6.11 Verificar `tsc --noEmit` limpio, `eslint` sin problemas
-       nuevos respecto al recuento base, `vite build` exitoso, y QA
-       manual con `pnpm tauri dev` de cada pantalla principal
+- [x] 6.10 Reescritos todos los imports relativos afectados con un
+       script Python (por archivo movido: mapa ruta-vieja→ruta-nueva
+       derivado de `git status --short` tras los `git mv`, resolviendo
+       cada import relativo contra la ubicación ANTIGUA del archivo que
+       lo contiene para encontrar el destino correcto, luego
+       recalculando la ruta relativa desde la ubicación NUEVA) —
+       actualizados también `src/App.tsx` (7 imports estáticos + 9
+       `lazy()`) y `src/hooks/useLinkPreview.ts` (import de
+       `LinkPreviewCard`). Primer intento del script tenía un bug
+       (resolvía contra el filesystem actual, que ya no tenía los
+       archivos en su ubicación vieja) — corregido antes de aplicar.
+- [x] 6.11 Verificado `tsc --noEmit` limpio, `eslint` (48 problemas,
+       idéntico al baseline vía `git stash` — cero nuevos) y
+       `vite build` exitoso. QA manual con `pnpm tauri dev` confirmado
+       por el usuario sin problemas.
 
 ## Fuera de alcance (ver requirements.md §9)
 

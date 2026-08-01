@@ -276,13 +276,41 @@ para todos: un pase de QA visual manual en `pnpm tauri dev`.
 ## Fase 4 — Componentes grandes (req. §6; requiere Fase 1 para el paso
       de menús contextuales/toggles/rename de cada archivo)
 
-- [ ] 4.1 `Sidebar.tsx`
-  - [ ] 4.1.1 Mover `FolderTreeItem`, `ProjectTreeItem`, `RootDropLine`
-        a archivos propios
-  - [ ] 4.1.2 Extraer `startFolderDrag` a `src/lib/folderDragDrop.ts`
-  - [ ] 4.1.3 Extraer la generación de PDF del daily a `src/lib/`
-  - [ ] 4.1.4 Reemplazar las 7 implementaciones de menú contextual por
-        `usePositionedMenu` (si no se hizo ya en la tarea 1.4.3)
+- [x] 4.1 `Sidebar.tsx` (2026-08-01): 1849 → 1443 líneas
+  - [x] 4.1.1 Movidos `FolderTreeItem`, `ProjectTreeItem`, `RootDropLine`
+        a archivos propios (`FolderTreeItem.tsx`, `ProjectTreeItem.tsx`,
+        `RootDropLine.tsx`). El estado compartido de highlight de
+        drag&drop (antes 2 variables de módulo `_dropHighlight`/
+        `_rootZoneHighlight` privadas del archivo) se movió también,
+        expuesto como API `registerDropHighlight`/`unregisterDropHighlight`/
+        `registerRootZoneHighlight`/`unregisterRootZoneHighlight` en
+        `folderDragDrop.ts` — necesario porque ahora 3 archivos
+        distintos necesitan coordinarse por él.
+  - [x] 4.1.2 Extraído `startFolderDrag` a `src/lib/folderDragDrop.ts`
+        (junto con el registro de highlight, ver arriba)
+  - [x] 4.1.3 Extraída la generación de PDF del daily a
+        `src/lib/dailyMonthExport.ts`. **Hallazgo no anticipado en el
+        diseño**: no era solo la parte de PDF — la función completa
+        `handleExportDailyMonth`/`handleExportMonth` (PDF + Markdown +
+        texto plano + diálogo de guardado) estaba duplicada verbatim
+        entre `Sidebar.tsx` y `DailyList.tsx` (no detectada en la
+        auditoría original de `requirements.md`). Se extrajo la función
+        completa como `exportDailyMonthEntries()` y se migraron AMBOS
+        call sites, no solo Sidebar — deduplicación adicional no pedida
+        explícitamente pero directamente en línea con el objetivo de
+        esta fase.
+  - [x] 4.1.4 Ya resuelto en la tarea 1.4.3 (las 7 ocurrencias ya usan
+        `usePositionedMenu`)
+      También movidos `FolderNode`/`buildFolderTree` a
+      `src/lib/folderTree.ts` (no estaban en el plan original de
+      `design.md`, pero eran necesarios como dependencia compartida de
+      `FolderTreeItem.tsx`/`ProjectTreeItem.tsx`/`Sidebar.tsx`).
+      Verificado con `tsc --noEmit`, `eslint` (sin errores nuevos) y
+      `vite build` limpio. **Nota**: el archivo queda en 1443 líneas,
+      por encima del ~800-1000 estimado en `design.md` — el resto del
+      volumen son los modales inline (nueva carpeta, nuevo proyecto,
+      subcarpeta, tags, menús de mes) que `design.md` no listó
+      explícitamente para extracción en esta fase; se dejan tal cual.
 - [ ] 4.2 `SettingsModal.tsx`
   - [ ] 4.2.1 Extraer `GeneralSettingsTab`, `WorkSettingsTab`,
         `ShortcutsSettingsTab`, `DataSettingsTab`, `AboutSettingsTab`

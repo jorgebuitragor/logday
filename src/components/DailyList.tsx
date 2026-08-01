@@ -8,9 +8,7 @@ import { AbsenceModal } from './AbsenceModal';
 import { placeMenuAtPointer } from '../lib/menuPosition';
 import { usePositionedMenu } from '../hooks/usePositionedMenu';
 import { MONTHS_TITLE, t } from '../lib/i18n';
-import { save } from '@tauri-apps/plugin-dialog';
-import { fs } from '../lib/invoke';
-import jsPDF from 'jspdf';
+import { exportDailyMonthEntries } from '../lib/dailyMonthExport';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
 
@@ -175,57 +173,8 @@ export function DailyList() {
       const label = `${MONTHS_TITLE[language][parseInt(monthStr) - 1]}-${yearStr}`;
       const entries = Object.entries(dailyEntries)
         .filter(([d]) => d.startsWith(activeDailyMonth))
-        .sort(([a], [b]) => a.localeCompare(b));
-
-      if (format === 'pdf') {
-        const path = await save({
-          defaultPath: `dailys-${activeDailyMonth}.pdf`,
-          filters: [{ name: 'PDF', extensions: ['pdf'] }],
-        });
-        if (!path) return;
-        const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
-        const margin = 15;
-        const pageWidth = pdf.internal.pageSize.getWidth();
-        const maxWidth = pageWidth - margin * 2;
-        let y = margin;
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(16);
-        pdf.text(label, margin, y);
-        y += 10;
-        for (const [date, content] of entries) {
-          if (y > 270) { pdf.addPage(); y = margin; }
-          pdf.setFont('helvetica', 'bold');
-          pdf.setFontSize(11);
-          pdf.text(date, margin, y);
-          y += 6;
-          pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(9);
-          const lines = content.split('\n').filter((l) => l.trim());
-          for (const line of lines) {
-            const wrapped = pdf.splitTextToSize(line, maxWidth);
-            if (y + wrapped.length * 4.5 > 280) { pdf.addPage(); y = margin; }
-            pdf.text(wrapped, margin, y);
-            y += wrapped.length * 4.5;
-          }
-          y += 5;
-        }
-        const base64 = pdf.output('datauristring').split(',')[1];
-        await fs.writeBinary(path, base64);
-      } else {
-        const path = await save({
-          defaultPath: `dailys-${activeDailyMonth}.${format}`,
-          filters: [{ name: format === 'md' ? 'Markdown' : 'Plain text', extensions: [format] }],
-        });
-        if (!path) return;
-        const ismd = format === 'md';
-        const header = ismd ? `# ${label}\n\n` : `${label}\n${'='.repeat(label.length)}\n\n`;
-        const body = entries
-          .map(([date, content]) =>
-            ismd ? `## ${date}\n\n${content}` : `${date}\n${'-'.repeat(date.length)}\n${content}`
-          )
-          .join('\n\n---\n\n');
-        await fs.writeFile(path, header + body + '\n');
-      }
+        .sort(([a], [b]) => a.localeCompare(b)) as [string, string][];
+      await exportDailyMonthEntries(activeDailyMonth, label, entries, format);
     } finally {
       setExportingMonth(false);
     }

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { X, Trash2 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
-import { AbsenceType } from '../types';
+import { AbsenceType } from '../types/absence';
 import { t } from '../lib/i18n';
 import { toISO } from '../lib/colombianHolidays';
 import { AppDatePicker } from './AppDatePicker';

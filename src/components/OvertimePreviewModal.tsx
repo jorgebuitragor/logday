@@ -1,5 +1,5 @@
 import { X, Download } from 'lucide-react';
-import { OvertimeEntry, OvertimeMonthMeta } from '../types';
+import { OvertimeEntry, OvertimeMonthMeta } from '../types/overtime';
 import { MONTHS_TITLE, t } from '../lib/i18n';
 import type { Language } from '../lib/i18n';
 

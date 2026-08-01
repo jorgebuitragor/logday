@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Circle, Clock, CheckCircle2, Copy, Check, Trash2, Pencil, Plus, CalendarDays } from 'lucide-react';
-import { Task, TaskStatus } from '../types';
+import { Task, TaskStatus } from '../types/task';
 import { useAppStore } from '../store/appStore';
 import { t } from '../lib/i18n';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';

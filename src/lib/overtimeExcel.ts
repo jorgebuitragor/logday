@@ -1,5 +1,4 @@
-import { OvertimeEntry, OvertimeMonthMeta } from '../types';
-
+import { OvertimeEntry, OvertimeMonthMeta } from '../types/overtime';
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
 type BorderSide = { style: string; color: { rgb: string } };

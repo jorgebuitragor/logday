@@ -1,6 +1,6 @@
 # Tasks — Estructura de código y buenas prácticas React
 
-Estado: en progreso. Fases 0 y 1 implementadas; Fases 2-5 siguen en
+Estado: en progreso. Fases 0-3 implementadas; Fases 4-5 siguen en
 diseño. Es la lista de trabajo fase por fase. Cada fase es independiente:
 se puede implementar y comitear por separado sin depender de que las
 demás estén hechas (salvo donde se indica).
@@ -199,27 +199,79 @@ para todos: un pase de QA visual manual en `pnpm tauri dev`.
 
 ## Fase 2 — Deduplicación puntual (req. §4)
 
-- [ ] 2.1 Crear `src/lib/dailyFileFormat.ts` con `parseDailyFile`/
-      `serializeDailyFile`; actualizar `appStore.ts` y `DashboardView.tsx`
-      para importar de ahí y eliminar sus copias
-- [ ] 2.2 Investigar la duplicación `GitModal.tsx` ↔ pestaña Git de
-      `SettingsModal.tsx` (con el código de ambos lado a lado) y decidir
-      la forma de resolverla — puede resolverse junto con la Fase 4.5
-      (split de `SettingsModal.tsx` en pestañas) en vez de por separado
-- [ ] 2.3 Eliminar `DailyEntry` de `types/index.ts` (confirmado sin uso)
-- [ ] 2.4 Eliminar la copia duplicada de `SearchResult` en
-      `types/index.ts` (la real vive en `src/lib/invoke.ts`)
+- [x] 2.1 Creado `src/lib/dailyFileFormat.ts` con `parseDailyFile`/
+      `serializeDailyFile` (2026-08-01); actualizados `appStore.ts` y
+      `DashboardView.tsx` para importar de ahí, eliminadas sus copias.
+      Verificado con `tsc --noEmit`, `eslint` (sin errores nuevos) y
+      `vite build` limpio.
+- [x] 2.2 Investigada la duplicación `GitModal.tsx` ↔ pestaña Git de
+      `SettingsModal.tsx` (2026-08-01) — **decisión: no implementar
+      todavía, diferir a la tarea 4.2** (split de `SettingsModal.tsx` en
+      componentes por pestaña). Hallazgos con el código de ambos lado a
+      lado:
+      - No es solo el switch (ya unificado en la Fase 1 con
+        `ToggleSwitch`) — es prácticamente **todo el archivo**
+        (`GitModal.tsx`, 401 líneas) duplicado dentro del tab Git de
+        `SettingsModal.tsx` (~350 líneas repartidas: estado, efectos,
+        handlers y JSX), con solo los nombres de variable cambiados
+        (`remote` ↔ `gitRemote`, `enabled` ↔ `gitEnabled`, etc.):
+        - Mismo shape de estado: `remote/autoCommit/autoPush/enabled/
+          userName/userEmail/busy/fetchBusy/errorMsg`
+        - Mismos 2 `useEffect` (auto-commit horario mientras la app/modal
+          está abierto; sincronizar estado local con `gitConfig` al
+          entrar al tab/abrir el modal)
+        - Mismos 4 handlers async verbatim (`handleSave`/`handleGitSave`,
+          `handleSync`/`handleGitSync`, `handlePull`/`handleGitPull`,
+          `handleFetch`/`handleGitFetch`) — idéntica lógica de
+          try/catch/finally sobre las mismas acciones del store
+        - Mismos objetos `statusIcon`/`remoteStatusInfo` y la misma
+          función `timeAgo()` duplicada en ambos archivos
+        - Único diferenciador real: `GitModal.tsx` envuelve todo en un
+          modal (backdrop, botón cerrar, Escape-para-cerrar vía
+          `toggleGit`), mientras la pestaña de `SettingsModal.tsx` lo
+          renderiza directo como contenido de tab, sin wrapper
+      - **Resolución recomendada** (a implementar en la tarea 4.2, no
+        ahora): extraer un `GitSettingsForm` (o un hook
+        `useGitSettingsForm()` + componente presentacional) con todo el
+        estado/efectos/handlers/JSX actual, que `GitModal.tsx` use
+        envuelto en su modal, y que el futuro `GitSettingsTab.tsx`
+        (tarea 4.2.2) use directo. Implementarlo ahora sería prematuro:
+        el componente compartido final depende de cómo quede exactamente
+        `GitSettingsTab.tsx` una vez separado, y hacerlo dos veces
+        (ahora y otra vez en la Fase 4) sería el tipo de trabajo
+        duplicado que este spec busca evitar.
+- [x] 2.3 Eliminado `DailyEntry` de `types/index.ts` (2026-08-01,
+      confirmado sin uso — ningún import lo referenciaba)
+- [x] 2.4 Eliminada la copia duplicada de `SearchResult` en
+      `types/index.ts` (2026-08-01; la real en `src/lib/invoke.ts`
+      sigue siendo la única, ya era la que todos los call sites
+      importaban). Verificado con `tsc --noEmit`, `eslint` y
+      `vite build` limpios.
 
-## Fase 3 — Separar `types/index.ts` (req. §5; diseño tabla de mapeo)
+**Fase 2 completa** (2026-08-01).
 
-- [ ] 3.1 Crear `types/task.ts`, `types/note.ts`, `types/overtime.ts`,
+## Fase 3 — Separar `types/index.ts` (req. §5; diseño tabla de mapeo) ✅ implementada (2026-08-01)
+
+- [x] 3.1 Creados `types/task.ts`, `types/note.ts`, `types/overtime.ts`,
       `types/calendar.ts`, `types/absence.ts`, `types/theme.ts`,
       `types/git.ts`, `types/config.ts`, `types/common.ts` con el
-      contenido mapeado en `design.md`
-- [ ] 3.2 Actualizar todos los call sites (~25 archivos) para importar
-      del archivo de dominio correspondiente en vez de `'../types'`
-- [ ] 3.3 Eliminar `src/types/index.ts`
-- [ ] 3.4 `tsc --noEmit` limpio tras la migración
+      contenido mapeado en `design.md`. `config.ts` importa de
+      `common.ts` (`Language`), `theme.ts` (`Theme`/`CustomTheme`) y
+      `overtime.ts` (`OvertimeMonthMeta`) para `AppConfig`/
+      `BackupSettings` — es el único archivo de dominio con
+      dependencias cruzadas, esperado por ser el "agregador".
+- [x] 3.2 Actualizados los 25 call sites para importar del archivo de
+      dominio correspondiente en vez de `'../types'` (script que mapea
+      cada símbolo importado a su archivo de dominio y reescribe la
+      línea de import agrupando por destino). Hallazgo no cubierto por
+      el script (imports estáticos únicamente): `NoteEditor.tsx` tenía
+      2 referencias de tipo dinámicas `import('../types').Task` (no son
+      un `import` estático de nivel de módulo) — corregidas a mano a
+      `import('../types/task').Task`.
+- [x] 3.3 Eliminado `src/types/index.ts`
+- [x] 3.4 `tsc --noEmit` limpio tras la migración. También verificado
+      con `eslint` (57 problemas — idéntico conteo a antes de esta
+      fase, ningún error/warning nuevo) y `vite build` limpio.
 
 ## Fase 4 — Componentes grandes (req. §6; requiere Fase 1 para el paso
       de menús contextuales/toggles/rename de cada archivo)

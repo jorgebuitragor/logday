@@ -2,9 +2,18 @@ import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Task, Note, AppConfig, ViewMode, Theme, BuiltInTheme, CustomTheme, ActiveSection, StartupScreen, Language, Shortcuts, DEFAULT_SHORTCUTS, OvertimeEntry, OvertimeMonthMeta, GitConfig, GitStatus, GitRemoteStatus, AppToast, ToastKind, CalendarEvent, AbsenceDay } from '../types';
+import { Task } from '../types/task';
+import { Note } from '../types/note';
+import { OvertimeEntry, OvertimeMonthMeta } from '../types/overtime';
+import { CalendarEvent } from '../types/calendar';
+import { AbsenceDay } from '../types/absence';
+import { Theme, BuiltInTheme, CustomTheme } from '../types/theme';
+import { GitConfig, GitStatus, GitRemoteStatus } from '../types/git';
+import { AppConfig, ViewMode, ActiveSection, StartupScreen, Shortcuts, DEFAULT_SHORTCUTS } from '../types/config';
+import { Language, AppToast, ToastKind } from '../types/common';
 import { deriveCustomThemeVars } from '../lib/themeColor';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
+import { parseDailyFile, serializeDailyFile } from '../lib/dailyFileFormat';
 import { generateOvertimeXlsx } from '../lib/overtimeExcel';
 import { fs, pickFolder, pickFile, saveDialog, SearchResult } from '../lib/invoke';
 import { parseFrontmatter, serializeTask, parseNote, serializeNote, formatDate } from '../lib/markdown';
@@ -241,24 +250,6 @@ const overtimeMonthFilePath = (base: string, year: string, month: string) =>
 // Guard para evitar cargas concurrentes del mismo mes
 const loadingDailyMonths = new Set<string>();
 const loadingOvertimeMonths = new Set<string>();
-
-function parseDailyFile(content: string): Record<string, string> {
-  const entries: Record<string, string> = {};
-  const parts = content.split(/^## (\d{4}-\d{2}-\d{2})\s*$/m);
-  for (let i = 1; i < parts.length; i += 2) {
-    // Eliminar separadores "---" que quedan al final de cada bloque
-    const raw = (parts[i + 1] || '').trim().replace(/(\n*---\s*)+$/, '').trim();
-    entries[parts[i].trim()] = raw;
-  }
-  return entries;
-}
-
-function serializeDailyFile(entries: Record<string, string>, yearMonth: string): string {
-  const sorted = Object.keys(entries).sort().reverse();
-  const header = `# ${yearMonth}\n\n`;
-  if (sorted.length === 0) return header;
-  return header + sorted.map((d) => `## ${d}\n\n${entries[d]}`).join('\n\n---\n\n') + '\n';
-}
 
 async function loadConfig(dir: string): Promise<AppConfig | null> {
   try {

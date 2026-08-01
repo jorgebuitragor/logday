@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { Plus, Pin, Search, Copy, CopyPlus, Trash2, FolderInput, FolderOpen, ChevronRight, Download, Pencil, Tag, X, ArrowUpDown, Upload, Loader2 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
-import { Note } from '../types';
+import { Note } from '../types/note';
 import { ExportModal } from './ExportModal';
 import InlineRenameInput from './InlineRenameInput';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';

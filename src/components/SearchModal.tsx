@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { Search, X, Circle, Clock, CheckCircle2, Calendar, BookOpen } from 'lucide-react';
-import { Task, TaskStatus } from '../types';
+import { Task, TaskStatus } from '../types/task';
 import { useAppStore } from '../store/appStore';
 import { t } from '../lib/i18n';
 

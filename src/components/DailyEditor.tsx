@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Copy, Check, X, Plus, GripVertical, Trash2, ListTodo } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../store/appStore';
-import { Task } from '../types';
+import { Task } from '../types/task';
 import {
   toISO,
   dateFromISO,

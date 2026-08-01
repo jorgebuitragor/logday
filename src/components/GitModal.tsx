@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { X, GitCommit, RefreshCw, CheckCircle2, AlertCircle, Clock, Upload, Download, CloudOff, ArrowDown } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
-import { GitConfig } from '../types';
+import { GitConfig } from '../types/git';
 import { t } from '../lib/i18n';
 import ToggleSwitch from './ToggleSwitch';
 

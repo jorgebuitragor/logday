@@ -5,7 +5,10 @@ import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
 import { fs } from '../lib/invoke';
 import { parseFrontmatter, parseNote } from '../lib/markdown';
-import { Note, Task, CalendarEvent } from '../types';
+import { parseDailyFile } from '../lib/dailyFileFormat';
+import { Task } from '../types/task';
+import { Note } from '../types/note';
+import { CalendarEvent } from '../types/calendar';
 import { t as tFn } from '../lib/i18n';
 import { isWorkDay, isColombianHoliday, toISO } from '../lib/colombianHolidays';
 import { TaskContextMenu } from './TaskContextMenu';
@@ -34,16 +37,6 @@ function toISODate(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
-}
-
-function parseDailyFile(content: string): Record<string, string> {
-  const entries: Record<string, string> = {};
-  const parts = content.split(/^## (\d{4}-\d{2}-\d{2})\s*$/m);
-  for (let i = 1; i < parts.length; i += 2) {
-    const raw = (parts[i + 1] || '').trim().replace(/(\n*---\s*)+$/, '').trim();
-    entries[parts[i].trim()] = raw;
-  }
-  return entries;
 }
 
 async function scanFilesRecursive(dir: string): Promise<string[]> {

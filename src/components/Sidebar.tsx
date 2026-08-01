@@ -32,7 +32,7 @@ import {
   FileType2,
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
-import { ViewMode } from '../types';
+import { ViewMode } from '../types/config';
 import { usePositionedMenu } from '../hooks/usePositionedMenu';
 import InlineRenameInput from './InlineRenameInput';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';

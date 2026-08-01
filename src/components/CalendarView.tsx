@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, ChevronDown, Plus, Pencil, Trash2, Clock, CalendarDays, Copy, Bell, Repeat2, X } from 'lucide-react';
-import { Task, TaskStatus, CalendarEvent, EventColor, EventRepeat } from '../types';
+import { Task, TaskStatus } from '../types/task';
+import { CalendarEvent, EventColor, EventRepeat } from '../types/calendar';
 import { useAppStore } from '../store/appStore';
 import { TaskContextMenu, NewTaskContextMenu } from './TaskContextMenu';
 import { AppDatePicker } from './AppDatePicker';

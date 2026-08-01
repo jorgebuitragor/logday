@@ -13,8 +13,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ExternalLink, FileText, Edit3, Copy, ArrowRight, Tag, Loader2, Pencil, Check, X } from 'lucide-react';
 import { t as tFn } from '../lib/i18n';
-import type { Language } from '../types';
-
+import type { Language } from '../types/common';
 // ── Public types ─────────────────────────────────────────────────────────────
 
 export interface InternalNoteMeta {

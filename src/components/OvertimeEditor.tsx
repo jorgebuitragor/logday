@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { X, Save, AlertTriangle, Plus, Pencil, RotateCcw } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
-import { OvertimeEntry } from '../types';
+import { OvertimeEntry } from '../types/overtime';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
 import { AppDatePicker } from './AppDatePicker';
 import { t, MONTHS_TITLE } from '../lib/i18n';

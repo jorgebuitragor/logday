@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Circle, Clock, CheckCircle2, Calendar, GripVertical, X, ChevronDown } from 'lucide-react';
-import { Task, TaskStatus } from '../types';
+import { Task, TaskStatus } from '../types/task';
 import { useAppStore } from '../store/appStore';
 import { TaskContextMenu, NewTaskContextMenu } from './TaskContextMenu';
 import { t } from '../lib/i18n';

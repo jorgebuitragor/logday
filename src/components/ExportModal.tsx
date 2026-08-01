@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { flushSync } from 'react-dom';
 import { X, Download, Clipboard, Check, Loader2 } from 'lucide-react';
-import { Note } from '../types';
+import { Note } from '../types/note';
 import { exportNote } from '../lib/exportNote';
 import { useAppStore } from '../store/appStore';
 import { t } from '../lib/i18n';

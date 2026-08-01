@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { RichTextEditor } from './RichTextEditor';
 import { AppDatePicker } from './AppDatePicker';
-import { Task, TaskStatus } from '../types';
+import { Task, TaskStatus } from '../types/task';
 import { useAppStore } from '../store/appStore';
 import { fs } from '../lib/invoke';
 import { t } from '../lib/i18n';

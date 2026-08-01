@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Download, Trash2, X, User, Pencil, Eye, Loader2 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
-import { OvertimeEntry } from '../types';
+import { OvertimeEntry } from '../types/overtime';
 import { MONTHS_TITLE, t } from '../lib/i18n';
 import { OvertimePreviewModal } from './OvertimePreviewModal';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';

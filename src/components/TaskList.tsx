@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, memo } from 'react';
 import { Plus, Circle, Clock, CheckCircle2, Calendar, AlertTriangle } from 'lucide-react';
-import { Task, TaskStatus } from '../types';
+import { Task, TaskStatus } from '../types/task';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
 import { TaskContextMenu, NewTaskContextMenu } from './TaskContextMenu';

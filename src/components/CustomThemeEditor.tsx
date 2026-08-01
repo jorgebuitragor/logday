@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { X, Trash2 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
-import { CustomTheme } from '../types';
+import { CustomTheme } from '../types/theme';
 import { t } from '../lib/i18n';
 import { deriveCustomThemeVars } from '../lib/themeColor';
 import { ColorPicker } from './ColorPicker';

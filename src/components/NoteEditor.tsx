@@ -65,7 +65,7 @@ import Paragraph from '@tiptap/extension-paragraph';
 import { common, createLowlight } from 'lowlight';
 import { gemoji } from 'gemoji';
 import { useAppStore } from '../store/appStore';
-import { Note } from '../types';
+import { Note } from '../types/note';
 import { ExportModal } from './ExportModal';
 import { MarkdownPreview } from './MarkdownPreview';
 import { MermaidEditorModal } from './MermaidEditorModal';
@@ -89,7 +89,7 @@ const GAP_LINK_CARD = 8; // px between anchor bottom and preview card top
 const taskCodePluginKey = new PluginKey<DecorationSet>('taskCodeDecorations');
 const TASK_CODE_RE = /#([A-Z0-9\-_]+)/gi;
 
-function createTaskCodePlugin(tasksRef: React.MutableRefObject<import('../types').Task[]>): Plugin {
+function createTaskCodePlugin(tasksRef: React.MutableRefObject<import('../types/task').Task[]>): Plugin {
   return new Plugin({
     key: taskCodePluginKey,
     props: {
@@ -468,7 +468,7 @@ export function NoteEditor() {
   }, [mdContent]);
 
   // ── Task-code decorations ────────────────────────────────────────────────
-  const tasksRef = useRef<import('../types').Task[]>(tasks);
+  const tasksRef = useRef<import('../types/task').Task[]>(tasks);
   useEffect(() => { tasksRef.current = tasks; }, [tasks]);
 
   const taskCodeExtension = useMemo(

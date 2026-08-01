@@ -13,7 +13,7 @@ import { TaskList } from './components/TaskList';
 import { SearchModal } from './components/SearchModal';
 import { SettingsModal } from './components/SettingsModal';
 import { ToastViewport } from './components/ToastViewport';
-import { OvertimeEntry } from './types';
+import { OvertimeEntry } from './types/overtime';
 import { useEventNotifier } from './lib/eventNotifier';
 
 const KanbanBoard   = lazy(() => import('./components/KanbanBoard').then(m => ({ default: m.KanbanBoard })));

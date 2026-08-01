@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, Monitor, Sun, Moon, FolderOpen, Minus, Plus, Download, Upload, Type, Keyboard, AlertTriangle, ChevronDown, Eye, RefreshCw, ExternalLink, GitCommit, CheckCircle2, AlertCircle, Clock, CloudOff, ArrowDown, BookOpen, Smartphone, Snowflake, MoreVertical, Pencil, Copy, Trash2, Palette } from 'lucide-react';
-import { Theme, CustomTheme, Shortcuts, StartupScreen, Language, BackupSettings, GitConfig } from '../types';
+import { Theme, CustomTheme } from '../types/theme';
+import { GitConfig } from '../types/git';
+import { Shortcuts, StartupScreen, BackupSettings } from '../types/config';
+import { Language } from '../types/common';
 import { useAppStore } from '../store/appStore';
 import { t } from '../lib/i18n';
 import { CustomThemeEditor } from './CustomThemeEditor';

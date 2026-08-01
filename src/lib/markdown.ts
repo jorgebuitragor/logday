@@ -1,5 +1,5 @@
-import { Task, TaskStatus, Note } from '../types';
-
+import { Task, TaskStatus } from '../types/task';
+import { Note } from '../types/note';
 /**
  * Parses a markdown file with YAML frontmatter.
  * Returns the parsed metadata and content body.

@@ -567,6 +567,7 @@ export function DailyEditor() {
     updateTask,
     language,
     confirmDestructiveActions,
+    absenceDays,
   } = useAppStore();
 
   const [todayActs, setTodayActs] = useState('');
@@ -579,8 +580,9 @@ export function DailyEditor() {
 
   const prevDate = useMemo(() => {
     if (!activeDailyDate) return null;
-    return getPreviousWorkingDay(dateFromISO(activeDailyDate));
-  }, [activeDailyDate]);
+    const absenceDates = new Set(absenceDays.map((a) => a.date));
+    return getPreviousWorkingDay(dateFromISO(activeDailyDate), absenceDates);
+  }, [activeDailyDate, absenceDays]);
 
   const prevISO = useMemo(() => (prevDate ? toISO(prevDate) : null), [prevDate]);
 

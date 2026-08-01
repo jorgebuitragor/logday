@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Task, Note, AppConfig, ViewMode, Theme, BuiltInTheme, CustomTheme, ActiveSection, StartupScreen, Language, Shortcuts, DEFAULT_SHORTCUTS, OvertimeEntry, OvertimeMonthMeta, GitConfig, GitStatus, GitRemoteStatus, AppToast, ToastKind, CalendarEvent } from '../types';
+import { Task, Note, AppConfig, ViewMode, Theme, BuiltInTheme, CustomTheme, ActiveSection, StartupScreen, Language, Shortcuts, DEFAULT_SHORTCUTS, OvertimeEntry, OvertimeMonthMeta, GitConfig, GitStatus, GitRemoteStatus, AppToast, ToastKind, CalendarEvent, AbsenceDay } from '../types';
 import { deriveCustomThemeVars } from '../lib/themeColor';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
 import { generateOvertimeXlsx } from '../lib/overtimeExcel';
@@ -55,6 +55,7 @@ interface AppState {
   // Calendar Events
   calendarEvents: CalendarEvent[];
   activeCalendarEvent: CalendarEvent | null;
+  absenceDays: AbsenceDay[];
 
   // UI
   currentView: ViewMode;
@@ -162,6 +163,11 @@ interface AppState {
   loadCalendarEvents: () => Promise<void>;
   saveCalendarEvent: (event: CalendarEvent) => Promise<void>;
   deleteCalendarEvent: (id: string) => Promise<void>;
+
+  // Absences
+  loadAbsenceDays: () => Promise<void>;
+  saveAbsenceDay: (absence: AbsenceDay) => Promise<void>;
+  deleteAbsenceDay: (id: string) => Promise<void>;
 
   // UI
   setSection: (section: ActiveSection) => Promise<void>;
@@ -434,6 +440,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   })(),
   calendarEvents: [],
   activeCalendarEvent: null,
+  absenceDays: [],
 
   showToast: ({ kind, title, description, durationMs = 3200 }) => {
     const id = uuidv4();
@@ -498,6 +505,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             get().loadDailyMonths(),
             get().loadOvertimeMonths(),
             get().loadCalendarEvents(),
+            get().loadAbsenceDays(),
           ]);
 
           if (lastProject) set({ activeProject: lastProject });
@@ -1413,9 +1421,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   copyDailyFormat: async (date) => {
-    const { basePath } = get();
+    const { basePath, absenceDays } = get();
     const todayDate = dateFromISO(date);
-    const prevDate = getPreviousWorkingDay(todayDate);
+    const absenceDates = new Set(absenceDays.map((a) => a.date));
+    const prevDate = getPreviousWorkingDay(todayDate, absenceDates);
     const prevISO = toISO(prevDate);
 
     // Asegurarse de tener cargado el mes del día anterior (puede ser distinto)
@@ -2093,5 +2102,44 @@ export const useAppStore = create<AppState>((set, get) => ({
     const next = get().calendarEvents.filter((e) => e.id !== id);
     await fs.writeFile(path, JSON.stringify(next, null, 2));
     set({ calendarEvents: next });
+  },
+
+  // ── Absences ───────────────────────────────────────────────────
+
+  loadAbsenceDays: async () => {
+    const base = get().basePath;
+    if (!base) return;
+    const path = `${base}/absences.json`;
+    try {
+      if (await fs.exists(path)) {
+        const raw = await fs.readFile(path);
+        const absences: AbsenceDay[] = JSON.parse(raw);
+        set({ absenceDays: absences });
+      }
+    } catch {
+      set({ absenceDays: [] });
+    }
+  },
+
+  saveAbsenceDay: async (absence) => {
+    const base = get().basePath;
+    if (!base) return;
+    const path = `${base}/absences.json`;
+    const current = get().absenceDays;
+    const idx = current.findIndex((a) => a.id === absence.id);
+    const next = idx >= 0
+      ? current.map((a) => (a.id === absence.id ? absence : a))
+      : [...current, absence];
+    await fs.writeFile(path, JSON.stringify(next, null, 2));
+    set({ absenceDays: next });
+  },
+
+  deleteAbsenceDay: async (id) => {
+    const base = get().basePath;
+    if (!base) return;
+    const path = `${base}/absences.json`;
+    const next = get().absenceDays.filter((a) => a.id !== id);
+    await fs.writeFile(path, JSON.stringify(next, null, 2));
+    set({ absenceDays: next });
   },
 }));

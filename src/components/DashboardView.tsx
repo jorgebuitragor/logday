@@ -7,8 +7,9 @@ import { fs } from '../lib/invoke';
 import { parseFrontmatter, parseNote } from '../lib/markdown';
 import { Note, Task, CalendarEvent } from '../types';
 import { t as tFn } from '../lib/i18n';
-import { isWorkDay, isColombianHoliday } from '../lib/colombianHolidays';
+import { isWorkDay, isColombianHoliday, toISO } from '../lib/colombianHolidays';
 import { TaskContextMenu } from './TaskContextMenu';
+import { AbsenceModal } from './AbsenceModal';
 import { placeMenuAtPointer } from '../lib/menuPosition';
 
 type RecentItem =
@@ -270,6 +271,7 @@ export function DashboardView() {
     createNote,
     workWeekDays,
     holidaysAsNonWork,
+    absenceDays,
   } = useAppStore(
     useShallow((s) => ({
       basePath: s.basePath,
@@ -287,11 +289,13 @@ export function DashboardView() {
       createNote: s.createNote,
       workWeekDays: s.workWeekDays,
       holidaysAsNonWork: s.holidaysAsNonWork,
+      absenceDays: s.absenceDays,
     }))
   );
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DashboardData | null>(null);
+  const [showAbsenceModal, setShowAbsenceModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
 
@@ -398,6 +402,10 @@ export function DashboardView() {
   const today = new Date();
   const todayIsWorkDay = isWorkDay(today, workWeekDays, holidaysAsNonWork);
   const isHoliday = isColombianHoliday(today);
+  const todayAbsence = absenceDays.find((a) => a.date === toISO(today)) ?? null;
+  const todayAbsenceLabel = todayAbsence
+    ? tFn(language, 'absence', `type${todayAbsence.type.charAt(0).toUpperCase()}${todayAbsence.type.slice(1)}` as 'typeIncapacidad' | 'typeVacaciones' | 'typeOtro')
+    : null;
 
   const hour = today.getHours();
   const greetingKey = hour < 12 ? 'greetingMorning' : hour < 19 ? 'greetingAfternoon' : 'greetingEvening';
@@ -444,11 +452,18 @@ export function DashboardView() {
             <div className="flex items-center gap-2 text-[var(--text-primary)]">
               <CalendarCheck2 size={18} />
               <h2 className="text-base font-semibold">{tFn(language, 'dashboard', 'today')}</h2>
-              {!todayIsWorkDay && (
+              {(!todayIsWorkDay || todayAbsence) && (
                 <span className="rounded-full border border-[var(--border-card)] bg-[var(--bg-elevated)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-hint)]">
-                  {isHoliday ? tFn(language, 'dashboard', 'offDayHoliday') : tFn(language, 'dashboard', 'offDayWeekend')}
+                  {todayAbsenceLabel ?? (isHoliday ? tFn(language, 'dashboard', 'offDayHoliday') : tFn(language, 'dashboard', 'offDayWeekend'))}
                 </span>
               )}
+              <button
+                onClick={() => setShowAbsenceModal(true)}
+                className="rounded-full px-2 py-0.5 text-[10px] font-medium text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-indigo-400"
+                title={tFn(language, 'absence', 'markButton')}
+              >
+                {tFn(language, 'dashboard', 'quickMarkAbsence')}
+              </button>
             </div>
             <button
               onClick={retryLoad}
@@ -657,6 +672,10 @@ export function DashboardView() {
           y={ctxTask.y}
           onClose={() => setCtxTask(null)}
         />
+      )}
+
+      {showAbsenceModal && (
+        <AbsenceModal initialDate={toISO(today)} onClose={() => setShowAbsenceModal(false)} />
       )}
 
       {noteCtx !== null && createPortal(

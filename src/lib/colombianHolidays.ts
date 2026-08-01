@@ -65,6 +65,7 @@ export function getColombianHolidays(year: number): Set<string> {
     new Date(year, 0, 6),   // Reyes Magos (6 ene)
     new Date(year, 2, 19),  // San José (19 mar)
     new Date(year, 5, 29),  // San Pedro y San Pablo (29 jun)
+    new Date(year, 7, 15),  // Asunción de la Virgen (15 ago)
     new Date(year, 9, 12),  // Día de la Raza (12 oct)
     new Date(year, 10, 1),  // Todos los Santos (1 nov)
     new Date(year, 10, 11), // Independencia de Cartagena (11 nov)
@@ -81,10 +82,15 @@ export function getColombianHolidays(year: number): Set<string> {
   return h;
 }
 
-/** Devuelve true si la fecha es un día hábil (lunes–viernes, no festivo CO). */
-export function isWorkingDay(date: Date): boolean {
+/**
+ * Devuelve true si la fecha es un día hábil (lunes–viernes, no festivo CO).
+ * @param extraNonWorking Fechas ISO (YYYY-MM-DD) marcadas manualmente como
+ * no laboradas (incapacidad, vacaciones, etc.) que también se excluyen.
+ */
+export function isWorkingDay(date: Date, extraNonWorking?: Set<string>): boolean {
   const dow = date.getDay();
   if (dow === 0 || dow === 6) return false;
+  if (extraNonWorking?.has(toISO(date))) return false;
   return !getColombianHolidays(date.getFullYear()).has(toISO(date));
 }
 
@@ -112,13 +118,14 @@ export function isWorkDay(date: Date, workWeekDays: 5 | 6 = 5, respectHolidays =
 
 /**
  * Devuelve el día hábil inmediatamente anterior a `from`,
- * omitiendo fines de semana y festivos colombianos.
+ * omitiendo fines de semana, festivos colombianos, y fechas marcadas
+ * manualmente como no laboradas (`extraNonWorking`, fechas ISO).
  */
-export function getPreviousWorkingDay(from: Date): Date {
+export function getPreviousWorkingDay(from: Date, extraNonWorking?: Set<string>): Date {
   const d = new Date(from);
   d.setHours(12, 0, 0, 0);
   d.setDate(d.getDate() - 1);
-  while (!isWorkingDay(d)) d.setDate(d.getDate() - 1);
+  while (!isWorkingDay(d, extraNonWorking)) d.setDate(d.getDate() - 1);
   return d;
 }
 

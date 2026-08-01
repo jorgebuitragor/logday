@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, ChevronLeft, ChevronRight, CalendarPlus, Trash2, Copy, Check, FileText, FileDown, FileType2 } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, CalendarPlus, CalendarOff, Trash2, Copy, Check, FileText, FileDown, FileType2 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
 import { toISO } from '../lib/colombianHolidays';
 import { AppCalendarGrid } from './AppDatePicker';
+import { AbsenceModal } from './AbsenceModal';
 import { placeMenuAtPointer } from '../lib/menuPosition';
 import { MONTHS_TITLE, t } from '../lib/i18n';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -66,6 +67,7 @@ export function DailyList() {
 
   // ── Estado del picker de fecha ────────────────────────────────────────────
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showAbsenceModal, setShowAbsenceModal] = useState(false);
   const [pickerPos, setPickerPos] = useState({ top: 0, right: 0 });
   const datePickerRef = useRef<HTMLDivElement>(null);
   const pickerBtnRef = useRef<HTMLButtonElement>(null);
@@ -397,6 +399,13 @@ export function DailyList() {
             </div>
           )}
           <button
+            onClick={() => setShowAbsenceModal(true)}
+            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            title={t(language, 'absence', 'markButton')}
+          >
+            <CalendarOff size={14} />
+          </button>
+          <button
             onClick={createTodayDaily}
             className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-indigo-400 transition hover:bg-indigo-500/10"
             title={t(language, 'dailys', 'createTodayTitle')}
@@ -406,6 +415,10 @@ export function DailyList() {
           </button>
         </div>
       </div>
+
+      {showAbsenceModal && (
+        <AbsenceModal onClose={() => setShowAbsenceModal(false)} />
+      )}
 
       {/* Navegación de mes */}
       <div

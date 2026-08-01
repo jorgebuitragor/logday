@@ -191,6 +191,8 @@ export function Sidebar() {
     onClose: () => setDailyMonthCtx(null),
   });
   const confirmDeleteDailyMonthDialog = useConfirmDelete<string>(confirmDestructiveActions);
+  const confirmDeleteFolderDialog = useConfirmDelete<string>(confirmDestructiveActions);
+  const confirmDeleteProjectDialog = useConfirmDelete<string>(confirmDestructiveActions);
   const [exportingDailyMonth, setExportingDailyMonth] = useState(false);
 
   const handleExportDailyMonth = async (ym: string, format: 'pdf' | 'md' | 'txt') => {
@@ -281,11 +283,11 @@ export function Sidebar() {
     setRenamingProject(null);
   };
 
-  const handleProjectDelete = async () => {
+  const handleProjectDelete = () => {
     if (!projectCtx) return;
     const project = projectCtx.project;
     setProjectCtx(null);
-    await deleteProject(project);
+    confirmDeleteProjectDialog.request(project, (p) => void deleteProject(p));
   };
 
   const handleProjectNewSubfolder = () => {
@@ -382,11 +384,11 @@ export function Sidebar() {
     setRenamingFolder(null);
   };
 
-  const handleDeleteFolder = async () => {
+  const handleDeleteFolder = () => {
     if (!folderCtx) return;
     const folder = folderCtx.folder;
     setFolderCtx(null);
-    await deleteNoteFolder(folder);
+    confirmDeleteFolderDialog.request(folder, (f) => void deleteNoteFolder(f));
   };
 
   const handleShareFolder = () => {
@@ -790,6 +792,27 @@ export function Sidebar() {
         </>
       )}
 
+      {/* Confirmación eliminar proyecto */}
+      {confirmDeleteProjectDialog.isOpen && confirmDeleteProjectDialog.pending && (
+        <ConfirmDeleteModal
+          title={t(language, 'sidebar', 'deleteProjectConfirmTitle')}
+          message={
+            <>
+              {t(language, 'sidebar', 'deleteProjectConfirmMsg')} &quot;{confirmDeleteProjectDialog.pending}&quot;?{' '}
+              {t(language, 'sidebar', 'deleteProjectConfirmDesc')}
+            </>
+          }
+          cancelLabel={t(language, 'sidebar', 'cancel')}
+          confirmLabel={t(language, 'sidebar', 'deleteFolder')}
+          onCancel={confirmDeleteProjectDialog.cancel}
+          onConfirm={() => {
+            const project = confirmDeleteProjectDialog.pending!;
+            confirmDeleteProjectDialog.cancel();
+            void deleteProject(project);
+          }}
+        />
+      )}
+
       {/* Modal nueva subcarpeta de proyecto */}
       {projectSubfolderParent !== null && (
         <ModalOverlay onClose={() => { setProjectSubfolderParent(null); setNewProjectSubfolderName(''); }}>
@@ -1067,6 +1090,27 @@ export function Sidebar() {
             </button>
           </div>
         </>
+      )}
+
+      {/* Confirmación eliminar carpeta de notas */}
+      {confirmDeleteFolderDialog.isOpen && confirmDeleteFolderDialog.pending && (
+        <ConfirmDeleteModal
+          title={t(language, 'sidebar', 'deleteFolderConfirmTitle')}
+          message={
+            <>
+              {t(language, 'sidebar', 'deleteFolderConfirmMsg')} &quot;{confirmDeleteFolderDialog.pending}&quot;?{' '}
+              {t(language, 'sidebar', 'deleteFolderConfirmDesc')}
+            </>
+          }
+          cancelLabel={t(language, 'sidebar', 'cancel')}
+          confirmLabel={t(language, 'sidebar', 'deleteFolder')}
+          onCancel={confirmDeleteFolderDialog.cancel}
+          onConfirm={() => {
+            const folder = confirmDeleteFolderDialog.pending!;
+            confirmDeleteFolderDialog.cancel();
+            void deleteNoteFolder(folder);
+          }}
+        />
       )}
 
       {/* Modal nueva subcarpeta */}

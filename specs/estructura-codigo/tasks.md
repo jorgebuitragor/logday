@@ -1,7 +1,8 @@
 # Tasks — Estructura de código y buenas prácticas React
 
-Estado: en progreso. Fases 0-3 implementadas; Fases 4-5 siguen en
-diseño. Es la lista de trabajo fase por fase. Cada fase es independiente:
+Estado: en progreso. Fases 0-3 implementadas; Fase 4 en progreso
+(4.1 y 4.2 completas; 4.3-4.5 pendientes); Fase 5 sigue en diseño.
+Es la lista de trabajo fase por fase. Cada fase es independiente:
 se puede implementar y comitear por separado sin depender de que las
 demás estén hechas (salvo donde se indica).
 
@@ -316,9 +317,27 @@ para todos: un pase de QA visual manual en `pnpm tauri dev`.
       volumen son los modales inline (nueva carpeta, nuevo proyecto,
       subcarpeta, tags, menús de mes) que `design.md` no listó
       explícitamente para extracción en esta fase; se dejan tal cual.
-- [ ] 4.2 `SettingsModal.tsx` (en progreso)
-  - [ ] 4.2.1 Extraer `GeneralSettingsTab`, `WorkSettingsTab`,
+- [x] 4.2 `SettingsModal.tsx`
+  - [x] 4.2.1 Extraídos `GeneralSettingsTab`, `WorkSettingsTab`,
         `ShortcutsSettingsTab`, `DataSettingsTab`, `AboutSettingsTab`
+        (2026-08-01). Cada pestaña se llevó su propio estado local,
+        efectos y handlers; `GeneralSettingsTab` recibe
+        `isStartupSelectorOpen`/`setIsStartupSelectorOpen`/
+        `startupSelectorRef` como props porque el handler global de
+        Escape del shell necesita esa señal para decidir si cierra el
+        dropdown antes que el modal (acoplamiento genuino, no roto).
+        `DataSettingsTab` se llevó `BACKUP_SETTINGS_PATH`/
+        `isICloudPath`/`collectFiles`/`handleExport`/`handleImport`
+        completos. `AboutSettingsTab` se llevó la lógica de
+        `checkUpdate`/versión de la app. Al limpiar el shell se
+        detectó y corrigió de paso un `react/no-unescaped-entities`
+        preexistente (comillas sin escapar en el mensaje de
+        confirmación de borrado de tema, arrastrado desde el bloque
+        original) — nunca se había visto porque ESLint no existía en
+        el proyecto antes de la Fase 0 de este mismo spec.
+        Verificado con `tsc --noEmit`, `eslint` (sin errores nuevos) y
+        `vite build` limpio. `SettingsModal.tsx`: 1157 → 141 líneas
+        (1564 líneas originales antes de toda la fase 4.2).
   - [x] 4.2.2 Extraído `GitSettingsTab` (2026-08-01). **Cambio de plan
         respecto a la tarea 2.2**: la investigación de esa tarea asumía
         que había que crear un `GitSettingsForm` compartido entre

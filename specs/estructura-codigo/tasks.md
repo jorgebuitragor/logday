@@ -1,7 +1,7 @@
 # Tasks — Estructura de código y buenas prácticas React
 
 Estado: en progreso. Fases 0-3 implementadas; Fase 4 en progreso
-(4.1-4.3 completas; 4.4-4.5 pendientes); Fase 5 sigue en diseño.
+(4.1-4.4 completas; 4.5 pendiente); Fase 5 sigue en diseño.
 Es la lista de trabajo fase por fase. Cada fase es independiente:
 se puede implementar y comitear por separado sin depender de que las
 demás estén hechas (salvo donde se indica).
@@ -412,10 +412,35 @@ para todos: un pase de QA visual manual en `pnpm tauri dev`.
         dedicado. Se deja documentado como candidato futuro si
         `NoteEditor.tsx` vuelve a crecer, pero no se ejecuta en esta
         fase.
-- [ ] 4.4 `CalendarView.tsx`
-  - [ ] 4.4.1 Resolver la duplicación de estado de formulario de evento
-        entre `CalendarView`/`EventEditor` antes de mover archivos
-  - [ ] 4.4.2 Mover `AppSelect` y `EventEditor` a archivos propios
+- [x] 4.4 `CalendarView.tsx` (2026-08-01)
+  - [x] 4.4.1 Investigada la duplicación de estado de formulario de
+        evento. **Cambio de plan respecto a `design.md`**: la hipótesis
+        de `design.md` era que `CalendarView` no necesitaba su propio
+        estado (`evTitle`/`evDate`/etc.) si ya lo delegaba a
+        `EventEditor`. Al leer el flujo de datos completo se confirmó
+        que son **dos features genuinamente distintas, no una
+        duplicación accidental**: `EventEditor` es el modal de
+        crear/editar (guardado explícito con botón "Guardar"), mientras
+        que `evTitle`/`evDate`/etc. alimentan el panel lateral de
+        detalle del evento activo (`activeCalendarEvent`), con
+        auto-guardado con debounce de 800ms — el mismo patrón que ya
+        usa el panel de detalle de tareas en otras vistas de la app. No
+        se puede eliminar ninguno de los dos sin perder una función real.
+        Lo que sí era duplicación genuina y se resolvió: las constantes
+        `EVENT_COLOR_DOT`/`EVENT_COLORS`/`REMINDER_OPTIONS`/
+        `reminderLabel()`, usadas tanto por `EventEditor` como por el
+        panel de detalle inline — se movieron a
+        `src/lib/calendarEventPresentation.ts` para que ambos las
+        compartan sin duplicar el código al mover `EventEditor` a su
+        propio archivo. `EVENT_COLOR_BADGE`/`STATUS_DOT` se quedan en
+        `CalendarView.tsx` (uso exclusivo suyo).
+  - [x] 4.4.2 Movidos `AppSelect` a `src/components/AppSelect.tsx` y
+        `EventEditor` a `src/components/EventEditor.tsx` (ambos ya eran
+        prácticamente autocontenidos; solo necesitaron las constantes
+        de `calendarEventPresentation.ts` de la tarea 4.4.1).
+        Verificado con `tsc --noEmit`, `eslint` (mismo único warning
+        preexistente de `max-lines`, ningún problema nuevo) y
+        `vite build` limpio. `CalendarView.tsx`: 1141 → 768 líneas.
 - [ ] 4.5 `DashboardView.tsx` — mover `WeeklyMiniCalendar` a archivo propio
 
 ## Fase 5 — `ModalOverlay`/`ModalPanel` (req. §7 — issue/PR separado, QA manual)

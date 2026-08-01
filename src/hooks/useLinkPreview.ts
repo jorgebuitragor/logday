@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { fs, fetchUrlMetadata } from '../lib/invoke';
-import type { InternalNoteMeta, ExternalMetaState, AnchorPos } from '../components/LinkPreviewCard';
+import type { InternalNoteMeta, ExternalMetaState, AnchorPos } from '../components/notes/LinkPreviewCard';
 
 const GAP_LINK_CARD = 8; // px between anchor bottom and preview card top
 

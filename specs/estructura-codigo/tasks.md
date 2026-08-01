@@ -1,7 +1,8 @@
 # Tasks — Estructura de código y buenas prácticas React
 
 Estado: en progreso. Fases 0-4 implementadas; Fase 5 sigue en diseño
-(requiere QA manual dedicado, ver sección de esa fase).
+(requiere QA manual dedicado, ver sección de esa fase); Fase 6 (organizar
+`src/components/` por feature) en progreso.
 Es la lista de trabajo fase por fase. Cada fase es independiente:
 se puede implementar y comitear por separado sin depender de que las
 demás estén hechas (salvo donde se indica).
@@ -475,7 +476,42 @@ para todos: un pase de QA visual manual en `pnpm tauri dev`.
 - [ ] 5.4 Pase de QA manual: abrir cada modal migrado y confirmar visual
       y funcionalmente que el comportamiento de cierre es el esperado
 
-## Fuera de alcance (ver requirements.md §8)
+## Fase 6 — Organizar `src/components/` por feature (req. §8, ver `design.md` §Fase 6)
+
+- [ ] 6.1 Mover con `git mv` los 10 archivos de `settings/`:
+      `SettingsModal.tsx`, `AboutSettingsTab.tsx`, `DataSettingsTab.tsx`,
+      `GeneralSettingsTab.tsx`, `GitSettingsTab.tsx`,
+      `ShortcutsSettingsTab.tsx`, `WorkSettingsTab.tsx`,
+      `CustomThemeEditor.tsx`, `ColorPicker.tsx`, `ThemeTile.tsx`
+- [ ] 6.2 Mover los 3 archivos de `calendar/`: `CalendarView.tsx`,
+      `EventEditor.tsx`, `AppSelect.tsx`
+- [ ] 6.3 Mover los 2 archivos de `dashboard/`: `DashboardView.tsx`,
+      `WeeklyMiniCalendar.tsx`
+- [ ] 6.4 Mover los 4 archivos de `sidebar/`: `Sidebar.tsx`,
+      `FolderTreeItem.tsx`, `ProjectTreeItem.tsx`, `RootDropLine.tsx`
+- [ ] 6.5 Mover los 7 archivos de `notes/` (`NoteEditor.tsx`,
+      `NoteList.tsx`, `MermaidEditorModal.tsx`, `MermaidBlock.tsx`,
+      `MarkdownPreview.tsx`, `LinkPreviewCard.tsx`, `ExportModal.tsx`) y
+      anidar `visual-editors/` como `notes/visual-editors/`
+- [ ] 6.6 Mover los 5 archivos de `tasks/`: `TaskList.tsx`,
+      `TaskEditor.tsx`, `KanbanBoard.tsx`, `RichTextEditor.tsx`,
+      `TaskContextMenu.tsx`
+- [ ] 6.7 Mover los 3 archivos de `overtime/`: `OvertimeList.tsx`,
+      `OvertimeEditor.tsx`, `OvertimePreviewModal.tsx`
+- [ ] 6.8 Mover los 2 archivos de `daily/`: `DailyList.tsx`,
+      `DailyEditor.tsx`
+- [ ] 6.9 Mover los 6 archivos de `shared/`: `ConfirmDeleteModal.tsx`,
+      `AppDatePicker.tsx`, `InlineRenameInput.tsx`, `ToggleSwitch.tsx`,
+      `AbsenceModal.tsx`, `ImageLinkModal.tsx`
+- [ ] 6.10 Reescribir todos los imports relativos afectados (script,
+       no edición manual archivo por archivo) y actualizar
+       `src/App.tsx` (imports estáticos y `lazy()`) y
+       `src/hooks/useLinkPreview.ts` (import de `LinkPreviewCard`)
+- [ ] 6.11 Verificar `tsc --noEmit` limpio, `eslint` sin problemas
+       nuevos respecto al recuento base, `vite build` exitoso, y QA
+       manual con `pnpm tauri dev` de cada pantalla principal
+
+## Fuera de alcance (ver requirements.md §9)
 
 - [ ] ~~Dividir `appStore.ts` en slices~~ — no planeado, decisión del
       usuario. Documentado como opción técnica válida para spec futuro.
@@ -497,3 +533,6 @@ para todos: un pase de QA visual manual en `pnpm tauri dev`.
   Mermaid y vista previa de enlaces, Calendar crear/editar evento,
   Dashboard).
 - **Fase 5**: pase de QA manual dedicado, uno por uno, de los ~19 modales.
+- **Fase 6**: `tsc --noEmit` limpio (detecta cualquier ruta de import
+  rota), `eslint` sin problemas nuevos, `vite build` exitoso, y
+  `pnpm tauri dev` probando cada pantalla principal.

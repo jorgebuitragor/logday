@@ -274,12 +274,67 @@ decisión por modal se documenta en `tasks.md` al implementar esta fase
 (no aquí, para no prescribir un comportamiento sin haber mirado cada
 caso con detalle).
 
+## Fase 6 — Organizar `src/components/` por feature
+
+Tras la Fase 4, `src/components/` quedó con 45 archivos .tsx/.ts en un
+único nivel plano (más la subcarpeta ya existente `visual-editors/`,
+4 archivos, único precedente de agrupación por feature en el repo). Se
+mapeó el grafo completo de imports (qué componente importa a cuál, y
+qué monta `App.tsx` directo o vía `lazy()`) para agrupar por
+acoplamiento real, no por parecido de nombre. Regla aplicada: un
+componente usado desde una sola feature va a la subcarpeta de esa
+feature; usado desde ≥2 features distintas va a `components/shared/`;
+usado únicamente por `App.tsx` sin dueño de feature se queda en la
+raíz.
+
+| Carpeta | Archivos |
+|---|---|
+| `settings/` (10) | `SettingsModal.tsx`, `AboutSettingsTab.tsx`, `DataSettingsTab.tsx`, `GeneralSettingsTab.tsx`, `GitSettingsTab.tsx`, `ShortcutsSettingsTab.tsx`, `WorkSettingsTab.tsx`, `CustomThemeEditor.tsx`, `ColorPicker.tsx`, `ThemeTile.tsx` |
+| `calendar/` (3) | `CalendarView.tsx`, `EventEditor.tsx`, `AppSelect.tsx` |
+| `dashboard/` (2) | `DashboardView.tsx`, `WeeklyMiniCalendar.tsx` |
+| `sidebar/` (4) | `Sidebar.tsx`, `FolderTreeItem.tsx`, `ProjectTreeItem.tsx`, `RootDropLine.tsx` |
+| `notes/` (7 + subcarpeta) | `NoteEditor.tsx`, `NoteList.tsx`, `MermaidEditorModal.tsx`, `MermaidBlock.tsx`, `MarkdownPreview.tsx`, `LinkPreviewCard.tsx`, `ExportModal.tsx`, y `notes/visual-editors/` (`ERVisualEditor.tsx`, `FlowVisualEditor.tsx`, `SequenceVisualEditor.tsx`, `diagramParsers.ts`) |
+| `tasks/` (5) | `TaskList.tsx`, `TaskEditor.tsx`, `KanbanBoard.tsx`, `RichTextEditor.tsx`, `TaskContextMenu.tsx` |
+| `overtime/` (3) | `OvertimeList.tsx`, `OvertimeEditor.tsx`, `OvertimePreviewModal.tsx` |
+| `daily/` (2) | `DailyList.tsx`, `DailyEditor.tsx` |
+| `shared/` (6) | `ConfirmDeleteModal.tsx` (6+ features), `AppDatePicker.tsx` (4 features), `InlineRenameInput.tsx` (3 features), `ToggleSwitch.tsx` (2 features), `AbsenceModal.tsx` (daily + dashboard), `ImageLinkModal.tsx` (notes + tasks) |
+| raíz de `components/` (3, sin mover) | `ResizeHandle.tsx`, `ToastViewport.tsx`, `SearchModal.tsx` — piezas de shell, solo las usa `App.tsx`, sin dueño de feature |
+
+Decisiones de límite en casos ambiguos, confirmadas con el usuario:
+
+- **`TaskContextMenu.tsx`** se usa desde 4 pantallas (Dashboard,
+  Calendar, Kanban, TaskList). Se queda en `tasks/` por ser lógica de
+  dominio de tareas (editar/completar/eliminar), no un primitivo
+  genérico de UI — las otras pantallas lo importan cruzando carpeta
+  (`../tasks/TaskContextMenu`).
+- **`ImageLinkModal.tsx`** se usa desde `NoteEditor.tsx` (notas) y
+  `RichTextEditor.tsx` (tareas). Va a `shared/` por ser un modal
+  genérico de insertar imagen/enlace sin lógica específica de una sola
+  feature.
+- **`visual-editors/`** se anida en `notes/visual-editors/` porque hoy
+  solo lo usa `MermaidEditorModal.tsx`, que pasa a vivir en `notes/`.
+
+No se encontró código muerto en el barrido: los 45 archivos tienen al
+menos un importador. `src/pages/` (solo `Onboarding.tsx`) y
+`src/components/` están limpiamente separados — no requieren tocarse.
+
+**Ejecución**: `git mv` archivo por archivo (o carpeta completa para
+`visual-editors/`) para preservar historial, seguido de un script que
+reescribe los imports relativos afectados — cualquier archivo que se
+mueve a una subcarpeta gana un nivel extra de `../` en sus imports
+hacia `store/`/`types/`/`lib/`/`hooks/`; los imports hacia otro
+componente que terminó en una carpeta distinta pasan a
+`../otraCarpeta/Archivo`; los que se mueven juntos como hermanos
+quedan como `./Archivo`. `src/App.tsx` (monta 16 de estos componentes,
+estático o `lazy()`) y `src/hooks/useLinkPreview.ts` (importa
+`LinkPreviewCard` desde fuera de `components/`) se actualizan aparte.
+
 ## Alternativas descartadas
 
 - **Dividir `appStore.ts` en slices de Zustand.** Es la forma idiomática
   de reducir el archivo sin romper el acoplamiento cruzado (167 llamadas
   a `get()`), pero descartado por decisión explícita del usuario para
-  este spec — documentado en `requirements.md` §8 como opción técnica
+  este spec — documentado en `requirements.md` §9 como opción técnica
   válida para un spec futuro.
 - **Dividir tiendas de Zustand por dominio (stores separados, no
   slices).** Descartado con más fuerza que la opción anterior: forzaría

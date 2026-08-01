@@ -24,8 +24,8 @@ ESLint antes de tocar código.
 |---|---|---|
 | `src/components/NoteEditor.tsx` | 2851 | Un componente haciendo ≥6 trabajos independientes |
 | `src/components/Sidebar.tsx` | 2209 | Un componente con 6 listas/menús independientes + lógica de drag&drop inline |
-| `src/store/appStore.ts` | 2145 | Un store de Zustand con 10 dominios — **fuera de alcance de este spec**, ver §7 |
-| `src/lib/i18n.ts` | 1666 | Diccionario de strings bilingüe — no es lógica, ver §7 |
+| `src/store/appStore.ts` | 2145 | Un store de Zustand con 10 dominios — **fuera de alcance de este spec**, ver §9 |
+| `src/lib/i18n.ts` | 1666 | Diccionario de strings bilingüe — no es lógica, ver §9 |
 | `src/components/SettingsModal.tsx` | 1564 | Un componente con 6 pestañas inlineadas |
 | `src/components/CalendarView.tsx` | 1209 | 3 componentes en un archivo (`AppSelect`, `EventEditor`, `CalendarView`) |
 | `src/components/NoteList.tsx` | 975 | — |
@@ -203,7 +203,40 @@ dos veces, verbatim, en `src/store/appStore.ts` y
   con un pase de QA manual sobre cada modal afectado, dado que cambia
   comportamiento de cierre visible al usuario, no solo estructura interna.
 
-## 8. Fuera de alcance
+## 8. Requisitos — Fase 6: organizar `src/components/` por feature
+
+Motivado por observación directa del usuario tras completar la Fase 4:
+el directorio `src/components/` concentra 45 archivos .tsx/.ts en un
+único nivel plano (sin contar la subcarpeta ya existente
+`visual-editors/`, con 4 archivos), en parte como consecuencia directa
+de las fases 4.1-4.5 (que añadieron ~15 archivos nuevos al mismo
+directorio). El propio repo ya tiene precedente de agrupar por feature
+dentro de `components/` (`visual-editors/`) — organizar el resto es
+consistente con una convención existente, no una nueva.
+
+- El sistema DEBERÁ agrupar los componentes en subcarpetas por feature
+  dentro de `src/components/`, según el mapa de acoplamiento real
+  (quién importa a quién), no por parecido de nombre — ver el detalle
+  completo en `design.md` §Fase 6.
+- Los componentes usados desde **una sola feature** DEBERÁN vivir en la
+  subcarpeta de esa feature (p. ej. `AboutSettingsTab.tsx` en
+  `settings/`).
+- Los componentes usados desde **2 o más features distintas** (p. ej.
+  `ConfirmDeleteModal.tsx`, usado desde 6+ features) DEBERÁN vivir en
+  `components/shared/`.
+- Los componentes usados **únicamente por `App.tsx`** y sin dueño de
+  feature ni reutilización cruzada (`ResizeHandle.tsx`,
+  `ToastViewport.tsx`, `SearchModal.tsx`) DEBERÁN permanecer en la raíz
+  de `components/`.
+- La subcarpeta `visual-editors/` DEBERÁ anidarse dentro de `notes/`
+  (`components/notes/visual-editors/`), dado que hoy solo la usa
+  `MermaidEditorModal.tsx`, que pasa a vivir en `notes/`.
+- El movimiento DEBERÁ hacerse con `git mv` para preservar el historial
+  de cada archivo.
+- El sistema DEBERÁ mantener `tsc --noEmit` limpio y `eslint` sin
+  problemas nuevos respecto al recuento base tras la reorganización.
+
+## 9. Fuera de alcance
 
 - **Dividir `appStore.ts`.** Decisión explícita del usuario. El patrón
   "slice" de Zustand (varios archivos `createXSlice(set, get)` combinados

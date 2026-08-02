@@ -61,7 +61,17 @@ import { TableCell } from '@tiptap/extension-table-cell';
 import Dropcursor from '@tiptap/extension-dropcursor';
 import { Markdown } from 'tiptap-markdown';
 import Paragraph from '@tiptap/extension-paragraph';
-import { common, createLowlight } from 'lowlight';
+import { createLowlight } from 'lowlight';
+import bash from 'highlight.js/lib/languages/bash';
+import go from 'highlight.js/lib/languages/go';
+import java from 'highlight.js/lib/languages/java';
+import javascript from 'highlight.js/lib/languages/javascript';
+import json from 'highlight.js/lib/languages/json';
+import plaintext from 'highlight.js/lib/languages/plaintext';
+import python from 'highlight.js/lib/languages/python';
+import sql from 'highlight.js/lib/languages/sql';
+import typescript from 'highlight.js/lib/languages/typescript';
+import yaml from 'highlight.js/lib/languages/yaml';
 import { useAppStore } from '../../store/appStore';
 import { Note } from '../../types/note';
 import { ExportModal } from './ExportModal';
@@ -81,7 +91,11 @@ import { EMOJI_CATALOG, normalizeEmojiSearchTerm } from '../../lib/emojiCatalog'
 import { createTaskCodePlugin, normalizeEditorMarkdown } from '../../lib/noteEditorMarkdown';
 import { useLinkPreview } from '../../hooks/useLinkPreview';
 
-const lowlight = createLowlight(common);
+// Solo los lenguajes que ofrece CODE_LANGUAGE_OPTIONS (lib/codeHighlight.ts) —
+// `common` de lowlight trae 37 lenguajes, la mayoría no seleccionables desde
+// la UI. Si un bloque trae un lenguaje no registrado (nota importada, etc.),
+// @tiptap/extension-code-block-lowlight cae a highlightAuto() sin romper.
+const lowlight = createLowlight({ bash, go, java, javascript, json, plaintext, python, sql, typescript, yaml });
 const BLOCK_MENU_ESTIMATED_SIZE = { width: 220, height: 260 };
 
 type BlockMenuType =

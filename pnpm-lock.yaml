@@ -113,6 +113,9 @@ importers:
       gray-matter:
         specifier: ^4.0.3
         version: 4.0.3
+      highlight.js:
+        specifier: ^11.11.1
+        version: 11.11.1
       jspdf:
         specifier: ^4.2.1
         version: 4.2.1

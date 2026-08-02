@@ -48,6 +48,7 @@
     "date-fns": "^4.1.0",
     "gemoji": "^8.1.0",
     "gray-matter": "^4.0.3",
+    "highlight.js": "^11.11.1",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
     "lowlight": "^3.3.0",

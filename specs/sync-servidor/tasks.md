@@ -60,7 +60,9 @@ del lado servidor, este spec ya no está bloqueado.
       código huérfano sin usar — el patrón real es el tab `'git'`
       dentro del propio modal, ver `design.md`): URL del servidor,
       login, estado de conexión, logout.
-- [ ] `src/types/sync.ts`: tipos de config (URL, token, estado).
+- [ ] Tipos de config (URL, token, estado) agregados a
+      `src/types/index.ts` (monolítico en esta rama, no un archivo
+      `sync.ts` separado — mismo criterio que `GitConfig`).
 - [ ] `src/lib/sync.ts`: login (`POST /auth/login` vía el comando
       Rust), refresh de token.
 - [ ] Persistencia del token vigente en `localStorage`, mismo

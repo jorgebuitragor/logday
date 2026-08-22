@@ -2,10 +2,11 @@ import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Task, Note, AppConfig, ViewMode, Theme, ActiveSection, StartupScreen, Language, Shortcuts, DEFAULT_SHORTCUTS, OvertimeEntry, OvertimeMonthMeta, GitConfig, GitStatus, GitRemoteStatus, AppToast, ToastKind, CalendarEvent } from '../types';
+import { Task, Note, AppConfig, ViewMode, Theme, ActiveSection, StartupScreen, Language, Shortcuts, DEFAULT_SHORTCUTS, OvertimeEntry, OvertimeMonthMeta, GitConfig, GitStatus, GitRemoteStatus, AppToast, ToastKind, CalendarEvent, SyncConfig, SyncConnectionStatus } from '../types';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
 import { generateOvertimeXlsx } from '../lib/overtimeExcel';
 import { fs, pickFolder, pickFile, saveDialog, SearchResult } from '../lib/invoke';
+import { login as syncLogin, SyncApiError, normalizeServerUrl } from '../lib/sync';
 import { parseFrontmatter, serializeTask, parseNote, serializeNote, formatDate } from '../lib/markdown';
 import { t } from '../lib/i18n';
 import {
@@ -89,6 +90,12 @@ interface AppState {
   gitRemoteStatus: GitRemoteStatus;
   lastCommitTime: string | null;
   isGitOpen: boolean;
+
+  // Sync (logday-server)
+  syncConfig: SyncConfig;
+  syncConnectionStatus: SyncConnectionStatus;
+  syncErrorMsg: string;
+  isSyncOpen: boolean;
 
   // ── Actions ──────────────────────────────────────────────────
 
@@ -192,6 +199,12 @@ interface AppState {
   gitFetch: () => Promise<void>;
   toggleGit: () => void;
   openSettingsGitTab: () => void;
+
+  // Sync (logday-server)
+  syncConnect: (serverUrl: string, email: string, password: string) => Promise<void>;
+  syncDisconnect: () => void;
+  toggleSync: () => void;
+  openSettingsSyncTab: () => void;
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -374,6 +387,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   gitRemoteStatus: 'unknown' as GitRemoteStatus,
   lastCommitTime: null,
   isGitOpen: false,
+  syncConfig: (() => {
+    try {
+      return {
+        enabled: false, serverUrl: '', email: '', accessToken: '', refreshToken: '', deviceId: '',
+        ...JSON.parse(localStorage.getItem('syncConfig') || '{}'),
+      };
+    } catch {
+      return { enabled: false, serverUrl: '', email: '', accessToken: '', refreshToken: '', deviceId: '' };
+    }
+  })(),
+  syncConnectionStatus: 'disconnected' as SyncConnectionStatus,
+  syncErrorMsg: '',
+  isSyncOpen: false,
   overtimeEntries: [],
   overtimeMonth: new Date().toISOString().slice(0, 7),
   overtimeMonths: [],
@@ -1838,6 +1864,39 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   toggleGit: () => set((s) => ({ isGitOpen: !s.isGitOpen })),
   openSettingsGitTab: () => set({ isGitOpen: true, isSettingsOpen: true }),
+
+  // ── Sync (logday-server) ──────────────────────────────────────
+
+  syncConnect: async (serverUrl: string, email: string, password: string) => {
+    set({ syncConnectionStatus: 'connecting', syncErrorMsg: '' });
+    const normalizedUrl = normalizeServerUrl(serverUrl);
+    try {
+      const tokens = await syncLogin(normalizedUrl, email, password, 'Logday Desktop');
+      const cfg: SyncConfig = {
+        enabled: true,
+        serverUrl: normalizedUrl,
+        email,
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        deviceId: tokens.device_id,
+      };
+      localStorage.setItem('syncConfig', JSON.stringify(cfg));
+      set({ syncConfig: cfg, syncConnectionStatus: 'connected' });
+    } catch (e) {
+      const msg = e instanceof SyncApiError ? e.message : String(e);
+      set({ syncConnectionStatus: 'error', syncErrorMsg: msg });
+      throw e;
+    }
+  },
+
+  syncDisconnect: () => {
+    const cfg: SyncConfig = { enabled: false, serverUrl: '', email: '', accessToken: '', refreshToken: '', deviceId: '' };
+    localStorage.setItem('syncConfig', JSON.stringify(cfg));
+    set({ syncConfig: cfg, syncConnectionStatus: 'disconnected', syncErrorMsg: '' });
+  },
+
+  toggleSync: () => set((s) => ({ isSyncOpen: !s.isSyncOpen })),
+  openSettingsSyncTab: () => set({ isSyncOpen: true, isSettingsOpen: true }),
 
   // ── Calendar Events ────────────────────────────────────────────
 

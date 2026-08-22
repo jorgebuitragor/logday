@@ -1,10 +1,11 @@
 # Sync con servidor — Tareas
 
-Estado: en diseño — nada implementado todavía. `logday-server` ya
-implementa
+Estado: en progreso — "Config y auth" implementado, pendiente de
+confirmación visual en la app real (ver "Punto de retomada" al final).
+`logday-server` ya implementa
 [`lww-por-campo`](https://github.com/jorgebuitragor/logday-server/tree/main/specs/lww-por-campo)
 (mergeado a `main`, release `v1.1.0`) — el `PATCH` parcial ya existe
-del lado servidor, este spec ya no está bloqueado.
+del lado servidor, este spec ya no está bloqueado por eso.
 
 ## Decisiones (ya tomadas, ver `requirements.md`/`design.md`)
 
@@ -46,28 +47,34 @@ del lado servidor, este spec ya no está bloqueado.
 
 ### Comandos Rust (REST)
 
-- [ ] `src-tauri/src/lib.rs`: comando(s) `sync_request` (o uno por
-      verbo) que reciben método/path/body/token y hacen la llamada con
-      `reqwest`, devolviendo status+body al frontend — mismo patrón
-      que `fetch_image_base64`. Registrar en el `invoke_handler` junto
-      a los demás comandos.
-- [ ] `src/lib/invoke.ts`: wrapper(s) que llaman a ese comando,
-      análogo a las funciones de `fs` existentes.
+- [x] `src-tauri/src/lib.rs`: comando `sync_request(base_url, method,
+      path, token, body)` — mismo patrón que `fetch_image_base64`,
+      registrado en `invoke_handler`. `cargo check` en verde.
+- [x] `src/lib/invoke.ts`: wrapper `syncRequest(...)`.
 
 ### Config y auth
 
-- [ ] Tab `'sync'` inline en `SettingsModal.tsx` (`GitModal.tsx` es
+- [x] Tab `'sync'` inline en `SettingsModal.tsx` (`GitModal.tsx` es
       código huérfano sin usar — el patrón real es el tab `'git'`
       dentro del propio modal, ver `design.md`): URL del servidor,
-      login, estado de conexión, logout.
-- [ ] Tipos de config (URL, token, estado) agregados a
-      `src/types/index.ts` (monolítico en esta rama, no un archivo
+      login, estado de conexión, logout. i18n (`es`/`en`) agregado en
+      `src/lib/i18n.ts` namespace `extras` + `settings.tabSync`.
+- [x] Tipos de config (`SyncConfig`, `SyncConnectionStatus`) agregados
+      a `src/types/index.ts` (monolítico en esta rama, no un archivo
       `sync.ts` separado — mismo criterio que `GitConfig`).
-- [ ] `src/lib/sync.ts`: login (`POST /auth/login` vía el comando
-      Rust), refresh de token.
-- [ ] Persistencia del token vigente en `localStorage`, mismo
-      mecanismo que `gitConfig` — sin storage "seguro" distinto, ver
-      `design.md`.
+- [x] `src/lib/sync.ts`: `login`/`refreshToken` (`POST /auth/login` y
+      `/auth/refresh` vía el comando Rust), `SyncApiError`.
+- [x] Persistencia del token vigente en `localStorage`
+      (`syncConfig`), mismo mecanismo que `gitConfig`.
+- [x] `appStore.ts`: estado `syncConfig`/`syncConnectionStatus`/
+      `syncErrorMsg`/`isSyncOpen`, acciones `syncConnect`/
+      `syncDisconnect`/`toggleSync`/`openSettingsSyncTab`.
+- [x] Bug encontrado y corregido: `reqwest` (Rust) exige esquema en la
+      URL — `localhost:8080` (sin `http://`, lo natural de tipear)
+      fallaba con "builder error for url". Fix:
+      `normalizeServerUrl()` en `src/lib/sync.ts`, agrega `http://` si
+      falta; `appStore.syncConnect` guarda la URL ya normalizada.
+- `tsc --noEmit` y `cargo check` en verde en todo momento.
 
 ### Mapeo de entidades
 
@@ -130,3 +137,29 @@ del lado servidor, este spec ya no está bloqueado.
 - [ ] Prueba manual offline→online: editar sin red, cerrar la app,
       reabrir, reconectar — confirmar que la cola persistida se drena
       igual.
+
+## Punto de retomada (2026-08-22)
+
+"Config y auth" está implementado y compila (`tsc`/`cargo check`)
+pero **sin confirmar visualmente en la app real** — la última captura
+mostró el tab Sync bien renderizado, pero el primer intento de login
+falló por el bug de URL sin esquema (ya corregido, sin volver a
+probar). Antes de seguir con "Mapeo de entidades":
+
+1. Levantar `logday-server` (Docker o `go run`) y la app Tauri
+   (`pnpm tauri dev` en `task-manager`, rama `feature/sync-servidor`).
+2. Ajustes → tab Sync → conectar contra el server local
+   (`admin@example.com` / `test-password-123` si se bootstrapeó con
+   esas env vars) y confirmar que "Conectado" aparece sin error.
+3. Si funciona: commitear el fix de `normalizeServerUrl` (todavía no
+   commiteado a la fecha de esta nota) y seguir con "Mapeo de
+   entidades" en este mismo `tasks.md`.
+4. Si falla distinto: el flujo completo de request es
+   `SettingsModal.tsx` (tab sync) → `appStore.syncConnect` →
+   `src/lib/sync.ts login()` → `src/lib/invoke.ts syncRequest()` →
+   comando Rust `sync_request` en `src-tauri/src/lib.rs` — revisar en
+   ese orden.
+
+Se acordó con el usuario trabajar por fases con checkpoints visuales
+antes de cada fase siguiente — no saltar a "Mapeo de entidades" sin
+este checkpoint confirmado.

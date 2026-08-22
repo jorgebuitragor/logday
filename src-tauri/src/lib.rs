@@ -217,6 +217,50 @@ fn read_file_binary(path: String) -> Result<String, String> {
     Ok(STANDARD.encode(bytes))
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SyncHttpResponse {
+    pub status: u16,
+    pub body: String,
+}
+
+/// Makes an HTTP request to a user-configured logday-server instance
+/// (self-hosted sync backend). Runs on the Rust side so it bypasses
+/// WebView CORS restrictions — logday-server doesn't implement CORS
+/// on purpose (see its specs/arquitectura-inicial), same rationale as
+/// fetch_image_base64 below. Returns the raw status/body; all
+/// protocol logic (auth headers, JSON parsing, retries) lives in
+/// src/lib/sync.ts, not here.
+#[tauri::command]
+async fn sync_request(
+    base_url: String,
+    method: String,
+    path: String,
+    token: Option<String>,
+    body: Option<String>,
+) -> Result<SyncHttpResponse, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let method = reqwest::Method::from_bytes(method.as_bytes())
+        .map_err(|e| format!("invalid HTTP method {method}: {e}"))?;
+    let url = format!("{}{}", base_url.trim_end_matches('/'), path);
+
+    let mut req = client.request(method, &url);
+    if let Some(t) = token {
+        req = req.bearer_auth(t);
+    }
+    if let Some(b) = body {
+        req = req.header("Content-Type", "application/json").body(b);
+    }
+
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
+    let text = resp.text().await.map_err(|e| e.to_string())?;
+    Ok(SyncHttpResponse { status, body: text })
+}
+
 /// Downloads an external URL and returns its contents as a base64-encoded string.
 /// Runs on the Rust side so it bypasses WebView CORS restrictions.
 #[tauri::command]
@@ -461,6 +505,7 @@ pub fn run() {
             write_file_binary,
             fetch_image_base64,
             git_run,
+            sync_request,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

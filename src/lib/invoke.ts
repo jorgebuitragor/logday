@@ -72,6 +72,24 @@ export function checkUpdate(): Promise<ReleaseInfo> {
   return invoke('check_update');
 }
 
+// ── Sync con servidor propio (logday-server) ─────────────────────────────────
+export interface SyncHttpResponse {
+  status: number;
+  body: string;
+}
+
+/** HTTP request a un logday-server configurado por el usuario, ejecutada
+ *  del lado Rust (evita CORS — ver comentario en src-tauri/src/lib.rs). */
+export function syncRequest(params: {
+  baseUrl: string;
+  method: string;
+  path: string;
+  token?: string;
+  body?: string;
+}): Promise<SyncHttpResponse> {
+  return invoke('sync_request', params);
+}
+
 // ── Notificaciones del sistema ───────────────────────────────────────────────
 import {
   isPermissionGranted,

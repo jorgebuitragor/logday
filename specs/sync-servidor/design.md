@@ -45,19 +45,41 @@ store consume, llamando a los nuevos comandos Rust vía `invoke()`
 igual que el resto de `invoke.ts`. `appStore.ts` sigue siendo la única
 fuente de verdad in-memory; `sync.ts` nunca muta estado directamente.
 
-Nuevo componente `src/components/SyncModal.tsx`, hermano de
-`GitModal.tsx` (patrón real en esta rama — el split a
-`components/settings/*Tab.tsx` vive en `feature/1.1.0`, todavía sin
-mergear a `develop`, así que este componente sigue el patrón actual:
-modal propio con su flag `isSyncOpen`/`toggleSync` en `appStore.ts`,
-no un tab). Cuando `feature/1.1.0` se mergee, migrar este componente
-al nuevo layout de tabs es un refactor mecánico aparte, no bloqueante.
+**Corrección tras revisar `SettingsModal.tsx`**: `GitModal.tsx` existe
+en el repo pero no se importa desde ningún lado (`grep` confirma cero
+referencias fuera del propio archivo) — es código huérfano. La UI de
+Git real vive **inline dentro de `SettingsModal.tsx`** (1320 líneas),
+como un tab más del union type `SettingsTab` (`'general' | 'work' |
+'shortcuts' | 'data' | 'git' | 'about'`), con su propio bloque
+`{settingsTab === 'git' && (() => { ... })()}` y estado local
+`useState` prefijado (`gitEnabled`, `gitRemote`, ...) que se
+inicializa desde el store y se guarda con un botón "Guardar". El tab
+de sync sigue exactamente ese patrón: agregar `'sync'` al union type,
+una entrada en `SETTINGS_TABS`, y un bloque `{settingsTab === 'sync'
+&& ...}` con estado `sync*` — no un componente ni modal separado.
+Cuando `feature/1.1.0` (que sí separa esto en
+`components/settings/*Tab.tsx`) se mergee a `develop`, migrar este
+bloque a su propio archivo es un refactor mecánico aparte, no
+bloqueante.
 
 ## Cola de escrituras offline
 
-**Persistencia**: archivo JSON en `configDir` (donde ya vive la config
-de la app), no solo en memoria — tiene que sobrevivir un cierre de la
-app mientras hay escrituras pendientes de enviar. Estructura:
+**Persistencia**: `localStorage`, no solo en memoria — tiene que
+sobrevivir un cierre de la app mientras hay escrituras pendientes de
+enviar. **Corrección**: la primera versión de este documento proponía
+un archivo en `configDir`, pero `appStore.ts` no persiste nada así
+hoy — todo el estado de config (`gitConfig`, `shortcuts`, `folderTags`,
+`overtimeMeta`, ...) usa `localStorage` con `JSON.parse`/`stringify`
+directo (ver `appStore.ts:365-372` para `gitConfig`, el caso más
+parecido). La cola sigue ese mismo mecanismo — introducir un archivo
+separado solo para esto rompería la consistencia sin una razón real
+(el tamaño esperado de la cola, minutos u horas de ediciones offline,
+está lejos del límite de `localStorage`). El token de sesión (ver
+"Config y auth" en `requirements.md`) también se guarda así: ningún
+otro dato del store tiene un mecanismo de storage "seguro" distinto, y
+git ya guarda ahí su remote/credenciales de identidad — inventar uno
+nuevo solo para el token de sync sería inconsistente con el resto de
+la app. Estructura:
 
 ```ts
 type QueuedWrite = {

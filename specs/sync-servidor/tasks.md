@@ -16,11 +16,14 @@ del lado servidor, este spec ya no está bloqueado.
       propia que romper. Ver "Capa de red" en `design.md` (decisión
       revisada tras encontrar `fetch_image_base64` en `src-tauri`).
 - [x] Decidir dónde vive el código: `src/lib/sync.ts` +
-      `src/lib/syncQueue.ts`, paralelo a `invoke.ts`; nuevo
-      `SyncModal.tsx` hermano de `GitModal.tsx` (patrón real de esta
-      rama — el split a tabs vive en `feature/1.1.0`, sin mergear).
-- [x] Decidir persistencia de la cola offline: archivo JSON en
-      `configDir`, no solo en memoria.
+      `src/lib/syncQueue.ts`, paralelo a `invoke.ts`; UI como tab
+      `'sync'` inline en `SettingsModal.tsx` (`GitModal.tsx` es código
+      huérfano, sin usar — el tab `'git'` inline es el patrón real de
+      esta rama; el split a `*Tab.tsx` vive en `feature/1.1.0`, sin
+      mergear).
+- [x] Decidir persistencia de la cola offline: `localStorage`, mismo
+      mecanismo que el resto del config del store (`gitConfig`, etc.)
+      — no un archivo separado.
 - [x] Decidir regla de prioridad cola vs. respuesta tardía: no
       sobreescribir un campo con la respuesta de un `PATCH` viejo si ya
       hay una entrada más nueva en cola para ese mismo campo.
@@ -53,14 +56,16 @@ del lado servidor, este spec ya no está bloqueado.
 
 ### Config y auth
 
-- [ ] `SyncModal.tsx`: URL del servidor, login, estado de conexión,
-      logout — mismo patrón visual/estructura que `GitModal.tsx`
-      (toggle `isSyncOpen`/`toggleSync` en `appStore.ts`).
+- [ ] Tab `'sync'` inline en `SettingsModal.tsx` (`GitModal.tsx` es
+      código huérfano sin usar — el patrón real es el tab `'git'`
+      dentro del propio modal, ver `design.md`): URL del servidor,
+      login, estado de conexión, logout.
 - [ ] `src/types/sync.ts`: tipos de config (URL, token, estado).
 - [ ] `src/lib/sync.ts`: login (`POST /auth/login` vía el comando
-      Rust), refresh de token, persistencia del token vigente (dónde y
-      cómo — definir mecanismo de storage seguro en Tauri, no
-      `localStorage` plano).
+      Rust), refresh de token.
+- [ ] Persistencia del token vigente en `localStorage`, mismo
+      mecanismo que `gitConfig` — sin storage "seguro" distinto, ver
+      `design.md`.
 
 ### Mapeo de entidades
 

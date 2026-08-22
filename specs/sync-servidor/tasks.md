@@ -1,20 +1,24 @@
 # Sync con servidor — Tareas
 
-Estado: en diseño — nada implementado todavía. Depende de que
-`logday-server` implemente
-[`lww-por-campo`](https://github.com/jorgebuitragor/logday-server/tree/feature/lww-por-campo/specs/lww-por-campo)
-(rama `feature/lww-por-campo`, todavía no mergeada) antes de que el
-`PATCH` parcial exista del lado servidor.
+Estado: en diseño — nada implementado todavía. `logday-server` ya
+implementa
+[`lww-por-campo`](https://github.com/jorgebuitragor/logday-server/tree/main/specs/lww-por-campo)
+(mergeado a `main`, release `v1.1.0`) — el `PATCH` parcial ya existe
+del lado servidor, este spec ya no está bloqueado.
 
 ## Decisiones (ya tomadas, ver `requirements.md`/`design.md`)
 
-- [x] Decidir capa de red: `@tauri-apps/plugin-http` +
-      `@tauri-apps/plugin-websocket` (ejecutan del lado Rust, evitan
-      CORS por completo) — no `fetch`/`WebSocket` del navegador,
-      porque `logday-server` no implementa CORS a propósito.
+- [x] Decidir capa de red: REST vía comandos Rust propios con
+      `reqwest` (ya es dependencia — mismo patrón que
+      `fetch_image_base64`), no `@tauri-apps/plugin-http` (evita
+      duplicar la forma de resolver CORS que el proyecto ya tiene).
+      WS sí usa `@tauri-apps/plugin-websocket` — ahí no hay convención
+      propia que romper. Ver "Capa de red" en `design.md` (decisión
+      revisada tras encontrar `fetch_image_base64` en `src-tauri`).
 - [x] Decidir dónde vive el código: `src/lib/sync.ts` +
       `src/lib/syncQueue.ts`, paralelo a `invoke.ts`; nuevo
-      `SyncSettingsTab.tsx` hermano de `GitSettingsTab.tsx`.
+      `SyncModal.tsx` hermano de `GitModal.tsx` (patrón real de esta
+      rama — el split a tabs vive en `feature/1.1.0`, sin mergear).
 - [x] Decidir persistencia de la cola offline: archivo JSON en
       `configDir`, no solo en memoria.
 - [x] Decidir regla de prioridad cola vs. respuesta tardía: no
@@ -32,18 +36,31 @@ Estado: en diseño — nada implementado todavía. Depende de que
 
 ### Dependencias nuevas
 
-- [ ] Agregar `@tauri-apps/plugin-http`, `@tauri-apps/plugin-websocket`
-      (+ permisos correspondientes en `src-tauri/capabilities/default.json`).
+- [ ] Agregar `@tauri-apps/plugin-websocket` (+ permiso en
+      `src-tauri/capabilities/default.json`). REST no agrega
+      dependencia JS nueva — son comandos Rust.
 - [ ] Agregar `yjs`, `@tiptap/extension-collaboration`.
+
+### Comandos Rust (REST)
+
+- [ ] `src-tauri/src/lib.rs`: comando(s) `sync_request` (o uno por
+      verbo) que reciben método/path/body/token y hacen la llamada con
+      `reqwest`, devolviendo status+body al frontend — mismo patrón
+      que `fetch_image_base64`. Registrar en el `invoke_handler` junto
+      a los demás comandos.
+- [ ] `src/lib/invoke.ts`: wrapper(s) que llaman a ese comando,
+      análogo a las funciones de `fs` existentes.
 
 ### Config y auth
 
-- [ ] `SyncSettingsTab.tsx`: URL del servidor, login, estado de
-      conexión, logout.
+- [ ] `SyncModal.tsx`: URL del servidor, login, estado de conexión,
+      logout — mismo patrón visual/estructura que `GitModal.tsx`
+      (toggle `isSyncOpen`/`toggleSync` en `appStore.ts`).
 - [ ] `src/types/sync.ts`: tipos de config (URL, token, estado).
-- [ ] `src/lib/sync.ts`: login (`POST /auth/login`), refresh de token,
-      persistencia del token vigente (dónde y cómo — definir mecanismo
-      de storage seguro en Tauri, no `localStorage` plano).
+- [ ] `src/lib/sync.ts`: login (`POST /auth/login` vía el comando
+      Rust), refresh de token, persistencia del token vigente (dónde y
+      cómo — definir mecanismo de storage seguro en Tauri, no
+      `localStorage` plano).
 
 ### Mapeo de entidades
 

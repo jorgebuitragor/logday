@@ -9,7 +9,7 @@ entradas diarias, `OvertimeEntry`, `CalendarEvent`, `AbsenceDay`) vive
 como archivo Markdown en `{basePath}/...`, leído/escrito vía Tauri
 (`src/lib/invoke.ts`) y mantenido en un único store (`src/store/appStore.ts`).
 El único mecanismo de sync existente es el wrapper sobre `git`
-(`src/types/git.ts`, `GitSettingsTab`) — sin servidor, sin resolución
+(`src/types/git.ts`, `GitModal.tsx`) — sin servidor, sin resolución
 de conflictos propia más allá de lo que el propio `git` ofrezca.
 
 Este spec agrega integración opcional con `logday-server` (repo
@@ -44,7 +44,7 @@ no los redefine.
 ### Configuración de conexión
 
 - El cliente DEBERÁ permitir configurar, desde Ajustes, la URL de un
-  servidor propio y credenciales de login — análogo a `GitSettingsTab`
+  servidor propio y credenciales de login — análogo a `GitModal.tsx`
   existente, no una ventana de onboarding separada.
 - El sync DEBERÁ ser opt-in: sin servidor configurado, el
   comportamiento es idéntico al actual (sin cambios visibles).

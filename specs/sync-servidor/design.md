@@ -2,46 +2,56 @@
 
 Estado: en diseño — no implementado.
 
-## Capa de red: plugins Tauri, no `fetch`/`WebSocket` del navegador
+## Capa de red: comandos Rust propios, no `fetch`/`WebSocket` del navegador
 
-**Decisión**: toda comunicación con `logday-server` pasa por
-`@tauri-apps/plugin-http` (REST) y `@tauri-apps/plugin-websocket` (WS)
-— ninguno de los dos está instalado hoy (`package.json` solo tiene
-`-dialog`, `-fs`, `-notification`, `-opener`, `-shell`), hay que
-agregarlos.
+**Decisión revisada** (la primera versión de este documento proponía
+`@tauri-apps/plugin-http`/`-websocket`; se descarta tras revisar
+`src-tauri` — ver abajo por qué): REST vía comandos Tauri propios en
+`src-tauri/src/lib.rs` usando `reqwest` (ya es dependencia del
+proyecto — `Cargo.toml:22`), exactamente el mismo patrón que
+`fetch_image_base64` (`src-tauri/src/lib.rs:220-238`, mismo comentario
+de justificación: "Runs on the Rust side so it bypasses WebView CORS
+restrictions"). No se agrega `@tauri-apps/plugin-http`: sería una
+segunda forma de hacer lo mismo que el proyecto ya resuelve a mano.
 
-**Por qué, no `fetch`/`WebSocket` nativos del webview**: `logday-server`
-no implementa CORS (verificado — cero referencias a `Access-Control` o
-middleware CORS en el repo). Un origen Tauri (`tauri://localhost` o
-`http://tauri.localhost` según plataforma) haciendo `fetch` contra el
-host que el usuario configuró chocaría con la falta de
-`Access-Control-Allow-Origin` en la mayoría de los navegadores/webviews
-embebidos. Las dos alternativas:
+**Por qué, no `fetch` nativo del webview**: `logday-server` no
+implementa CORS a propósito (ver `arquitectura-inicial`, "un único
+contenedor, cero configuración obligatoria" — un allowlist de
+orígenes por instancia contradice ese objetivo). Un origen Tauri
+haciendo `fetch` contra el host que el usuario configuró choca con la
+falta de `Access-Control-Allow-Origin`. Un comando Rust no pasa por el
+webview, así que no está sujeto a CORS en absoluto.
 
-1. Agregar CORS al servidor — **descartada**. Forzaría a cada instancia
-   self-hosted a mantener un allowlist de orígenes (¿cuál? el desktop
-   no tiene un origen fijo entre plataformas), contradiciendo el
-   objetivo explícito de `arquitectura-inicial` de "un único
-   contenedor, cero configuración obligatoria". El server ya sirve
-   HTTP plano a propósito, sin manejar más superficie de la necesaria.
-2. **Elegida**: los plugins oficiales de Tauri ejecutan la request
-   HTTP/WS del lado Rust, no en el contexto del webview — no están
-   sujetos a CORS del navegador en absoluto, porque no es el navegador
-   quien hace la conexión. Mismo patrón arquitectónico que ya usa el
-   proyecto para fs (`plugin-fs`, no APIs de browser).
+**WebSocket** (`/ws`, autenticación por mensaje, reconexión con
+backoff): a diferencia de REST, acá no hay precedente en el repo. Dos
+opciones:
+1. Replicar el patrón "a mano" (tarea Rust en background con
+   `tokio-tungstenite`, reenviando mensajes al frontend vía eventos
+   Tauri) — más consistente con el resto del código, pero es
+   significativamente más superficie de Rust nueva (conexión
+   persistente, reconexión, manejo de errores, todo sin un plugin que
+   ya lo resuelva).
+2. **Elegida**: `@tauri-apps/plugin-websocket` — sí se agrega como
+   dependencia, porque acá no hay una convención propia que romper (a
+   diferencia de HTTP) y reimplementar reconexión+framing de WS a mano
+   en Rust no se justifica cuando el plugin oficial ya lo cubre.
 
 ## Ubicación del código
 
 Nuevo módulo `src/lib/sync.ts` (+ `src/lib/syncQueue.ts` para la cola,
 ver abajo), paralelo a `src/lib/invoke.ts` — mismo rol: encapsula I/O
 externo (red, en vez de filesystem) detrás de funciones puras que el
-store consume. `appStore.ts` sigue siendo la única fuente de verdad
-in-memory; `sync.ts` nunca muta estado directamente, llama a acciones
-existentes del store (mismo patrón que `invoke.ts` hoy).
+store consume, llamando a los nuevos comandos Rust vía `invoke()`
+igual que el resto de `invoke.ts`. `appStore.ts` sigue siendo la única
+fuente de verdad in-memory; `sync.ts` nunca muta estado directamente.
 
-Nuevo tab de Ajustes: `src/components/settings/SyncSettingsTab.tsx`,
-hermano de `GitSettingsTab.tsx` — mismo lugar en el menú de Ajustes,
-mismo patrón de componente (form + estado de conexión + acciones).
+Nuevo componente `src/components/SyncModal.tsx`, hermano de
+`GitModal.tsx` (patrón real en esta rama — el split a
+`components/settings/*Tab.tsx` vive en `feature/1.1.0`, todavía sin
+mergear a `develop`, así que este componente sigue el patrón actual:
+modal propio con su flag `isSyncOpen`/`toggleSync` en `appStore.ts`,
+no un tab). Cuando `feature/1.1.0` se mergee, migrar este componente
+al nuevo layout de tabs es un refactor mecánico aparte, no bloqueante.
 
 ## Cola de escrituras offline
 

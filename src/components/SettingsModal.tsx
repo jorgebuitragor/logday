@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, Monitor, Sun, Moon, FolderOpen, Minus, Plus, Download, Upload, Type, Keyboard, AlertTriangle, ChevronDown, Eye, RefreshCw, ExternalLink, GitCommit, CheckCircle2, AlertCircle, Clock, CloudOff, ArrowDown } from 'lucide-react';
+import { X, Monitor, Sun, Moon, FolderOpen, Minus, Plus, Download, Upload, Type, Keyboard, AlertTriangle, ChevronDown, Eye, EyeOff, RefreshCw, ExternalLink, GitCommit, CheckCircle2, AlertCircle, Clock, CloudOff, ArrowDown } from 'lucide-react';
 import { Theme, Shortcuts, StartupScreen, Language, BackupSettings, GitConfig } from '../types';
 import { useAppStore } from '../store/appStore';
 import { t } from '../lib/i18n';
@@ -134,6 +134,7 @@ export function SettingsModal() {
   const [syncServerUrl, setSyncServerUrl] = useState(syncConfig.serverUrl);
   const [syncEmail, setSyncEmail] = useState(syncConfig.email);
   const [syncPassword, setSyncPassword] = useState('');
+  const [showSyncPassword, setShowSyncPassword] = useState(false);
   const [gitFetchBusy, setGitFetchBusy] = useState(false);
   const [gitErrorMsg, setGitErrorMsg] = useState('');
   const [gitNow, setGitNow] = useState(Date.now());
@@ -1376,13 +1377,23 @@ export function SettingsModal() {
                   <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-widest text-[var(--text-hint)]">
                     {t(language, 'extras', 'syncPassword')}
                   </label>
-                  <input
-                    type="password"
-                    value={syncPassword}
-                    onChange={(e) => setSyncPassword(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleSyncConnect(); }}
-                    className="w-full rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showSyncPassword ? 'text' : 'password'}
+                      value={syncPassword}
+                      onChange={(e) => setSyncPassword(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleSyncConnect(); }}
+                      className="w-full rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-2 pr-9 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSyncPassword((v) => !v)}
+                      className="absolute inset-y-0 right-0 flex items-center px-2.5 text-[var(--text-hint)] transition hover:text-[var(--text-primary)]"
+                      title={showSyncPassword ? t(language, 'extras', 'hidePassword') : t(language, 'extras', 'showPassword')}
+                    >
+                      {showSyncPassword ? <EyeOff size={13} /> : <Eye size={13} />}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

@@ -14,6 +14,19 @@ export interface TokenResponse {
   device_id: string;
 }
 
+export type SyncEntityType =
+  | 'task' | 'note' | 'overtime_entry' | 'overtime_month_meta'
+  | 'calendar_event' | 'absence_day' | 'daily_entry';
+
+export interface SyncChange {
+  type: SyncEntityType;
+  id: string;
+  seq: number;
+  deleted: boolean;
+  updated_at: string;
+  data: unknown; // fila completa de la entidad, shape = *ApiResponse de syncMapping.ts
+}
+
 export class SyncApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -64,6 +77,13 @@ export function refreshToken(baseUrl: string, refreshTokenValue: string): Promis
   return request<TokenResponse>(baseUrl, 'POST', '/auth/refresh', {
     body: { refresh_token: refreshTokenValue },
   });
+}
+
+/** since=0 (u omitido) trae el historial completo — usado tanto para
+ *  el pull incremental normal como para el full resync tras un cursor
+ *  inválido (410, ver appStore.ts reconcileSync). */
+export function syncChangesRemote(baseUrl: string, token: string, since: number): Promise<SyncChange[]> {
+  return request(baseUrl, 'GET', `/sync/changes?since=${since}`, { token });
 }
 
 // ─── Task ───

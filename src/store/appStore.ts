@@ -17,7 +17,7 @@ import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
 import { parseDailyFile, serializeDailyFile } from '../lib/dailyFileFormat';
 import { generateOvertimeXlsx } from '../lib/overtimeExcel';
 import { fs, pickFolder, pickFile, saveDialog, SearchResult } from '../lib/invoke';
-import { login as syncLogin, SyncApiError, normalizeServerUrl, createTaskRemote, patchTaskRemote, deleteTaskRemote } from '../lib/sync';
+import { login as syncLogin, SyncApiError, normalizeServerUrl, createTaskRemote, patchTaskRemote, deleteTaskRemote, syncChangesRemote, SyncChange } from '../lib/sync';
 import { taskToCreatePayload, taskFieldsToPatchPayload, taskFromApiResponse, TaskApiResponse, TaskCreatePayload, TaskPatchPayload } from '../lib/syncMapping';
 import * as syncQueue from '../lib/syncQueue';
 import { parseFrontmatter, serializeTask, parseNote, serializeNote, formatDate } from '../lib/markdown';
@@ -497,6 +497,129 @@ async function sendQueuedWrite(get: SyncGet, set: SyncSet, write: syncQueue.Queu
  *  parte de la fase "Tiempo real" (reconexión WS con backoff). */
 async function drainSyncQueue(get: SyncGet, set: SyncSet): Promise<void> {
   await syncQueue.drainQueue((write) => sendQueuedWrite(get, set, write));
+}
+
+// ── Cursor y reconciliación ─────────────────────────────────────
+// Trae /sync/changes desde el cursor guardado y aplica cada cambio al
+// estado local — así una edición hecha en otro cliente (logday-web,
+// otra instalación de Desktop) llega acá, no solo al revés. Por ahora
+// solo 'task' tiene el otro lado (escribir el archivo local) resuelto;
+// el resto de los tipos que puedan venir en el feed se ignoran hasta
+// que "Escritura y cola offline" se replique a esas entidades (ver
+// specs/sync-servidor/tasks.md).
+
+const SYNC_CURSOR_KEY = 'syncCursor';
+// Cualquier entrada en cola en este momento es, por definición, una
+// edición local todavía sin confirmar — no importa cuándo se encoló,
+// tiene prioridad sobre cualquier cambio remoto que estemos
+// reconciliando ahora. Pasar una fecha época como "sinceIso" hace que
+// hasNewerQueuedField matchee cualquier entrada existente.
+const EPOCH = '0000-01-01T00:00:00.000Z';
+
+function getSyncCursor(): number {
+  return Number(localStorage.getItem(SYNC_CURSOR_KEY) || '0');
+}
+
+function setSyncCursor(seq: number): void {
+  localStorage.setItem(SYNC_CURSOR_KEY, String(seq));
+}
+
+async function applyRemoteTaskChange(get: SyncGet, set: SyncSet, change: SyncChange): Promise<void> {
+  const { basePath } = get();
+  if (!basePath) return;
+  const existing = get().tasks.find((t) => t.id === change.id);
+
+  if (change.deleted) {
+    if (!existing) return; // nunca existió acá, nada que borrar
+    await fs.deleteFile(existing.filePath).catch(() => {});
+    set((state) => ({
+      tasks: state.tasks.filter((t) => t.id !== change.id),
+      activeTask: state.activeTask?.id === change.id ? null : state.activeTask,
+    }));
+    return;
+  }
+
+  const mapped = taskFromApiResponse(change.data as TaskApiResponse);
+  const filePath = existing?.filePath ?? taskFilePath(basePath, mapped.project, change.id);
+  const merged = { ...existing, ...mapped, filePath, linked_paths: existing?.linked_paths ?? [] } as unknown as Record<string, unknown>;
+
+  // Regla de prioridad: un campo con una edición local todavía sin
+  // mandar (en cola) no se pisa con el valor remoto — esa cola,
+  // cuando drene, va a traer el valor final real (ver
+  // applyTaskResponse, misma regla).
+  if (existing) {
+    for (const [localKey, serverKey] of Object.entries(TASK_FIELD_MAP)) {
+      if (syncQueue.hasNewerQueuedField('task', change.id, serverKey, EPOCH)) {
+        merged[localKey] = (existing as unknown as Record<string, unknown>)[localKey];
+      }
+    }
+  }
+
+  const finalTask = merged as unknown as Task;
+  await fs.writeFile(filePath, serializeTask(finalTask));
+  set((state) => ({
+    tasks: existing
+      ? state.tasks.map((t) => (t.id === change.id ? finalTask : t))
+      : [finalTask, ...state.tasks],
+    activeTask: state.activeTask?.id === change.id ? finalTask : state.activeTask,
+  }));
+}
+
+async function applyRemoteChanges(get: SyncGet, set: SyncSet, changes: SyncChange[]): Promise<void> {
+  for (const change of changes) {
+    if (change.type === 'task') {
+      await applyRemoteTaskChange(get, set, change);
+    }
+    // otros tipos (note, overtime_entry, overtime_month_meta,
+    // calendar_event, absence_day, daily_entry): pendientes, ver
+    // comentario arriba del archivo.
+  }
+}
+
+/** GET /sync/changes desde el cursor guardado; si el servidor dice
+ *  que el cursor ya no es válido (410 — se purgaron tombstones más
+ *  viejos de lo que este cliente conoce), descarta el cursor y hace
+ *  un resync completo desde cero. Los cambios en cola siguen
+ *  protegidos igual (ver EPOCH arriba) — un full resync no pisa
+ *  ediciones locales todavía sin confirmar. */
+async function reconcileSync(get: SyncGet, set: SyncSet): Promise<void> {
+  const { syncConfig } = get();
+  if (!syncConfig.enabled) return;
+  const cursor = getSyncCursor();
+  try {
+    const changes = await syncChangesRemote(syncConfig.serverUrl, syncConfig.accessToken, cursor);
+    await applyRemoteChanges(get, set, changes);
+    if (changes.length > 0) {
+      setSyncCursor(changes.reduce((m, c) => Math.max(m, c.seq), cursor));
+    }
+  } catch (e) {
+    if (e instanceof SyncApiError && e.status === 410) {
+      const changes = await syncChangesRemote(syncConfig.serverUrl, syncConfig.accessToken, 0);
+      await applyRemoteChanges(get, set, changes);
+      setSyncCursor(changes.reduce((m, c) => Math.max(m, c.seq), 0));
+    }
+    // Otros errores (red caída, etc.): se reintenta solo en el
+    // próximo intervalo periódico o la próxima reconexión — no hay
+    // nada más que hacer acá sin bloquear la UI.
+  }
+}
+
+// Sin WebSocket todavía (fase "Tiempo real" pendiente) — este
+// intervalo es el stand-in hasta entonces. Se arranca/para junto con
+// syncConnect/syncDisconnect.
+const RECONCILE_INTERVAL_MS = 30_000;
+let reconcileIntervalId: ReturnType<typeof setInterval> | null = null;
+
+function startReconcileInterval(get: SyncGet, set: SyncSet): void {
+  if (reconcileIntervalId) return;
+  reconcileIntervalId = setInterval(() => { void reconcileSync(get, set); }, RECONCILE_INTERVAL_MS);
+}
+
+function stopReconcileInterval(): void {
+  if (reconcileIntervalId) {
+    clearInterval(reconcileIntervalId);
+    reconcileIntervalId = null;
+  }
 }
 
 // ── Store ──────────────────────────────────────────────────────
@@ -2234,7 +2357,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
       localStorage.setItem('syncConfig', JSON.stringify(cfg));
       set({ syncConfig: cfg, syncConnectionStatus: 'connected' });
-      void drainSyncQueue(get, set);
+      // Primero manda lo local pendiente, después trae lo remoto —
+      // así una edición local recién hecha no se pisa a sí misma con
+      // el eco de su propia respuesta llegando por /sync/changes
+      // (aplicarla de nuevo es inofensivo, pero drenar primero evita
+      // el orden raro de verla "revertirse" un instante).
+      void drainSyncQueue(get, set).then(() => reconcileSync(get, set));
+      startReconcileInterval(get, set);
     } catch (e) {
       const msg = e instanceof SyncApiError ? e.message : String(e);
       set({ syncConnectionStatus: 'error', syncErrorMsg: msg });
@@ -2243,6 +2372,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   syncDisconnect: () => {
+    stopReconcileInterval();
     const cfg: SyncConfig = { enabled: false, serverUrl: '', email: '', accessToken: '', refreshToken: '', deviceId: '' };
     localStorage.setItem('syncConfig', JSON.stringify(cfg));
     set({ syncConfig: cfg, syncConnectionStatus: 'disconnected', syncErrorMsg: '' });

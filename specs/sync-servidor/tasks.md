@@ -128,12 +128,38 @@ pendientes, replicando el mismo patrón ya probado.
 
 ### Cursor y reconciliación
 
-- [ ] Persistir `seq` local (dónde — archivo de config o junto a la
-      cola).
-- [ ] `GET /sync/changes` al reconectar y periódicamente; aplicar cada
-      entidad recibida sobreescribiendo el estado local.
-- [ ] Manejo de "cursor inválido": descartar cursor, full resync,
-      preservando escrituras locales no confirmadas.
+Implementado y validado contra un server real **solo para Task** (el
+único tipo con el mapeo + escritura local completos hasta ahora, ver
+"Escritura y cola offline") — el resto de los tipos que puedan venir
+en el feed de `/sync/changes` se ignoran por ahora
+(`applyRemoteChanges` en `appStore.ts`, con un comentario marcando el
+punto exacto donde agregar cada uno cuando llegue su turno).
+
+- [x] Persistir `seq` local — `localStorage`, clave `syncCursor`
+      (`getSyncCursor`/`setSyncCursor` en `appStore.ts`), mismo
+      mecanismo que el resto (`gitConfig`, `syncConfig`, la cola).
+- [x] `GET /sync/changes` al reconectar (`reconcileSync`, llamado
+      desde `syncConnect` después de drenar la cola local) y
+      periódicamente (`setInterval` cada 30s mientras haya sesión,
+      `startReconcileInterval`/`stopReconcileInterval` — stand-in
+      hasta que exista WebSocket en la fase "Tiempo real"). Aplica
+      cada entidad recibida sobreescribiendo el estado local
+      (`applyRemoteTaskChange`): task nueva (nunca vista acá) se crea
+      localmente calculando su `filePath`; existente se actualiza;
+      borrada del lado del servidor borra el archivo local.
+- [x] Manejo de "cursor inválido": un `410` de `/sync/changes`
+      descarta el cursor guardado y reintenta con `since=0` (full
+      resync). Las escrituras locales no confirmadas quedan
+      protegidas por la misma regla de prioridad que ya usa
+      `applyTaskResponse` (cualquier campo con una entrada en la cola
+      offline no se pisa con el valor remoto, sin importar hace
+      cuánto se encoló — ver `EPOCH` en `appStore.ts`).
+
+Validado a mano por el usuario: creada una task por `curl` (simulando
+un cambio desde otro cliente, p. ej. logday-web) mientras Desktop
+estaba desconectado; al reconectar, apareció sola sin que el usuario
+hiciera nada más — confirma el sentido que faltaba (antes solo Desktop
+→ servidor funcionaba, no al revés).
 
 ### Tiempo real
 

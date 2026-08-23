@@ -78,10 +78,19 @@ del lado servidor, este spec ya no está bloqueado por eso.
 
 ### Mapeo de entidades
 
-- [ ] Funciones de (de)serialización por entidad: `Task`, `Note`
+- [x] Funciones de (de)serialización por entidad: `Task`, `Note`
       (metadata, sin `content`), `OvertimeEntry`, `OvertimeMonthMeta`,
       `CalendarEvent`, `AbsenceDay` — tipo local ↔ payload REST del
       servidor, excluyendo `filePath`/`linked_paths`.
+      `src/lib/syncMapping.ts`: por entidad, `xToCreatePayload`
+      (local → POST body completo), `xFieldsToPatchPayload`
+      (`Partial<X>` → PATCH body, solo campos presentes — usa `'campo'
+      in fields` para distinguir "no cambió" de "se limpió a null/''",
+      igual que el `Field[T]` del servidor) y `xFromApiResponse`
+      (respuesta → tipo local, sin `filePath`/`content`/`linked_paths`).
+      `OvertimeMonthMeta` no tiene `xToCreatePayload` — el servidor no
+      tiene POST propio, el primer PATCH crea si no existe (año-mes va
+      en la URL, no en el tipo local). `tsc`/`eslint` en verde.
 
 ### Escritura y cola offline
 

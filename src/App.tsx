@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { Clock, Plus } from 'lucide-react';
 import './App.css';
@@ -6,27 +6,28 @@ import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from './store/appStore';
 import { t } from './lib/i18n';
 import { Onboarding } from './pages/Onboarding';
-import { Sidebar } from './components/Sidebar';
-import { DashboardView } from './components/DashboardView';
-import { TaskList } from './components/TaskList';
+import { Sidebar } from './components/sidebar/Sidebar';
+import { ResizeHandle } from './components/ResizeHandle';
+import { DashboardView } from './components/dashboard/DashboardView';
+import { TaskList } from './components/tasks/TaskList';
 import { SearchModal } from './components/SearchModal';
-import { SettingsModal } from './components/SettingsModal';
+import { SettingsModal } from './components/settings/SettingsModal';
 import { ToastViewport } from './components/ToastViewport';
-import { OvertimeEntry } from './types';
+import { OvertimeEntry } from './types/overtime';
 import { useEventNotifier } from './lib/eventNotifier';
 
-const KanbanBoard   = lazy(() => import('./components/KanbanBoard').then(m => ({ default: m.KanbanBoard })));
-const CalendarView  = lazy(() => import('./components/CalendarView').then(m => ({ default: m.CalendarView })));
-const TaskEditor    = lazy(() => import('./components/TaskEditor').then(m => ({ default: m.TaskEditor })));
-const NoteList      = lazy(() => import('./components/NoteList').then(m => ({ default: m.NoteList })));
-const NoteEditor    = lazy(() => import('./components/NoteEditor').then(m => ({ default: m.NoteEditor })));
-const DailyList     = lazy(() => import('./components/DailyList').then(m => ({ default: m.DailyList })));
-const DailyEditor   = lazy(() => import('./components/DailyEditor').then(m => ({ default: m.DailyEditor })));
-const OvertimeList  = lazy(() => import('./components/OvertimeList').then(m => ({ default: m.OvertimeList })));
-const OvertimeEditor = lazy(() => import('./components/OvertimeEditor').then(m => ({ default: m.OvertimeEditor })));
+const KanbanBoard   = lazy(() => import('./components/tasks/KanbanBoard').then(m => ({ default: m.KanbanBoard })));
+const CalendarView  = lazy(() => import('./components/calendar/CalendarView').then(m => ({ default: m.CalendarView })));
+const TaskEditor    = lazy(() => import('./components/tasks/TaskEditor').then(m => ({ default: m.TaskEditor })));
+const NoteList      = lazy(() => import('./components/notes/NoteList').then(m => ({ default: m.NoteList })));
+const NoteEditor    = lazy(() => import('./components/notes/NoteEditor').then(m => ({ default: m.NoteEditor })));
+const DailyList     = lazy(() => import('./components/daily/DailyList').then(m => ({ default: m.DailyList })));
+const DailyEditor   = lazy(() => import('./components/daily/DailyEditor').then(m => ({ default: m.DailyEditor })));
+const OvertimeList  = lazy(() => import('./components/overtime/OvertimeList').then(m => ({ default: m.OvertimeList })));
+const OvertimeEditor = lazy(() => import('./components/overtime/OvertimeEditor').then(m => ({ default: m.OvertimeEditor })));
 
 export default function App() {
-  const { init, isLoading, isConfigured, activeTask, activeSection, createNote, setSection, shortcuts, overtimeMonth, language } = useAppStore(
+  const { init, isLoading, isConfigured, activeTask, activeSection, createNote, setSection, shortcuts, overtimeMonth, language, isSidebarCollapsed } = useAppStore(
     useShallow((s) => ({
       init: s.init,
       isLoading: s.isLoading,
@@ -38,9 +39,50 @@ export default function App() {
       shortcuts: s.shortcuts,
       overtimeMonth: s.overtimeMonth,
       language: s.language,
+      isSidebarCollapsed: s.isSidebarCollapsed,
     }))
   );
   const [editingEntry, setEditingEntry] = useState<OvertimeEntry | null | undefined>(undefined);
+
+  // ── Panel resize ───────────────────────────────────────────────
+  const SIDEBAR_W_KEY = 'logday_sidebar_w';
+  const LIST_W_KEY = 'logday_list_w';
+  const DEFAULT_SIDEBAR_W = 224;
+  const DEFAULT_LIST_W = 288;
+
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() =>
+    Number(localStorage.getItem(SIDEBAR_W_KEY) || DEFAULT_SIDEBAR_W)
+  );
+  const [listPanelWidth, setListPanelWidth] = useState<number>(() =>
+    Number(localStorage.getItem(LIST_W_KEY) || DEFAULT_LIST_W)
+  );
+
+  const handleSidebarResize = useCallback((delta: number) => {
+    setSidebarWidth((w) => {
+      const next = Math.max(160, Math.min(420, w + delta));
+      localStorage.setItem(SIDEBAR_W_KEY, String(next));
+      return next;
+    });
+  }, []);
+
+  const handleListResize = useCallback((delta: number) => {
+    setListPanelWidth((w) => {
+      const next = Math.max(200, Math.min(520, w + delta));
+      localStorage.setItem(LIST_W_KEY, String(next));
+      return next;
+    });
+  }, []);
+
+  const resetSidebarWidth = useCallback(() => {
+    setSidebarWidth(DEFAULT_SIDEBAR_W);
+    localStorage.setItem(SIDEBAR_W_KEY, String(DEFAULT_SIDEBAR_W));
+  }, []);
+
+  const resetListWidth = useCallback(() => {
+    setListPanelWidth(DEFAULT_LIST_W);
+    localStorage.setItem(LIST_W_KEY, String(DEFAULT_LIST_W));
+  }, []);
+  // ──────────────────────────────────────────────────────────────
 
   // Cerrar el editor de extras al cambiar de mes
   useEffect(() => {
@@ -109,9 +151,18 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[var(--bg-base)]">
+    <div
+      className="flex h-screen w-full overflow-hidden bg-[var(--bg-base)]"
+      style={{
+        '--logday-sidebar-w': `${sidebarWidth}px`,
+        '--logday-list-w': `${listPanelWidth}px`,
+      } as React.CSSProperties}
+    >
       {/* Sidebar */}
       <Sidebar />
+      {!isSidebarCollapsed && (
+        <ResizeHandle onResize={handleSidebarResize} onReset={resetSidebarWidth} />
+      )}
 
       {/* Main content area */}
       <div className="flex flex-1 overflow-hidden">
@@ -128,6 +179,7 @@ export default function App() {
         ) : activeSection === 'notes' ? (
           <>
             <NoteList />
+            <ResizeHandle onResize={handleListResize} onReset={resetListWidth} />
             <NoteEditor />
           </>
         ) : activeSection === 'overtime' ? (
@@ -136,6 +188,7 @@ export default function App() {
               activeEntryId={editingEntry?.id ?? null}
               onEdit={setEditingEntry}
             />
+            <ResizeHandle onResize={handleListResize} onReset={resetListWidth} />
             {editingEntry !== undefined ? (
               <Suspense fallback={null}>
                 <OvertimeEditor key={editingEntry?.id ?? 'new'} entry={editingEntry} onClose={() => setEditingEntry(undefined)} />
@@ -160,6 +213,7 @@ export default function App() {
         ) : (
           <>
             <DailyList />
+            <ResizeHandle onResize={handleListResize} onReset={resetListWidth} />
             <DailyEditor />
           </>
         )}

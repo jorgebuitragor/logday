@@ -1,5 +1,4 @@
-import { OvertimeEntry, OvertimeMonthMeta } from '../types';
-
+import { OvertimeEntry, OvertimeMonthMeta } from '../types/overtime';
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
 type BorderSide = { style: string; color: { rgb: string } };
@@ -41,10 +40,30 @@ function cellAddr(r: number, c: number): string {
 
 // ── Conversión de fechas/horas ────────────────────────────────────────────────
 
-/** "YYYY-MM-DD" → Date local */
-function parseFecha(s: string): Date {
+/**
+ * "YYYY-MM-DD" → número de serie de Excel (fracción de día desde el
+ * epoch de Excel). Se calcula a mano en vez de pasar un objeto `Date`
+ * en la celda: xlsx-js-style convierte `Date` a serie asumiendo la hora
+ * local, y en zonas horarias detrás de UTC (ej. UTC-5) eso corre la
+ * fecha mostrada un día hacia atrás. Mismo enfoque que `parseHora` ya
+ * usa para evitar el problema equivalente con horas.
+ */
+function parseFecha(s: string): number {
   const [y, m, d] = s.split('-').map(Number);
-  return new Date(y, m - 1, d);
+  const utcMs = Date.UTC(y, m - 1, d);
+  const excelEpochMs = Date.UTC(1899, 11, 30);
+  return (utcMs - excelEpochMs) / 86400000;
+}
+
+const OBSERVACIONES_LABELS: Record<string, string> = {
+  comp: 'Compensatorio',
+  pay: 'Pago',
+  other: 'Otro',
+};
+
+/** Clave interna ('comp'/'pay'/'other') → etiqueta en español; texto libre se deja tal cual. */
+function formatObservaciones(v: string): string {
+  return OBSERVACIONES_LABELS[v] ?? v;
 }
 
 /**
@@ -194,14 +213,14 @@ export async function generateOvertimeXlsx(
     const e = entries[i];
 
     if (e) {
-      // A: fecha como Date
-      ws[cellAddr(ri, 0)] = { t: 'd', v: parseFecha(e.fecha),       s: sFecha };
+      // A: fecha como número de serie de Excel (ver parseFecha)
+      ws[cellAddr(ri, 0)] = { t: 'n', v: parseFecha(e.fecha),       s: sFecha };
       // B: solicitadaPor
       ws[cellAddr(ri, 1)] = { t: 's', v: e.solicitadaPor,           s: sBase  };
       // C: actividad (texto largo, wrap)
       ws[cellAddr(ri, 2)] = { t: 's', v: e.actividad,               s: sWrap  };
       // D: observaciones (texto largo, wrap)
-      ws[cellAddr(ri, 3)] = { t: 's', v: e.observaciones,           s: sWrap  };
+      ws[cellAddr(ri, 3)] = { t: 's', v: formatObservaciones(e.observaciones), s: sWrap  };
       // E: horaInicio como fracción de día (número puro)
       ws[cellAddr(ri, 4)] = { t: 'n', v: parseHora(e.horaInicio),   s: sHora  };
       // F: horaFinal como fracción de día

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { Search, X, Circle, Clock, CheckCircle2, Calendar, BookOpen } from 'lucide-react';
-import { Task, TaskStatus } from '../types';
+import { Task, TaskStatus } from '../types/task';
 import { useAppStore } from '../store/appStore';
 import { t } from '../lib/i18n';
+import { ModalOverlay } from './shared/ModalOverlay';
+import { ModalPanel } from './shared/ModalPanel';
 
 const STATUS_ICONS: Record<TaskStatus, React.ReactNode> = {
   todo: <Circle size={13} className="text-zinc-500 shrink-0" />,
@@ -69,18 +71,8 @@ export function SearchModal() {
   const hasResults = searchResults.length > 0 || dailyHits.length > 0;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] px-4"
-      onClick={toggleSearch}
-    >
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-
-      {/* Modal */}
-      <div
-        className="relative w-full max-w-xl rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <ModalOverlay onClose={toggleSearch} align="start" className="pt-[15vh] px-4">
+      <ModalPanel className="w-full max-w-xl rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-2xl overflow-hidden">
         {/* Search input */}
         <div className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-3.5">
           <Search size={16} className="text-[var(--text-hint)] shrink-0" />
@@ -109,7 +101,7 @@ export function SearchModal() {
             </div>
           ) : !hasResults ? (
             <div className="py-10 text-center text-sm text-[var(--text-faint)]">
-              {t(language, 'extras', 'noResultsFor')} "{searchQuery}"
+              {t(language, 'extras', 'noResultsFor')} &quot;{searchQuery}&quot;
             </div>
           ) : (
             <div className="p-2">
@@ -191,7 +183,7 @@ export function SearchModal() {
             </p>
           </div>
         )}
-      </div>
-    </div>
+      </ModalPanel>
+    </ModalOverlay>
   );
 }

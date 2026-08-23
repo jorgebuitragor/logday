@@ -10,9 +10,10 @@
 
 /* ── Theme variables ───────────────────────────────────────── */
 :root {
-  --bg-base:     #0f0f0f;
+  --bg-base:     #121212;
   --bg-panel:    #141414;
   --bg-surface:  #1c1c1c;
+  --bg-secondary: var(--bg-surface);
   --bg-hover:    #242424;
   --bg-elevated: #181818;
   --bg-input:    #161616;
@@ -21,13 +22,13 @@
   --border-card: #333333;
   --border-high: #4a4a4a;
 
-  --text-primary:   #ffffff;
+  --text-primary:   #f2f2f2;
   --text-body:      #e4e4e4;
   --text-secondary: #c8c8c8;
   --text-tertiary:  #aaaaaa;
   --text-muted:     #888888;
-  --text-hint:      #777777;
-  --text-faint:     #555555;
+  --text-hint:      #848484;
+  --text-faint:     #7e7e7e;
 
   --accent:         #818cf8;
   --accent-strong:  #6366f1;
@@ -42,6 +43,7 @@
   --bg-base:     #f4f4f5;
   --bg-panel:    #ffffff;
   --bg-surface:  #f9f9fb;
+  --bg-secondary: var(--bg-surface);
   --bg-hover:    #f0f0f2;
   --bg-elevated: #ffffff;
   --bg-input:    #fafafa;
@@ -71,6 +73,7 @@
   --bg-base:     #000000;
   --bg-panel:    #050505;
   --bg-surface:  #0a0a0a;
+  --bg-secondary: var(--bg-surface);
   --bg-hover:    #141414;
   --bg-elevated: #0f0f0f;
   --bg-input:    #0a0a0a;
@@ -100,6 +103,7 @@
   --bg-base:     #0f1513;
   --bg-panel:    #141d1a;
   --bg-surface:  #1a2521;
+  --bg-secondary: var(--bg-surface);
   --bg-hover:    #22312b;
   --bg-elevated: #16201d;
   --bg-input:    #1a2521;
@@ -125,35 +129,124 @@
   --accent-code:    #a7dcbf;
 }
 
-:root[data-theme="high-contrast"] [class*="text-indigo-"],
-:root[data-theme="visual-rest"] [class*="text-indigo-"] {
+:root[data-theme="sepia"] {
+  --bg-base:     #f2e8d3;
+  --bg-panel:    #f9f2e4;
+  --bg-surface:  #ede0c4;
+  --bg-secondary: var(--bg-surface);
+  --bg-hover:    #e6d7b7;
+  --bg-elevated: #f9f2e4;
+  --bg-input:    #efe3c8;
+
+  --border:      #ddc9a3;
+  --border-card: #cbb488;
+  --border-high: #a3895d;
+
+  --text-primary:   #2e2013;
+  --text-body:      #3d2d1c;
+  --text-secondary: #5a4630;
+  --text-tertiary:  #715a3d;
+  --text-muted:     #725b40;
+  --text-hint:      #796044;
+  --text-faint:     #7c6346;
+
+  --accent:         #b5652f;
+  --accent-strong:  #7d512a;
+  --accent-soft:    rgba(181, 101, 47, 0.18);
+  --accent-ink:     #b5652f;
+  --accent-inline:  #665a27;
+  --accent-link:    #7d512a;
+  --accent-code:    #73611f;
+}
+
+:root[data-theme="oled"] {
+  --bg-base:     #000000;
+  --bg-panel:    #0a0a0a;
+  --bg-surface:  #111111;
+  --bg-secondary: var(--bg-surface);
+  --bg-hover:    #1c1c1c;
+  --bg-elevated: #0d0d0d;
+  --bg-input:    #0c0c0c;
+
+  --border:      #262626;
+  --border-card: #333333;
+  --border-high: #4d4d4d;
+
+  --text-primary:   #ededed;
+  --text-body:      #d6d6d6;
+  --text-secondary: #bcbcbc;
+  --text-tertiary:  #9e9e9e;
+  --text-muted:     #8e8e8e;
+  --text-hint:      #848484;
+  --text-faint:     #7a7a7a;
+
+  --accent:         #38bdf8;
+  --accent-strong:  #0caef6;
+  --accent-soft:    rgba(56, 189, 248, 0.22);
+  --accent-ink:     #87c4fb;
+  --accent-inline:  #73a8fa;
+  --accent-link:    #38bdf8;
+  --accent-code:    #568bf9;
+}
+
+:root[data-theme="nordic"] {
+  --bg-base:     #2e3440;
+  --bg-panel:    #333a47;
+  --bg-surface:  #3b4252;
+  --bg-secondary: var(--bg-surface);
+  --bg-hover:    #434c5e;
+  --bg-elevated: #363d4a;
+  --bg-input:    #323944;
+
+  --border:      #4c566a;
+  --border-card: #4c566a;
+  --border-high: #6b768c;
+
+  --text-primary:   #eceff4;
+  --text-body:      #e5e9f0;
+  --text-secondary: #d3dae6;
+  --text-tertiary:  #b7c1d1;
+  --text-muted:     #b2bac7;
+  --text-hint:      #a9b2c1;
+  --text-faint:     #a0aaba;
+
+  --accent:         #88c0d0;
+  --accent-strong:  #5e81ac;
+  --accent-soft:    rgba(136, 192, 208, 0.20);
+  --accent-ink:     #c2d9e7;
+  --accent-inline:  #b4cae1;
+  --accent-link:    #88c0d0;
+  --accent-code:    #9eb6d9;
+}
+
+/* Repinta clases Tailwind indigo-* hardcodeadas al acento del tema activo.
+   Se activa vía la clase .theme-tinted en <html>, gestionada por
+   applyThemeToDOM() para cualquier tema (predefinido o personalizado) cuyo
+   acento no sea el índigo por defecto — no está acoplado a nombres de tema
+   fijos, así que cubre temas personalizados sin tocar este archivo. */
+html.theme-tinted [class*="text-indigo-"] {
   color: var(--accent) !important;
 }
 
-:root[data-theme="high-contrast"] [class*="bg-indigo-"],
-:root[data-theme="visual-rest"] [class*="bg-indigo-"] {
+html.theme-tinted [class*="bg-indigo-"] {
   background-color: var(--accent-soft) !important;
 }
 
-:root[data-theme="high-contrast"] [class*="border-indigo-"],
-:root[data-theme="visual-rest"] [class*="border-indigo-"] {
+html.theme-tinted [class*="border-indigo-"] {
   border-color: var(--accent) !important;
 }
 
-:root[data-theme="high-contrast"] [class*="ring-indigo-"],
-:root[data-theme="visual-rest"] [class*="ring-indigo-"] {
+html.theme-tinted [class*="ring-indigo-"] {
   --tw-ring-color: color-mix(in srgb, var(--accent) 45%, transparent) !important;
 }
 
-:root[data-theme="high-contrast"] [class*="from-indigo-"],
-:root[data-theme="visual-rest"] [class*="from-indigo-"] {
+html.theme-tinted [class*="from-indigo-"] {
   --tw-gradient-from: color-mix(in srgb, var(--accent) 28%, transparent) var(--tw-gradient-from-position) !important;
   --tw-gradient-to: rgb(255 255 255 / 0) var(--tw-gradient-to-position) !important;
   --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
 }
 
-:root[data-theme="high-contrast"] [class*="to-indigo-"],
-:root[data-theme="visual-rest"] [class*="to-indigo-"] {
+html.theme-tinted [class*="to-indigo-"] {
   --tw-gradient-to: color-mix(in srgb, var(--accent) 10%, transparent) var(--tw-gradient-to-position) !important;
 }
 
@@ -167,6 +260,41 @@ html.theme-animating body * {
   html.theme-animating body * {
     transition: none !important;
   }
+}
+
+/* ── Selector de color propio (ColorPicker.tsx) — mismo aspecto en cualquier
+   motor/SO, reemplaza el look nativo por defecto de <input type="range"> ─── */
+.color-picker-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 10px;
+  border-radius: 5px;
+  outline: none;
+  cursor: pointer;
+}
+.color-picker-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2px solid #333333;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+.color-picker-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2px solid #333333;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+.color-picker-slider::-moz-range-track {
+  background: transparent;
 }
 
 @layer base {
@@ -370,14 +498,14 @@ html.theme-animating body * {
 
 /* ── Task code reference links in notes (WYSIWYG, display-only) ────────── */
 .task-code-link {
-  color: rgb(129 140 248);
+  color: var(--accent-link);
   font-weight: 500;
   cursor: pointer;
-  border-bottom: 1px dotted rgb(129 140 248 / 0.5);
+  border-bottom: 1px dotted color-mix(in srgb, var(--accent-link) 50%, transparent);
   transition: color 0.12s, border-color 0.12s;
 }
 .task-code-link:hover {
-  color: rgb(165 180 252);
+  color: var(--accent);
   border-bottom-style: solid;
 }
 
@@ -774,26 +902,26 @@ html.theme-animating body * {
 }
 
 .drag-handle:hover {
-  background-color: rgba(129, 140, 248, 0.10);
-  border-color: rgba(129, 140, 248, 0.25);
+  background-color: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 .drag-handle:active,
 .drag-handle[data-dragging='true'] {
   cursor: grabbing;
-  background-color: rgba(129, 140, 248, 0.16);
-  border-color: rgba(129, 140, 248, 0.32);
+  background-color: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
 }
 
 .ProseMirror.dragging > * {
-  outline: 1px solid rgba(129, 140, 248, 0.10);
+  outline: 1px solid color-mix(in srgb, var(--accent) 10%, transparent);
   border-radius: 4px;
 }
 
 /* Bloque resaltado mientras se arrastra (la extensión añade esta clase) */
 .ProseMirror [data-drag-handle-selected],
 .ProseMirror .drag-handle-active-node {
-  outline: 1px solid rgba(129, 140, 248, 0.3);
+  outline: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
   border-radius: 4px;
 }
 
@@ -801,7 +929,7 @@ html.theme-animating body * {
 .drag-drop-indicator,
 .tiptap-drag-drop-indicator {
   height: 1.5px;
-  background: linear-gradient(90deg, transparent 0%, rgba(129, 140, 248, 0.7) 8%, rgba(129, 140, 248, 0.7) 92%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--accent) 70%, transparent) 8%, color-mix(in srgb, var(--accent) 70%, transparent) 92%, transparent 100%);
   border-radius: 1px;
   margin: 1px 0;
   pointer-events: none;
@@ -818,11 +946,11 @@ html.theme-animating body * {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: rgba(129, 140, 248, 0.8);
+  background: color-mix(in srgb, var(--accent) 80%, transparent);
 }
 
 .block-drop-flash {
-  background: rgba(129, 140, 248, 0.85);
+  background: color-mix(in srgb, var(--accent) 85%, transparent);
   animation: block-drop-flash 220ms ease-out;
 }
 

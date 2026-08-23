@@ -2,8 +2,19 @@ import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Task, Note, AppConfig, ViewMode, Theme, ActiveSection, StartupScreen, Language, Shortcuts, DEFAULT_SHORTCUTS, OvertimeEntry, OvertimeMonthMeta, GitConfig, GitStatus, GitRemoteStatus, AppToast, ToastKind, CalendarEvent, SyncConfig, SyncConnectionStatus } from '../types';
+import { Task } from '../types/task';
+import { Note } from '../types/note';
+import { OvertimeEntry, OvertimeMonthMeta } from '../types/overtime';
+import { CalendarEvent } from '../types/calendar';
+import { AbsenceDay } from '../types/absence';
+import { Theme, BuiltInTheme, CustomTheme } from '../types/theme';
+import { GitConfig, GitStatus, GitRemoteStatus } from '../types/git';
+import { SyncConfig, SyncConnectionStatus } from '../types/sync';
+import { AppConfig, ViewMode, ActiveSection, StartupScreen, Shortcuts, DEFAULT_SHORTCUTS } from '../types/config';
+import { Language, AppToast, ToastKind } from '../types/common';
+import { deriveCustomThemeVars } from '../lib/themeColor';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
+import { parseDailyFile, serializeDailyFile } from '../lib/dailyFileFormat';
 import { generateOvertimeXlsx } from '../lib/overtimeExcel';
 import { fs, pickFolder, pickFile, saveDialog, SearchResult } from '../lib/invoke';
 import { login as syncLogin, SyncApiError, normalizeServerUrl } from '../lib/sync';
@@ -55,6 +66,7 @@ interface AppState {
   // Calendar Events
   calendarEvents: CalendarEvent[];
   activeCalendarEvent: CalendarEvent | null;
+  absenceDays: AbsenceDay[];
 
   // UI
   currentView: ViewMode;
@@ -78,6 +90,7 @@ interface AppState {
 
   // Theme + Settings
   theme: Theme;
+  customThemes: CustomTheme[];
   startupScreen: StartupScreen;
   language: Language;
   fontSize: number;
@@ -138,6 +151,8 @@ interface AppState {
   replaceFolderTags: (tags: Record<string, string[]>) => void;
   moveNoteFolder: (folder: string, targetParent: string) => Promise<void>;
   duplicateNoteFolder: (folder: string, targetParent: string | null) => Promise<void>;
+  importNotesFromPaths: (paths: string[]) => Promise<void>;
+  importNotesFromContent: (files: Array<{ name: string; content: string }>) => Promise<void>;
 
   // Dailys
   loadDailyMonths: () => Promise<void>;
@@ -166,6 +181,11 @@ interface AppState {
   saveCalendarEvent: (event: CalendarEvent) => Promise<void>;
   deleteCalendarEvent: (id: string) => Promise<void>;
 
+  // Absences
+  loadAbsenceDays: () => Promise<void>;
+  saveAbsenceDay: (absence: AbsenceDay) => Promise<void>;
+  deleteAbsenceDay: (id: string) => Promise<void>;
+
   // UI
   setSection: (section: ActiveSection) => Promise<void>;
   setView: (view: ViewMode) => void;
@@ -184,6 +204,12 @@ interface AppState {
   setHolidaysAsNonWork: (enabled: boolean) => Promise<void>;
   setAnimationsEnabled: (enabled: boolean) => Promise<void>;
   setTheme: (theme: Theme) => void;
+  createCustomTheme: (input: { name: string; base: 'dark' | 'light'; accent: string; bgTint: string; textTint: string; intensity: number }) => CustomTheme;
+  renameCustomTheme: (id: string, name: string) => void;
+  duplicateCustomTheme: (id: string) => void;
+  deleteCustomTheme: (id: string) => void;
+  updateCustomTheme: (id: string, patch: Partial<Omit<CustomTheme, 'id' | 'createdAt'>>) => void;
+  replaceCustomThemes: (customThemes: CustomTheme[]) => void;
   setStartupScreen: (screen: StartupScreen) => Promise<void>;
   setLanguage: (lang: Language) => Promise<void>;
   setFontSize: (size: number) => void;
@@ -239,24 +265,6 @@ const overtimeMonthFilePath = (base: string, year: string, month: string) =>
 const loadingDailyMonths = new Set<string>();
 const loadingOvertimeMonths = new Set<string>();
 
-function parseDailyFile(content: string): Record<string, string> {
-  const entries: Record<string, string> = {};
-  const parts = content.split(/^## (\d{4}-\d{2}-\d{2})\s*$/m);
-  for (let i = 1; i < parts.length; i += 2) {
-    // Eliminar separadores "---" que quedan al final de cada bloque
-    const raw = (parts[i + 1] || '').trim().replace(/(\n*---\s*)+$/, '').trim();
-    entries[parts[i].trim()] = raw;
-  }
-  return entries;
-}
-
-function serializeDailyFile(entries: Record<string, string>, yearMonth: string): string {
-  const sorted = Object.keys(entries).sort().reverse();
-  const header = `# ${yearMonth}\n\n`;
-  if (sorted.length === 0) return header;
-  return header + sorted.map((d) => `## ${d}\n\n${entries[d]}`).join('\n\n---\n\n') + '\n';
-}
-
 async function loadConfig(dir: string): Promise<AppConfig | null> {
   try {
     const raw = await fs.readFile(configFilePath(dir));
@@ -305,13 +313,37 @@ export function applyAnimationsToDOM(enabled: boolean) {
   document.documentElement.classList.toggle('no-animations', !enabled);
 }
 
-export function applyThemeToDOM(theme: Theme, animate = false) {
-  const resolved =
-    theme === 'system'
-      ? window.matchMedia('(prefers-color-scheme: dark)').matches
-        ? 'dark'
-        : 'light'
-      : theme;
+const CUSTOM_THEME_VARS = [
+  '--bg-base', '--bg-panel', '--bg-surface', '--bg-secondary', '--bg-hover', '--bg-elevated', '--bg-input',
+  '--border', '--border-card', '--border-high',
+  '--text-primary', '--text-body', '--text-secondary', '--text-tertiary', '--text-muted', '--text-hint', '--text-faint',
+  '--accent', '--accent-strong', '--accent-soft', '--accent-ink', '--accent-inline', '--accent-link', '--accent-code',
+] as const;
+
+const TINTED_BUILTIN_THEMES: BuiltInTheme[] = ['high-contrast', 'visual-rest', 'sepia', 'oled', 'nordic'];
+
+export function applyCustomThemeToDOM(customTheme: CustomTheme | null) {
+  const root = document.documentElement.style;
+  if (!customTheme) {
+    CUSTOM_THEME_VARS.forEach((v) => root.removeProperty(v));
+    return;
+  }
+  const vars = deriveCustomThemeVars(customTheme);
+  Object.entries(vars).forEach(([k, v]) => root.setProperty(k, v));
+}
+
+export function applyThemeToDOM(theme: Theme, animate = false, customThemes: CustomTheme[] = []) {
+  let resolved: BuiltInTheme;
+  let custom: CustomTheme | null = null;
+
+  if (theme.startsWith('custom:')) {
+    custom = customThemes.find((t) => `custom:${t.id}` === theme) ?? null;
+    resolved = custom?.base ?? 'dark';
+  } else {
+    resolved = theme === 'system'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : (theme as BuiltInTheme);
+  }
 
   if (animate) {
     document.documentElement.classList.add('theme-animating');
@@ -321,6 +353,11 @@ export function applyThemeToDOM(theme: Theme, animate = false) {
   }
 
   document.documentElement.dataset.theme = resolved;
+  applyCustomThemeToDOM(custom);
+  document.documentElement.classList.toggle(
+    'theme-tinted',
+    custom !== null || TINTED_BUILTIN_THEMES.includes(resolved),
+  );
 
   try {
     const nativeTheme = theme === 'system' ? null : (resolved === 'dark' ? 'dark' : 'light');
@@ -363,6 +400,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   holidaysAsNonWork: true,
   animationsEnabled: true,
   theme: (localStorage.getItem('theme') as Theme) || 'system',
+  customThemes: (() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('customThemes') || '[]') as CustomTheme[];
+      // Normaliza temas creados antes de añadir bgTint/textTint/intensity.
+      return parsed.map((ct) => ({
+        ...ct,
+        bgTint: ct.bgTint ?? (ct.base === 'light' ? '#f4f4f5' : '#1c1c1c'),
+        textTint: ct.textTint ?? '#888888',
+        intensity: ct.intensity ?? 50,
+      }));
+    } catch { return []; }
+  })(),
   startupScreen: 'dashboard',
   language: (localStorage.getItem('language') as Language) || 'es',
   fontSize: Number(localStorage.getItem('fontSize')) || 17,
@@ -409,6 +458,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   })(),
   calendarEvents: [],
   activeCalendarEvent: null,
+  absenceDays: [],
 
   showToast: ({ kind, title, description, durationMs = 3200 }) => {
     const id = uuidv4();
@@ -433,7 +483,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   init: async () => {
     set({ isLoading: true });
-    applyThemeToDOM(get().theme);
+    applyThemeToDOM(get().theme, false, get().customThemes);
     applyFontSizeToDOM(get().fontSize);
     applyAnimationsToDOM(get().animationsEnabled);
     try {
@@ -473,6 +523,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             get().loadDailyMonths(),
             get().loadOvertimeMonths(),
             get().loadCalendarEvents(),
+            get().loadAbsenceDays(),
           ]);
 
           if (lastProject) set({ activeProject: lastProject });
@@ -1021,6 +1072,106 @@ export const useAppStore = create<AppState>((set, get) => ({
     return note;
   },
 
+  importNotesFromPaths: async (paths) => {
+    const { basePath, activeNoteFolder, language } = get();
+    if (!basePath) return;
+    const folder = activeNoteFolder ?? '';
+    const imported: Note[] = [];
+    for (const filePath of paths) {
+      try {
+        const raw = await fs.readFile(filePath);
+        const id = uuidv4();
+        const today = formatDate(new Date());
+        const parsed = parseNote(raw, filePath);
+        let title: string;
+        let content: string;
+        let tags: string[] = [];
+        if (parsed) {
+          title = parsed.title;
+          content = parsed.content;
+          tags = parsed.tags;
+        } else {
+          const headingMatch = raw.match(/^#\s+(.+)$/m);
+          const filename = filePath.split('/').pop()?.split('\\').pop()?.replace(/\.(md|txt)$/i, '') ?? 'Imported';
+          title = headingMatch ? headingMatch[1].trim() : filename;
+          content = raw.trim();
+        }
+        const note: Note = {
+          id,
+          title,
+          folder,
+          tags,
+          created: today,
+          updated: today,
+          pinned: false,
+          content,
+          filePath: noteFilePath(basePath, folder, id),
+        };
+        if (folder) await fs.createDir(noteFolderDir(basePath, folder)).catch(() => {});
+        await fs.writeFile(note.filePath, serializeNote(note));
+        imported.push(note);
+      } catch { /* skip unreadable files */ }
+    }
+    if (imported.length > 0) {
+      set((state) => ({ notes: [...imported, ...state.notes], activeNote: imported[0] }));
+      if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+      get().showToast({
+        kind: 'success',
+        title: t(language, 'toast', 'noteImported'),
+        description: imported.length === 1 ? imported[0].title || t(language, 'notes', 'untitled') : `${imported.length} ${t(language, 'notes', 'title').toLowerCase()}`,
+      });
+    }
+  },
+
+  importNotesFromContent: async (files) => {
+    const { basePath, activeNoteFolder, language } = get();
+    if (!basePath) return;
+    const folder = activeNoteFolder ?? '';
+    const imported: Note[] = [];
+    for (const { name, content: rawContent } of files) {
+      try {
+        const id = uuidv4();
+        const today = formatDate(new Date());
+        const parsed = parseNote(rawContent, '');
+        let title: string;
+        let content: string;
+        let tags: string[] = [];
+        if (parsed) {
+          title = parsed.title;
+          content = parsed.content;
+          tags = parsed.tags;
+        } else {
+          const headingMatch = rawContent.match(/^#\s+(.+)$/m);
+          title = headingMatch ? headingMatch[1].trim() : name.replace(/\.(md|txt)$/i, '');
+          content = rawContent.trim();
+        }
+        const note: Note = {
+          id,
+          title,
+          folder,
+          tags,
+          created: today,
+          updated: today,
+          pinned: false,
+          content,
+          filePath: noteFilePath(basePath, folder, id),
+        };
+        if (folder) await fs.createDir(noteFolderDir(basePath, folder)).catch(() => {});
+        await fs.writeFile(note.filePath, serializeNote(note));
+        imported.push(note);
+      } catch { /* skip unreadable entries */ }
+    }
+    if (imported.length > 0) {
+      set((state) => ({ notes: [...imported, ...state.notes], activeNote: imported[0] }));
+      if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+      get().showToast({
+        kind: 'success',
+        title: t(language, 'toast', 'noteImported'),
+        description: imported.length === 1 ? imported[0].title || t(language, 'notes', 'untitled') : `${imported.length} ${t(language, 'notes', 'title').toLowerCase()}`,
+      });
+    }
+  },
+
   updateNote: async (note) => {
     const updated = { ...note, updated: formatDate(new Date()) };
     await fs.writeFile(updated.filePath, serializeNote(updated));
@@ -1288,9 +1439,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   copyDailyFormat: async (date) => {
-    const { basePath } = get();
+    const { basePath, absenceDays } = get();
     const todayDate = dateFromISO(date);
-    const prevDate = getPreviousWorkingDay(todayDate);
+    const absenceDates = new Set(absenceDays.map((a) => a.date));
+    const prevDate = getPreviousWorkingDay(todayDate, absenceDates);
     const prevISO = toISO(prevDate);
 
     // Asegurarse de tener cargado el mes del día anterior (puede ser distinto)
@@ -1464,7 +1616,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const calc = calcOvertimeBreakdown(input.fecha, input.horaInicio, input.horaFinal);
     const id = input.id ?? uuidv4();
     const entry: OvertimeEntry = { ...input, id, ...calc };
-    const ym = get().overtimeMonth;
+    // Usar el mes de la fecha de la entrada, no el mes visible en la lista
+    const ym = input.fecha.slice(0, 7);
     const [year, month] = ym.split('-');
     await fs.createDir(overtimeMonthDir(base, year, month));
     const path = overtimeMonthFilePath(base, year, month);
@@ -1479,13 +1632,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     const entries = [...existing.filter(e => e.id !== entry.id), entry]
       .sort((a, b) => a.fecha.localeCompare(b.fecha));
-    set({ overtimeEntries: entries });
-    await fs.writeFile(path, `---\n${JSON.stringify({ entries }, null, 2)}\n---\n`);
     // Actualizar lista de meses si es nuevo
     const { overtimeMonths } = get();
     if (!overtimeMonths.includes(ym)) {
       set({ overtimeMonths: [ym, ...overtimeMonths].sort().reverse() });
     }
+    await fs.writeFile(path, `---\n${JSON.stringify({ entries }, null, 2)}\n---\n`);
+    // Navegar al mes de la entrada para que aparezca en la lista
+    await get().loadOvertimeMonth(ym);
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
 
@@ -1573,10 +1727,72 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  setTheme: (theme: Theme) => {
+  setTheme: (theme) => {
     localStorage.setItem('theme', theme);
-    applyThemeToDOM(theme, true);
+    applyThemeToDOM(theme, true, get().customThemes);
     set({ theme });
+  },
+
+  createCustomTheme: ({ name, base, accent, bgTint, textTint, intensity }) => {
+    const newTheme: CustomTheme = {
+      id: uuidv4(),
+      name: name.trim() || t(get().language, 'settings', 'customThemeDefaultName'),
+      base,
+      accent,
+      bgTint,
+      textTint,
+      intensity,
+      createdAt: new Date().toISOString(),
+    };
+    const customThemes = [...get().customThemes, newTheme];
+    localStorage.setItem('customThemes', JSON.stringify(customThemes));
+    set({ customThemes });
+    get().setTheme(`custom:${newTheme.id}`);
+    return newTheme;
+  },
+
+  renameCustomTheme: (id, name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const customThemes = get().customThemes.map((th) => th.id === id ? { ...th, name: trimmed } : th);
+    localStorage.setItem('customThemes', JSON.stringify(customThemes));
+    set({ customThemes });
+  },
+
+  duplicateCustomTheme: (id) => {
+    const source = get().customThemes.find((th) => th.id === id);
+    if (!source) return;
+    const newTheme: CustomTheme = {
+      ...source,
+      id: uuidv4(),
+      name: `${source.name} ${t(get().language, 'settings', 'customThemeCopySuffix')}`,
+      createdAt: new Date().toISOString(),
+    };
+    const customThemes = [...get().customThemes, newTheme];
+    localStorage.setItem('customThemes', JSON.stringify(customThemes));
+    set({ customThemes });
+  },
+
+  deleteCustomTheme: (id) => {
+    const wasActive = get().theme === `custom:${id}`;
+    const customThemes = get().customThemes.filter((th) => th.id !== id);
+    localStorage.setItem('customThemes', JSON.stringify(customThemes));
+    set({ customThemes });
+    if (wasActive) get().setTheme('dark');
+  },
+
+  updateCustomTheme: (id, patch) => {
+    const customThemes = get().customThemes.map((th) => th.id === id ? { ...th, ...patch } : th);
+    localStorage.setItem('customThemes', JSON.stringify(customThemes));
+    set({ customThemes });
+    if (get().theme === `custom:${id}`) {
+      applyThemeToDOM(get().theme, false, customThemes);
+    }
+  },
+
+  replaceCustomThemes: (customThemes) => {
+    localStorage.setItem('customThemes', JSON.stringify(customThemes));
+    set({ customThemes });
   },
 
   setConfirmDestructiveActions: async (enabled) => {
@@ -1937,5 +2153,44 @@ export const useAppStore = create<AppState>((set, get) => ({
     const next = get().calendarEvents.filter((e) => e.id !== id);
     await fs.writeFile(path, JSON.stringify(next, null, 2));
     set({ calendarEvents: next });
+  },
+
+  // ── Absences ───────────────────────────────────────────────────
+
+  loadAbsenceDays: async () => {
+    const base = get().basePath;
+    if (!base) return;
+    const path = `${base}/absences.json`;
+    try {
+      if (await fs.exists(path)) {
+        const raw = await fs.readFile(path);
+        const absences: AbsenceDay[] = JSON.parse(raw);
+        set({ absenceDays: absences });
+      }
+    } catch {
+      set({ absenceDays: [] });
+    }
+  },
+
+  saveAbsenceDay: async (absence) => {
+    const base = get().basePath;
+    if (!base) return;
+    const path = `${base}/absences.json`;
+    const current = get().absenceDays;
+    const idx = current.findIndex((a) => a.id === absence.id);
+    const next = idx >= 0
+      ? current.map((a) => (a.id === absence.id ? absence : a))
+      : [...current, absence];
+    await fs.writeFile(path, JSON.stringify(next, null, 2));
+    set({ absenceDays: next });
+  },
+
+  deleteAbsenceDay: async (id) => {
+    const base = get().basePath;
+    if (!base) return;
+    const path = `${base}/absences.json`;
+    const next = get().absenceDays.filter((a) => a.id !== id);
+    await fs.writeFile(path, JSON.stringify(next, null, 2));
+    set({ absenceDays: next });
   },
 }));

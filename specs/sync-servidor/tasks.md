@@ -126,8 +126,8 @@ del lado servidor, este spec ya no está bloqueado por eso.
 
 ### Validación
 
-- [ ] `tsc` en verde (`npm install` en esta rama, no `pnpm` — ver
-      "Punto de retomada").
+- [ ] `tsc` en verde (`pnpm install` en esta rama desde el merge de
+      feature/1.1.0 — ver "Punto de retomada").
 - [ ] Prueba manual: dos instancias de la app (o una app + `curl`
       directo al servidor) editando la misma tarea en campos distintos
       sin verse, offline y reconectando, confirmando que ninguna
@@ -139,39 +139,39 @@ del lado servidor, este spec ya no está bloqueado por eso.
       reabrir, reconectar — confirmar que la cola persistida se drena
       igual.
 
-## Punto de retomada (2026-08-23)
+## Punto de retomada (2026-08-23, actualizado tras mergear feature/1.1.0)
 
-"Config y auth" está implementado y compila (`tsc`/`cargo check`)
-pero **sin confirmar visualmente en la app real todavía** — se
-retomó la sesión, se resolvieron varios problemas de entorno, pero la
-confirmación de login contra un server real quedó pendiente (se
-desvió a agregar mostrar/ocultar contraseña en el propio tab Sync).
+"Config y auth" está implementado, compila, y **quedó confirmado
+visualmente en la app real**: Ajustes → tab Sync conecta contra
+`logday-server` local y muestra "Conectado" sin error.
 
-**Importante — el gestor de paquetes de esta rama es `npm`, no
-`pnpm`**: tiene `package-lock.json` commiteado, sin `packageManager`
-en `package.json`. `feature/1.1.0` sí migró a pnpm
-(`pnpm-workspace.yaml`), pero esa migración no llegó a esta rama. Usar
-`pnpm install` acá genera un `pnpm-lock.yaml` fantasma y falla
-distinto (ver el commit "Declara dependencias fantasma de Tiptap..."
-— `@tiptap/core`, `@tiptap/pm`, `@tiptap/extension-paragraph` y
-`gemoji` se importaban directo en el código sin estar en
-`package.json`; con npm resolvían igual por hoisting, pero pnpm es
-estricto y los rechaza). Con eso ya corregido, `npm install` +
-`npm run tauri dev` levantan limpio.
+**`feature/1.1.0` (33 commits — temas, ajustes de notas, links
+dinámicos, mejoras en dailys, split de `SettingsModal.tsx`, migración
+a pnpm) ya está mergeado a esta rama** (merge commit "Merge branch
+'feature/1.1.0' into feature/sync-servidor"). El gestor de paquetes de
+esta rama ahora es **`pnpm`** (adoptado del merge; la nota anterior
+sobre usar `npm` quedó obsoleta — `package-lock.json` se eliminó).
+`SettingsModal.tsx` ya no es un archivo único: vive partido en
+`src/components/settings/*Tab.tsx`, y el tab Sync es
+`SyncSettingsTab.tsx` ahí mismo, siguiendo ese mismo patrón (sin el
+prop `active` de `GitSettingsTab` — Sync no tiene timers de fondo
+todavía). Los tipos de sync viven en `src/types/sync.ts`, no en
+`types/index.ts` (que ya no existe, partido por dominio).
 
 1. Levantar `logday-server` (Docker o `go run`) y la app Tauri
-   (`npm run tauri dev` en `task-manager`, rama `feature/sync-servidor`
-   — NO `pnpm tauri dev`).
+   (`pnpm tauri dev` en `task-manager`, rama `feature/sync-servidor`).
 2. Ajustes → tab Sync → conectar contra el server local
    (`admin@example.com` / `test-password-123` si se bootstrapeó con
-   esas env vars) y confirmar que "Conectado" aparece sin error.
-3. Si funciona: seguir con "Mapeo de entidades" en este mismo
-   `tasks.md`.
-4. Si falla: el flujo completo de request es `SettingsModal.tsx` (tab
-   sync) → `appStore.syncConnect` → `src/lib/sync.ts login()` →
-   `src/lib/invoke.ts syncRequest()` → comando Rust `sync_request` en
-   `src-tauri/src/lib.rs` — revisar en ese orden.
+   esas env vars) — ya confirmado que funciona.
+3. Seguir con "Mapeo de entidades" en este mismo `tasks.md`, ahora
+   considerando los tipos nuevos que trajo 1.1.0 (`types/absence.ts`,
+   etc.) para las entidades que ya tienen contraparte ahí.
+4. Si el login vuelve a fallar: el flujo completo de request es
+   `SyncSettingsTab.tsx` → `appStore.syncConnect` →
+   `src/lib/sync.ts login()` → `src/lib/invoke.ts syncRequest()` →
+   comando Rust `sync_request` en `src-tauri/src/lib.rs` — revisar en
+   ese orden.
 
 Se acordó con el usuario trabajar por fases con checkpoints visuales
-antes de cada fase siguiente — no saltar a "Mapeo de entidades" sin
-este checkpoint confirmado.
+antes de cada fase siguiente — este checkpoint ya está confirmado, así
+que "Mapeo de entidades" puede arrancar.

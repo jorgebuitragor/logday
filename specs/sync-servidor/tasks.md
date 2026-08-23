@@ -126,7 +126,8 @@ del lado servidor, este spec ya no está bloqueado por eso.
 
 ### Validación
 
-- [ ] `pnpm lint` / `tsc` en verde.
+- [ ] `tsc` en verde (`npm install` en esta rama, no `pnpm` — ver
+      "Punto de retomada").
 - [ ] Prueba manual: dos instancias de la app (o una app + `curl`
       directo al servidor) editando la misma tarea en campos distintos
       sin verse, offline y reconectando, confirmando que ninguna
@@ -138,27 +139,38 @@ del lado servidor, este spec ya no está bloqueado por eso.
       reabrir, reconectar — confirmar que la cola persistida se drena
       igual.
 
-## Punto de retomada (2026-08-22)
+## Punto de retomada (2026-08-23)
 
 "Config y auth" está implementado y compila (`tsc`/`cargo check`)
-pero **sin confirmar visualmente en la app real** — la última captura
-mostró el tab Sync bien renderizado, pero el primer intento de login
-falló por el bug de URL sin esquema (ya corregido, sin volver a
-probar). Antes de seguir con "Mapeo de entidades":
+pero **sin confirmar visualmente en la app real todavía** — se
+retomó la sesión, se resolvieron varios problemas de entorno, pero la
+confirmación de login contra un server real quedó pendiente (se
+desvió a agregar mostrar/ocultar contraseña en el propio tab Sync).
+
+**Importante — el gestor de paquetes de esta rama es `npm`, no
+`pnpm`**: tiene `package-lock.json` commiteado, sin `packageManager`
+en `package.json`. `feature/1.1.0` sí migró a pnpm
+(`pnpm-workspace.yaml`), pero esa migración no llegó a esta rama. Usar
+`pnpm install` acá genera un `pnpm-lock.yaml` fantasma y falla
+distinto (ver el commit "Declara dependencias fantasma de Tiptap..."
+— `@tiptap/core`, `@tiptap/pm`, `@tiptap/extension-paragraph` y
+`gemoji` se importaban directo en el código sin estar en
+`package.json`; con npm resolvían igual por hoisting, pero pnpm es
+estricto y los rechaza). Con eso ya corregido, `npm install` +
+`npm run tauri dev` levantan limpio.
 
 1. Levantar `logday-server` (Docker o `go run`) y la app Tauri
-   (`pnpm tauri dev` en `task-manager`, rama `feature/sync-servidor`).
+   (`npm run tauri dev` en `task-manager`, rama `feature/sync-servidor`
+   — NO `pnpm tauri dev`).
 2. Ajustes → tab Sync → conectar contra el server local
    (`admin@example.com` / `test-password-123` si se bootstrapeó con
    esas env vars) y confirmar que "Conectado" aparece sin error.
-3. Si funciona: commitear el fix de `normalizeServerUrl` (todavía no
-   commiteado a la fecha de esta nota) y seguir con "Mapeo de
-   entidades" en este mismo `tasks.md`.
-4. Si falla distinto: el flujo completo de request es
-   `SettingsModal.tsx` (tab sync) → `appStore.syncConnect` →
-   `src/lib/sync.ts login()` → `src/lib/invoke.ts syncRequest()` →
-   comando Rust `sync_request` en `src-tauri/src/lib.rs` — revisar en
-   ese orden.
+3. Si funciona: seguir con "Mapeo de entidades" en este mismo
+   `tasks.md`.
+4. Si falla: el flujo completo de request es `SettingsModal.tsx` (tab
+   sync) → `appStore.syncConnect` → `src/lib/sync.ts login()` →
+   `src/lib/invoke.ts syncRequest()` → comando Rust `sync_request` en
+   `src-tauri/src/lib.rs` — revisar en ese orden.
 
 Se acordó con el usuario trabajar por fases con checkpoints visuales
 antes de cada fase siguiente — no saltar a "Mapeo de entidades" sin

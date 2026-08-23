@@ -94,14 +94,37 @@ del lado servidor, este spec ya no está bloqueado por eso.
 
 ### Escritura y cola offline
 
-- [ ] `src/lib/syncQueue.ts`: cola persistida en `configDir`, encolar
-      al editar sin conexión, drenar en orden al reconectar.
-- [ ] Detección de campos cambiados por acción de usuario (qué dispara
-      un `PATCH`: cada save-point del store, no cada keystroke).
-- [ ] Integrar `POST`/`PATCH`/`DELETE` en las acciones existentes del
-      store (`appStore.ts`) para cada entidad, aplicando "sobreescribir
-      con la respuesta" tras cada llamada exitosa.
-- [ ] Regla de prioridad cola vs. respuesta tardía (ver Decisiones).
+Implementado y validado contra un server real **solo para Task**
+(create vía cola offline, patch en vivo, delete — los tres probados a
+mano por el usuario y confirmados por `curl` del lado del servidor).
+Note/OvertimeEntry/OvertimeMonthMeta/CalendarEvent/AbsenceDay quedan
+pendientes, replicando el mismo patrón ya probado.
+
+- [x] `src/lib/syncQueue.ts`: cola persistida en **`localStorage`**
+      (no `configDir` — corrección ya hecha en design.md, este bullet
+      tenía el texto viejo), encolar al editar sin conexión, drenar en
+      orden al reconectar. `QueuedWrite` incluye `op:
+      'create'|'patch'|'delete'` — PATCH no crea-si-no-existe salvo
+      `overtime_month_meta`, así que una entidad creada offline tiene
+      que drenar como `create` (POST), no `patch`, o el servidor la
+      rechaza con 404.
+- [x] Detección de campos cambiados por acción de usuario — Task:
+      `diffTaskFields` en `appStore.ts` compara `prev` vs. el objeto
+      completo que llega a `updateTask` (que ya es el save-point real,
+      se llama al blur del editor, no por keystroke) y arma el
+      `Partial<Task>` de lo que de verdad cambió.
+- [x] Integrar `POST`/`PATCH`/`DELETE` en las acciones existentes del
+      store — hecho para `createTask`/`updateTask`/`deleteTask`
+      (`syncCreateTask`/`syncPatchTask`/`syncDeleteTask` en
+      `appStore.ts`): conectado y sin cola → envío directo, con
+      "sobreescribir con la respuesta" vía `applyTaskResponse`; sin
+      conexión o si el envío falla → `syncQueue.enqueue`. Faltan las
+      otras 5 entidades sobre este mismo patrón.
+- [x] Regla de prioridad cola vs. respuesta tardía — `applyTaskResponse`
+      solo sobreescribe cada campo local si no hay una entrada en cola
+      más nueva para ese mismo campo (`syncQueue.hasNewerQueuedField`),
+      tanto al aplicar una respuesta en vivo como al drenar
+      (`sendQueuedWrite` usa la misma función).
 
 ### Cursor y reconciliación
 

@@ -17,7 +17,9 @@ import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
 import { parseDailyFile, serializeDailyFile } from '../lib/dailyFileFormat';
 import { generateOvertimeXlsx } from '../lib/overtimeExcel';
 import { fs, pickFolder, pickFile, saveDialog, SearchResult } from '../lib/invoke';
-import { login as syncLogin, SyncApiError, normalizeServerUrl } from '../lib/sync';
+import { login as syncLogin, SyncApiError, normalizeServerUrl, createTaskRemote, patchTaskRemote, deleteTaskRemote } from '../lib/sync';
+import { taskToCreatePayload, taskFieldsToPatchPayload, taskFromApiResponse, TaskApiResponse, TaskCreatePayload, TaskPatchPayload } from '../lib/syncMapping';
+import * as syncQueue from '../lib/syncQueue';
 import { parseFrontmatter, serializeTask, parseNote, serializeNote, formatDate } from '../lib/markdown';
 import { t } from '../lib/i18n';
 import {
@@ -365,6 +367,136 @@ export function applyThemeToDOM(theme: Theme, animate = false, customThemes: Cus
   } catch {
     // Puede ejecutarse fuera del contexto Tauri (tests o navegador)
   }
+}
+
+// ── Sync (logday-server): escritura con cola offline ───────────────
+// Al crear/editar/borrar una task localmente, si sync está
+// configurado se intenta mandar la escritura al servidor. Sin
+// conexión (o si el envío falla) queda en cola (syncQueue.ts) para
+// reintentar al reconectar — el archivo en disco ya es la fuente de
+// verdad para la UI, esto es solo el side-channel hacia el servidor
+// (ver specs/sync-servidor/design.md). Por ahora solo Task tiene esta
+// integración — Note/Overtime/Calendar/Absence quedan para una
+// siguiente pasada sobre el mismo patrón.
+
+type SyncGet = () => AppState;
+type SyncSet = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void;
+
+const TASK_FIELD_MAP: Record<string, string> = {
+  title: 'title', taskCode: 'task_code', status: 'status', tags: 'tags', project: 'project',
+  created: 'created', completedAt: 'completed_at', due: 'due', content: 'content',
+};
+
+/** Aplica la respuesta del servidor a la task local, campo por campo,
+ *  salteando cualquier campo que ya tenga una entrada más nueva en
+ *  cola ("Regla de prioridad cola vs. respuesta tardía" en
+ *  design.md) — esa entrada, cuando se drene, va a traer el valor
+ *  final real; pisarlo ahora con una respuesta vieja perdería la
+ *  edición todavía no enviada. */
+function applyTaskResponse(get: SyncGet, set: SyncSet, entityId: string, sinceIso: string, response: TaskApiResponse): void {
+  const current = get().tasks.find((t) => t.id === entityId);
+  if (!current) return; // se borró localmente mientras tanto, nada que actualizar
+  const mapped = taskFromApiResponse(response);
+  const merged = { ...current } as unknown as Record<string, unknown>;
+  const mappedRecord = mapped as unknown as Record<string, unknown>;
+  for (const [localKey, serverKey] of Object.entries(TASK_FIELD_MAP)) {
+    if (!syncQueue.hasNewerQueuedField('task', entityId, serverKey, sinceIso)) {
+      merged[localKey] = mappedRecord[localKey];
+    }
+  }
+  const updated = merged as unknown as Task;
+  set((state) => ({
+    tasks: state.tasks.map((t) => (t.id === entityId ? updated : t)),
+    activeTask: state.activeTask?.id === entityId ? updated : state.activeTask,
+  }));
+}
+
+async function syncCreateTask(get: SyncGet, set: SyncSet, task: Task): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  const payload = taskToCreatePayload(task);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('task', task.id, 'create', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await createTaskRemote(syncConfig.serverUrl, syncConfig.accessToken, payload);
+    applyTaskResponse(get, set, task.id, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('task', task.id, 'create', payload as unknown as Record<string, unknown>);
+  }
+}
+
+async function syncPatchTask(get: SyncGet, set: SyncSet, taskId: string, fields: Partial<Task>): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled || Object.keys(fields).length === 0) return;
+  const payload = taskFieldsToPatchPayload(fields);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('task', taskId, 'patch', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await patchTaskRemote(syncConfig.serverUrl, syncConfig.accessToken, taskId, payload);
+    applyTaskResponse(get, set, taskId, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('task', taskId, 'patch', payload as unknown as Record<string, unknown>);
+  }
+}
+
+async function syncDeleteTask(get: SyncGet, taskId: string): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('task', taskId, 'delete');
+    return;
+  }
+  try {
+    await deleteTaskRemote(syncConfig.serverUrl, syncConfig.accessToken, taskId);
+  } catch {
+    syncQueue.enqueue('task', taskId, 'delete');
+  }
+}
+
+/** Solo los campos que de verdad cambiaron entre prev y next — un
+ *  PATCH mandando todo pisaría, en el servidor, cualquier edición
+ *  concurrente a un campo que acá ni se tocó (ver LWW por campo en
+ *  logday-server). */
+function diffTaskFields(prev: Task | undefined, next: Task): Partial<Task> {
+  if (!prev) return { ...next };
+  const fields: Partial<Task> = {};
+  if (prev.title !== next.title) fields.title = next.title;
+  if (prev.taskCode !== next.taskCode) fields.taskCode = next.taskCode;
+  if (prev.status !== next.status) fields.status = next.status;
+  if (JSON.stringify(prev.tags) !== JSON.stringify(next.tags)) fields.tags = next.tags;
+  if (prev.project !== next.project) fields.project = next.project;
+  if (prev.created !== next.created) fields.created = next.created;
+  if (prev.completedAt !== next.completedAt) fields.completedAt = next.completedAt;
+  if (prev.due !== next.due) fields.due = next.due;
+  if (prev.content !== next.content) fields.content = next.content;
+  return fields;
+}
+
+async function sendQueuedWrite(get: SyncGet, set: SyncSet, write: syncQueue.QueuedWrite): Promise<void> {
+  if (write.entity !== 'task') return; // otras entidades: siguiente pasada sobre este mismo patrón
+  const { serverUrl, accessToken } = get().syncConfig;
+  if (write.op === 'create') {
+    const response = await createTaskRemote(serverUrl, accessToken, write.fields as unknown as TaskCreatePayload);
+    applyTaskResponse(get, set, write.entityId, write.queuedAt, response);
+  } else if (write.op === 'patch') {
+    const response = await patchTaskRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as TaskPatchPayload);
+    applyTaskResponse(get, set, write.entityId, write.queuedAt, response);
+  } else {
+    await deleteTaskRemote(serverUrl, accessToken, write.entityId);
+  }
+}
+
+/** Drena la cola en orden — se llama al reconectar (ver
+ *  syncConnect). Sin timers ni reintento automático todavía: eso es
+ *  parte de la fase "Tiempo real" (reconexión WS con backoff). */
+async function drainSyncQueue(get: SyncGet, set: SyncSet): Promise<void> {
+  await syncQueue.drainQueue((write) => sendQueuedWrite(get, set, write));
 }
 
 // ── Store ──────────────────────────────────────────────────────
@@ -796,6 +928,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await fs.writeFile(task.filePath, serializeTask(task));
     set((state) => ({ tasks: [task, ...state.tasks], activeTask: task }));
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    void syncCreateTask(get, set, task);
     return task;
   },
 
@@ -836,6 +969,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeTask: state.activeTask?.id === normalizedTask.id ? normalizedTask : state.activeTask,
     }));
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    const changedFields = diffTaskFields(prev, normalizedTask);
+    if (Object.keys(changedFields).length > 0) void syncPatchTask(get, set, normalizedTask.id, changedFields);
   },
 
   deleteTask: async (task) => {
@@ -851,6 +986,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       description: task.title,
     });
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    void syncDeleteTask(get, task.id);
   },
 
   setActiveTask: (task) => set({ activeTask: task, activeCalendarEvent: null }),
@@ -2098,6 +2234,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
       localStorage.setItem('syncConfig', JSON.stringify(cfg));
       set({ syncConfig: cfg, syncConnectionStatus: 'connected' });
+      void drainSyncQueue(get, set);
     } catch (e) {
       const msg = e instanceof SyncApiError ? e.message : String(e);
       set({ syncConnectionStatus: 'error', syncErrorMsg: msg });

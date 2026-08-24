@@ -94,11 +94,14 @@ del lado servidor, este spec ya no está bloqueado por eso.
 
 ### Escritura y cola offline
 
-Implementado y validado contra un server real **solo para Task**
-(create vía cola offline, patch en vivo, delete — los tres probados a
-mano por el usuario y confirmados por `curl` del lado del servidor).
-Note/OvertimeEntry/OvertimeMonthMeta/CalendarEvent/AbsenceDay quedan
-pendientes, replicando el mismo patrón ya probado.
+Implementado y validado contra un server real para Task (create vía
+cola offline, patch en vivo, delete — los tres probados a mano por el
+usuario y confirmados por `curl` del lado del servidor). Replicado
+(mismo patrón, `tsc`/lint en verde, pendiente de validación manual en
+la app) a Note, CalendarEvent, AbsenceDay y OvertimeEntry.
+OvertimeMonthMeta queda pendiente — desajuste de modelo local (un
+único objeto global `{colaborador, cedula}`) vs. servidor (uno por
+`year_month`), ver `specs/sync-primer-sincronizacion`.
 
 - [x] `src/lib/syncQueue.ts`: cola persistida en **`localStorage`**
       (no `configDir` — corrección ya hecha en design.md, este bullet
@@ -114,26 +117,42 @@ pendientes, replicando el mismo patrón ya probado.
       se llama al blur del editor, no por keystroke) y arma el
       `Partial<Task>` de lo que de verdad cambió.
 - [x] Integrar `POST`/`PATCH`/`DELETE` en las acciones existentes del
-      store — hecho para `createTask`/`updateTask`/`deleteTask`
-      (`syncCreateTask`/`syncPatchTask`/`syncDeleteTask` en
-      `appStore.ts`): conectado y sin cola → envío directo, con
-      "sobreescribir con la respuesta" vía `applyTaskResponse`; sin
-      conexión o si el envío falla → `syncQueue.enqueue`. Faltan las
-      otras 5 entidades sobre este mismo patrón.
-- [x] Regla de prioridad cola vs. respuesta tardía — `applyTaskResponse`
-      solo sobreescribe cada campo local si no hay una entrada en cola
-      más nueva para ese mismo campo (`syncQueue.hasNewerQueuedField`),
-      tanto al aplicar una respuesta en vivo como al drenar
-      (`sendQueuedWrite` usa la misma función).
+      store — hecho para las 5 entidades con mapeo local completo
+      (`createTask`/`updateTask`/`deleteTask`,
+      `createNote`/`updateNote`/`deleteNote`,
+      `saveCalendarEvent`/`deleteCalendarEvent`,
+      `saveAbsenceDay`/`deleteAbsenceDay`,
+      `saveOvertimeEntry`/`deleteOvertimeEntry`): conectado y sin cola
+      → envío directo, con "sobreescribir con la respuesta" vía
+      `applyXResponse`; sin conexión o si el envío falla →
+      `syncQueue.enqueue`. Falta solo OvertimeMonthMeta (ver nota de
+      arriba).
+- [x] Regla de prioridad cola vs. respuesta tardía — `applyXResponse`
+      (una por entidad) solo sobreescribe cada campo local si no hay
+      una entrada en cola más nueva para ese mismo campo
+      (`syncQueue.hasNewerQueuedField`), tanto al aplicar una
+      respuesta en vivo como al drenar (`sendQueuedWrite` despacha a
+      la función de la entidad correspondiente).
+- [x] Bug encontrado y corregido al replicar a Note: `createNote()`
+      local permite título vacío (se completa después), pero el
+      servidor rechaza `title` vacío con 400 — un `catch` genérico
+      trataba ese rechazo permanente como transitorio y lo dejaba
+      encolado para siempre. Fix en dos partes: `syncCreateNote` manda
+      `'Sin título'` en el payload cuando el título local está vacío
+      (mismo placeholder que ya usa logday-web, no toca el archivo
+      local), y `syncQueue.drainQueue` distingue fallo permanente
+      (4xx, se descarta) de transitorio (excepción, corta el drenado).
 
 ### Cursor y reconciliación
 
-Implementado y validado contra un server real **solo para Task** (el
-único tipo con el mapeo + escritura local completos hasta ahora, ver
-"Escritura y cola offline") — el resto de los tipos que puedan venir
-en el feed de `/sync/changes` se ignoran por ahora
-(`applyRemoteChanges` en `appStore.ts`, con un comentario marcando el
-punto exacto donde agregar cada uno cuando llegue su turno).
+Implementado y validado contra un server real para Task (curl
+simulando un cambio remoto, reconectar, verlo aparecer solo — ver
+nota de validación más abajo). Replicado (mismo patrón, `tsc`/lint en
+verde, pendiente de validación manual) a Note, CalendarEvent,
+AbsenceDay y OvertimeEntry. OvertimeMonthMeta y DailyEntry se ignoran
+a propósito en `applyRemoteChanges` (comentario en el código marca el
+motivo de cada uno — desajuste de modelo el primero, sin tipo local el
+segundo).
 
 - [x] Persistir `seq` local — `localStorage`, clave `syncCursor`
       (`getSyncCursor`/`setSyncCursor` en `appStore.ts`), mismo
@@ -144,9 +163,18 @@ punto exacto donde agregar cada uno cuando llegue su turno).
       `startReconcileInterval`/`stopReconcileInterval` — stand-in
       hasta que exista WebSocket en la fase "Tiempo real"). Aplica
       cada entidad recibida sobreescribiendo el estado local
-      (`applyRemoteTaskChange`): task nueva (nunca vista acá) se crea
-      localmente calculando su `filePath`; existente se actualiza;
-      borrada del lado del servidor borra el archivo local.
+      (`applyRemoteTaskChange`/`applyRemoteNoteChange`/
+      `applyRemoteCalendarEventChange`/`applyRemoteAbsenceDayChange`/
+      `applyRemoteOvertimeEntryChange`, despachadas por
+      `applyRemoteChanges` según `change.type`): entidad nueva (nunca
+      vista acá) se crea localmente; existente se actualiza; borrada
+      del lado del servidor borra el archivo/entrada local.
+      OvertimeEntry vive en archivos por mes — el array en memoria
+      solo se actualiza si el mes remoto es el que el usuario tiene
+      abierto, para no pisarle la vista actual con datos de otro mes.
+      Note: `content` nunca se toca acá (CRDT, fase pendiente) — se
+      preserva el contenido local, vacío para una nota nueva creada
+      desde un cambio remoto.
 - [x] Manejo de "cursor inválido": un `410` de `/sync/changes`
       descarta el cursor guardado y reintenta con `since=0` (full
       resync). Las escrituras locales no confirmadas quedan
@@ -197,39 +225,37 @@ hiciera nada más — confirma el sentido que faltaba (antes solo Desktop
       reabrir, reconectar — confirmar que la cola persistida se drena
       igual.
 
-## Punto de retomada (2026-08-23, actualizado tras mergear feature/1.1.0)
+## Punto de retomada (2026-08-23)
 
-"Config y auth" está implementado, compila, y **quedó confirmado
-visualmente en la app real**: Ajustes → tab Sync conecta contra
-`logday-server` local y muestra "Conectado" sin error.
-
-**`feature/1.1.0` (33 commits — temas, ajustes de notas, links
-dinámicos, mejoras en dailys, split de `SettingsModal.tsx`, migración
-a pnpm) ya está mergeado a esta rama** (merge commit "Merge branch
-'feature/1.1.0' into feature/sync-servidor"). El gestor de paquetes de
-esta rama ahora es **`pnpm`** (adoptado del merge; la nota anterior
-sobre usar `npm` quedó obsoleta — `package-lock.json` se eliminó).
-`SettingsModal.tsx` ya no es un archivo único: vive partido en
-`src/components/settings/*Tab.tsx`, y el tab Sync es
-`SyncSettingsTab.tsx` ahí mismo, siguiendo ese mismo patrón (sin el
-prop `active` de `GitSettingsTab` — Sync no tiene timers de fondo
-todavía). Los tipos de sync viven en `src/types/sync.ts`, no en
-`types/index.ts` (que ya no existe, partido por dominio).
+"Config y auth", "Mapeo de entidades", "Escritura y cola offline" y
+"Cursor y reconciliación" están implementados para las 5 entidades con
+mapeo local completo (Task, Note, CalendarEvent, AbsenceDay,
+OvertimeEntry). Task está **validado a mano contra un server real**
+(create/patch/delete en ambos sentidos, incluyendo un cambio remoto
+simulado por `curl` apareciendo solo al reconectar). Las otras 4 están
+replicadas con el mismo patrón, `tsc`/lint en verde, pero **todavía
+sin ese mismo checkpoint visual** — el próximo paso es exactamente eso:
+levantar la app, conectar el tab Sync, y probar crear/editar/borrar
+una nota, un evento de calendario, un día de ausencia y una entrada de
+horas extra, confirmando que aparecen/se actualizan en el servidor
+(y, simulando un cambio remoto por `curl`, que vuelven a aparecer acá).
 
 1. Levantar `logday-server` (Docker o `go run`) y la app Tauri
    (`pnpm tauri dev` en `task-manager`, rama `feature/sync-servidor`).
 2. Ajustes → tab Sync → conectar contra el server local
    (`admin@example.com` / `test-password-123` si se bootstrapeó con
-   esas env vars) — ya confirmado que funciona.
-3. Seguir con "Mapeo de entidades" en este mismo `tasks.md`, ahora
-   considerando los tipos nuevos que trajo 1.1.0 (`types/absence.ts`,
-   etc.) para las entidades que ya tienen contraparte ahí.
-4. Si el login vuelve a fallar: el flujo completo de request es
-   `SyncSettingsTab.tsx` → `appStore.syncConnect` →
-   `src/lib/sync.ts login()` → `src/lib/invoke.ts syncRequest()` →
-   comando Rust `sync_request` en `src-tauri/src/lib.rs` — revisar en
-   ese orden.
+   esas env vars).
+3. Probar las 4 entidades nuevas (ver checklist arriba). Si algo
+   falla, mismo patrón de debugging que ya sirvió para el bug de Note
+   con título vacío: revisar si el problema es de conexión (el estado
+   `syncConnectionStatus` no persiste entre reinicios de la app, solo
+   `syncConfig.enabled` — reconectar antes de sospechar del código) o
+   un rechazo del servidor por un campo requerido que el modelo local
+   permite dejar vacío/inválido.
+4. Pendiente después de este checkpoint: "Tiempo real" (WS en vez del
+   poll de 30s), "CRDT" (contenido de notas y dailys), y
+   OvertimeMonthMeta (bloqueado por el desajuste de modelo, ver
+   `specs/sync-primer-sincronizacion`).
 
 Se acordó con el usuario trabajar por fases con checkpoints visuales
-antes de cada fase siguiente — este checkpoint ya está confirmado, así
-que "Mapeo de entidades" puede arrancar.
+antes de cada fase siguiente.

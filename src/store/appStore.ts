@@ -17,8 +17,21 @@ import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
 import { parseDailyFile, serializeDailyFile } from '../lib/dailyFileFormat';
 import { generateOvertimeXlsx } from '../lib/overtimeExcel';
 import { fs, pickFolder, pickFile, saveDialog, SearchResult } from '../lib/invoke';
-import { login as syncLogin, SyncApiError, normalizeServerUrl, createTaskRemote, patchTaskRemote, deleteTaskRemote, syncChangesRemote, SyncChange } from '../lib/sync';
-import { taskToCreatePayload, taskFieldsToPatchPayload, taskFromApiResponse, TaskApiResponse, TaskCreatePayload, TaskPatchPayload } from '../lib/syncMapping';
+import {
+  login as syncLogin, SyncApiError, normalizeServerUrl, syncChangesRemote, SyncChange,
+  createTaskRemote, patchTaskRemote, deleteTaskRemote,
+  createNoteRemote, patchNoteRemote, deleteNoteRemote,
+  createCalendarEventRemote, patchCalendarEventRemote, deleteCalendarEventRemote,
+  createAbsenceDayRemote, patchAbsenceDayRemote, deleteAbsenceDayRemote,
+  createOvertimeEntryRemote, patchOvertimeEntryRemote, deleteOvertimeEntryRemote,
+} from '../lib/sync';
+import {
+  taskToCreatePayload, taskFieldsToPatchPayload, taskFromApiResponse, TaskApiResponse, TaskCreatePayload, TaskPatchPayload,
+  noteToCreatePayload, noteFieldsToPatchPayload, noteFromApiResponse, NoteApiResponse, NoteCreatePayload, NotePatchPayload,
+  calendarEventToCreatePayload, calendarEventFieldsToPatchPayload, calendarEventFromApiResponse, CalendarEventApiResponse, CalendarEventCreatePayload, CalendarEventPatchPayload,
+  absenceDayToCreatePayload, absenceDayFieldsToPatchPayload, absenceDayFromApiResponse, AbsenceDayApiResponse, AbsenceDayCreatePayload, AbsenceDayPatchPayload,
+  overtimeEntryToCreatePayload, overtimeEntryFieldsToPatchPayload, overtimeEntryFromApiResponse, OvertimeEntryApiResponse, OvertimeEntryCreatePayload, OvertimeEntryPatchPayload,
+} from '../lib/syncMapping';
 import * as syncQueue from '../lib/syncQueue';
 import { parseFrontmatter, serializeTask, parseNote, serializeNote, formatDate } from '../lib/markdown';
 import { t } from '../lib/i18n';
@@ -478,9 +491,394 @@ function diffTaskFields(prev: Task | undefined, next: Task): Partial<Task> {
   return fields;
 }
 
-async function sendQueuedWrite(get: SyncGet, set: SyncSet, write: syncQueue.QueuedWrite): Promise<void> {
-  if (write.entity !== 'task') return; // otras entidades: siguiente pasada sobre este mismo patrón
+// ── Note (metadata) ──────────────────────────────────────────────
+// content queda afuera (CRDT, ver specs/sync-servidor "CRDT") — nunca
+// se lee ni se manda desde acá, se preserva el valor local tal cual.
+
+const NOTE_FIELD_MAP: Record<string, string> = {
+  title: 'title', folder: 'folder', tags: 'tags', created: 'created', updated: 'updated', pinned: 'pinned',
+};
+
+function applyNoteResponse(get: SyncGet, set: SyncSet, entityId: string, sinceIso: string, response: NoteApiResponse): void {
+  const current = get().notes.find((n) => n.id === entityId);
+  if (!current) return;
+  const mapped = noteFromApiResponse(response);
+  const merged = { ...current } as unknown as Record<string, unknown>;
+  const mappedRecord = mapped as unknown as Record<string, unknown>;
+  for (const [localKey, serverKey] of Object.entries(NOTE_FIELD_MAP)) {
+    if (!syncQueue.hasNewerQueuedField('note', entityId, serverKey, sinceIso)) {
+      merged[localKey] = mappedRecord[localKey];
+    }
+  }
+  const updated = merged as unknown as Note;
+  set((state) => ({
+    notes: state.notes.map((n) => (n.id === entityId ? updated : n)),
+    activeNote: state.activeNote?.id === entityId ? updated : state.activeNote,
+  }));
+}
+
+async function syncCreateNote(get: SyncGet, set: SyncSet, note: Note): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  // Desktop permite crear una nota sin título (createNote la deja en
+  // '', el usuario lo escribe después) — pero el server exige un
+  // title no vacío (internal/note/handlers.go) y rechaza el create
+  // con 400. Mismo placeholder que logday-web ya usa para esto ("Sin
+  // título"), solo en el payload que se manda — el archivo/estado
+  // local siguen con el título real (vacío o no) tal cual.
+  const payload = noteToCreatePayload(note.title.trim() ? note : { ...note, title: 'Sin título' });
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('note', note.id, 'create', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await createNoteRemote(syncConfig.serverUrl, syncConfig.accessToken, payload);
+    applyNoteResponse(get, set, note.id, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('note', note.id, 'create', payload as unknown as Record<string, unknown>);
+  }
+}
+
+async function syncPatchNote(get: SyncGet, set: SyncSet, noteId: string, fields: Partial<Note>): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled || Object.keys(fields).length === 0) return;
+  const payload = noteFieldsToPatchPayload(fields);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('note', noteId, 'patch', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await patchNoteRemote(syncConfig.serverUrl, syncConfig.accessToken, noteId, payload);
+    applyNoteResponse(get, set, noteId, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('note', noteId, 'patch', payload as unknown as Record<string, unknown>);
+  }
+}
+
+async function syncDeleteNote(get: SyncGet, noteId: string): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('note', noteId, 'delete');
+    return;
+  }
+  try {
+    await deleteNoteRemote(syncConfig.serverUrl, syncConfig.accessToken, noteId);
+  } catch {
+    syncQueue.enqueue('note', noteId, 'delete');
+  }
+}
+
+function diffNoteFields(prev: Note | undefined, next: Note): Partial<Note> {
+  if (!prev) return { ...next };
+  const fields: Partial<Note> = {};
+  if (prev.title !== next.title) fields.title = next.title;
+  if (prev.folder !== next.folder) fields.folder = next.folder;
+  if (JSON.stringify(prev.tags) !== JSON.stringify(next.tags)) fields.tags = next.tags;
+  if (prev.created !== next.created) fields.created = next.created;
+  if (prev.updated !== next.updated) fields.updated = next.updated;
+  if (prev.pinned !== next.pinned) fields.pinned = next.pinned;
+  return fields;
+}
+
+// ── CalendarEvent ────────────────────────────────────────────────
+
+const CALENDAR_EVENT_FIELD_MAP: Record<string, string> = {
+  title: 'title', date: 'date', time: 'time', description: 'description',
+  color: 'color', reminderMinutes: 'reminder_minutes', repeat: 'repeat',
+};
+
+function applyCalendarEventResponse(get: SyncGet, set: SyncSet, entityId: string, sinceIso: string, response: CalendarEventApiResponse): void {
+  const current = get().calendarEvents.find((e) => e.id === entityId);
+  if (!current) return;
+  const mapped = calendarEventFromApiResponse(response);
+  const merged = { ...current } as unknown as Record<string, unknown>;
+  const mappedRecord = mapped as unknown as Record<string, unknown>;
+  for (const [localKey, serverKey] of Object.entries(CALENDAR_EVENT_FIELD_MAP)) {
+    if (!syncQueue.hasNewerQueuedField('calendar_event', entityId, serverKey, sinceIso)) {
+      merged[localKey] = mappedRecord[localKey];
+    }
+  }
+  const updated = merged as unknown as CalendarEvent;
+  set((state) => ({ calendarEvents: state.calendarEvents.map((e) => (e.id === entityId ? updated : e)) }));
+}
+
+async function syncCreateCalendarEvent(get: SyncGet, set: SyncSet, event: CalendarEvent): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  const payload = calendarEventToCreatePayload(event);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('calendar_event', event.id, 'create', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await createCalendarEventRemote(syncConfig.serverUrl, syncConfig.accessToken, payload);
+    applyCalendarEventResponse(get, set, event.id, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('calendar_event', event.id, 'create', payload as unknown as Record<string, unknown>);
+  }
+}
+
+async function syncPatchCalendarEvent(get: SyncGet, set: SyncSet, eventId: string, fields: Partial<CalendarEvent>): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled || Object.keys(fields).length === 0) return;
+  const payload = calendarEventFieldsToPatchPayload(fields);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('calendar_event', eventId, 'patch', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await patchCalendarEventRemote(syncConfig.serverUrl, syncConfig.accessToken, eventId, payload);
+    applyCalendarEventResponse(get, set, eventId, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('calendar_event', eventId, 'patch', payload as unknown as Record<string, unknown>);
+  }
+}
+
+async function syncDeleteCalendarEvent(get: SyncGet, eventId: string): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('calendar_event', eventId, 'delete');
+    return;
+  }
+  try {
+    await deleteCalendarEventRemote(syncConfig.serverUrl, syncConfig.accessToken, eventId);
+  } catch {
+    syncQueue.enqueue('calendar_event', eventId, 'delete');
+  }
+}
+
+function diffCalendarEventFields(prev: CalendarEvent | undefined, next: CalendarEvent): Partial<CalendarEvent> {
+  if (!prev) return { ...next };
+  const fields: Partial<CalendarEvent> = {};
+  if (prev.title !== next.title) fields.title = next.title;
+  if (prev.date !== next.date) fields.date = next.date;
+  if (prev.time !== next.time) fields.time = next.time;
+  if (prev.description !== next.description) fields.description = next.description;
+  if (prev.color !== next.color) fields.color = next.color;
+  if (prev.reminderMinutes !== next.reminderMinutes) fields.reminderMinutes = next.reminderMinutes;
+  if (prev.repeat !== next.repeat) fields.repeat = next.repeat;
+  return fields;
+}
+
+// ── AbsenceDay ───────────────────────────────────────────────────
+
+const ABSENCE_DAY_FIELD_MAP: Record<string, string> = { date: 'date', type: 'type', note: 'note' };
+
+function applyAbsenceDayResponse(get: SyncGet, set: SyncSet, entityId: string, sinceIso: string, response: AbsenceDayApiResponse): void {
+  const current = get().absenceDays.find((a) => a.id === entityId);
+  if (!current) return;
+  const mapped = absenceDayFromApiResponse(response);
+  const merged = { ...current } as unknown as Record<string, unknown>;
+  const mappedRecord = mapped as unknown as Record<string, unknown>;
+  for (const [localKey, serverKey] of Object.entries(ABSENCE_DAY_FIELD_MAP)) {
+    if (!syncQueue.hasNewerQueuedField('absence_day', entityId, serverKey, sinceIso)) {
+      merged[localKey] = mappedRecord[localKey];
+    }
+  }
+  const updated = merged as unknown as AbsenceDay;
+  set((state) => ({ absenceDays: state.absenceDays.map((a) => (a.id === entityId ? updated : a)) }));
+}
+
+async function syncCreateAbsenceDay(get: SyncGet, set: SyncSet, absence: AbsenceDay): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  const payload = absenceDayToCreatePayload(absence);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('absence_day', absence.id, 'create', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await createAbsenceDayRemote(syncConfig.serverUrl, syncConfig.accessToken, payload);
+    applyAbsenceDayResponse(get, set, absence.id, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('absence_day', absence.id, 'create', payload as unknown as Record<string, unknown>);
+  }
+}
+
+async function syncPatchAbsenceDay(get: SyncGet, set: SyncSet, absenceId: string, fields: Partial<AbsenceDay>): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled || Object.keys(fields).length === 0) return;
+  const payload = absenceDayFieldsToPatchPayload(fields);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('absence_day', absenceId, 'patch', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await patchAbsenceDayRemote(syncConfig.serverUrl, syncConfig.accessToken, absenceId, payload);
+    applyAbsenceDayResponse(get, set, absenceId, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('absence_day', absenceId, 'patch', payload as unknown as Record<string, unknown>);
+  }
+}
+
+async function syncDeleteAbsenceDay(get: SyncGet, absenceId: string): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('absence_day', absenceId, 'delete');
+    return;
+  }
+  try {
+    await deleteAbsenceDayRemote(syncConfig.serverUrl, syncConfig.accessToken, absenceId);
+  } catch {
+    syncQueue.enqueue('absence_day', absenceId, 'delete');
+  }
+}
+
+function diffAbsenceDayFields(prev: AbsenceDay | undefined, next: AbsenceDay): Partial<AbsenceDay> {
+  if (!prev) return { ...next };
+  const fields: Partial<AbsenceDay> = {};
+  if (prev.date !== next.date) fields.date = next.date;
+  if (prev.type !== next.type) fields.type = next.type;
+  if (prev.note !== next.note) fields.note = next.note;
+  return fields;
+}
+
+// ── OvertimeEntry ────────────────────────────────────────────────
+// Sin filePath propio — vive bundleada en el archivo del mes de
+// entry.fecha (ver saveOvertimeEntry). applyOvertimeEntryResponse
+// solo toca el estado en memoria; el archivo ya lo escribió quien
+// llamó (saveOvertimeEntry) antes de disparar el sync.
+
+const OVERTIME_ENTRY_FIELD_MAP: Record<string, string> = {
+  fecha: 'fecha', solicitadaPor: 'solicitada_por', actividad: 'actividad', observaciones: 'observaciones',
+  horaInicio: 'hora_inicio', horaFinal: 'hora_final', totalHoras: 'total_horas',
+  extrasDiurnas: 'extras_diurnas', extrasNocturnas: 'extras_nocturnas',
+  extrasDiurnasFestivas: 'extras_diurnas_festivas', extrasNocturnasFestivas: 'extras_nocturnas_festivas',
+};
+
+function applyOvertimeEntryResponse(get: SyncGet, set: SyncSet, entityId: string, sinceIso: string, response: OvertimeEntryApiResponse): void {
+  const current = get().overtimeEntries.find((e) => e.id === entityId);
+  if (!current) return; // no es del mes actualmente cargado en memoria — el archivo ya quedó bien igual
+  const mapped = overtimeEntryFromApiResponse(response);
+  const merged = { ...current } as unknown as Record<string, unknown>;
+  const mappedRecord = mapped as unknown as Record<string, unknown>;
+  for (const [localKey, serverKey] of Object.entries(OVERTIME_ENTRY_FIELD_MAP)) {
+    if (!syncQueue.hasNewerQueuedField('overtime_entry', entityId, serverKey, sinceIso)) {
+      merged[localKey] = mappedRecord[localKey];
+    }
+  }
+  const updated = merged as unknown as OvertimeEntry;
+  set((state) => ({ overtimeEntries: state.overtimeEntries.map((e) => (e.id === entityId ? updated : e)) }));
+}
+
+async function syncCreateOvertimeEntry(get: SyncGet, set: SyncSet, entry: OvertimeEntry): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  const payload = overtimeEntryToCreatePayload(entry);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('overtime_entry', entry.id, 'create', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await createOvertimeEntryRemote(syncConfig.serverUrl, syncConfig.accessToken, payload);
+    applyOvertimeEntryResponse(get, set, entry.id, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('overtime_entry', entry.id, 'create', payload as unknown as Record<string, unknown>);
+  }
+}
+
+async function syncPatchOvertimeEntry(get: SyncGet, set: SyncSet, entryId: string, fields: Partial<OvertimeEntry>): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled || Object.keys(fields).length === 0) return;
+  const payload = overtimeEntryFieldsToPatchPayload(fields);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('overtime_entry', entryId, 'patch', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await patchOvertimeEntryRemote(syncConfig.serverUrl, syncConfig.accessToken, entryId, payload);
+    applyOvertimeEntryResponse(get, set, entryId, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('overtime_entry', entryId, 'patch', payload as unknown as Record<string, unknown>);
+  }
+}
+
+async function syncDeleteOvertimeEntry(get: SyncGet, entryId: string): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('overtime_entry', entryId, 'delete');
+    return;
+  }
+  try {
+    await deleteOvertimeEntryRemote(syncConfig.serverUrl, syncConfig.accessToken, entryId);
+  } catch {
+    syncQueue.enqueue('overtime_entry', entryId, 'delete');
+  }
+}
+
+function diffOvertimeEntryFields(prev: OvertimeEntry | undefined, next: OvertimeEntry): Partial<OvertimeEntry> {
+  if (!prev) return { ...next };
+  const fields: Partial<OvertimeEntry> = {};
+  if (prev.fecha !== next.fecha) fields.fecha = next.fecha;
+  if (prev.solicitadaPor !== next.solicitadaPor) fields.solicitadaPor = next.solicitadaPor;
+  if (prev.actividad !== next.actividad) fields.actividad = next.actividad;
+  if (prev.observaciones !== next.observaciones) fields.observaciones = next.observaciones;
+  if (prev.horaInicio !== next.horaInicio) fields.horaInicio = next.horaInicio;
+  if (prev.horaFinal !== next.horaFinal) fields.horaFinal = next.horaFinal;
+  if (prev.totalHoras !== next.totalHoras) fields.totalHoras = next.totalHoras;
+  if (prev.extrasDiurnas !== next.extrasDiurnas) fields.extrasDiurnas = next.extrasDiurnas;
+  if (prev.extrasNocturnas !== next.extrasNocturnas) fields.extrasNocturnas = next.extrasNocturnas;
+  if (prev.extrasDiurnasFestivas !== next.extrasDiurnasFestivas) fields.extrasDiurnasFestivas = next.extrasDiurnasFestivas;
+  if (prev.extrasNocturnasFestivas !== next.extrasNocturnasFestivas) fields.extrasNocturnasFestivas = next.extrasNocturnasFestivas;
+  return fields;
+}
+
+async function dispatchQueuedWrite(get: SyncGet, set: SyncSet, write: syncQueue.QueuedWrite): Promise<void> {
   const { serverUrl, accessToken } = get().syncConfig;
+
+  if (write.entity === 'note') {
+    if (write.op === 'create') {
+      applyNoteResponse(get, set, write.entityId, write.queuedAt, await createNoteRemote(serverUrl, accessToken, write.fields as unknown as NoteCreatePayload));
+    } else if (write.op === 'patch') {
+      applyNoteResponse(get, set, write.entityId, write.queuedAt, await patchNoteRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as NotePatchPayload));
+    } else {
+      await deleteNoteRemote(serverUrl, accessToken, write.entityId);
+    }
+    return;
+  }
+  if (write.entity === 'calendar_event') {
+    if (write.op === 'create') {
+      applyCalendarEventResponse(get, set, write.entityId, write.queuedAt, await createCalendarEventRemote(serverUrl, accessToken, write.fields as unknown as CalendarEventCreatePayload));
+    } else if (write.op === 'patch') {
+      applyCalendarEventResponse(get, set, write.entityId, write.queuedAt, await patchCalendarEventRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as CalendarEventPatchPayload));
+    } else {
+      await deleteCalendarEventRemote(serverUrl, accessToken, write.entityId);
+    }
+    return;
+  }
+  if (write.entity === 'absence_day') {
+    if (write.op === 'create') {
+      applyAbsenceDayResponse(get, set, write.entityId, write.queuedAt, await createAbsenceDayRemote(serverUrl, accessToken, write.fields as unknown as AbsenceDayCreatePayload));
+    } else if (write.op === 'patch') {
+      applyAbsenceDayResponse(get, set, write.entityId, write.queuedAt, await patchAbsenceDayRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as AbsenceDayPatchPayload));
+    } else {
+      await deleteAbsenceDayRemote(serverUrl, accessToken, write.entityId);
+    }
+    return;
+  }
+  if (write.entity === 'overtime_entry') {
+    if (write.op === 'create') {
+      applyOvertimeEntryResponse(get, set, write.entityId, write.queuedAt, await createOvertimeEntryRemote(serverUrl, accessToken, write.fields as unknown as OvertimeEntryCreatePayload));
+    } else if (write.op === 'patch') {
+      applyOvertimeEntryResponse(get, set, write.entityId, write.queuedAt, await patchOvertimeEntryRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as OvertimeEntryPatchPayload));
+    } else {
+      await deleteOvertimeEntryRemote(serverUrl, accessToken, write.entityId);
+    }
+    return;
+  }
+  if (write.entity !== 'task') return; // overtime_month_meta: pendiente, ver specs/sync-primer-sincronizacion
   if (write.op === 'create') {
     const response = await createTaskRemote(serverUrl, accessToken, write.fields as unknown as TaskCreatePayload);
     applyTaskResponse(get, set, write.entityId, write.queuedAt, response);
@@ -489,6 +887,25 @@ async function sendQueuedWrite(get: SyncGet, set: SyncSet, write: syncQueue.Queu
     applyTaskResponse(get, set, write.entityId, write.queuedAt, response);
   } else {
     await deleteTaskRemote(serverUrl, accessToken, write.entityId);
+  }
+}
+
+/** Un 4xx del servidor (ej. un create con un campo requerido vacío)
+ *  nunca se va a arreglar solo reintentando el mismo payload — a
+ *  diferencia de una caída de red o un 5xx, donde sí tiene sentido
+ *  parar el drenado y probar de nuevo más tarde. Sin esto, una sola
+ *  entrada mal formada (por un bug ya corregido en el código, pero
+ *  que ya quedó encolada con el payload viejo) bloquearía el resto de
+ *  la cola para siempre, ver syncQueue.ts drainQueue. */
+async function sendQueuedWrite(get: SyncGet, set: SyncSet, write: syncQueue.QueuedWrite): Promise<'ok' | 'permanent-failure'> {
+  try {
+    await dispatchQueuedWrite(get, set, write);
+    return 'ok';
+  } catch (e) {
+    if (e instanceof SyncApiError && e.status >= 400 && e.status < 500) {
+      return 'permanent-failure';
+    }
+    throw e;
   }
 }
 
@@ -565,14 +982,186 @@ async function applyRemoteTaskChange(get: SyncGet, set: SyncSet, change: SyncCha
   }));
 }
 
+async function applyRemoteNoteChange(get: SyncGet, set: SyncSet, change: SyncChange): Promise<void> {
+  const { basePath } = get();
+  if (!basePath) return;
+  const existing = get().notes.find((n) => n.id === change.id);
+
+  if (change.deleted) {
+    if (!existing) return;
+    await fs.deleteFile(existing.filePath).catch(() => {});
+    set((state) => ({
+      notes: state.notes.filter((n) => n.id !== change.id),
+      activeNote: state.activeNote?.id === change.id ? null : state.activeNote,
+    }));
+    return;
+  }
+
+  const mapped = noteFromApiResponse(change.data as NoteApiResponse);
+  const filePath = existing?.filePath ?? noteFilePath(basePath, mapped.folder, change.id);
+  // content nunca viene de acá (metadata únicamente, ver comentario
+  // arriba del archivo) — se preserva el contenido local tal cual,
+  // tanto para una nota existente como para una nueva (que arranca
+  // sin contenido hasta que la fase CRDT lo traiga).
+  const merged = {
+    ...existing, ...mapped, filePath,
+    content: existing?.content ?? '',
+  } as unknown as Record<string, unknown>;
+
+  if (existing) {
+    for (const [localKey, serverKey] of Object.entries(NOTE_FIELD_MAP)) {
+      if (syncQueue.hasNewerQueuedField('note', change.id, serverKey, EPOCH)) {
+        merged[localKey] = (existing as unknown as Record<string, unknown>)[localKey];
+      }
+    }
+  }
+
+  const finalNote = merged as unknown as Note;
+  if (!existing && finalNote.folder) await fs.createDir(noteFolderDir(basePath, finalNote.folder)).catch(() => {});
+  await fs.writeFile(filePath, serializeNote(finalNote));
+  set((state) => ({
+    notes: existing
+      ? state.notes.map((n) => (n.id === change.id ? finalNote : n))
+      : [finalNote, ...state.notes],
+    activeNote: state.activeNote?.id === change.id ? finalNote : state.activeNote,
+  }));
+}
+
+async function applyRemoteCalendarEventChange(get: SyncGet, set: SyncSet, change: SyncChange): Promise<void> {
+  const { basePath } = get();
+  if (!basePath) return;
+  const path = `${basePath}/calendar/events.json`;
+  const current = get().calendarEvents;
+  const existing = current.find((e) => e.id === change.id);
+
+  if (change.deleted) {
+    if (!existing) return;
+    const next = current.filter((e) => e.id !== change.id);
+    await fs.writeFile(path, JSON.stringify(next, null, 2));
+    set({ calendarEvents: next });
+    return;
+  }
+
+  const mapped = calendarEventFromApiResponse(change.data as CalendarEventApiResponse);
+  const merged = { ...existing, ...mapped } as unknown as Record<string, unknown>;
+  if (existing) {
+    for (const [localKey, serverKey] of Object.entries(CALENDAR_EVENT_FIELD_MAP)) {
+      if (syncQueue.hasNewerQueuedField('calendar_event', change.id, serverKey, EPOCH)) {
+        merged[localKey] = (existing as unknown as Record<string, unknown>)[localKey];
+      }
+    }
+  }
+  const finalEvent = merged as unknown as CalendarEvent;
+  const next = existing ? current.map((e) => (e.id === change.id ? finalEvent : e)) : [...current, finalEvent];
+  if (!(await fs.exists(`${basePath}/calendar`))) await fs.createDir(`${basePath}/calendar`);
+  await fs.writeFile(path, JSON.stringify(next, null, 2));
+  set({ calendarEvents: next });
+}
+
+async function applyRemoteAbsenceDayChange(get: SyncGet, set: SyncSet, change: SyncChange): Promise<void> {
+  const { basePath } = get();
+  if (!basePath) return;
+  const path = `${basePath}/absences.json`;
+  const current = get().absenceDays;
+  const existing = current.find((a) => a.id === change.id);
+
+  if (change.deleted) {
+    if (!existing) return;
+    const next = current.filter((a) => a.id !== change.id);
+    await fs.writeFile(path, JSON.stringify(next, null, 2));
+    set({ absenceDays: next });
+    return;
+  }
+
+  const mapped = absenceDayFromApiResponse(change.data as AbsenceDayApiResponse);
+  const merged = { ...existing, ...mapped } as unknown as Record<string, unknown>;
+  if (existing) {
+    for (const [localKey, serverKey] of Object.entries(ABSENCE_DAY_FIELD_MAP)) {
+      if (syncQueue.hasNewerQueuedField('absence_day', change.id, serverKey, EPOCH)) {
+        merged[localKey] = (existing as unknown as Record<string, unknown>)[localKey];
+      }
+    }
+  }
+  const finalAbsence = merged as unknown as AbsenceDay;
+  const next = existing ? current.map((a) => (a.id === change.id ? finalAbsence : a)) : [...current, finalAbsence];
+  await fs.writeFile(path, JSON.stringify(next, null, 2));
+  set({ absenceDays: next });
+}
+
+/** A diferencia de las otras entidades, no toca el estado en memoria
+ *  salvo que el mes de la entrada coincida con el mes actualmente
+ *  visible (get().overtimeMonth) — aplicar una reconciliación en
+ *  background no debería saltar la vista del usuario a un mes
+ *  distinto, a diferencia de saveOvertimeEntry (que sí navega, porque
+ *  ahí es una acción explícita del usuario). El archivo del mes que
+ *  corresponda igual se escribe siempre. */
+async function applyRemoteOvertimeEntryChange(get: SyncGet, set: SyncSet, change: SyncChange): Promise<void> {
+  const { basePath } = get();
+  if (!basePath) return;
+
+  if (change.deleted) {
+    // No sabemos a qué mes pertenecía sin la data — si está en el mes
+    // visible, ya sabemos su fecha por el estado en memoria.
+    const existing = get().overtimeEntries.find((e) => e.id === change.id);
+    if (!existing) return; // no es del mes visible, no hay archivo que tocar sin arriesgar adivinar
+    const ym = existing.fecha.slice(0, 7);
+    const [year, month] = ym.split('-');
+    const path = overtimeMonthFilePath(basePath, year, month);
+    const entries = get().overtimeEntries.filter((e) => e.id !== change.id);
+    await fs.writeFile(path, `---\n${JSON.stringify({ entries }, null, 2)}\n---\n`);
+    set({ overtimeEntries: entries });
+    return;
+  }
+
+  const mapped = overtimeEntryFromApiResponse(change.data as OvertimeEntryApiResponse);
+  const ym = mapped.fecha.slice(0, 7);
+  const [year, month] = ym.split('-');
+  await fs.createDir(overtimeMonthDir(basePath, year, month)).catch(() => {});
+  const path = overtimeMonthFilePath(basePath, year, month);
+
+  let entries: OvertimeEntry[] = [];
+  if (await fs.exists(path)) {
+    try {
+      const raw = await fs.readFile(path);
+      const match = raw.match(/^---\n([\s\S]*?)\n---/);
+      entries = match ? (JSON.parse(match[1]).entries ?? []) : [];
+    } catch { /* archivo vacío o corrupto */ }
+  }
+  const existing = entries.find((e) => e.id === change.id);
+  const merged = { ...existing, ...mapped } as unknown as Record<string, unknown>;
+  if (existing) {
+    for (const [localKey, serverKey] of Object.entries(OVERTIME_ENTRY_FIELD_MAP)) {
+      if (syncQueue.hasNewerQueuedField('overtime_entry', change.id, serverKey, EPOCH)) {
+        merged[localKey] = (existing as unknown as Record<string, unknown>)[localKey];
+      }
+    }
+  }
+  const finalEntry = merged as unknown as OvertimeEntry;
+  const nextEntries = [...entries.filter((e) => e.id !== change.id), finalEntry]
+    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+  await fs.writeFile(path, `---\n${JSON.stringify({ entries: nextEntries }, null, 2)}\n---\n`);
+
+  const { overtimeMonths } = get();
+  if (!overtimeMonths.includes(ym)) set({ overtimeMonths: [ym, ...overtimeMonths].sort().reverse() });
+  if (get().overtimeMonth === ym) set({ overtimeEntries: nextEntries });
+}
+
 async function applyRemoteChanges(get: SyncGet, set: SyncSet, changes: SyncChange[]): Promise<void> {
   for (const change of changes) {
     if (change.type === 'task') {
       await applyRemoteTaskChange(get, set, change);
+    } else if (change.type === 'note') {
+      await applyRemoteNoteChange(get, set, change);
+    } else if (change.type === 'calendar_event') {
+      await applyRemoteCalendarEventChange(get, set, change);
+    } else if (change.type === 'absence_day') {
+      await applyRemoteAbsenceDayChange(get, set, change);
+    } else if (change.type === 'overtime_entry') {
+      await applyRemoteOvertimeEntryChange(get, set, change);
     }
-    // otros tipos (note, overtime_entry, overtime_month_meta,
-    // calendar_event, absence_day, daily_entry): pendientes, ver
-    // comentario arriba del archivo.
+    // overtime_month_meta, daily_entry: pendientes, ver
+    // specs/sync-primer-sincronizacion (mismatch de modelo local) y
+    // comentario arriba del archivo respectivamente.
   }
 }
 
@@ -1328,6 +1917,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await fs.writeFile(note.filePath, serializeNote(note));
     set((state) => ({ notes: [note, ...state.notes], activeNote: note }));
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    void syncCreateNote(get, set, note);
     return note;
   },
 
@@ -1374,6 +1964,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (imported.length > 0) {
       set((state) => ({ notes: [...imported, ...state.notes], activeNote: imported[0] }));
       if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+      imported.forEach((note) => void syncCreateNote(get, set, note));
       get().showToast({
         kind: 'success',
         title: t(language, 'toast', 'noteImported'),
@@ -1423,6 +2014,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (imported.length > 0) {
       set((state) => ({ notes: [...imported, ...state.notes], activeNote: imported[0] }));
       if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+      imported.forEach((note) => void syncCreateNote(get, set, note));
       get().showToast({
         kind: 'success',
         title: t(language, 'toast', 'noteImported'),
@@ -1432,6 +2024,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   updateNote: async (note) => {
+    const prev = get().notes.find((n) => n.id === note.id);
     const updated = { ...note, updated: formatDate(new Date()) };
     await fs.writeFile(updated.filePath, serializeNote(updated));
     set((state) => ({
@@ -1439,6 +2032,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeNote: state.activeNote?.id === updated.id ? updated : state.activeNote,
     }));
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    const changedFields = diffNoteFields(prev, updated);
+    if (Object.keys(changedFields).length > 0) void syncPatchNote(get, set, updated.id, changedFields);
   },
 
   deleteNote: async (note, options) => {
@@ -1449,6 +2044,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       notes: state.notes.filter((n) => n.id !== note.id),
       activeNote: state.activeNote?.id === note.id ? null : state.activeNote,
     }));
+    void syncDeleteNote(get, note.id);
     if (showToast) {
       get().showToast({
         kind: 'success',
@@ -1889,6 +2485,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         existing = match ? (JSON.parse(match[1]).entries ?? []) : [];
       } catch { /* archivo vacío o corrupto */ }
     }
+    const prevEntry = existing.find((e) => e.id === entry.id);
     const entries = [...existing.filter(e => e.id !== entry.id), entry]
       .sort((a, b) => a.fecha.localeCompare(b.fecha));
     // Actualizar lista de meses si es nuevo
@@ -1900,6 +2497,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Navegar al mes de la entrada para que aparezca en la lista
     await get().loadOvertimeMonth(ym);
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    if (prevEntry) {
+      const changedFields = diffOvertimeEntryFields(prevEntry, entry);
+      if (Object.keys(changedFields).length > 0) void syncPatchOvertimeEntry(get, set, entry.id, changedFields);
+    } else {
+      void syncCreateOvertimeEntry(get, set, entry);
+    }
   },
 
   deleteOvertimeEntry: async (id) => {
@@ -1913,6 +2516,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const [year, month] = ym.split('-');
     const path = overtimeMonthFilePath(base, year, month);
     await fs.writeFile(path, `---\n${JSON.stringify({ entries }, null, 2)}\n---\n`);
+    void syncDeleteOvertimeEntry(get, id);
     get().showToast({
       kind: 'success',
       title: t(language, 'toast', 'overtimeDeleted'),
@@ -2406,11 +3010,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     const path = `${dir}/events.json`;
     const current = get().calendarEvents;
     const idx = current.findIndex((e) => e.id === event.id);
+    const prev = idx >= 0 ? current[idx] : undefined;
     const next = idx >= 0
       ? current.map((e) => (e.id === event.id ? event : e))
       : [...current, event];
     await fs.writeFile(path, JSON.stringify(next, null, 2));
     set({ calendarEvents: next });
+    if (prev) {
+      const changedFields = diffCalendarEventFields(prev, event);
+      if (Object.keys(changedFields).length > 0) void syncPatchCalendarEvent(get, set, event.id, changedFields);
+    } else {
+      void syncCreateCalendarEvent(get, set, event);
+    }
   },
 
   deleteCalendarEvent: async (id) => {
@@ -2420,6 +3031,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const next = get().calendarEvents.filter((e) => e.id !== id);
     await fs.writeFile(path, JSON.stringify(next, null, 2));
     set({ calendarEvents: next });
+    void syncDeleteCalendarEvent(get, id);
   },
 
   // ── Absences ───────────────────────────────────────────────────
@@ -2445,11 +3057,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     const path = `${base}/absences.json`;
     const current = get().absenceDays;
     const idx = current.findIndex((a) => a.id === absence.id);
+    const prev = idx >= 0 ? current[idx] : undefined;
     const next = idx >= 0
       ? current.map((a) => (a.id === absence.id ? absence : a))
       : [...current, absence];
     await fs.writeFile(path, JSON.stringify(next, null, 2));
     set({ absenceDays: next });
+    if (prev) {
+      const changedFields = diffAbsenceDayFields(prev, absence);
+      if (Object.keys(changedFields).length > 0) void syncPatchAbsenceDay(get, set, absence.id, changedFields);
+    } else {
+      void syncCreateAbsenceDay(get, set, absence);
+    }
   },
 
   deleteAbsenceDay: async (id) => {
@@ -2459,5 +3078,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     const next = get().absenceDays.filter((a) => a.id !== id);
     await fs.writeFile(path, JSON.stringify(next, null, 2));
     set({ absenceDays: next });
+    void syncDeleteAbsenceDay(get, id);
   },
 }));

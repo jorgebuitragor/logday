@@ -89,11 +89,19 @@ export function hasNewerQueuedField(
 /**
  * Drena la cola en orden de `queuedAt`, un envío a la vez (no en
  * paralelo — evita reordenar escrituras al mismo campo por timing de
- * red). Corta al primer fallo en vez de saltearlo: si el servidor se
- * cayó de nuevo a mitad del drenado, las entradas restantes quedan en
- * cola en su orden original para el próximo intento.
+ * red). `send` puede devolver:
+ * - `'ok'`: se sacó de la cola normalmente.
+ * - `'permanent-failure'`: el servidor la rechazó de forma que
+ *   reintentarla nunca va a funcionar (ej. un create con un campo
+ *   requerido vacío que el bug ya no debería producir, pero que puede
+ *   haber quedado encolado de antes de un fix) — se saca igual, sin
+ *   reintentar, para no bloquear el resto de la cola para siempre por
+ *   una sola entrada irrecuperable.
+ * - lanza una excepción: fallo transitorio (red caída, 5xx) — corta
+ *   el drenado acá, las entradas restantes (esta incluida) quedan en
+ *   cola en su orden original para el próximo intento.
  */
-export async function drainQueue(send: (write: QueuedWrite) => Promise<void>): Promise<void> {
+export async function drainQueue(send: (write: QueuedWrite) => Promise<'ok' | 'permanent-failure'>): Promise<void> {
   const queue = [...loadQueue()].sort((a, b) => a.queuedAt.localeCompare(b.queuedAt));
   for (const write of queue) {
     try {

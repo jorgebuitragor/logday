@@ -38,3 +38,4 @@ tres archivos:
 | Estructura de código y buenas prácticas React | implementado | [`estructura-codigo/`](./estructura-codigo/requirements.md) |
 | Sync con servidor (logday-server) | en progreso | [`sync-servidor/`](./sync-servidor/requirements.md) |
 | Primer sync / migración de datos existentes | en diseño, bloqueado | [`sync-primer-sincronizacion/`](./sync-primer-sincronizacion/requirements.md) |
+| Papelera de reciclaje | implementado (baseline) | [`papelera-reciclaje/`](./papelera-reciclaje/requirements.md) |

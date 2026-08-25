@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import TauriWebSocket from '@tauri-apps/plugin-websocket';
 import { Task } from '../types/task';
 import { Note } from '../types/note';
 import { OvertimeEntry, OvertimeMonthMeta } from '../types/overtime';
@@ -1565,6 +1566,173 @@ function stopTrashPurgeInterval(): void {
   }
 }
 
+// ── Tiempo real (WebSocket) ──────────────────────────────────────
+// Ver specs/sync-servidor "Tiempo real"/"Reconexión WebSocket" — el
+// diseño (backoff, protocolo) ya estaba escrito ahí, esto lo
+// implementa. Mismo patrón que logday-web (src/store/appStore.ts,
+// connectRealtime/handleNotice/schedulePull) con dos diferencias
+// deliberadas: transporte (@tauri-apps/plugin-websocket en vez de
+// WebSocket nativo del navegador — mismo motivo que REST usa comandos
+// Rust y no fetch, ver arriba "Capa de red") y backoff exponencial
+// (design.md ya lo definía así, no el retry fijo de 3s de web).
+//
+// El aviso {"type","id","seq"} nunca se aplica directo — solo dispara
+// reconcileSync (ya existente, sin cambios) antes de lo que tardaría
+// el poll de 30s, que sigue como red de respaldo tal cual está.
+
+const REALTIME_BACKOFF_MS = [1000, 2000, 4000, 8000, 16000, 30000];
+let realtimeWs: TauriWebSocket | null = null;
+let realtimeReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let realtimeBackoffIdx = 0;
+let realtimePullInFlight = false;
+let realtimePullPending = false;
+let realtimeNoticeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let realtimePendingNoticeSeq = 0;
+
+function wsUrl(serverUrl: string): string {
+  return normalizeServerUrl(serverUrl).replace(/^http/, 'ws') + '/ws';
+}
+
+// Una ráfaga de avisos (varios cambios casi juntos) no debe disparar
+// un pull por cada uno — si ya hay uno en vuelo, el resto solo marca
+// "pendiente" y dispara exactamente un pull más al terminar.
+function scheduleRealtimePull(get: SyncGet, set: SyncSet): void {
+  if (realtimePullInFlight) {
+    realtimePullPending = true;
+    return;
+  }
+  realtimePullInFlight = true;
+  void reconcileSync(get, set).finally(() => {
+    realtimePullInFlight = false;
+    if (realtimePullPending) {
+      realtimePullPending = false;
+      scheduleRealtimePull(get, set);
+    }
+  });
+}
+
+// El servidor manda Notify() antes de resolver la respuesta HTTP del
+// propio write (ver logday-web, mismo comentario) — el eco por WS de
+// una escritura propia puede llegar antes de que esa respuesta
+// termine de avanzar el cursor acá. Esperar un toque antes de decidir
+// le da tiempo a que aterrice, y de paso agrupa ráfagas en una sola
+// decisión.
+const REALTIME_NOTICE_DEBOUNCE_MS = 250;
+
+function handleRealtimeNotice(seq: number | undefined, get: SyncGet, set: SyncSet): void {
+  if (typeof seq === 'number') realtimePendingNoticeSeq = Math.max(realtimePendingNoticeSeq, seq);
+  if (realtimeNoticeDebounceTimer) return;
+  realtimeNoticeDebounceTimer = setTimeout(() => {
+    realtimeNoticeDebounceTimer = null;
+    const seqToCheck = realtimePendingNoticeSeq;
+    realtimePendingNoticeSeq = 0;
+    if (seqToCheck > 0 && seqToCheck <= getSyncCursor()) return; // ya lo tenemos, viene de nuestra propia escritura
+    scheduleRealtimePull(get, set);
+  }, REALTIME_NOTICE_DEBOUNCE_MS);
+}
+
+async function connectRealtime(get: SyncGet, set: SyncSet): Promise<void> {
+  if (realtimeWs) return;
+  const { syncConfig } = get();
+  if (!syncConfig.enabled || !syncConfig.accessToken) return;
+
+  let socket: TauriWebSocket;
+  try {
+    socket = await TauriWebSocket.connect(wsUrl(syncConfig.serverUrl));
+  } catch {
+    scheduleRealtimeReconnect(get, set);
+    return;
+  }
+  realtimeWs = socket;
+
+  socket.addListener((msg) => {
+    if (realtimeWs !== socket) return; // conexión vieja, ya reemplazada
+
+    // El plugin de Rust serializa un cierre "sucio" (p. ej. el server
+    // cierra con conn.CloseNow() justo después de un auth fallido, sin
+    // esperar a que el cliente termine de leer la trama de cierre
+    // prolija) como un string plano en vez de {type, data} — no como
+    // 'Close'. Sin este chequeo, ese mensaje no matchea ninguna rama de
+    // abajo, `realtimeWs` queda apuntando a un socket ya muerto para
+    // siempre, y como connectRealtime empieza con `if (realtimeWs)
+    // return`, ningún reintento futuro (ni el de este backoff ni el que
+    // dispara un login/reconexión manual después) vuelve a conectar
+    // (encontrado probando: cero intentos de /ws en el server tras un
+    // primer cierre a los 3.8s).
+    if (typeof msg !== 'object' || msg === null || typeof (msg as { type?: unknown }).type !== 'string') {
+      if (realtimeWs === socket) {
+        realtimeWs = null;
+        scheduleRealtimeReconnect(get, set);
+      }
+      return;
+    }
+
+    if (msg.type === 'Text') {
+      // Recibir CUALQUIER mensaje que pruebe que el servidor aceptó la
+      // conexión (texto/ping/pong) sí prueba que la autenticación pasó —
+      // reset acá. 'Close' se maneja aparte y NO resetea: si reseteara,
+      // un token inválido volvería a reintentar cada 1s para siempre en
+      // vez de escalar el backoff (el bug original que motivó todo esto).
+      realtimeBackoffIdx = 0;
+      try {
+        const notice = JSON.parse(msg.data) as { seq?: number };
+        handleRealtimeNotice(notice.seq, get, set);
+      } catch { /* mensaje no-JSON, no debería pasar */ }
+    } else if (msg.type === 'Ping') {
+      realtimeBackoffIdx = 0;
+      // El plugin/librería de bajo nivel debería responder el pong de
+      // protocolo solo; este eco es una red de respaldo barata por si
+      // no lo hace (no confirmado en runtime, ver plan).
+      void socket.send({ type: 'Pong', data: msg.data }).catch(() => {});
+    } else if (msg.type === 'Close') {
+      if (realtimeWs === socket) {
+        realtimeWs = null;
+        scheduleRealtimeReconnect(get, set);
+      }
+    }
+  });
+
+  try {
+    await socket.send(JSON.stringify({ type: 'auth', token: syncConfig.accessToken }));
+  } catch {
+    realtimeWs = null;
+    scheduleRealtimeReconnect(get, set);
+  }
+}
+
+function scheduleRealtimeReconnect(get: SyncGet, set: SyncSet): void {
+  if (realtimeReconnectTimer || !get().syncConfig.enabled) return;
+  const delay = REALTIME_BACKOFF_MS[Math.min(realtimeBackoffIdx, REALTIME_BACKOFF_MS.length - 1)];
+  realtimeBackoffIdx = Math.min(realtimeBackoffIdx + 1, REALTIME_BACKOFF_MS.length - 1);
+  realtimeReconnectTimer = setTimeout(() => {
+    realtimeReconnectTimer = null;
+    void connectRealtime(get, set);
+  }, delay);
+}
+
+function disconnectRealtime(): void {
+  if (realtimeReconnectTimer) {
+    clearTimeout(realtimeReconnectTimer);
+    realtimeReconnectTimer = null;
+  }
+  realtimeBackoffIdx = 0;
+  if (realtimeWs) {
+    const socket = realtimeWs;
+    realtimeWs = null;
+    void socket.disconnect().catch(() => {});
+  }
+}
+
+// Mejor esfuerzo: al recargar/cerrar el webview, el socket real del lado
+// Rust queda vivo para siempre si no se le avisa (el estado de JS se
+// resetea solo, pero eso no cierra el socket viejo) — visto en pruebas
+// como conexiones TCP "zombie" acumulándose en el servidor tras varios
+// reloads. No hay garantía de que el IPC async alcance a completarse
+// antes de que el proceso muera, pero reduce el leak en el caso común.
+window.addEventListener('beforeunload', () => {
+  disconnectRealtime();
+});
+
 // ── Store ──────────────────────────────────────────────────────
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -1741,6 +1909,23 @@ export const useAppStore = create<AppState>((set, get) => ({
           if (get().trashAutoPurgeEnabled) {
             trash.purgeExpiredTrash(cfg.basePath).catch(() => {});
             startTrashPurgeInterval(get);
+          }
+
+          // Auto-reconexión de sync si ya estaba habilitado de una
+          // sesión anterior — sin esto, hay que volver a entrar a
+          // Ajustes después de cada reinicio de la app. Mismo patrón
+          // optimista que syncConnect (arranca el poll/WS ya, drena y
+          // reconcilia en background) — si el token guardado expiró,
+          // no hay refresh automático todavía (ver plan), las
+          // llamadas individuales fallan/encolan como en cualquier
+          // corte de red, comportamiento aceptado explícitamente.
+          const { syncConfig } = get();
+          if (syncConfig.enabled && syncConfig.accessToken) {
+            set({ syncConnectionStatus: 'connected' });
+            void Promise.all([drainSyncQueue(get, set), drainContentSyncQueue(get, set)])
+              .then(() => reconcileSync(get, set));
+            startReconcileInterval(get, set);
+            void connectRealtime(get, set);
           }
         }
       }
@@ -3227,6 +3412,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       void Promise.all([drainSyncQueue(get, set), drainContentSyncQueue(get, set)])
         .then(() => reconcileSync(get, set));
       startReconcileInterval(get, set);
+      void connectRealtime(get, set);
     } catch (e) {
       const msg = e instanceof SyncApiError ? e.message : String(e);
       set({ syncConnectionStatus: 'error', syncErrorMsg: msg });
@@ -3236,6 +3422,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   syncDisconnect: () => {
     stopReconcileInterval();
+    disconnectRealtime();
     const cfg: SyncConfig = { enabled: false, serverUrl: '', email: '', accessToken: '', refreshToken: '', deviceId: '' };
     localStorage.setItem('syncConfig', JSON.stringify(cfg));
     set({ syncConfig: cfg, syncConnectionStatus: 'disconnected', syncErrorMsg: '' });

@@ -523,6 +523,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_websocket::init())
         .setup(|app| {
             let show_item = MenuItem::with_id(app, "show", "Mostrar Logday", true, None::<&str>)?;
             let new_note_item = MenuItem::with_id(app, "new_note", "Nueva nota", true, None::<&str>)?;

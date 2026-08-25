@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FolderOpen, Download, Upload, AlertTriangle } from 'lucide-react';
+import { FolderOpen, Download, Upload, AlertTriangle, Trash2 } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { Shortcuts, BackupSettings } from '../../types/config';
 import { t } from '../../lib/i18n';
@@ -7,6 +7,8 @@ import { fs } from '../../lib/invoke';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import JSZip from 'jszip';
+import ToggleSwitch from '../shared/ToggleSwitch';
+import { TrashModal } from './TrashModal';
 
 const BACKUP_SETTINGS_PATH = '__logday/settings.json';
 
@@ -62,10 +64,12 @@ export function DataSettingsTab() {
     loadNoteFolders, loadNotes,
     loadDailyMonths, loadOvertimeMonths,
     showToast,
+    trashAutoPurgeEnabled, setTrashAutoPurgeEnabled,
   } = useAppStore();
 
   const [backupStatus, setBackupStatus] = useState<'idle' | 'exporting' | 'importing' | 'done' | 'error'>('idle');
   const [backupMsg, setBackupMsg] = useState('');
+  const [showTrashModal, setShowTrashModal] = useState(false);
 
   async function handleExport() {
     if (!basePath) return;
@@ -311,6 +315,41 @@ export function DataSettingsTab() {
       </p>
     )}
   </div>
+
+  {/* Trash section */}
+  <div>
+    <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
+      {t(language, 'settings', 'trashSection')}
+    </p>
+    <div
+      onClick={() => void setTrashAutoPurgeEnabled(!trashAutoPurgeEnabled)}
+      className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 text-left transition hover:bg-[var(--bg-hover)] cursor-pointer"
+    >
+      <div>
+        <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'trashAutoPurgeTitle')}</p>
+        <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'trashAutoPurgeDesc')}</p>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className={`text-[10px] font-semibold uppercase tracking-wider ${trashAutoPurgeEnabled ? 'text-[var(--accent)]' : 'text-[var(--text-hint)]'}`}>
+          {trashAutoPurgeEnabled ? t(language, 'settings', 'trashAutoPurgeEnabled') : t(language, 'settings', 'trashAutoPurgeDisabled')}
+        </span>
+        <ToggleSwitch checked={trashAutoPurgeEnabled} onChange={setTrashAutoPurgeEnabled} size="lg" />
+      </div>
+    </div>
+    <button
+      onClick={() => setShowTrashModal(true)}
+      disabled={!basePath}
+      className="mt-2 flex w-full items-center gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 text-xs text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)] disabled:opacity-40 disabled:cursor-not-allowed"
+    >
+      <Trash2 size={13} className="shrink-0 text-red-400" />
+      <div className="text-left">
+        <p className="font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'trashViewButton')}</p>
+        <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'trashViewDesc')}</p>
+      </div>
+    </button>
+  </div>
+
+  {showTrashModal && <TrashModal onClose={() => setShowTrashModal(false)} />}
 
   </>;
 }

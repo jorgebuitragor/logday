@@ -26,6 +26,7 @@ export interface AppConfig {
   workWeekDays?: 5 | 6;
   holidaysAsNonWork?: boolean;
   animationsEnabled?: boolean;
+  trashAutoPurgeEnabled?: boolean;
 }
 
 export interface BackupSettings {

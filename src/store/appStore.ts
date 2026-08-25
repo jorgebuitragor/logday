@@ -35,6 +35,7 @@ import {
 } from '../lib/syncMapping';
 import * as syncQueue from '../lib/syncQueue';
 import * as contentSyncQueue from '../lib/contentSyncQueue';
+import * as trash from '../lib/trash';
 import { bytesToBase64, persistYDoc, applyIncomingContentState, noteContentStatePath } from '../lib/noteContentSync';
 import { parseFrontmatter, serializeTask, parseNote, serializeNote, formatDate } from '../lib/markdown';
 import { t } from '../lib/i18n';
@@ -105,6 +106,9 @@ interface AppState {
 
   // Accesibilidad
   animationsEnabled: boolean;
+
+  // Papelera de reciclaje
+  trashAutoPurgeEnabled: boolean;
 
   // Theme + Settings
   theme: Theme;
@@ -221,6 +225,11 @@ interface AppState {
   setWorkWeekDays: (days: 5 | 6) => Promise<void>;
   setHolidaysAsNonWork: (enabled: boolean) => Promise<void>;
   setAnimationsEnabled: (enabled: boolean) => Promise<void>;
+  setTrashAutoPurgeEnabled: (enabled: boolean) => Promise<void>;
+  listTrash: () => Promise<trash.TrashListItem[]>;
+  restoreFromTrash: (entity: trash.TrashEntity, key: string) => Promise<void>;
+  deleteTrashItemForever: (entity: trash.TrashEntity, key: string) => Promise<void>;
+  emptyTrash: () => Promise<void>;
   setTheme: (theme: Theme) => void;
   createCustomTheme: (input: { name: string; base: 'dark' | 'light'; accent: string; bgTint: string; textTint: string; intensity: number }) => CustomTheme;
   renameCustomTheme: (id: string, name: string) => void;
@@ -295,6 +304,37 @@ async function loadConfig(dir: string): Promise<AppConfig | null> {
 async function saveConfig(dir: string, cfg: AppConfig): Promise<void> {
   await fs.createDir(dir);
   await fs.writeFile(configFilePath(dir), JSON.stringify(cfg, null, 2));
+}
+
+/** Arma el snapshot completo de `AppConfig` desde el estado actual y lo
+ *  persiste — un solo lugar, en vez de que cada setter reconstruya el
+ *  objeto a mano (bug real: los setters más viejos no incluían campos
+ *  agregados después, así que cambiar una opción vieja podía pisar en
+ *  silencio una más nueva — ver setTrashAutoPurgeEnabled más abajo, es
+ *  el motivo por el que se consolidó esto acá). Se llama DESPUÉS de que
+ *  el setter ya hizo su propio `set(...)`, así que `get()` ya refleja el
+ *  valor nuevo — no hace falta un parámetro de patch. */
+async function persistConfig(get: SyncGet): Promise<void> {
+  const {
+    configDir, basePath, startupScreen, language, confirmDestructiveActions,
+    notificationsEnabled, defaultReminderMinutes, workWeekDays, holidaysAsNonWork,
+    animationsEnabled, trashAutoPurgeEnabled, activeProject, activeNoteFolder,
+  } = get();
+  if (!configDir || !basePath) return;
+  await saveConfig(configDir, {
+    basePath,
+    startupScreen,
+    language,
+    confirmDestructiveActions,
+    notificationsEnabled,
+    defaultReminderMinutes,
+    workWeekDays,
+    holidaysAsNonWork,
+    animationsEnabled,
+    trashAutoPurgeEnabled,
+    lastOpenedProject: activeProject ?? undefined,
+    lastOpenedNoteFolder: activeNoteFolder ?? undefined,
+  });
 }
 
 async function readTaskFromPath(filePath: string): Promise<Task | null> {
@@ -1010,6 +1050,10 @@ async function applyRemoteTaskChange(get: SyncGet, set: SyncSet, change: SyncCha
 
   if (change.deleted) {
     if (!existing) return; // nunca existió acá, nada que borrar
+    // Delete que llegó de OTRA instalación desktop — se captura acá
+    // también (no solo en deleteTask) para que la papelera quede
+    // compartida entre instalaciones del mismo usuario, ver plan.
+    await trash.writeTrashRecord(basePath, 'task', existing.id, existing.title, existing);
     await fs.deleteFile(existing.filePath).catch(() => {});
     set((state) => ({
       tasks: state.tasks.filter((t) => t.id !== change.id),
@@ -1051,6 +1095,12 @@ async function applyRemoteNoteChange(get: SyncGet, set: SyncSet, change: SyncCha
 
   if (change.deleted) {
     if (!existing) return;
+    // Delete que llegó de OTRA instalación desktop — mismo motivo que en
+    // applyRemoteTaskChange (papelera compartida entre instalaciones).
+    // Igual que deleteNote, no vale la pena trashear una nota vacía.
+    if (existing.title.trim() || existing.content.trim()) {
+      await trash.writeTrashRecord(basePath, 'note', existing.id, existing.title || existing.id, existing);
+    }
     await fs.deleteFile(existing.filePath).catch(() => {});
     await fs.deleteFile(noteContentStatePath(existing.filePath)).catch(() => {});
     set((state) => ({
@@ -1171,6 +1221,9 @@ async function applyRemoteOvertimeEntryChange(get: SyncGet, set: SyncSet, change
     // visible, ya sabemos su fecha por el estado en memoria.
     const existing = get().overtimeEntries.find((e) => e.id === change.id);
     if (!existing) return; // no es del mes visible, no hay archivo que tocar sin arriesgar adivinar
+    // Delete que llegó de OTRA instalación desktop — mismo motivo que en
+    // applyRemoteTaskChange/applyRemoteNoteChange.
+    await trash.writeTrashRecord(basePath, 'overtime_entry', existing.id, `${existing.fecha} — ${existing.actividad}`, existing);
     const ym = existing.fecha.slice(0, 7);
     const [year, month] = ym.split('-');
     const path = overtimeMonthFilePath(basePath, year, month);
@@ -1291,6 +1344,28 @@ function stopReconcileInterval(): void {
   }
 }
 
+// No depende de conexión a sync (a diferencia del reconcile de arriba) —
+// es puro filesystem local, así que arranca directo desde init(). La
+// ventana de retención es de 60 días, no hace falta chequear tan seguido
+// como el sync — cada 6 horas alcanza de sobra.
+const TRASH_PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+let trashPurgeIntervalId: ReturnType<typeof setInterval> | null = null;
+
+function startTrashPurgeInterval(get: SyncGet): void {
+  if (trashPurgeIntervalId) return;
+  trashPurgeIntervalId = setInterval(() => {
+    const { basePath } = get();
+    if (basePath) void trash.purgeExpiredTrash(basePath);
+  }, TRASH_PURGE_INTERVAL_MS);
+}
+
+function stopTrashPurgeInterval(): void {
+  if (trashPurgeIntervalId) {
+    clearInterval(trashPurgeIntervalId);
+    trashPurgeIntervalId = null;
+  }
+}
+
 // ── Store ──────────────────────────────────────────────────────
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -1323,6 +1398,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   workWeekDays: 5 as (5 | 6),
   holidaysAsNonWork: true,
   animationsEnabled: true,
+  trashAutoPurgeEnabled: true,
   theme: (localStorage.getItem('theme') as Theme) || 'system',
   customThemes: (() => {
     try {
@@ -1432,6 +1508,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             workWeekDays: (cfg.workWeekDays as (5 | 6)) ?? 5,
             holidaysAsNonWork: cfg.holidaysAsNonWork ?? true,
             animationsEnabled: cfg.animationsEnabled ?? true,
+            trashAutoPurgeEnabled: cfg.trashAutoPurgeEnabled ?? true,
           });
 
           const lastProject = cfg.lastOpenedProject || null;
@@ -1458,6 +1535,14 @@ export const useAppStore = create<AppState>((set, get) => ({
           if (gitConfig.enabled && gitConfig.remote.trim()) {
             get().gitFetch().catch(() => {});
           }
+
+          // Papelera: una pasada de purga ya al abrir (no espera al
+          // primer tick del intervalo) + arranca el job periódico si
+          // está habilitado. No depende de sync — es puro filesystem.
+          if (get().trashAutoPurgeEnabled) {
+            trash.purgeExpiredTrash(cfg.basePath).catch(() => {});
+            startTrashPurgeInterval(get);
+          }
         }
       }
     } catch (e) {
@@ -1471,18 +1556,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     const picked = await pickFolder();
     if (!picked) return;
 
-    const { configDir, startupScreen, confirmDestructiveActions } = get();
     const basePath = picked;
 
     await fs.createDir(`${basePath}/projects/inbox`);
     await fs.createDir(`${basePath}/notes`);
     await fs.createDir(`${basePath}/dailys`);
 
-    if (configDir) {
-      await saveConfig(configDir, { basePath, startupScreen, language: get().language, confirmDestructiveActions, notificationsEnabled: get().notificationsEnabled, defaultReminderMinutes: get().defaultReminderMinutes });
-    }
-
     set({ basePath, isConfigured: true });
+    await persistConfig(get);
     await get().loadProjects();
     await get().loadNoteFolders();
     await get().loadTasks(null);
@@ -1493,18 +1574,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     const picked = await pickFolder();
     if (!picked) return;
 
-    const { configDir, startupScreen, confirmDestructiveActions } = get();
     const basePath = picked;
 
     await fs.createDir(`${basePath}/projects/inbox`);
     await fs.createDir(`${basePath}/notes`);
     await fs.createDir(`${basePath}/dailys`);
 
-    if (configDir) {
-      await saveConfig(configDir, { basePath, startupScreen, language: get().language, confirmDestructiveActions, notificationsEnabled: get().notificationsEnabled, defaultReminderMinutes: get().defaultReminderMinutes });
-    }
-
     set({ basePath, activeProject: null, activeNote: null, activeNoteFolder: null, tasks: [], notes: [] });
+    await persistConfig(get);
     await get().loadProjects();
     await get().loadNoteFolders();
     await get().loadTasks(null);
@@ -1574,17 +1651,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectProject: (project) => {
     set({ activeProject: project });
     get().loadTasks(project);
-    const { configDir, basePath, activeNoteFolder, startupScreen } = get();
-    if (configDir && basePath) {
-      saveConfig(configDir, {
-        basePath,
-        startupScreen,
-        language: get().language,
-        confirmDestructiveActions: get().confirmDestructiveActions,
-        lastOpenedProject: project ?? undefined,
-        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
-      }).catch(() => {});
-    }
+    persistConfig(get).catch(() => {});
   },
 
   createProject: async (name, parent = '') => {
@@ -1766,6 +1833,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   deleteTask: async (task) => {
+    const { basePath } = get();
+    if (basePath) await trash.writeTrashRecord(basePath, 'task', task.id, task.title, task);
     await fs.deleteFile(task.filePath);
     const language = get().language;
     set((state) => ({
@@ -1891,19 +1960,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set({ activeNoteFolder: folder, activeNote: null });
     get().loadNotes(folder);
-    const { configDir, basePath, activeProject, startupScreen } = get();
-    if (configDir && basePath) {
-      saveConfig(configDir, {
-        basePath,
-        startupScreen,
-        language: get().language,
-        confirmDestructiveActions: get().confirmDestructiveActions,
-        notificationsEnabled: get().notificationsEnabled,
-        defaultReminderMinutes: get().defaultReminderMinutes,
-        lastOpenedProject: activeProject ?? undefined,
-        lastOpenedNoteFolder: folder ?? undefined,
-      }).catch(() => {});
-    }
+    persistConfig(get).catch(() => {});
   },
 
   createNoteFolder: async (name, parent?) => {
@@ -2118,6 +2175,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   deleteNote: async (note, options) => {
     const showToast = options?.showToast ?? true;
+    const { basePath } = get();
+    // Una nota vacía (sin título ni contenido) es un descarte automático
+    // (ver selectNoteFolder/setSection/NoteList "descartar nota vacía"),
+    // no un borrado real del usuario — no vale la pena ensuciar la
+    // papelera con esas.
+    const isEmpty = !note.title.trim() && !note.content.trim();
+    if (basePath && !isEmpty) {
+      await trash.writeTrashRecord(basePath, 'note', note.id, note.title || note.id, note);
+    }
     await fs.deleteFile(note.filePath);
     await fs.deleteFile(noteContentStatePath(note.filePath)).catch(() => {});
     const language = get().language;
@@ -2414,6 +2480,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       const raw = await fs.readFile(fp);
       existing = parseDailyFile(raw);
     } catch { /* no file */ }
+    const dayContent = existing[date];
+    if (dayContent !== undefined) {
+      await trash.writeTrashRecord(basePath, 'daily_entry', date, date, { date, content: dayContent });
+    }
     delete existing[date];
     await fs.createDir(dailyMonthDir(basePath, year, month));
     await fs.writeFile(fp, serializeDailyFile(existing, yearMonth));
@@ -2591,6 +2661,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!base) return;
     const language = get().language;
     const deletedEntry = get().overtimeEntries.find((entry) => entry.id === id);
+    if (deletedEntry) {
+      await trash.writeTrashRecord(base, 'overtime_entry', id, `${deletedEntry.fecha} — ${deletedEntry.actividad}`, deletedEntry);
+    }
     const entries = get().overtimeEntries.filter(e => e.id !== id);
     set({ overtimeEntries: entries });
     const ym = get().overtimeMonth;
@@ -2741,150 +2814,51 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setConfirmDestructiveActions: async (enabled) => {
     set({ confirmDestructiveActions: enabled });
-    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
-    if (configDir && basePath) {
-      await saveConfig(configDir, {
-        basePath,
-        startupScreen,
-        language,
-        confirmDestructiveActions: enabled,
-        notificationsEnabled: get().notificationsEnabled,
-        defaultReminderMinutes: get().defaultReminderMinutes,
-        lastOpenedProject: activeProject ?? undefined,
-        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
-      });
-    }
+    await persistConfig(get);
   },
 
   setNotificationsEnabled: async (enabled) => {
     set({ notificationsEnabled: enabled });
-    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
-    if (configDir && basePath) {
-      await saveConfig(configDir, {
-        basePath,
-        startupScreen,
-        language,
-        confirmDestructiveActions: get().confirmDestructiveActions,
-        notificationsEnabled: enabled,
-        defaultReminderMinutes: get().defaultReminderMinutes,
-        lastOpenedProject: activeProject ?? undefined,
-        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
-      });
-    }
+    await persistConfig(get);
   },
 
   setDefaultReminderMinutes: async (mins) => {
     set({ defaultReminderMinutes: mins });
-    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
-    if (configDir && basePath) {
-      await saveConfig(configDir, {
-        basePath,
-        startupScreen,
-        language,
-        confirmDestructiveActions: get().confirmDestructiveActions,
-        notificationsEnabled: get().notificationsEnabled,
-        defaultReminderMinutes: mins,
-        workWeekDays: get().workWeekDays,
-        holidaysAsNonWork: get().holidaysAsNonWork,
-        lastOpenedProject: activeProject ?? undefined,
-        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
-      });
-    }
+    await persistConfig(get);
   },
 
   setWorkWeekDays: async (days) => {
     set({ workWeekDays: days });
-    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
-    if (configDir && basePath) {
-      await saveConfig(configDir, {
-        basePath,
-        startupScreen,
-        language,
-        confirmDestructiveActions: get().confirmDestructiveActions,
-        notificationsEnabled: get().notificationsEnabled,
-        defaultReminderMinutes: get().defaultReminderMinutes,
-        workWeekDays: days,
-        holidaysAsNonWork: get().holidaysAsNonWork,
-        lastOpenedProject: activeProject ?? undefined,
-        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
-      });
-    }
+    await persistConfig(get);
   },
 
   setHolidaysAsNonWork: async (enabled) => {
     set({ holidaysAsNonWork: enabled });
-    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
-    if (configDir && basePath) {
-      await saveConfig(configDir, {
-        basePath,
-        startupScreen,
-        language,
-        confirmDestructiveActions: get().confirmDestructiveActions,
-        notificationsEnabled: get().notificationsEnabled,
-        defaultReminderMinutes: get().defaultReminderMinutes,
-        workWeekDays: get().workWeekDays,
-        holidaysAsNonWork: enabled,
-        animationsEnabled: get().animationsEnabled,
-        lastOpenedProject: activeProject ?? undefined,
-        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
-      });
-    }
+    await persistConfig(get);
   },
 
   setAnimationsEnabled: async (enabled) => {
     set({ animationsEnabled: enabled });
     applyAnimationsToDOM(enabled);
-    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
-    if (configDir && basePath) {
-      await saveConfig(configDir, {
-        basePath,
-        startupScreen,
-        language,
-        confirmDestructiveActions: get().confirmDestructiveActions,
-        notificationsEnabled: get().notificationsEnabled,
-        defaultReminderMinutes: get().defaultReminderMinutes,
-        workWeekDays: get().workWeekDays,
-        holidaysAsNonWork: get().holidaysAsNonWork,
-        animationsEnabled: enabled,
-        lastOpenedProject: activeProject ?? undefined,
-        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
-      });
-    }
+    await persistConfig(get);
+  },
+
+  setTrashAutoPurgeEnabled: async (enabled) => {
+    set({ trashAutoPurgeEnabled: enabled });
+    await persistConfig(get);
+    if (enabled) startTrashPurgeInterval(get);
+    else stopTrashPurgeInterval();
   },
 
   setStartupScreen: async (screen) => {
     set({ startupScreen: screen, activeSection: screen });
-    const { configDir, basePath, activeProject, activeNoteFolder } = get();
-    if (configDir && basePath) {
-      await saveConfig(configDir, {
-        basePath,
-        startupScreen: screen,
-        language: get().language,
-        confirmDestructiveActions: get().confirmDestructiveActions,
-        notificationsEnabled: get().notificationsEnabled,
-        defaultReminderMinutes: get().defaultReminderMinutes,
-        lastOpenedProject: activeProject ?? undefined,
-        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
-      });
-    }
+    await persistConfig(get);
   },
 
   setLanguage: async (lang) => {
     localStorage.setItem('language', lang);
     set({ language: lang });
-    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder } = get();
-    if (configDir && basePath) {
-      await saveConfig(configDir, {
-        basePath,
-        startupScreen,
-        language: lang,
-        confirmDestructiveActions: get().confirmDestructiveActions,
-        notificationsEnabled: get().notificationsEnabled,
-        defaultReminderMinutes: get().defaultReminderMinutes,
-        lastOpenedProject: activeProject ?? undefined,
-        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
-      });
-    }
+    await persistConfig(get);
   },
 
   setFontSize: (size: number) => {
@@ -3161,5 +3135,103 @@ export const useAppStore = create<AppState>((set, get) => ({
     await fs.writeFile(path, JSON.stringify(next, null, 2));
     set({ absenceDays: next });
     void syncDeleteAbsenceDay(get, id);
+  },
+
+  // ── Papelera de reciclaje ────────────────────────────────────
+  // Local por instalación (ver src/lib/trash.ts) — restaurar Task/Note/
+  // OvertimeEntry vuelve a mandar un CREATE al servidor con el mismo id;
+  // logday-server hace upsert-revive (ON CONFLICT... deleted_at = NULL,
+  // confirmado leyendo internal/note|task|overtime/store.go), así que
+  // esto revive el tombstone en vez de chocar con él. Daily entry no
+  // tiene sync hoy, no dispara nada de red.
+
+  listTrash: async () => {
+    const { basePath } = get();
+    if (!basePath) return [];
+    return trash.listTrashRecords(basePath);
+  },
+
+  restoreFromTrash: async (entity, key) => {
+    const { basePath, language } = get();
+    if (!basePath) return;
+    const record = await trash.readTrashRecord(basePath, entity, key);
+    if (!record) return;
+
+    if (entity === 'task') {
+      const task = record.data as Task;
+      await fs.createDir(projectDir(basePath, task.project)).catch(() => {});
+      await fs.writeFile(task.filePath, serializeTask(task));
+      set((state) => ({ tasks: [task, ...state.tasks.filter((t) => t.id !== task.id)] }));
+      void syncCreateTask(get, set, task);
+    } else if (entity === 'note') {
+      const note = record.data as Note;
+      if (note.folder) await fs.createDir(noteFolderDir(basePath, note.folder)).catch(() => {});
+      await fs.writeFile(note.filePath, serializeNote(note));
+      set((state) => ({ notes: [note, ...state.notes.filter((n) => n.id !== note.id)] }));
+      void syncCreateNote(get, set, note);
+    } else if (entity === 'overtime_entry') {
+      const entry = record.data as OvertimeEntry;
+      const ym = entry.fecha.slice(0, 7);
+      const [year, month] = ym.split('-');
+      await fs.createDir(overtimeMonthDir(basePath, year, month)).catch(() => {});
+      const path = overtimeMonthFilePath(basePath, year, month);
+      let entries: OvertimeEntry[] = [];
+      if (await fs.exists(path)) {
+        try {
+          const raw = await fs.readFile(path);
+          const match = raw.match(/^---\n([\s\S]*?)\n---/);
+          entries = match ? (JSON.parse(match[1]).entries ?? []) : [];
+        } catch { /* archivo vacío o corrupto */ }
+      }
+      const nextEntries = [...entries.filter((e) => e.id !== entry.id), entry]
+        .sort((a, b) => a.fecha.localeCompare(b.fecha));
+      await fs.writeFile(path, `---\n${JSON.stringify({ entries: nextEntries }, null, 2)}\n---\n`);
+      const { overtimeMonths } = get();
+      if (!overtimeMonths.includes(ym)) set({ overtimeMonths: [ym, ...overtimeMonths].sort().reverse() });
+      if (get().overtimeMonth === ym) set({ overtimeEntries: nextEntries });
+      void syncCreateOvertimeEntry(get, set, entry);
+    } else {
+      const { date, content } = record.data as { date: string; content: string };
+      const year = date.slice(0, 4);
+      const month = date.slice(5, 7);
+      const yearMonth = `${year}-${month}`;
+      const fp = dailyMonthFilePath(basePath, year, month);
+      let dayEntries: Record<string, string> = {};
+      try {
+        const raw = await fs.readFile(fp);
+        dayEntries = parseDailyFile(raw);
+      } catch { /* no file */ }
+      dayEntries[date] = content;
+      await fs.createDir(dailyMonthDir(basePath, year, month));
+      await fs.writeFile(fp, serializeDailyFile(dayEntries, yearMonth));
+      set((state) => ({ dailyEntries: { ...state.dailyEntries, [date]: content } }));
+      const { dailyMonths } = get();
+      if (!dailyMonths.includes(yearMonth)) set({ dailyMonths: [yearMonth, ...dailyMonths].sort().reverse() });
+    }
+
+    await trash.deleteTrashRecord(basePath, entity, key);
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    get().showToast({
+      kind: 'success',
+      title: t(language, 'toast', 'trashRestored'),
+      description: record.label,
+    });
+  },
+
+  deleteTrashItemForever: async (entity, key) => {
+    const { basePath, language } = get();
+    if (!basePath) return;
+    await trash.deleteTrashRecord(basePath, entity, key);
+    get().showToast({ kind: 'success', title: t(language, 'toast', 'trashItemDeleted') });
+  },
+
+  emptyTrash: async () => {
+    const { basePath, language } = get();
+    if (!basePath) return;
+    const items = await trash.listTrashRecords(basePath);
+    for (const item of items) {
+      await trash.deleteTrashRecord(basePath, item.entity, item.key);
+    }
+    get().showToast({ kind: 'success', title: t(language, 'toast', 'trashEmptied') });
   },
 }));

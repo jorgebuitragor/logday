@@ -6,6 +6,7 @@ import {
   OvertimeMonthMetaPatchPayload, OvertimeMonthMetaApiResponse,
   CalendarEventCreatePayload, CalendarEventPatchPayload, CalendarEventApiResponse,
   AbsenceDayCreatePayload, AbsenceDayPatchPayload, AbsenceDayApiResponse,
+  DailyEntryApiResponse,
 } from './syncMapping';
 
 export interface TokenResponse {
@@ -170,4 +171,17 @@ export function patchAbsenceDayRemote(baseUrl: string, token: string, id: string
 }
 export function deleteAbsenceDayRemote(baseUrl: string, token: string, id: string): Promise<void> {
   return request(baseUrl, 'DELETE', `/absence-days/${id}`, { token });
+}
+
+// ─── DailyEntry (contenido, CRDT) ───
+// PUT-only (natural key = date, sin POST) — mismo patrón que
+// pushNoteContentRemote, ver internal/dailyentry/handlers.go.
+export function putDailyEntryContentRemote(baseUrl: string, token: string, date: string, updateB64: string): Promise<DailyEntryApiResponse> {
+  return request(baseUrl, 'PUT', `/daily-entries/${date}`, {
+    token,
+    body: { content_update: updateB64, updated_at: new Date().toISOString() },
+  });
+}
+export function deleteDailyEntryRemote(baseUrl: string, token: string, date: string): Promise<void> {
+  return request(baseUrl, 'DELETE', `/daily-entries/${date}`, { token });
 }

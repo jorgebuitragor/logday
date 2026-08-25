@@ -25,6 +25,8 @@ import {
   createCalendarEventRemote, patchCalendarEventRemote, deleteCalendarEventRemote,
   createAbsenceDayRemote, patchAbsenceDayRemote, deleteAbsenceDayRemote,
   createOvertimeEntryRemote, patchOvertimeEntryRemote, deleteOvertimeEntryRemote,
+  patchOvertimeMonthMetaRemote,
+  putDailyEntryContentRemote, deleteDailyEntryRemote,
 } from '../lib/sync';
 import {
   taskToCreatePayload, taskFieldsToPatchPayload, taskFromApiResponse, TaskApiResponse, TaskCreatePayload, TaskPatchPayload,
@@ -32,11 +34,14 @@ import {
   calendarEventToCreatePayload, calendarEventFieldsToPatchPayload, calendarEventFromApiResponse, CalendarEventApiResponse, CalendarEventCreatePayload, CalendarEventPatchPayload,
   absenceDayToCreatePayload, absenceDayFieldsToPatchPayload, absenceDayFromApiResponse, AbsenceDayApiResponse, AbsenceDayCreatePayload, AbsenceDayPatchPayload,
   overtimeEntryToCreatePayload, overtimeEntryFieldsToPatchPayload, overtimeEntryFromApiResponse, OvertimeEntryApiResponse, OvertimeEntryCreatePayload, OvertimeEntryPatchPayload,
+  overtimeMonthMetaFieldsToPatchPayload, overtimeMonthMetaFromApiResponse, OvertimeMonthMetaApiResponse, OvertimeMonthMetaPatchPayload,
+  DailyEntryApiResponse,
 } from '../lib/syncMapping';
 import * as syncQueue from '../lib/syncQueue';
 import * as contentSyncQueue from '../lib/contentSyncQueue';
 import * as trash from '../lib/trash';
 import { bytesToBase64, persistYDoc, applyIncomingContentState, noteContentStatePath } from '../lib/noteContentSync';
+import { persistDailyYDoc, applyIncomingDailyContentState, getContentText as getDailyContentText, applyTextEdit as applyDailyTextEdit, loadPersistedDailyYDoc, deleteDailyContentState } from '../lib/dailyContentSync';
 import { parseFrontmatter, serializeTask, parseNote, serializeNote, formatDate } from '../lib/markdown';
 import { t } from '../lib/i18n';
 import {
@@ -597,7 +602,7 @@ export async function syncNoteContent(get: SyncGet, set: SyncSet, note: Note, yd
   if (!syncConfig.enabled) return;
   const updateB64 = bytesToBase64(Y.encodeStateAsUpdate(ydoc));
   if (syncConnectionStatus !== 'connected') {
-    contentSyncQueue.enqueue(note.id, updateB64);
+    contentSyncQueue.enqueue('note', note.id, updateB64);
     return;
   }
   const queuedAt = new Date().toISOString();
@@ -605,17 +610,67 @@ export async function syncNoteContent(get: SyncGet, set: SyncSet, note: Note, yd
     const response = await pushNoteContentRemote(syncConfig.serverUrl, syncConfig.accessToken, note.id, updateB64);
     applyNoteResponse(get, set, note.id, queuedAt, response);
   } catch {
-    contentSyncQueue.enqueue(note.id, updateB64);
+    contentSyncQueue.enqueue('note', note.id, updateB64);
+  }
+}
+
+/** Push del diff CRDT de un daily entry — mismo patrón que
+ *  syncNoteContent, pero sin componente propio: vive enteramente acá
+ *  porque saveDailyEntry (appStore.ts) ya recibe la llamada debounced
+ *  800ms desde DailyEditor.tsx, no hace falta un Y.Doc por componente
+ *  como el de NoteEditor.tsx. `oldText`/`newText` son solo un atajo para
+ *  saltar el trabajo si no cambió nada — el diff real siempre se hace
+ *  contra el contenido ya persistido en el `.ydoc` (getDailyContentText),
+ *  nunca contra `oldText` directamente. */
+async function pushDailyContentUpdate(get: SyncGet, set: SyncSet, date: string, oldText: string, newText: string): Promise<void> {
+  const { basePath } = get();
+  if (!basePath || oldText === newText) return;
+  const ydoc = (await loadPersistedDailyYDoc(basePath, date)) ?? new Y.Doc();
+  applyDailyTextEdit(ydoc, getDailyContentText(ydoc), newText);
+  await persistDailyYDoc(basePath, date, ydoc);
+  const updateB64 = bytesToBase64(Y.encodeStateAsUpdate(ydoc));
+  ydoc.destroy();
+
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  if (syncConnectionStatus !== 'connected') {
+    contentSyncQueue.enqueue('daily_entry', date, updateB64);
+    return;
+  }
+  try {
+    const response = await putDailyEntryContentRemote(syncConfig.serverUrl, syncConfig.accessToken, date, updateB64);
+    if (response.content_state) await applyDailyEntryContentUpdate(get, set, date, response.content_state);
+  } catch {
+    contentSyncQueue.enqueue('daily_entry', date, updateB64);
+  }
+}
+
+async function syncDeleteDailyEntry(get: SyncGet, date: string): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('daily_entry', date, 'delete');
+    return;
+  }
+  try {
+    await deleteDailyEntryRemote(syncConfig.serverUrl, syncConfig.accessToken, date);
+  } catch {
+    syncQueue.enqueue('daily_entry', date, 'delete');
   }
 }
 
 async function drainContentSyncQueue(get: SyncGet, set: SyncSet): Promise<void> {
   const { syncConfig } = get();
   if (!syncConfig.enabled) return;
-  await contentSyncQueue.drain(async (noteId, updateB64) => {
+  await contentSyncQueue.drain(async (entity, key, updateB64) => {
     const queuedAt = new Date().toISOString();
-    const response = await pushNoteContentRemote(syncConfig.serverUrl, syncConfig.accessToken, noteId, updateB64);
-    applyNoteResponse(get, set, noteId, queuedAt, response);
+    if (entity === 'note') {
+      const response = await pushNoteContentRemote(syncConfig.serverUrl, syncConfig.accessToken, key, updateB64);
+      applyNoteResponse(get, set, key, queuedAt, response);
+    } else {
+      const response = await putDailyEntryContentRemote(syncConfig.serverUrl, syncConfig.accessToken, key, updateB64);
+      if (response.content_state) await applyDailyEntryContentUpdate(get, set, key, response.content_state);
+    }
   });
 }
 
@@ -920,6 +975,59 @@ async function syncDeleteOvertimeEntry(get: SyncGet, entryId: string): Promise<v
   }
 }
 
+// ── OvertimeMonthMeta ─────────────────────────────────────────────
+// Mismatch de modelo: local es UN SOLO valor global (`overtimeMeta`,
+// localStorage), el server lo trata por year_month. Se sincroniza el
+// valor global como "la meta del mes que se está viendo ahora" — un
+// cambio remoto de un mes que NO es el visible se ignora a propósito
+// (no tiene sentido pisar lo que ves con la meta de un mes distinto).
+
+const OVERTIME_MONTH_META_FIELD_MAP: Record<string, string> = { colaborador: 'colaborador', cedula: 'cedula' };
+
+function applyOvertimeMonthMetaResponse(get: SyncGet, set: SyncSet, yearMonth: string, sinceIso: string, response: OvertimeMonthMetaApiResponse): void {
+  if (get().overtimeMonth !== yearMonth) return;
+  const mapped = overtimeMonthMetaFromApiResponse(response);
+  const merged = { ...get().overtimeMeta } as unknown as Record<string, unknown>;
+  const mappedRecord = mapped as unknown as Record<string, unknown>;
+  for (const [localKey, serverKey] of Object.entries(OVERTIME_MONTH_META_FIELD_MAP)) {
+    if (!syncQueue.hasNewerQueuedField('overtime_month_meta', yearMonth, serverKey, sinceIso)) {
+      merged[localKey] = mappedRecord[localKey];
+    }
+  }
+  const updated = merged as unknown as OvertimeMonthMeta;
+  set({ overtimeMeta: updated });
+  localStorage.setItem('overtimeMeta', JSON.stringify(updated));
+}
+
+async function syncPatchOvertimeMonthMeta(get: SyncGet, set: SyncSet, yearMonth: string, fields: Partial<OvertimeMonthMeta>): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled || Object.keys(fields).length === 0) return;
+  const payload = overtimeMonthMetaFieldsToPatchPayload(fields);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('overtime_month_meta', yearMonth, 'patch', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await patchOvertimeMonthMetaRemote(syncConfig.serverUrl, syncConfig.accessToken, yearMonth, payload);
+    applyOvertimeMonthMetaResponse(get, set, yearMonth, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('overtime_month_meta', yearMonth, 'patch', payload as unknown as Record<string, unknown>);
+  }
+}
+
+// Debounce del push — setOvertimeMeta se llama directo por cada tecla
+// desde OvertimeList.tsx (sin debounce de componente, a diferencia de
+// Note/Daily), así que este sí necesita el suyo acá.
+let overtimeMetaPushTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleOvertimeMetaPush(get: SyncGet, set: SyncSet, fields: Partial<OvertimeMonthMeta>): void {
+  if (overtimeMetaPushTimeout) clearTimeout(overtimeMetaPushTimeout);
+  overtimeMetaPushTimeout = setTimeout(() => {
+    void syncPatchOvertimeMonthMeta(get, set, get().overtimeMonth, fields);
+  }, 400);
+}
+
 function diffOvertimeEntryFields(prev: OvertimeEntry | undefined, next: OvertimeEntry): Partial<OvertimeEntry> {
   if (!prev) return { ...next };
   const fields: Partial<OvertimeEntry> = {};
@@ -980,7 +1088,23 @@ async function dispatchQueuedWrite(get: SyncGet, set: SyncSet, write: syncQueue.
     }
     return;
   }
-  if (write.entity !== 'task') return; // overtime_month_meta: pendiente, ver specs/sync-primer-sincronizacion
+  if (write.entity === 'overtime_month_meta') {
+    // Sin create — PATCH crea-si-no-existe (ver syncMapping.ts), y sin
+    // delete tampoco: no hay acción local que borre la meta de un mes.
+    if (write.op === 'patch') {
+      applyOvertimeMonthMetaResponse(get, set, write.entityId, write.queuedAt, await patchOvertimeMonthMetaRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as OvertimeMonthMetaPatchPayload));
+    }
+    return;
+  }
+  if (write.entity === 'daily_entry') {
+    // Solo delete acá — el contenido va por contentSyncQueue (CRDT), no
+    // por esta cola de create/patch/delete.
+    if (write.op === 'delete') {
+      await deleteDailyEntryRemote(serverUrl, accessToken, write.entityId);
+    }
+    return;
+  }
+  if (write.entity !== 'task') return;
   if (write.op === 'create') {
     const response = await createTaskRemote(serverUrl, accessToken, write.fields as unknown as TaskCreatePayload);
     applyTaskResponse(get, set, write.entityId, write.queuedAt, response);
@@ -1266,6 +1390,80 @@ async function applyRemoteOvertimeEntryChange(get: SyncGet, set: SyncSet, change
   if (get().overtimeMonth === ym) set({ overtimeEntries: nextEntries });
 }
 
+// change.id es el year_month (natural key, sin id generado — ver
+// syncQueue.ts). Igual que el push, un cambio remoto de un mes que no
+// es el visible se ignora a propósito (mismatch de modelo, ver arriba).
+async function applyRemoteOvertimeMonthMetaChange(get: SyncGet, set: SyncSet, change: SyncChange): Promise<void> {
+  const yearMonth = change.id;
+  if (get().overtimeMonth !== yearMonth) return;
+  if (change.deleted) {
+    const empty = { colaborador: '', cedula: '' };
+    set({ overtimeMeta: empty });
+    localStorage.setItem('overtimeMeta', JSON.stringify(empty));
+    return;
+  }
+  applyOvertimeMonthMetaResponse(get, set, yearMonth, EPOCH, change.data as OvertimeMonthMetaApiResponse);
+}
+
+/** Aplica un content_state de daily entry (echo del propio push o
+ *  /sync/changes) — reescribe la sección del día en el archivo de su mes.
+ *  Misma operación sin importar el origen, igual que applyNoteContentUpdate. */
+async function applyDailyEntryContentUpdate(get: SyncGet, set: SyncSet, date: string, contentStateB64: string): Promise<void> {
+  const { basePath } = get();
+  if (!basePath) return;
+  const { content } = await applyIncomingDailyContentState(basePath, date, contentStateB64);
+  if (get().dailyEntries[date] === content) return;
+  const year = date.slice(0, 4);
+  const month = date.slice(5, 7);
+  const yearMonth = `${year}-${month}`;
+  const fp = dailyMonthFilePath(basePath, year, month);
+  let entries: Record<string, string> = {};
+  try { entries = parseDailyFile(await fs.readFile(fp)); } catch { /* archivo nuevo */ }
+  entries[date] = content;
+  await fs.createDir(dailyMonthDir(basePath, year, month));
+  await fs.writeFile(fp, serializeDailyFile(entries, yearMonth));
+  set((s) => ({
+    dailyEntries: { ...s.dailyEntries, [date]: content },
+    dailyMonths: s.dailyMonths.includes(yearMonth) ? s.dailyMonths : [yearMonth, ...s.dailyMonths].sort().reverse(),
+  }));
+}
+
+async function applyRemoteDailyEntryChange(get: SyncGet, set: SyncSet, change: SyncChange): Promise<void> {
+  const { basePath } = get();
+  if (!basePath) return;
+  const date = change.id;
+
+  if (change.deleted) {
+    const existingContent = get().dailyEntries[date];
+    if (existingContent !== undefined) {
+      // Delete que llegó de OTRA instalación desktop — mismo motivo que
+      // Task/Note/OvertimeEntry (papelera compartida, ver
+      // specs/papelera-reciclaje). Antes de esto, dailys no tenían sync
+      // en absoluto, así que este es su primer hook de papelera remota.
+      await trash.writeTrashRecord(basePath, 'daily_entry', date, date, { date, content: existingContent });
+    }
+    const year = date.slice(0, 4);
+    const month = date.slice(5, 7);
+    const yearMonth = `${year}-${month}`;
+    const fp = dailyMonthFilePath(basePath, year, month);
+    let entries: Record<string, string> = {};
+    try { entries = parseDailyFile(await fs.readFile(fp)); } catch { /* no file */ }
+    delete entries[date];
+    await fs.createDir(dailyMonthDir(basePath, year, month));
+    await fs.writeFile(fp, serializeDailyFile(entries, yearMonth));
+    await deleteDailyContentState(basePath, date);
+    set((s) => {
+      const rest = { ...s.dailyEntries };
+      delete rest[date];
+      return { dailyEntries: rest };
+    });
+    return;
+  }
+
+  const contentState = (change.data as DailyEntryApiResponse).content_state;
+  if (contentState) await applyDailyEntryContentUpdate(get, set, date, contentState);
+}
+
 async function applyRemoteChanges(get: SyncGet, set: SyncSet, changes: SyncChange[]): Promise<void> {
   for (const change of changes) {
     if (change.type === 'task') {
@@ -1278,10 +1476,11 @@ async function applyRemoteChanges(get: SyncGet, set: SyncSet, changes: SyncChang
       await applyRemoteAbsenceDayChange(get, set, change);
     } else if (change.type === 'overtime_entry') {
       await applyRemoteOvertimeEntryChange(get, set, change);
+    } else if (change.type === 'overtime_month_meta') {
+      await applyRemoteOvertimeMonthMetaChange(get, set, change);
+    } else if (change.type === 'daily_entry') {
+      await applyRemoteDailyEntryChange(get, set, change);
     }
-    // overtime_month_meta, daily_entry: pendientes, ver
-    // specs/sync-primer-sincronizacion (mismatch de modelo local) y
-    // comentario arriba del archivo respectivamente.
   }
 }
 
@@ -2404,6 +2603,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         : [yearMonth, ...s.dailyMonths].sort().reverse(),
     }));
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    void pushDailyContentUpdate(get, set, date, existing[date] ?? '', activities);
   },
 
   setActiveDailyDate: (date) => set({ activeDailyDate: date }),
@@ -2487,6 +2687,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     delete existing[date];
     await fs.createDir(dailyMonthDir(basePath, year, month));
     await fs.writeFile(fp, serializeDailyFile(existing, yearMonth));
+    await deleteDailyContentState(basePath, date);
     set((s) => {
       const { [date]: _removed, ...rest } = s.dailyEntries;
       return {
@@ -2494,6 +2695,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeDailyDate: s.activeDailyDate === date ? null : s.activeDailyDate,
       };
     });
+    void syncDeleteDailyEntry(get, date);
     get().showToast({
       kind: 'success',
       title: t(language, 'toast', 'dailyDeleted'),
@@ -2705,6 +2907,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const updated = { ...get().overtimeMeta, ...meta };
     localStorage.setItem('overtimeMeta', JSON.stringify(updated));
     set({ overtimeMeta: updated });
+    scheduleOvertimeMetaPush(get, set, meta);
   },
 
   replaceOvertimeMetaSnapshot: (meta) => {

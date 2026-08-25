@@ -403,3 +403,21 @@ export function absenceDayFromApiResponse(payload: AbsenceDayApiResponse): Absen
     note: payload.note ?? undefined,
   };
 }
+
+// ─── DailyEntry ───
+// Sin tipo local propio (ver specs/sync-primer-sincronizacion) — un daily
+// es una entrada en `Record<fecha, texto>` (dailyFileFormat.ts), no un
+// objeto con id. `date` es la key natural tanto acá como en logday-server
+// (PUT /daily-entries/:date), igual que year_month en OvertimeMonthMeta.
+// Todo el contenido es CRDT (ver dailyContentSync.ts) — no hay create ni
+// patch de metadata, PUT-only con content_update, por eso no hace falta un
+// CreatePayload/PatchPayload acá como en las demás entidades.
+
+export interface DailyEntryApiResponse {
+  date: string;
+  content: string;
+  content_state?: string;
+  seq: number;
+  updated_at: string;
+  deleted_at?: string;
+}

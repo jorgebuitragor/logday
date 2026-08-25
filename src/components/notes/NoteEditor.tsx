@@ -72,7 +72,9 @@ import python from 'highlight.js/lib/languages/python';
 import sql from 'highlight.js/lib/languages/sql';
 import typescript from 'highlight.js/lib/languages/typescript';
 import yaml from 'highlight.js/lib/languages/yaml';
-import { useAppStore } from '../../store/appStore';
+import * as Y from 'yjs';
+import { readPersistedUpdate, getContentText, applyTextEdit } from '../../lib/noteContentSync';
+import { useAppStore, syncNoteContent } from '../../store/appStore';
 import { Note } from '../../types/note';
 import { ExportModal } from './ExportModal';
 import { MarkdownPreview } from './MarkdownPreview';
@@ -299,6 +301,34 @@ export function NoteEditor() {
     editor.chain().focus().insertContentAt({ from, to }, transformed).run();
   };
 
+  // Y.Doc propio de esta nota (canal CRDT de contenido, ver
+  // noteContentSync.ts) — vive mientras este componente esté montado.
+  // Gracias a `key={activeNote.id}` en App.tsx, este componente se
+  // desmonta/remonta completo por nota (mismo patrón que
+  // `<OvertimeEditor key={editingEntry?.id}>`), así que no hay que
+  // destruir/rebindear un Y.Doc vivo bajo un editor persistente — cada
+  // instancia de NoteEditor tiene exactamente un Y.Doc, creado una vez acá.
+  // NO está atado al editor Tiptap (no hay `@tiptap/extension-collaboration`
+  // acá) — el protocolo real de logday-server/logday-web para
+  // `Note.content` es un `Y.Text` plano (ver noteContentSync.ts), no un
+  // documento estructurado; el editor sigue siendo el Tiptap normal de
+  // siempre, y el contenido se refleja hacia el `Y.Doc` como un diff de
+  // texto en cada guardado (`applyTextEdit`), igual que hace logday-web.
+  const ydocRef = useRef<Y.Doc | null>(null);
+  if (!ydocRef.current) ydocRef.current = new Y.Doc();
+  // Promesa de hidratación del Y.Doc (sidecar local o bootstrap desde el
+  // contenido actual) — el guardado espera esto antes de diffear, para no
+  // correr contra un Y.Text todavía vacío por una hidratación en curso.
+  const ydocReadyRef = useRef<Promise<void> | null>(null);
+  // Última nota conocida para esta instancia (misma id durante toda su
+  // vida) — el efecto de flush al desmontar la lee de acá en vez de
+  // cerrar sobre `activeNote` directamente, para no perder ediciones de
+  // metadata (título, tags, etc.) hechas después de que ese efecto se
+  // registró la primera vez. Se reasigna en cada render, sin useEffect,
+  // mismo patrón que `titleIsPresentRef` más abajo.
+  const activeNoteRef = useRef<Note | null>(null);
+  activeNoteRef.current = activeNote;
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -315,7 +345,7 @@ export function NoteEditor() {
       UnderlineExt,
       TaskList,
       TaskItem.configure({ nested: true }),
-      Placeholder.configure({ placeholder: 'Escribe tu nota\u2026' }),
+      Placeholder.configure({ placeholder: 'Escribe tu nota…' }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Highlight.configure({ multicolor: false }),
       ImageExt.configure({ inline: false, allowBase64: true }),
@@ -908,12 +938,28 @@ export function NoteEditor() {
 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Refleja `newContent` hacia el Y.Doc de esta nota como un diff de texto
+  // (ver applyTextEdit en noteContentSync.ts) y lo manda/encola. Espera
+  // ydocReadyRef primero — diffear contra un Y.Text que todavía no terminó
+  // de hidratarse (sidecar local, o bootstrap desde el contenido actual)
+  // produciría un diff contra una base incorrecta.
+  const pushContentUpdate = useCallback(async (note: Note, newContent: string) => {
+    await ydocReadyRef.current;
+    const ydoc = ydocRef.current;
+    if (!ydoc) return;
+    applyTextEdit(ydoc, getContentText(ydoc), newContent);
+    await syncNoteContent(useAppStore.getState, useAppStore.setState, note, ydoc);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const schedulesSave = useCallback(
     (patch: Partial<Note>) => {
       if (!activeNote) return;
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = setTimeout(() => {
-        updateNote({ ...activeNote, ...patch });
+        const updated = { ...activeNote, ...patch };
+        updateNote(updated);
+        if ('content' in patch) void pushContentUpdate(updated, patch.content as string);
       }, 600);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -984,7 +1030,9 @@ export function NoteEditor() {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const currentMd = normalizeEditorMarkdown((editorInstance.storage as any).markdown.getMarkdown() as string);
-        updateNote({ ...freshNote, title: titleToSave, content: currentMd });
+        const flushed = { ...freshNote, title: titleToSave, content: currentMd };
+        updateNote(flushed);
+        void pushContentUpdate(flushed, currentMd);
       } catch { /* editor destroyed */ }
     }, 600);
 
@@ -999,6 +1047,8 @@ export function NoteEditor() {
   };
   // ────────────────────────────────────────────────────────────────────────
 
+  // Lo que se ve en pantalla se resuelve igual que siempre — síncrono,
+  // directo desde `activeNote.content` — sin esperar nada del canal CRDT.
   useEffect(() => {
     if (!activeNote || !editor) return;
     const normalizedContent = normalizeEditorMarkdown(activeNote.content || '');
@@ -1015,6 +1065,65 @@ export function NoteEditor() {
     setShowDiagramMenu(false);
     setEditingDiagramIndex(null);
   }, [activeNote?.id, editor]);
+
+  // Hidratación del canal CRDT (independiente de lo que se ve en pantalla,
+  // resuelto arriba de forma síncrona como siempre) — dos caminos mutuamente
+  // excluyentes para no duplicar contenido (Yjs trataría un seed + un
+  // applyUpdate del mismo contenido como dos ediciones concurrentes):
+  //  - ya existe `.ydoc` local (nota tocada antes por esta feature) →
+  //    aplicarlo sobre el Y.Doc recién creado.
+  //  - no existe → sembrar el `Y.Text` desde el Markdown actual
+  //    (`activeNote.content`) como un diff contra "" — primera vez que
+  //    esta nota entra al mundo CRDT, la migra sin perder su contenido
+  //    previo (logday-web no necesita este camino: ahí toda nota nace ya
+  //    dentro del CRDT, nunca tiene contenido previo que migrar).
+  useEffect(() => {
+    if (!activeNote) return;
+    const ydoc = ydocRef.current!;
+    let cancelled = false;
+    ydocReadyRef.current = (async () => {
+      const persistedUpdate = await readPersistedUpdate(activeNote.filePath).catch(() => null);
+      if (cancelled) return;
+      if (persistedUpdate) {
+        Y.applyUpdate(ydoc, persistedUpdate);
+      } else {
+        const normalizedContent = normalizeEditorMarkdown(activeNote.content || '');
+        if (normalizedContent) applyTextEdit(ydoc, '', normalizedContent);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeNote?.id]);
+
+  // Flush del guardado pendiente + push de contenido + liberar el Y.Doc al
+  // desmontar (cambio de nota vía `key`, o salir de la sección Notas). El
+  // `setTimeout` de `schedulesSave` no se cancela solo con React — si no se
+  // hace flush acá, la última edición dentro de la ventana de debounce de
+  // 600ms se perdería del todo al cambiar de nota rápido.
+  useEffect(() => {
+    return () => {
+      const ydoc = ydocRef.current;
+      let pending: Promise<void> | null = null;
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+        const latestNote = activeNoteRef.current;
+        if (latestNote && editor) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const md = normalizeEditorMarkdown((editor.storage as any).markdown.getMarkdown() as string);
+            const flushed = { ...latestNote, content: md };
+            void updateNote(flushed);
+            pending = pushContentUpdate(flushed, md);
+          } catch { /* editor ya destruido */ }
+        }
+      }
+      // Solo se destruye el Y.Doc después de que el flush pendiente (si lo
+      // hay) termine — destruirlo antes rompería el encode/push en curso.
+      if (pending) void pending.finally(() => ydoc?.destroy());
+      else ydoc?.destroy();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor]);
 
   useEffect(() => {
     if (skipNextContentSaveRef.current) {

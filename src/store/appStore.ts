@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
+import * as Y from 'yjs';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Task } from '../types/task';
@@ -20,7 +21,7 @@ import { fs, pickFolder, pickFile, saveDialog, SearchResult } from '../lib/invok
 import {
   login as syncLogin, SyncApiError, normalizeServerUrl, syncChangesRemote, SyncChange,
   createTaskRemote, patchTaskRemote, deleteTaskRemote,
-  createNoteRemote, patchNoteRemote, deleteNoteRemote,
+  createNoteRemote, patchNoteRemote, deleteNoteRemote, pushNoteContentRemote,
   createCalendarEventRemote, patchCalendarEventRemote, deleteCalendarEventRemote,
   createAbsenceDayRemote, patchAbsenceDayRemote, deleteAbsenceDayRemote,
   createOvertimeEntryRemote, patchOvertimeEntryRemote, deleteOvertimeEntryRemote,
@@ -33,6 +34,8 @@ import {
   overtimeEntryToCreatePayload, overtimeEntryFieldsToPatchPayload, overtimeEntryFromApiResponse, OvertimeEntryApiResponse, OvertimeEntryCreatePayload, OvertimeEntryPatchPayload,
 } from '../lib/syncMapping';
 import * as syncQueue from '../lib/syncQueue';
+import * as contentSyncQueue from '../lib/contentSyncQueue';
+import { bytesToBase64, persistYDoc, applyIncomingContentState, noteContentStatePath } from '../lib/noteContentSync';
 import { parseFrontmatter, serializeTask, parseNote, serializeNote, formatDate } from '../lib/markdown';
 import { t } from '../lib/i18n';
 import {
@@ -515,6 +518,65 @@ function applyNoteResponse(get: SyncGet, set: SyncSet, entityId: string, sinceIs
     notes: state.notes.map((n) => (n.id === entityId ? updated : n)),
     activeNote: state.activeNote?.id === entityId ? updated : state.activeNote,
   }));
+  if (response.content_state) void applyNoteContentUpdate(get, set, entityId, response.content_state);
+}
+
+/** Aplica un `content_state` (CRDT, base64) recibido del servidor —
+ *  creación/patch propio (echo) o /sync/changes — al `.ydoc` local y
+ *  reescribe `content` + el `.md` en disco. Misma operación sin importar si
+ *  la nota está abierta en el editor ahora mismo: no hay forma de tocar el
+ *  `Y.Doc` en memoria de un NoteEditor montado desde acá (sin WebSocket
+ *  todavía, ver reconcileSync) — si el usuario la tiene abierta, ve el
+ *  contenido fusionado la próxima vez que la abra. Colaboración en vivo
+ *  depende de la fase "Tiempo real" (fuera de este diseño). */
+async function applyNoteContentUpdate(get: SyncGet, set: SyncSet, noteId: string, contentStateB64: string): Promise<void> {
+  const note = get().notes.find((n) => n.id === noteId);
+  if (!note) return;
+  const { content } = await applyIncomingContentState(note.filePath, contentStateB64);
+  if (content === note.content) return;
+  const updated = { ...note, content };
+  await fs.writeFile(updated.filePath, serializeNote(updated));
+  set((state) => ({
+    notes: state.notes.map((n) => (n.id === noteId ? updated : n)),
+    activeNote: state.activeNote?.id === noteId ? updated : state.activeNote,
+  }));
+}
+
+/** Push del estado Yjs completo de una nota — canal separado de
+ *  syncPatchNote (metadata/LWW). Persiste el `.ydoc` local siempre primero
+ *  (offline-safe, igual que el `.md`); si hay conexión intenta mandarlo ya,
+ *  si no (o falla) lo encola en contentSyncQueue — llamado desde
+ *  NoteEditor.tsx en cada guardado. La respuesta es la fila completa de la
+ *  nota (mismo shape que create/patch, ver logday-web api.ts
+ *  `postNoteContent`) — se enruta por `applyNoteResponse` para reusar el
+ *  mismo merge de metadata guardado-por-cola-pendiente y el enganche de
+ *  `content_state` que ya tienen create/patch. */
+export async function syncNoteContent(get: SyncGet, set: SyncSet, note: Note, ydoc: Y.Doc): Promise<void> {
+  await persistYDoc(note.filePath, ydoc);
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  const updateB64 = bytesToBase64(Y.encodeStateAsUpdate(ydoc));
+  if (syncConnectionStatus !== 'connected') {
+    contentSyncQueue.enqueue(note.id, updateB64);
+    return;
+  }
+  const queuedAt = new Date().toISOString();
+  try {
+    const response = await pushNoteContentRemote(syncConfig.serverUrl, syncConfig.accessToken, note.id, updateB64);
+    applyNoteResponse(get, set, note.id, queuedAt, response);
+  } catch {
+    contentSyncQueue.enqueue(note.id, updateB64);
+  }
+}
+
+async function drainContentSyncQueue(get: SyncGet, set: SyncSet): Promise<void> {
+  const { syncConfig } = get();
+  if (!syncConfig.enabled) return;
+  await contentSyncQueue.drain(async (noteId, updateB64) => {
+    const queuedAt = new Date().toISOString();
+    const response = await pushNoteContentRemote(syncConfig.serverUrl, syncConfig.accessToken, noteId, updateB64);
+    applyNoteResponse(get, set, noteId, queuedAt, response);
+  });
 }
 
 async function syncCreateNote(get: SyncGet, set: SyncSet, note: Note): Promise<void> {
@@ -990,6 +1052,7 @@ async function applyRemoteNoteChange(get: SyncGet, set: SyncSet, change: SyncCha
   if (change.deleted) {
     if (!existing) return;
     await fs.deleteFile(existing.filePath).catch(() => {});
+    await fs.deleteFile(noteContentStatePath(existing.filePath)).catch(() => {});
     set((state) => ({
       notes: state.notes.filter((n) => n.id !== change.id),
       activeNote: state.activeNote?.id === change.id ? null : state.activeNote,
@@ -999,10 +1062,12 @@ async function applyRemoteNoteChange(get: SyncGet, set: SyncSet, change: SyncCha
 
   const mapped = noteFromApiResponse(change.data as NoteApiResponse);
   const filePath = existing?.filePath ?? noteFilePath(basePath, mapped.folder, change.id);
-  // content nunca viene de acá (metadata únicamente, ver comentario
-  // arriba del archivo) — se preserva el contenido local tal cual,
-  // tanto para una nota existente como para una nueva (que arranca
-  // sin contenido hasta que la fase CRDT lo traiga).
+  // content nunca viene de acá por el campo `content` de la metadata
+  // (ver comentario arriba del archivo) — se preserva el contenido
+  // local tal cual, tanto para una nota existente como para una nueva
+  // (que arranca sin contenido hasta que llegue su content_state, ver
+  // abajo). `content_state` (CRDT) sí puede venir en este mismo
+  // payload — se aplica aparte, después del set() de esta función.
   const merged = {
     ...existing, ...mapped, filePath,
     content: existing?.content ?? '',
@@ -1025,6 +1090,8 @@ async function applyRemoteNoteChange(get: SyncGet, set: SyncSet, change: SyncCha
       : [finalNote, ...state.notes],
     activeNote: state.activeNote?.id === change.id ? finalNote : state.activeNote,
   }));
+  const contentState = (change.data as NoteApiResponse).content_state;
+  if (contentState) void applyNoteContentUpdate(get, set, change.id, contentState);
 }
 
 async function applyRemoteCalendarEventChange(get: SyncGet, set: SyncSet, change: SyncChange): Promise<void> {
@@ -1196,12 +1263,25 @@ async function reconcileSync(get: SyncGet, set: SyncSet): Promise<void> {
 // Sin WebSocket todavía (fase "Tiempo real" pendiente) — este
 // intervalo es el stand-in hasta entonces. Se arranca/para junto con
 // syncConnect/syncDisconnect.
+//
+// Cada tick también drena la cola local antes de reconciliar — no
+// solo al conectar. syncCreateX/syncPatchX/syncDeleteX mandan directo
+// cuando hay conexión y encolan solo si esa llamada falla (network
+// blip, timeout, etc.); sin este drenado periódico esa entrada se
+// queda en la cola para siempre aunque la app siga "Conectado", ya
+// que nada más la reintenta hasta el próximo syncConnect (reconectar
+// a mano o reiniciar la app). Bug real encontrado probando el delete
+// de CalendarEvent: quedó en la cola sin drenar con la app conectada
+// todo el tiempo.
 const RECONCILE_INTERVAL_MS = 30_000;
 let reconcileIntervalId: ReturnType<typeof setInterval> | null = null;
 
 function startReconcileInterval(get: SyncGet, set: SyncSet): void {
   if (reconcileIntervalId) return;
-  reconcileIntervalId = setInterval(() => { void reconcileSync(get, set); }, RECONCILE_INTERVAL_MS);
+  reconcileIntervalId = setInterval(() => {
+    void Promise.all([drainSyncQueue(get, set), drainContentSyncQueue(get, set)])
+      .then(() => reconcileSync(get, set));
+  }, RECONCILE_INTERVAL_MS);
 }
 
 function stopReconcileInterval(): void {
@@ -2039,6 +2119,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   deleteNote: async (note, options) => {
     const showToast = options?.showToast ?? true;
     await fs.deleteFile(note.filePath);
+    await fs.deleteFile(noteContentStatePath(note.filePath)).catch(() => {});
     const language = get().language;
     set((state) => ({
       notes: state.notes.filter((n) => n.id !== note.id),
@@ -2966,7 +3047,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       // el eco de su propia respuesta llegando por /sync/changes
       // (aplicarla de nuevo es inofensivo, pero drenar primero evita
       // el orden raro de verla "revertirse" un instante).
-      void drainSyncQueue(get, set).then(() => reconcileSync(get, set));
+      void Promise.all([drainSyncQueue(get, set), drainContentSyncQueue(get, set)])
+        .then(() => reconcileSync(get, set));
       startReconcileInterval(get, set);
     } catch (e) {
       const msg = e instanceof SyncApiError ? e.message : String(e);

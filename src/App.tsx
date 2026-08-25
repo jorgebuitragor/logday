@@ -27,12 +27,13 @@ const OvertimeList  = lazy(() => import('./components/overtime/OvertimeList').th
 const OvertimeEditor = lazy(() => import('./components/overtime/OvertimeEditor').then(m => ({ default: m.OvertimeEditor })));
 
 export default function App() {
-  const { init, isLoading, isConfigured, activeTask, activeSection, createNote, setSection, shortcuts, overtimeMonth, language, isSidebarCollapsed } = useAppStore(
+  const { init, isLoading, isConfigured, activeTask, activeNoteId, activeSection, createNote, setSection, shortcuts, overtimeMonth, language, isSidebarCollapsed } = useAppStore(
     useShallow((s) => ({
       init: s.init,
       isLoading: s.isLoading,
       isConfigured: s.isConfigured,
       activeTask: s.activeTask,
+      activeNoteId: s.activeNote?.id ?? null,
       activeSection: s.activeSection,
       createNote: s.createNote,
       setSection: s.setSection,
@@ -180,7 +181,7 @@ export default function App() {
           <>
             <NoteList />
             <ResizeHandle onResize={handleListResize} onReset={resetListWidth} />
-            <NoteEditor />
+            <NoteEditor key={activeNoteId ?? 'none'} />
           </>
         ) : activeSection === 'overtime' ? (
           <>

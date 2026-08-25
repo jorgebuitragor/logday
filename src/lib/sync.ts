@@ -110,6 +110,22 @@ export function deleteNoteRemote(baseUrl: string, token: string, id: string): Pr
   return request(baseUrl, 'DELETE', `/notes/${id}`, { token });
 }
 
+// ─── Note (content, CRDT) ───
+// Canal separado del PATCH de metadata (LWW) de arriba — ver
+// specs/sync-servidor/design.md "CRDT: Note.content..." y, para el
+// contrato exacto (verificado contra la implementación real, no solo el
+// spec), logday-web/src/lib/api.ts `postNoteContent`: el body va como
+// `content_update` (no `update`) + `updated_at`, y la respuesta es la fila
+// completa de la nota (mismo shape que create/patch), no un objeto angosto
+// — el servidor mergea el update Yjs (nunca lo rechaza por antigüedad, los
+// updates conmutan) y devuelve el `content`/`content_state` ya resultante.
+export function pushNoteContentRemote(baseUrl: string, token: string, id: string, updateB64: string): Promise<NoteApiResponse> {
+  return request(baseUrl, 'POST', `/notes/${id}/content`, {
+    token,
+    body: { content_update: updateB64, updated_at: new Date().toISOString() },
+  });
+}
+
 // ─── OvertimeEntry ───
 
 export function createOvertimeEntryRemote(baseUrl: string, token: string, payload: OvertimeEntryCreatePayload): Promise<OvertimeEntryApiResponse> {

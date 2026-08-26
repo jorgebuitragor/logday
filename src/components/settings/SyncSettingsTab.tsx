@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Upload, Eye, EyeOff, RefreshCw, CheckCircle2, AlertCircle, CloudOff } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
+import { DevicesPanel } from './DevicesPanel';
 
 // Sin timers de fondo (a diferencia de GitSettingsTab) — no hace
 // falta el patrón "active prop, siempre montado". El shell lo monta
@@ -78,6 +79,7 @@ export function SyncSettingsTab() {
         >
           {t(language, 'extras', 'syncDisconnect')}
         </button>
+        <DevicesPanel />
       </>
     ) : (
       <div className="space-y-3">

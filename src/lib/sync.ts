@@ -80,6 +80,21 @@ export function refreshToken(baseUrl: string, refreshTokenValue: string): Promis
   });
 }
 
+export interface DeviceResponse {
+  id: string;
+  device_name: string;
+  created_at: string;
+  last_used_at: string;
+}
+
+export function listDevicesRemote(baseUrl: string, token: string): Promise<DeviceResponse[]> {
+  return request(baseUrl, 'GET', '/devices', { token });
+}
+
+export function revokeDeviceRemote(baseUrl: string, token: string, id: string): Promise<void> {
+  return request(baseUrl, 'DELETE', `/devices/${id}`, { token });
+}
+
 /** since=0 (u omitido) trae el historial completo — usado tanto para
  *  el pull incremental normal como para el full resync tras un cursor
  *  inválido (410, ver appStore.ts reconcileSync). */

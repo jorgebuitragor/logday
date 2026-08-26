@@ -28,6 +28,7 @@ import {
   createOvertimeEntryRemote, patchOvertimeEntryRemote, deleteOvertimeEntryRemote,
   patchOvertimeMonthMetaRemote,
   putDailyEntryContentRemote, deleteDailyEntryRemote,
+  listDevicesRemote, revokeDeviceRemote, DeviceResponse,
 } from '../lib/sync';
 import {
   taskToCreatePayload, taskFieldsToPatchPayload, taskFromApiResponse, TaskApiResponse, TaskCreatePayload, TaskPatchPayload,
@@ -137,6 +138,7 @@ interface AppState {
   syncConnectionStatus: SyncConnectionStatus;
   syncErrorMsg: string;
   isSyncOpen: boolean;
+  devices: DeviceResponse[];
 
   // ── Actions ──────────────────────────────────────────────────
 
@@ -264,6 +266,8 @@ interface AppState {
   syncDisconnect: () => void;
   toggleSync: () => void;
   openSettingsSyncTab: () => void;
+  loadDevices: () => Promise<void>;
+  revokeDeviceAction: (id: string) => Promise<void>;
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -1816,6 +1820,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   syncConnectionStatus: 'disconnected' as SyncConnectionStatus,
   syncErrorMsg: '',
   isSyncOpen: false,
+  devices: [],
   overtimeEntries: [],
   overtimeMonth: new Date().toISOString().slice(0, 7),
   overtimeMonths: [],
@@ -3430,6 +3435,30 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   toggleSync: () => set((s) => ({ isSyncOpen: !s.isSyncOpen })),
   openSettingsSyncTab: () => set({ isSyncOpen: true, isSettingsOpen: true }),
+
+  loadDevices: async () => {
+    const { syncConfig } = get();
+    if (!syncConfig.enabled || !syncConfig.accessToken) return;
+    try {
+      const devices = await listDevicesRemote(syncConfig.serverUrl, syncConfig.accessToken);
+      set({ devices });
+    } catch { /* sin conexión momentánea — la lista se queda con lo que ya tenía */ }
+  },
+
+  // Revocar el propio dispositivo invalida ya mismo el access/refresh
+  // token que se usaron para pedirlo — desconectar el sync local de
+  // inmediato en vez de esperar a que el próximo write falle solo,
+  // mismo criterio que logday-web (ver su revokeDeviceAction).
+  revokeDeviceAction: async (id: string) => {
+    const { syncConfig } = get();
+    if (!syncConfig.enabled || !syncConfig.accessToken) return;
+    const isSelf = id === syncConfig.deviceId;
+    try {
+      await revokeDeviceRemote(syncConfig.serverUrl, syncConfig.accessToken, id);
+      if (isSelf) { get().syncDisconnect(); return; }
+      set({ devices: get().devices.filter((d) => d.id !== id) });
+    } catch { /* deja la lista como estaba, el usuario puede reintentar */ }
+  },
 
   // ── Calendar Events ────────────────────────────────────────────
 

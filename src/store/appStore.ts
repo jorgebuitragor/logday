@@ -139,6 +139,8 @@ interface AppState {
   syncErrorMsg: string;
   isSyncOpen: boolean;
   devices: DeviceResponse[];
+  lastSyncedAt: string | null;
+  syncNowInProgress: boolean;
 
   // ── Actions ──────────────────────────────────────────────────
 
@@ -268,6 +270,7 @@ interface AppState {
   openSettingsSyncTab: () => void;
   loadDevices: () => Promise<void>;
   revokeDeviceAction: (id: string) => Promise<void>;
+  syncNow: () => Promise<void>;
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -1505,11 +1508,16 @@ async function reconcileSync(get: SyncGet, set: SyncSet): Promise<void> {
     if (changes.length > 0) {
       setSyncCursor(changes.reduce((m, c) => Math.max(m, c.seq), cursor));
     }
+    // Se marca "sincronizado" acá, no solo cuando hay cambios reales
+    // — un chequeo exitoso sin novedades sigue siendo una
+    // sincronización válida para el indicador de "última vez".
+    set({ lastSyncedAt: new Date().toISOString() });
   } catch (e) {
     if (e instanceof SyncApiError && e.status === 410) {
       const changes = await syncChangesRemote(syncConfig.serverUrl, syncConfig.accessToken, 0);
       await applyRemoteChanges(get, set, changes);
       setSyncCursor(changes.reduce((m, c) => Math.max(m, c.seq), 0));
+      set({ lastSyncedAt: new Date().toISOString() });
     }
     // Otros errores (red caída, etc.): se reintenta solo en el
     // próximo intervalo periódico o la próxima reconexión — no hay
@@ -1821,6 +1829,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   syncErrorMsg: '',
   isSyncOpen: false,
   devices: [],
+  lastSyncedAt: null,
+  syncNowInProgress: false,
   overtimeEntries: [],
   overtimeMonth: new Date().toISOString().slice(0, 7),
   overtimeMonths: [],
@@ -3430,7 +3440,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     disconnectRealtime();
     const cfg: SyncConfig = { enabled: false, serverUrl: '', email: '', accessToken: '', refreshToken: '', deviceId: '' };
     localStorage.setItem('syncConfig', JSON.stringify(cfg));
-    set({ syncConfig: cfg, syncConnectionStatus: 'disconnected', syncErrorMsg: '' });
+    set({ syncConfig: cfg, syncConnectionStatus: 'disconnected', syncErrorMsg: '', lastSyncedAt: null, devices: [] });
   },
 
   toggleSync: () => set((s) => ({ isSyncOpen: !s.isSyncOpen })),
@@ -3458,6 +3468,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (isSelf) { get().syncDisconnect(); return; }
       set({ devices: get().devices.filter((d) => d.id !== id) });
     } catch { /* deja la lista como estaba, el usuario puede reintentar */ }
+  },
+
+  // Botón manual (estilo "sync now" de Bitwarden) — el WS+poll de
+  // fondo ya mantienen todo al día solos, esto es una vía de escape
+  // visible para cuando el usuario quiere confirmar/forzar ahora mismo
+  // (después de reconectar wifi, dormir la laptop, etc.), no el
+  // mecanismo principal. También drena la cola local, igual que hace
+  // el intervalo periódico — no solo reconcilia.
+  syncNow: async () => {
+    if (!get().syncConfig.enabled) return;
+    set({ syncNowInProgress: true });
+    try {
+      await Promise.all([drainSyncQueue(get, set), drainContentSyncQueue(get, set)]);
+      await reconcileSync(get, set);
+    } finally {
+      set({ syncNowInProgress: false });
+    }
   },
 
   // ── Calendar Events ────────────────────────────────────────────

@@ -1,8 +1,29 @@
-import { useState } from 'react';
-import { Upload, Eye, EyeOff, RefreshCw, CheckCircle2, AlertCircle, CloudOff } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Upload, Eye, EyeOff, RefreshCw, Check, CheckCircle2, AlertCircle, CloudOff } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
+import { Language } from '../../types/common';
 import { DevicesPanel } from './DevicesPanel';
+import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
+import { useConfirmDelete } from '../../hooks/useConfirmDelete';
+
+// Enfriamiento tras un click manual — sin esto, nada impide que el
+// usuario reviente el botón a clicks; syncNowInProgress por sí solo
+// no alcanza porque un pull exitoso contra un server rápido resuelve
+// en bien menos de un segundo, dejando la puerta abierta a reintentos
+// inmediatos. El check visible dura menos que el enfriamiento a
+// propósito, para no sugerir que ya se puede volver a sincronizar.
+const SYNC_COOLDOWN_MS = 8_000;
+const SYNC_CHECK_DISPLAY_MS = 2_000;
+
+function relativeSyncTime(iso: string, language: Language): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const diffMin = Math.floor(diffMs / 60_000);
+  if (diffMin < 1) return language === 'en' ? 'just now' : 'ahora mismo';
+  if (diffMin < 60) return language === 'en' ? `${diffMin} min ago` : `hace ${diffMin} min`;
+  const diffH = Math.floor(diffMin / 60);
+  return language === 'en' ? `${diffH} h ago` : `hace ${diffH} h`;
+}
 
 // Sin timers de fondo (a diferencia de GitSettingsTab) — no hace
 // falta el patrón "active prop, siempre montado". El shell lo monta
@@ -13,8 +34,33 @@ export function SyncSettingsTab() {
   const {
     syncConfig, syncConnectionStatus, syncErrorMsg,
     syncConnect, syncDisconnect,
-    language,
+    lastSyncedAt, syncNowInProgress, syncNow,
+    language, confirmDestructiveActions,
   } = useAppStore();
+
+  const confirmDisconnectDialog = useConfirmDelete<true>(confirmDestructiveActions);
+
+  // El label de "hace X" es derivado de Date.now() en cada render —
+  // sin este tick se queda pegado al valor de la última vez que algo
+  // más causó un re-render de este tab (que solo está montado
+  // mientras el modal de ajustes está abierto en esta pestaña).
+  const [, forceSyncTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => forceSyncTick((n) => n + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const [syncCooldown, setSyncCooldown] = useState(false);
+  const [justSynced, setJustSynced] = useState(false);
+
+  const handleSyncNow = async () => {
+    if (syncCooldown || syncNowInProgress) return;
+    setSyncCooldown(true);
+    setTimeout(() => setSyncCooldown(false), SYNC_COOLDOWN_MS);
+    await syncNow();
+    setJustSynced(true);
+    setTimeout(() => setJustSynced(false), SYNC_CHECK_DISPLAY_MS);
+  };
 
   const [syncServerUrl, setSyncServerUrl] = useState(syncConfig.serverUrl);
   const [syncEmail, setSyncEmail] = useState(syncConfig.email);
@@ -51,13 +97,13 @@ export function SyncSettingsTab() {
 
   return <>
     {/* Header de sección */}
-    <div className="flex items-center gap-2 mb-1">
+    <div className="flex items-center gap-2 mb-2">
       <Upload size={14} className="text-indigo-400" />
       <p className="text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
         {t(language, 'extras', 'syncTitle')}
       </p>
     </div>
-    <p className="text-[10px] text-[var(--text-hint)] -mt-2">
+    <p className="text-[10px] text-[var(--text-hint)] mb-1">
       {t(language, 'extras', 'syncOptionalHint')}
     </p>
 
@@ -73,13 +119,43 @@ export function SyncSettingsTab() {
             <span className="text-[11px] text-[var(--text-secondary)]">{statusLabel}</span>
           </div>
         </div>
+        {/* Botón manual (estilo "sync now" de Bitwarden) — el WS+poll
+            de fondo ya mantienen todo al día solos, esto es una vía
+            de escape visible para forzar/confirmar ahora mismo, no el
+            mecanismo principal. */}
         <button
-          onClick={handleSyncDisconnect}
+          onClick={() => void handleSyncNow()}
+          disabled={syncCooldown || syncNowInProgress}
+          className={`flex w-full items-center justify-center gap-2 rounded-xl border py-2 text-xs transition disabled:opacity-60 ${
+            justSynced
+              ? 'border-green-500/30 bg-green-500/10 text-green-400'
+              : 'border-[var(--border-card)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]'
+          }`}
+        >
+          {justSynced ? <Check size={13} /> : <RefreshCw size={13} className={syncNowInProgress ? 'animate-spin' : ''} />}
+          {justSynced
+            ? t(language, 'extras', 'syncedNowMessage')
+            : lastSyncedAt
+              ? `${t(language, 'extras', 'syncedPrefix')} ${relativeSyncTime(lastSyncedAt, language)}`
+              : t(language, 'extras', 'syncNowLabel')}
+        </button>
+        <button
+          onClick={() => confirmDisconnectDialog.request(true, handleSyncDisconnect)}
           className="w-full rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] py-2 text-xs text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)]"
         >
           {t(language, 'extras', 'syncDisconnect')}
         </button>
         <DevicesPanel />
+        {confirmDisconnectDialog.isOpen && (
+          <ConfirmDeleteModal
+            title={t(language, 'extras', 'syncDisconnectConfirmTitle')}
+            message={t(language, 'extras', 'syncDisconnectConfirmMessage')}
+            cancelLabel={t(language, 'extras', 'devicesCancel')}
+            confirmLabel={t(language, 'extras', 'syncDisconnect')}
+            onCancel={confirmDisconnectDialog.cancel}
+            onConfirm={() => { handleSyncDisconnect(); confirmDisconnectDialog.cancel(); }}
+          />
+        )}
       </>
     ) : (
       <div className="space-y-3">

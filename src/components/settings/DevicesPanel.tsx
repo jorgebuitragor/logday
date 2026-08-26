@@ -76,34 +76,34 @@ export function DevicesPanel() {
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={() => confirmRevokeDialog.request(d, (device) => void revokeDeviceAction(device.id))}
-                  className="rounded-lg px-2 py-1 text-[11px] text-[var(--text-hint)] transition hover:bg-red-500/10 hover:text-red-400"
-                >
-                  {t(language, 'extras', 'devicesRevoke')}
-                </button>
+                {/* La sesión propia no se cierra desde acá — a
+                    propósito, para que esa acción siempre pase por el
+                    botón "Desconectar" de la pestaña, no por un click
+                    suelto en esta lista. */}
+                {!isSelf && (
+                  <button
+                    onClick={() => confirmRevokeDialog.request(d, (device) => void revokeDeviceAction(device.id))}
+                    className="rounded-lg px-2 py-1 text-[11px] text-[var(--text-hint)] transition hover:bg-red-500/10 hover:text-red-400"
+                  >
+                    {t(language, 'extras', 'devicesRevoke')}
+                  </button>
+                )}
               </div>
             );
           })
         )}
       </div>
 
-      {confirmRevokeDialog.isOpen && confirmRevokeDialog.pending && (() => {
-        const device = confirmRevokeDialog.pending;
-        const isSelf = device.id === syncConfig.deviceId;
-        return (
-          <ConfirmDeleteModal
-            title={t(language, 'extras', 'devicesRevokeTitle')}
-            message={isSelf
-              ? t(language, 'extras', 'devicesRevokeSelfConfirm')
-              : <>{t(language, 'extras', 'devicesRevokeConfirmPrefix')} <span className="font-medium text-[var(--text-primary)]">{device.device_name}</span>?</>}
-            cancelLabel={t(language, 'extras', 'devicesCancel')}
-            confirmLabel={t(language, 'extras', 'devicesRevoke')}
-            onCancel={confirmRevokeDialog.cancel}
-            onConfirm={() => { void revokeDeviceAction(device.id); confirmRevokeDialog.cancel(); }}
-          />
-        );
-      })()}
+      {confirmRevokeDialog.isOpen && confirmRevokeDialog.pending && (
+        <ConfirmDeleteModal
+          title={t(language, 'extras', 'devicesRevokeTitle')}
+          message={<>{t(language, 'extras', 'devicesRevokeConfirmPrefix')} <span className="font-medium text-[var(--text-primary)]">{confirmRevokeDialog.pending.device_name}</span>?</>}
+          cancelLabel={t(language, 'extras', 'devicesCancel')}
+          confirmLabel={t(language, 'extras', 'devicesRevoke')}
+          onCancel={confirmRevokeDialog.cancel}
+          onConfirm={() => { void revokeDeviceAction(confirmRevokeDialog.pending!.id); confirmRevokeDialog.cancel(); }}
+        />
+      )}
     </div>
   );
 }

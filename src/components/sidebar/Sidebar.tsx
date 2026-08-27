@@ -43,8 +43,6 @@ import { ProjectTreeItem } from './ProjectTreeItem';
 import { RootDropLine } from './RootDropLine';
 import { ModalOverlay } from '../shared/ModalOverlay';
 import { ModalPanel } from '../shared/ModalPanel';
-import logoImg from '../../assets/logo.png';
-import iconSquareNoBg from '../../../icon_square_wiout_background.png';
 
 function formatYearMonthLabel(ym: string, language: 'es' | 'en', style: 'short' | 'long'): string {
   const [year, month] = ym.split('-').map(Number);
@@ -465,7 +463,12 @@ export function Sidebar() {
           }`}
           title={t(language, 'sidebar', 'dashboard')}
         >
-          <img src={logoImg} alt="Logday" className="h-[18px] w-[18px] rounded-sm object-cover" />
+          <svg viewBox="0 0 64 64" className="h-[18px] w-[18px]" role="img" aria-label="Logday">
+            <rect x="0" y="0" width="64" height="64" rx="15" fill="var(--accent)" />
+            <path d="M19 13.5h19L47 21.5V48.5a2 2 0 0 1-2 2H19a2 2 0 0 1-2-2V15.5a2 2 0 0 1 2-2z" fill="#ffffff" />
+            <path d="M38 13.5L47 21.5h-9z" fill="var(--accent)" fillOpacity={0.24} />
+            <path d="M20 36h4l3-8.5 4.5 13L44 25" fill="none" stroke="var(--accent)" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         </button>
         <div className="my-1 h-px w-6 bg-[var(--border)]" />
         <button
@@ -556,10 +559,14 @@ export function Sidebar() {
           className="flex items-center gap-2"
           title={t(language, 'sidebar', 'dashboard')}
         >
-          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-600">
-            <img src={iconSquareNoBg} alt="Logday" className="h-4 w-4 rounded-sm object-contain" />
+          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--accent)]">
+            <svg viewBox="0 0 64 64" className="h-5 w-5" role="img" aria-label="Logday">
+              <path d="M19 13.5h19L47 21.5V48.5a2 2 0 0 1-2 2H19a2 2 0 0 1-2-2V15.5a2 2 0 0 1 2-2z" fill="#ffffff" />
+              <path d="M38 13.5L47 21.5h-9z" fill="var(--accent)" fillOpacity={0.24} />
+              <path d="M20 36h4l3-8.5 4.5 13L44 25" fill="none" stroke="var(--accent)" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </div>
-          <span className="font-semibold text-[var(--text-primary)] text-sm">Logday</span>
+          <span className="brand-wordmark text-base">log<span className="accent">day</span></span>
         </button>
         <div className="flex items-center gap-0.5">
           <button

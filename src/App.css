@@ -319,6 +319,17 @@ html.theme-animating body * {
   ::-webkit-scrollbar-thumb:hover { background: var(--text-hint); }
 }
 
+/* Wordmark de marca — "log" neutro + "day" con el acento del tema activo
+   (accentInWordmark, ver Logday Brand.dc.html sección 03). Solo para el
+   lockup de producto (Onboarding); el ícono del sidebar no lleva texto. */
+.brand-wordmark {
+  font-family: "JetBrains Mono", "Fira Code", "Courier New", monospace;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+}
+.brand-wordmark .accent { color: var(--accent); }
+
 /* ── Animaciones globales ligeras (solo opacity + transform → GPU) ─────── */
 @keyframes fade-in-up {
   from { opacity: 0; transform: translateY(5px); }

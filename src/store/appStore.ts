@@ -1633,15 +1633,47 @@ async function applyRemoteChanges(get: SyncGet, set: SyncSet, changes: SyncChang
  *  un resync completo desde cero. Los cambios en cola siguen
  *  protegidos igual (ver EPOCH arriba) — un full resync no pisa
  *  ediciones locales todavía sin confirmar. */
+// Ver specs/sync-incremental/design.md "Paginación" — un full resync
+// (since=0, o el fallback 410 de abajo) puede incluir cientos de
+// notas largas, cada una con su content_state (snapshot Yjs completo
+// en base64). SYNC_PAGE_LIMIT solo acota el tamaño de cada respuesta;
+// sigue habiendo una llamada por página hasta que llega una más corta
+// que el límite (o vacía).
+const SYNC_PAGE_LIMIT = 500;
+
+// Trae TODO el delta desde sinceStart, paginando en loop — usado tanto
+// por el camino normal (desde el cursor guardado) como por el
+// fallback de cursor inválido (since=0) de reconcileSync. Acumula
+// todas las páginas y las aplica de una sola vez al final (mismo
+// criterio que ya tenía este archivo antes de paginar, no una
+// aplicación incremental página por página como logday-web) — Desktop
+// tiene memoria de sobra para sostener unas pocas páginas en un array
+// mientras dura el pull.
+async function fetchAllChanges(
+  get: SyncGet, set: SyncSet, baseUrl: string, sinceStart: number,
+): Promise<{ changes: SyncChange[]; maxSeq: number }> {
+  const all: SyncChange[] = [];
+  let since = sinceStart;
+  let pageLen = SYNC_PAGE_LIMIT;
+  while (pageLen === SYNC_PAGE_LIMIT) {
+    const page = await withSyncAuth(get, set, (token) => syncChangesRemote(baseUrl, token, since, SYNC_PAGE_LIMIT));
+    pageLen = page.length;
+    if (page.length === 0) break;
+    all.push(...page);
+    since = page.reduce((m, c) => Math.max(m, c.seq), since);
+  }
+  return { changes: all, maxSeq: since };
+}
+
 async function reconcileSync(get: SyncGet, set: SyncSet): Promise<void> {
   const { syncConfig } = get();
   if (!syncConfig.enabled) return;
   const cursor = getSyncCursor();
   try {
-    const changes = await withSyncAuth(get, set, (token) => syncChangesRemote(syncConfig.serverUrl, token, cursor));
+    const { changes, maxSeq } = await fetchAllChanges(get, set, syncConfig.serverUrl, cursor);
     await applyRemoteChanges(get, set, changes);
     if (changes.length > 0) {
-      setSyncCursor(changes.reduce((m, c) => Math.max(m, c.seq), cursor));
+      setSyncCursor(maxSeq);
     }
     // Se marca "sincronizado" acá, no solo cuando hay cambios reales
     // — un chequeo exitoso sin novedades sigue siendo una
@@ -1649,9 +1681,9 @@ async function reconcileSync(get: SyncGet, set: SyncSet): Promise<void> {
     set({ lastSyncedAt: new Date().toISOString() });
   } catch (e) {
     if (e instanceof SyncApiError && e.status === 410) {
-      const changes = await withSyncAuth(get, set, (token) => syncChangesRemote(syncConfig.serverUrl, token, 0));
+      const { changes, maxSeq } = await fetchAllChanges(get, set, syncConfig.serverUrl, 0);
       await applyRemoteChanges(get, set, changes);
-      setSyncCursor(changes.reduce((m, c) => Math.max(m, c.seq), 0));
+      setSyncCursor(maxSeq);
       set({ lastSyncedAt: new Date().toISOString() });
     }
     // Otros errores (red caída, etc.): se reintenta solo en el

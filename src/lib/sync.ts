@@ -97,9 +97,14 @@ export function revokeDeviceRemote(baseUrl: string, token: string, id: string): 
 
 /** since=0 (u omitido) trae el historial completo — usado tanto para
  *  el pull incremental normal como para el full resync tras un cursor
- *  inválido (410, ver appStore.ts reconcileSync). */
-export function syncChangesRemote(baseUrl: string, token: string, since: number): Promise<SyncChange[]> {
-  return request(baseUrl, 'GET', `/sync/changes?since=${since}`, { token });
+ *  inválido (410, ver appStore.ts reconcileSync). limit es opcional —
+ *  sin él, el server devuelve todo el delta en una sola respuesta
+ *  (comportamiento de siempre). Con límite, una página completa
+ *  (length === limit) puede no ser la última — el caller vuelve a
+ *  pedir con since = el seq del último elemento recibido. */
+export function syncChangesRemote(baseUrl: string, token: string, since: number, limit?: number): Promise<SyncChange[]> {
+  const query = limit ? `?since=${since}&limit=${limit}` : `?since=${since}`;
+  return request(baseUrl, 'GET', `/sync/changes${query}`, { token });
 }
 
 // ─── Task ───

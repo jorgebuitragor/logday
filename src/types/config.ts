@@ -27,6 +27,7 @@ export interface AppConfig {
   holidaysAsNonWork?: boolean;
   animationsEnabled?: boolean;
   trashAutoPurgeEnabled?: boolean;
+  sidebarLabelsVisible?: boolean;
 }
 
 export interface BackupSettings {

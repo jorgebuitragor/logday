@@ -114,6 +114,11 @@ const dict = {
       animationsDesc: 'Activa o desactiva todas las animaciones y transiciones de la app.',
       animationsEnabled: 'Activadas',
       animationsDisabled: 'Desactivadas',
+      sidebarSection: 'Menú lateral',
+      sidebarLabelsTitle: 'Textos del menú lateral',
+      sidebarLabelsDesc: 'Muestra u oculta los nombres de sección, dejando solo los íconos.',
+      sidebarLabelsOn: 'Visibles',
+      sidebarLabelsOff: 'Ocultos',
       // Shortcuts
       shortcutNewNote: 'Nueva nota',
       shortcutNewTask: 'Nueva tarea',
@@ -1013,6 +1018,11 @@ const dict = {
       animationsDesc: 'Enable or disable all animations and transitions in the app.',
       animationsEnabled: 'Enabled',
       animationsDisabled: 'Disabled',
+      sidebarSection: 'Sidebar menu',
+      sidebarLabelsTitle: 'Sidebar menu text',
+      sidebarLabelsDesc: 'Show or hide the section names, leaving only the icons.',
+      sidebarLabelsOn: 'Visible',
+      sidebarLabelsOff: 'Hidden',
       // Shortcuts
       shortcutNewNote: 'New note',
       shortcutNewTask: 'New task',

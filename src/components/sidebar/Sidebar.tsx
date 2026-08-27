@@ -108,12 +108,48 @@ export function Sidebar() {
     deleteOvertimeMonth,
     language,
     confirmDestructiveActions,
+    sidebarLabelsVisible,
   } = useAppStore();
 
   const [isProjectsOpen, setIsProjectsOpen] = useState(true);
   const [isFoldersOpen, setIsFoldersOpen] = useState(true);
   const [showNewProject, setShowNewProject] = useState(false);
   const newProjectInputRef = useRef<HTMLInputElement>(null);
+
+  // Oculta el label del tab activo del menú de secciones si, con el
+  // sidebar angosto, no entra en su botón sin desbordarse — se mide el
+  // ancho real en vez de un umbral fijo porque el largo del texto varía
+  // por idioma (p. ej. "Overtime" en inglés es más largo que "Extras").
+  // Se decide en base al label MÁS ANCHO de los cuatro (no solo el del
+  // tab activo): si no, un texto corto como "Notas" seguía entrando a
+  // un ancho donde uno más largo como "Tareas" ya no — el mismo ancho
+  // de sidebar mostraba u ocultaba el texto según qué pestaña estuviera
+  // activa, inconsistente al cambiar de tab sin tocar el resize.
+  const [activeSectionLabelFits, setActiveSectionLabelFits] = useState(true);
+  const sectionGridRef = useRef<HTMLDivElement>(null);
+  const sectionBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  // Margen de aire: si el texto entra pero raspando el borde del botón
+  // se ve apretado (encontrado probando con "Tareas" a 170px: entraba
+  // por 3px y se veía mal) — exigir este colchón lo oculta antes de
+  // llegar a ese punto, no solo cuando desborda de verdad.
+  const LABEL_FIT_MARGIN_PX = 8;
+
+  useEffect(() => {
+    const checkFit = () => {
+      const btns = Object.values(sectionBtnRefs.current).filter((b): b is HTMLButtonElement => b !== null);
+      if (btns.length === 0) { setActiveSectionLabelFits(true); return; }
+      const btnWidth = btns[0].clientWidth;
+      const widestLabel = Math.max(...btns.map((b) => b.querySelector('span')?.scrollWidth ?? 0));
+      setActiveSectionLabelFits(widestLabel + LABEL_FIT_MARGIN_PX <= btnWidth);
+    };
+    checkFit();
+    const grid = sectionGridRef.current;
+    if (!grid) return;
+    const observer = new ResizeObserver(checkFit);
+    observer.observe(grid);
+    return () => observer.disconnect();
+  }, [sidebarLabelsVisible, language]);
 
   useEffect(() => {
     if (showNewProject) setTimeout(() => newProjectInputRef.current?.focus(), 50);
@@ -586,7 +622,7 @@ export function Sidebar() {
       </div>
 
       {/* Section toggle */}
-      <div className="grid grid-cols-4 border-b border-[var(--border)] px-2 py-2 gap-1">
+      <div ref={sectionGridRef} className="grid grid-cols-4 border-b border-[var(--border)] px-2 py-2 gap-1">
         {(
           [
             { id: 'dailys',   Icon: CalendarDays, labelKey: 'dailys'   },
@@ -600,8 +636,9 @@ export function Sidebar() {
           return (
             <button
               key={id}
+              ref={(el) => { sectionBtnRefs.current[id] = el; }}
               onClick={() => setSection(id)}
-              className={`flex flex-col items-center justify-center gap-0.5 rounded-lg py-1.5 transition-[background-color,color] duration-200 ${
+              className={`flex h-[42px] flex-col items-center justify-center gap-0.5 rounded-lg transition-[background-color,color] duration-200 ${
                 isActive
                   ? 'bg-indigo-500/15 text-indigo-400 font-medium'
                   : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]'
@@ -609,13 +646,15 @@ export function Sidebar() {
               title={label}
             >
               <Icon size={14} className="shrink-0" />
-              <span
-                className={`whitespace-nowrap text-[10px] leading-tight transition-all duration-200 ${
-                  isActive ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden'
-                }`}
-              >
-                {label}
-              </span>
+              {sidebarLabelsVisible && (
+                <span
+                  className={`whitespace-nowrap text-[10px] leading-tight transition-all duration-200 ${
+                    isActive && activeSectionLabelFits ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden'
+                  }`}
+                >
+                  {label}
+                </span>
+              )}
             </button>
           );
         })}

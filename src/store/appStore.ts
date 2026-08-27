@@ -115,6 +115,9 @@ export interface AppState {
   // Accesibilidad
   animationsEnabled: boolean;
 
+  // Menú lateral
+  sidebarLabelsVisible: boolean;
+
   // Papelera de reciclaje
   trashAutoPurgeEnabled: boolean;
 
@@ -240,6 +243,7 @@ export interface AppState {
   setWorkWeekDays: (days: 5 | 6) => Promise<void>;
   setHolidaysAsNonWork: (enabled: boolean) => Promise<void>;
   setAnimationsEnabled: (enabled: boolean) => Promise<void>;
+  setSidebarLabelsVisible: (visible: boolean) => Promise<void>;
   setTrashAutoPurgeEnabled: (enabled: boolean) => Promise<void>;
   listTrash: () => Promise<trash.TrashListItem[]>;
   restoreFromTrash: (entity: trash.TrashEntity, key: string) => Promise<void>;
@@ -343,7 +347,7 @@ async function persistConfig(get: SyncGet): Promise<void> {
   const {
     configDir, basePath, startupScreen, language, confirmDestructiveActions,
     notificationsEnabled, defaultReminderMinutes, workWeekDays, holidaysAsNonWork,
-    animationsEnabled, trashAutoPurgeEnabled, activeProject, activeNoteFolder,
+    animationsEnabled, trashAutoPurgeEnabled, sidebarLabelsVisible, activeProject, activeNoteFolder,
   } = get();
   if (!configDir || !basePath) return;
   await saveConfig(configDir, {
@@ -357,6 +361,7 @@ async function persistConfig(get: SyncGet): Promise<void> {
     holidaysAsNonWork,
     animationsEnabled,
     trashAutoPurgeEnabled,
+    sidebarLabelsVisible,
     lastOpenedProject: activeProject ?? undefined,
     lastOpenedNoteFolder: activeNoteFolder ?? undefined,
   });
@@ -1946,6 +1951,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   holidaysAsNonWork: true,
   animationsEnabled: true,
   trashAutoPurgeEnabled: true,
+  sidebarLabelsVisible: true,
   theme: (localStorage.getItem('theme') as Theme) || 'system',
   customThemes: (() => {
     try {
@@ -2068,6 +2074,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             holidaysAsNonWork: cfg.holidaysAsNonWork ?? true,
             animationsEnabled: cfg.animationsEnabled ?? true,
             trashAutoPurgeEnabled: cfg.trashAutoPurgeEnabled ?? true,
+            sidebarLabelsVisible: cfg.sidebarLabelsVisible ?? true,
           });
 
           const lastProject = cfg.lastOpenedProject || null;
@@ -3407,6 +3414,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setAnimationsEnabled: async (enabled) => {
     set({ animationsEnabled: enabled });
     applyAnimationsToDOM(enabled);
+    await persistConfig(get);
+  },
+
+  setSidebarLabelsVisible: async (visible) => {
+    set({ sidebarLabelsVisible: visible });
     await persistConfig(get);
   },
 

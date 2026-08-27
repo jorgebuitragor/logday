@@ -91,6 +91,12 @@ export function DailyList() {
     setListKey((k) => k + 1);
   }, [activeDailyMonth]);
 
+  useEffect(() => {
+    const handler = () => setShowAbsenceModal(true);
+    window.addEventListener('logday:mark-absence', handler);
+    return () => window.removeEventListener('logday:mark-absence', handler);
+  }, []);
+
   // ── Estado del menú contextual (sobre una entrada) ────────────────────────
   const [contextMenu, setContextMenu] = useState<{ date: string; x: number; y: number } | null>(null);
   const [copied, setCopied] = useState(false);

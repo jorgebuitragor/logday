@@ -123,6 +123,8 @@ const dict = {
       shortcutNewNote: 'Nueva nota',
       shortcutNewTask: 'Nueva tarea',
       shortcutSearch: 'Búsqueda global',
+      shortcutNewDaily: 'Daily de hoy',
+      shortcutMarkAbsence: 'Marcar ausencia',
       shortcutPress: 'Presiona una tecla…',
       shortcutHint: 'Siempre se combinan con ⌘ (Mac) o Ctrl (Windows)',
       // Backup
@@ -1027,6 +1029,8 @@ const dict = {
       shortcutNewNote: 'New note',
       shortcutNewTask: 'New task',
       shortcutSearch: 'Global search',
+      shortcutNewDaily: "Today's daily",
+      shortcutMarkAbsence: 'Mark absence',
       shortcutPress: 'Press a key…',
       shortcutHint: 'Always combined with ⌘ (Mac) or Ctrl (Windows)',
       // Backup

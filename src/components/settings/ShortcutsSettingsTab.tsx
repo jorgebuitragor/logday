@@ -34,6 +34,8 @@ export function ShortcutsSettingsTab() {
             { key: 'newNote' as keyof Shortcuts, label: t(language, 'settings', 'shortcutNewNote') },
             { key: 'newTask' as keyof Shortcuts, label: t(language, 'settings', 'shortcutNewTask') },
             { key: 'search'  as keyof Shortcuts, label: t(language, 'settings', 'shortcutSearch') },
+            { key: 'newDaily' as keyof Shortcuts, label: t(language, 'settings', 'shortcutNewDaily') },
+            { key: 'markAbsence' as keyof Shortcuts, label: t(language, 'settings', 'shortcutMarkAbsence') },
           ] as { key: keyof Shortcuts; label: string }[]
         ).map(({ key, label }) => {
           const isRecording = recordingFor === key;

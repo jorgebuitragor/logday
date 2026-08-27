@@ -27,7 +27,7 @@ const OvertimeList  = lazy(() => import('./components/overtime/OvertimeList').th
 const OvertimeEditor = lazy(() => import('./components/overtime/OvertimeEditor').then(m => ({ default: m.OvertimeEditor })));
 
 export default function App() {
-  const { init, isLoading, isConfigured, activeTask, activeNoteId, activeSection, createNote, setSection, shortcuts, overtimeMonth, language, isSidebarCollapsed } = useAppStore(
+  const { init, isLoading, isConfigured, activeTask, activeNoteId, activeSection, createNote, createTodayDaily, setSection, shortcuts, overtimeMonth, language, isSidebarCollapsed } = useAppStore(
     useShallow((s) => ({
       init: s.init,
       isLoading: s.isLoading,
@@ -36,6 +36,7 @@ export default function App() {
       activeNoteId: s.activeNote?.id ?? null,
       activeSection: s.activeSection,
       createNote: s.createNote,
+      createTodayDaily: s.createTodayDaily,
       setSection: s.setSection,
       shortcuts: s.shortcuts,
       overtimeMonth: s.overtimeMonth,
@@ -116,10 +117,24 @@ export default function App() {
         setSection('tasks');
         setTimeout(() => window.dispatchEvent(new CustomEvent('logday:new-task')), 50);
       }
+
+      // daily de hoy
+      if (e.key === shortcuts.newDaily && !inField) {
+        e.preventDefault();
+        setSection('dailys');
+        createTodayDaily();
+      }
+
+      // marcar ausencia
+      if (e.key === shortcuts.markAbsence && !inField) {
+        e.preventDefault();
+        setSection('dailys');
+        setTimeout(() => window.dispatchEvent(new CustomEvent('logday:mark-absence')), 50);
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [createNote, setSection, shortcuts]);
+  }, [createNote, createTodayDaily, setSection, shortcuts]);
 
   useEffect(() => {
     const unNote = listen('tray:new-note', async () => {

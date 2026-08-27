@@ -10,9 +10,11 @@ export interface Shortcuts {
   newNote: string;
   newTask: string;
   search: string;
+  newDaily: string;
+  markAbsence: string;
 }
 
-export const DEFAULT_SHORTCUTS: Shortcuts = { newNote: 'n', newTask: 't', search: 'f' };
+export const DEFAULT_SHORTCUTS: Shortcuts = { newNote: 'n', newTask: 't', search: 'f', newDaily: 'd', markAbsence: 'a' };
 
 export interface AppConfig {
   basePath: string;

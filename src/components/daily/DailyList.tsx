@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, ChevronLeft, ChevronRight, CalendarPlus, CalendarOff, Trash2, Copy, Check, FileText, FileDown, FileType2 } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, CalendarPlus, CalendarOff, ListChecks, Trash2, Copy, Check, FileText, FileDown, FileType2 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../store/appStore';
 import { toISO } from '../../lib/colombianHolidays';
 import { AppCalendarGrid } from '../shared/AppDatePicker';
 import { AbsenceModal } from '../shared/AbsenceModal';
+import { AbsenceListModal } from '../shared/AbsenceListModal';
 import { placeMenuAtPointer } from '../../lib/menuPosition';
 import { usePositionedMenu } from '../../hooks/usePositionedMenu';
 import { MONTHS_TITLE, t } from '../../lib/i18n';
@@ -77,6 +78,7 @@ export function DailyList() {
   // ── Estado del picker de fecha ────────────────────────────────────────────
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showAbsenceModal, setShowAbsenceModal] = useState(false);
+  const [showAbsenceListModal, setShowAbsenceListModal] = useState(false);
   const [pickerPos, setPickerPos] = useState({ top: 0, right: 0 });
   const datePickerRef = useRef<HTMLDivElement>(null);
   const pickerBtnRef = useRef<HTMLButtonElement>(null);
@@ -281,6 +283,13 @@ export function DailyList() {
             <CalendarOff size={14} />
           </button>
           <button
+            onClick={() => setShowAbsenceListModal(true)}
+            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            title={t(language, 'absence', 'listButton')}
+          >
+            <ListChecks size={14} />
+          </button>
+          <button
             onClick={createTodayDaily}
             className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-indigo-400 transition hover:bg-indigo-500/10"
             title={t(language, 'dailys', 'createTodayTitle')}
@@ -293,6 +302,10 @@ export function DailyList() {
 
       {showAbsenceModal && (
         <AbsenceModal onClose={() => setShowAbsenceModal(false)} />
+      )}
+
+      {showAbsenceListModal && (
+        <AbsenceListModal onClose={() => setShowAbsenceListModal(false)} />
       )}
 
       {/* Navegación de mes */}

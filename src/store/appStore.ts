@@ -8,7 +8,7 @@ import { Task } from '../types/task';
 import { Note } from '../types/note';
 import { OvertimeEntry, OvertimeMonthMeta } from '../types/overtime';
 import { CalendarEvent } from '../types/calendar';
-import { AbsenceDay } from '../types/absence';
+import { AbsenceDay, AbsenceType } from '../types/absence';
 import { Theme, BuiltInTheme, CustomTheme } from '../types/theme';
 import { GitConfig, GitStatus, GitRemoteStatus } from '../types/git';
 import { SyncConfig, SyncConnectionStatus } from '../types/sync';
@@ -220,6 +220,7 @@ export interface AppState {
   // Absences
   loadAbsenceDays: () => Promise<void>;
   saveAbsenceDay: (absence: AbsenceDay) => Promise<void>;
+  saveAbsenceDayRange: (startDate: string, endDate: string, type: AbsenceType, note?: string) => Promise<void>;
   deleteAbsenceDay: (id: string) => Promise<void>;
 
   // UI
@@ -3782,6 +3783,54 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (Object.keys(changedFields).length > 0) void syncPatchAbsenceDay(get, set, absence.id, changedFields);
     } else {
       void syncCreateAbsenceDay(get, set, absence);
+    }
+  },
+
+  // Un rango se modela como N filas independientes (una AbsenceDay por
+  // día, cada una con su propio id) en vez de una sola fila con
+  // start/end — logday-server no tiene ningún concepto de rango
+  // (confirmado leyendo internal/absence antes de construir esto) y
+  // así el caso real "volví un día en medio de las vacaciones" se
+  // resuelve borrando/editando esa fila puntual con el flujo de un
+  // solo día que ya existe, sin partir un rango en dos.
+  saveAbsenceDayRange: async (startDate, endDate, type, note) => {
+    const base = get().basePath;
+    if (!base) return;
+    const path = `${base}/absences.json`;
+
+    const dates: string[] = [];
+    const end = dateFromISO(endDate);
+    for (let cursor = dateFromISO(startDate); cursor.getTime() <= end.getTime();
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1, 12, 0, 0)) {
+      dates.push(toISO(cursor));
+    }
+
+    // Mismo criterio "buscar por fecha, editar en el lugar si existe"
+    // que ya usa AbsenceModal para un solo día — acá se repite por
+    // cada fecha del rango, sobreescribiendo el día que ya tuviera
+    // una ausencia cargada en vez de duplicarlo.
+    let current = get().absenceDays;
+    const toSync: { absence: AbsenceDay; prev?: AbsenceDay }[] = [];
+    for (const date of dates) {
+      const idx = current.findIndex((a) => a.date === date);
+      const prev = idx >= 0 ? current[idx] : undefined;
+      const absence: AbsenceDay = { id: prev?.id ?? uuidv4(), date, type, note };
+      current = idx >= 0 ? current.map((a) => (a.date === date ? absence : a)) : [...current, absence];
+      toSync.push({ absence, prev });
+    }
+
+    // Un solo write + un solo set() para todo el rango, no uno por
+    // día — mismo criterio que saveAbsenceDay/deleteAbsenceDay.
+    await fs.writeFile(path, JSON.stringify(current, null, 2));
+    set({ absenceDays: current });
+
+    for (const { absence, prev } of toSync) {
+      if (prev) {
+        const changedFields = diffAbsenceDayFields(prev, absence);
+        if (Object.keys(changedFields).length > 0) void syncPatchAbsenceDay(get, set, absence.id, changedFields);
+      } else {
+        void syncCreateAbsenceDay(get, set, absence);
+      }
     }
   },
 

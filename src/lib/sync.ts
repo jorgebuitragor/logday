@@ -104,6 +104,13 @@ export function syncChangesRemote(baseUrl: string, token: string, since: number)
 
 // ─── Task ───
 
+/** Lista completa, sin paginar (ver internal/task/handlers.go) — solo
+ *  para la migración de datos existentes (syncMigration.ts); el flujo
+ *  normal de sync usa syncChangesRemote (delta), nunca esto. */
+export function listTasksRemote(baseUrl: string, token: string): Promise<TaskApiResponse[]> {
+  return request(baseUrl, 'GET', '/tasks', { token });
+}
+
 export function createTaskRemote(baseUrl: string, token: string, payload: TaskCreatePayload): Promise<TaskApiResponse> {
   return request(baseUrl, 'POST', '/tasks', { token, body: payload });
 }
@@ -115,6 +122,10 @@ export function deleteTaskRemote(baseUrl: string, token: string, id: string): Pr
 }
 
 // ─── Note (metadata) ───
+
+export function listNotesRemote(baseUrl: string, token: string): Promise<NoteApiResponse[]> {
+  return request(baseUrl, 'GET', '/notes', { token });
+}
 
 export function createNoteRemote(baseUrl: string, token: string, payload: NoteCreatePayload): Promise<NoteApiResponse> {
   return request(baseUrl, 'POST', '/notes', { token, body: payload });
@@ -144,6 +155,10 @@ export function pushNoteContentRemote(baseUrl: string, token: string, id: string
 
 // ─── OvertimeEntry ───
 
+export function listOvertimeEntriesRemote(baseUrl: string, token: string): Promise<OvertimeEntryApiResponse[]> {
+  return request(baseUrl, 'GET', '/overtime-entries', { token });
+}
+
 export function createOvertimeEntryRemote(baseUrl: string, token: string, payload: OvertimeEntryCreatePayload): Promise<OvertimeEntryApiResponse> {
   return request(baseUrl, 'POST', '/overtime-entries', { token, body: payload });
 }
@@ -157,6 +172,10 @@ export function deleteOvertimeEntryRemote(baseUrl: string, token: string, id: st
 // ─── OvertimeMonthMeta ───
 // Sin POST — el primer PATCH crea si no existe (ver syncMapping.ts).
 
+export function listOvertimeMonthMetaRemote(baseUrl: string, token: string): Promise<OvertimeMonthMetaApiResponse[]> {
+  return request(baseUrl, 'GET', '/overtime-month-meta', { token });
+}
+
 export function patchOvertimeMonthMetaRemote(baseUrl: string, token: string, yearMonth: string, payload: OvertimeMonthMetaPatchPayload): Promise<OvertimeMonthMetaApiResponse> {
   return request(baseUrl, 'PATCH', `/overtime-month-meta/${yearMonth}`, { token, body: payload });
 }
@@ -165,6 +184,10 @@ export function deleteOvertimeMonthMetaRemote(baseUrl: string, token: string, ye
 }
 
 // ─── CalendarEvent ───
+
+export function listCalendarEventsRemote(baseUrl: string, token: string): Promise<CalendarEventApiResponse[]> {
+  return request(baseUrl, 'GET', '/calendar-events', { token });
+}
 
 export function createCalendarEventRemote(baseUrl: string, token: string, payload: CalendarEventCreatePayload): Promise<CalendarEventApiResponse> {
   return request(baseUrl, 'POST', '/calendar-events', { token, body: payload });
@@ -177,6 +200,10 @@ export function deleteCalendarEventRemote(baseUrl: string, token: string, id: st
 }
 
 // ─── AbsenceDay ───
+
+export function listAbsenceDaysRemote(baseUrl: string, token: string): Promise<AbsenceDayApiResponse[]> {
+  return request(baseUrl, 'GET', '/absence-days', { token });
+}
 
 export function createAbsenceDayRemote(baseUrl: string, token: string, payload: AbsenceDayCreatePayload): Promise<AbsenceDayApiResponse> {
   return request(baseUrl, 'POST', '/absence-days', { token, body: payload });
@@ -191,6 +218,10 @@ export function deleteAbsenceDayRemote(baseUrl: string, token: string, id: strin
 // ─── DailyEntry (contenido, CRDT) ───
 // PUT-only (natural key = date, sin POST) — mismo patrón que
 // pushNoteContentRemote, ver internal/dailyentry/handlers.go.
+export function listDailyEntriesRemote(baseUrl: string, token: string): Promise<DailyEntryApiResponse[]> {
+  return request(baseUrl, 'GET', '/daily-entries', { token });
+}
+
 export function putDailyEntryContentRemote(baseUrl: string, token: string, date: string, updateB64: string): Promise<DailyEntryApiResponse> {
   return request(baseUrl, 'PUT', `/daily-entries/${date}`, {
     token,

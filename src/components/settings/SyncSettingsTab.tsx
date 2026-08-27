@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Upload, Eye, EyeOff, RefreshCw, Check, CheckCircle2, AlertCircle, CloudOff } from 'lucide-react';
+import { Upload, Eye, EyeOff, RefreshCw, Check, CheckCircle2, AlertCircle, CloudOff, Database } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import { Language } from '../../types/common';
@@ -35,6 +35,7 @@ export function SyncSettingsTab() {
     syncConfig, syncConnectionStatus, syncErrorMsg,
     syncConnect, syncDisconnect,
     lastSyncedAt, syncNowInProgress, syncNow,
+    syncMigrationStatus, syncMigrationProgress, syncMigrateExisting,
     language, confirmDestructiveActions,
   } = useAppStore();
 
@@ -109,42 +110,72 @@ export function SyncSettingsTab() {
 
     {connected ? (
       <>
-        <div className="flex items-center justify-between gap-2 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3">
-          <div>
-            <p className="text-xs font-medium text-[var(--text-secondary)]">{syncConfig.serverUrl}</p>
-            <p className="text-[10px] text-[var(--text-hint)]">{syncConfig.email}</p>
+        {/* Todo lo referido a la conexión activa en una sola tarjeta:
+            estado, sincronizar ahora, y desconectar — las tres son
+            "cosas que haces sobre la conexión que ya tienes", a
+            diferencia de migrar (una acción aparte, ocasional, sobre
+            datos viejos) o las sesiones (otros dispositivos). */}
+        <div className="divide-y divide-[var(--border-card)] overflow-hidden rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)]">
+          <div className="flex items-center justify-between gap-2 px-4 py-3">
+            <div>
+              <p className="text-xs font-medium text-[var(--text-secondary)]">{syncConfig.serverUrl}</p>
+              <p className="text-[10px] text-[var(--text-hint)]">{syncConfig.email}</p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {statusIcon}
+              <span className="text-[11px] text-[var(--text-secondary)]">{statusLabel}</span>
+            </div>
           </div>
-          <div className="flex items-center gap-1.5">
-            {statusIcon}
-            <span className="text-[11px] text-[var(--text-secondary)]">{statusLabel}</span>
+          {/* Botón manual (estilo "sync now" de Bitwarden) — el WS+poll
+              de fondo ya mantienen todo al día solos, esto es una vía
+              de escape visible para forzar/confirmar ahora mismo, no
+              el mecanismo principal. */}
+          <button
+            onClick={() => void handleSyncNow()}
+            disabled={syncCooldown || syncNowInProgress}
+            className={`flex w-full items-center justify-center gap-2 py-2 text-xs transition disabled:opacity-60 ${
+              justSynced ? 'bg-green-500/10 text-green-400' : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)]'
+            }`}
+          >
+            {justSynced ? <Check size={13} /> : <RefreshCw size={13} className={syncNowInProgress ? 'animate-spin' : ''} />}
+            {justSynced
+              ? t(language, 'extras', 'syncedNowMessage')
+              : lastSyncedAt
+                ? `${t(language, 'extras', 'syncedPrefix')} ${relativeSyncTime(lastSyncedAt, language)}`
+                : t(language, 'extras', 'syncNowLabel')}
+          </button>
+          <button
+            onClick={() => confirmDisconnectDialog.request(true, handleSyncDisconnect)}
+            className="w-full py-2 text-xs text-red-400 transition hover:bg-red-500/10"
+          >
+            {t(language, 'extras', 'syncDisconnect')}
+          </button>
+        </div>
+
+        {/* Migrar datos existentes — apartado propio: es una acción
+            ocasional sobre datos viejos, no algo que se haga junto con
+            sincronizar o desconectar la conexión de arriba. */}
+        <div>
+          <p className="mb-1.5 text-[10px] font-medium uppercase tracking-widest text-[var(--text-hint)]">
+            {t(language, 'extras', 'migrationSectionTitle')}
+          </p>
+          <div className="rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-1 py-1">
+            <button
+              onClick={() => void syncMigrateExisting()}
+              disabled={syncMigrationStatus === 'running'}
+              className="flex w-full items-center justify-center gap-2 rounded-lg py-1.5 text-xs text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] disabled:opacity-60"
+            >
+              <Database size={13} className={syncMigrationStatus === 'running' ? 'animate-pulse' : ''} />
+              {syncMigrationStatus === 'running'
+                ? `${t(language, 'extras', 'migrationRunning')} ${syncMigrationProgress.done}/${syncMigrationProgress.total}`
+                : t(language, 'extras', 'migrationButton')}
+            </button>
+            <p className="px-2 pb-1 text-center text-[10px] text-[var(--text-hint)]">
+              {t(language, 'extras', 'migrationHint')}
+            </p>
           </div>
         </div>
-        {/* Botón manual (estilo "sync now" de Bitwarden) — el WS+poll
-            de fondo ya mantienen todo al día solos, esto es una vía
-            de escape visible para forzar/confirmar ahora mismo, no el
-            mecanismo principal. */}
-        <button
-          onClick={() => void handleSyncNow()}
-          disabled={syncCooldown || syncNowInProgress}
-          className={`flex w-full items-center justify-center gap-2 rounded-xl border py-2 text-xs transition disabled:opacity-60 ${
-            justSynced
-              ? 'border-green-500/30 bg-green-500/10 text-green-400'
-              : 'border-[var(--border-card)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]'
-          }`}
-        >
-          {justSynced ? <Check size={13} /> : <RefreshCw size={13} className={syncNowInProgress ? 'animate-spin' : ''} />}
-          {justSynced
-            ? t(language, 'extras', 'syncedNowMessage')
-            : lastSyncedAt
-              ? `${t(language, 'extras', 'syncedPrefix')} ${relativeSyncTime(lastSyncedAt, language)}`
-              : t(language, 'extras', 'syncNowLabel')}
-        </button>
-        <button
-          onClick={() => confirmDisconnectDialog.request(true, handleSyncDisconnect)}
-          className="w-full rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] py-2 text-xs text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)]"
-        >
-          {t(language, 'extras', 'syncDisconnect')}
-        </button>
+
         <DevicesPanel />
         {confirmDisconnectDialog.isOpen && (
           <ConfirmDeleteModal

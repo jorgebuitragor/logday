@@ -1,50 +1,66 @@
 # Primer sync / migración de datos existentes — Tareas
 
-Estado: **bloqueado** — no empezar hasta que estén resueltos (ver
-`requirements.md` "Depende de"):
+Estado: implementado. Los bloqueos de abajo ya estaban resueltos en
+el código (desactualizado respecto al spec) al momento de implementar
+esto.
 
-- [ ] `specs/sync-servidor` "Cursor y reconciliación" implementado.
-- [ ] `specs/sync-servidor` "Escritura y cola offline" replicado a
+- [x] `specs/sync-servidor` "Cursor y reconciliación" implementado.
+- [x] `specs/sync-servidor` "Escritura y cola offline" replicado a
       `Note`, `OvertimeEntry`, `OvertimeMonthMeta`, `CalendarEvent`,
-      `AbsenceDay` (hoy solo `Task` lo tiene).
-- [ ] `specs/sync-servidor` fase CRDT implementada (para la fase
-      futura de migrar contenido, no bloquea migrar metadata).
-- [ ] `DailyEntry` mapeado — tipo local, funciones de
-      (de)serialización, integrado a escritura/cola. No existe
-      todavía en ninguna fase de `sync-servidor`.
+      `AbsenceDay`.
+- [x] `specs/sync-servidor` fase CRDT implementada.
+- [x] `DailyEntry` mapeado (tipo de respuesta, funciones de
+      (de)serialización, integrado a escritura).
 
-## Implementación (cuando se desbloquee)
+## Implementación
 
-- [ ] `src/lib/syncMigration.ts`: una función por entidad
+- [x] `src/lib/syncMigration.ts`: una función por entidad
       (`migrateTasks`, `migrateNotes`, `migrateOvertimeEntries`,
       `migrateOvertimeMonthMeta`, `migrateCalendarEvents`,
-      `migrateAbsenceDays`) — cada una trae la lista completa del
-      servidor, filtra por id no presente, y hace `POST` de las que
-      faltan usando `xToCreatePayload`/`createXRemote` ya existentes.
-- [ ] Orquestador `migrateExistingData(get, set)` que corre las seis en
-      secuencia, actualizando progreso.
-- [ ] `appStore.ts`: acción `syncMigrateExisting`, estado
-      `syncMigrationStatus`/`syncMigrationProgress`.
-- [ ] `SyncSettingsTab.tsx`: botón "Sincronizar datos existentes"
-      (habilitado solo si `syncConnectionStatus === 'connected'`),
-      contador de progreso, toast de resumen al terminar.
-- [ ] i18n: strings nuevos en `extras` (es/en), mismo namespace que el
-      resto del tab Sync.
+      `migrateAbsenceDays`, `migrateDailyEntries`) — cada una trae la
+      lista completa del servidor, filtra por id/fecha/year_month no
+      presente, y hace `POST`/`PATCH`/`PUT` de lo que falta usando
+      `xToCreatePayload`/`createXRemote` ya existentes (o el push CRDT
+      para `Note`/`DailyEntry`).
+- [x] `src/lib/sync.ts`: 7 funciones `list*Remote` nuevas (no existía
+      ninguna, solo `syncChangesRemote`).
+- [x] Orquestador `migrateExistingData(get, set)` que corre las siete
+      en secuencia, actualizando progreso item por item.
+- [x] `appStore.ts`: acción `syncMigrateExisting` (import dinámico de
+      `syncMigration.ts` para evitar un ciclo de módulos — ver
+      `design.md`), estado `syncMigrationStatus`/`syncMigrationProgress`.
+      `projectDir`/`readTaskFromPath`/`notesDir`/`noteFolderDir`/
+      `readNoteFromPath`/`scanNoteFolders`/`overtimeBaseDir`/
+      `overtimeMonthFilePath` exportados para que la migración lea
+      disco directo sin pasar por `loadTasks`/`loadNotes`/
+      `loadOvertimeMonth` (ver `design.md` "Enumeración de lo local").
+- [x] `SyncSettingsTab.tsx`: botón "Migrar datos existentes"
+      (habilitado solo si `connected`), contador de progreso en vivo
+      (`{done}/{total}`), toast de resumen al terminar.
+- [x] i18n: strings nuevos en `extras` (es/en).
 
 ## Validación
 
 - [ ] Prueba manual: instalación con datos locales previos (tasks,
-      notas, etc. creados antes de este spec) + servidor vacío →
-      correr migración → confirmar en el servidor (`curl`) que todo
-      llegó, con los mismos `id` que en disco.
+      notas, overtime, dailys creados antes de conectar sync) +
+      servidor vacío → correr migración → confirmar en el servidor
+      (`curl`/sqlite) que todo llegó, con los mismos `id`/fecha que en
+      disco, notas y dailys con contenido real (no vacío).
 - [ ] Prueba manual: correr la migración dos veces seguidas →
-      confirmar que la segunda corrida no duplica nada (todo aparece
-      como "ya existía").
+      confirmar que la segunda corrida reporta todo como "ya existía",
+      cero duplicados.
 - [ ] Prueba manual: entidad que ya existe en el servidor con una
       edición más reciente que la copia local (simular con `curl`
       antes de migrar) → confirmar que la migración la saltea sin
-      pisarla, y que la copia local queda como estaba (la reconciliación
-      es quien la corrige, no este flujo).
+      pisarla.
 - [ ] Prueba manual: interrumpir la migración a mitad de camino
       (cerrar la app) → confirmar que una corrida nueva completa lo
       que faltó sin duplicar lo que ya había subido.
+- [ ] Prueba manual: mientras la migración corre, confirmar que las
+      secciones Overtime/Dailys/Kanban/Notes de la UI no cambian de
+      vista/mes/proyecto/carpeta solas.
+
+**Nota**: la validación manual contra la app real (Tauri) queda
+pendiente — solo se validó `tsc`/`eslint`/`vite build`/`cargo check`
+en esta sesión, sin poder interactuar con la UI de escritorio
+directamente.

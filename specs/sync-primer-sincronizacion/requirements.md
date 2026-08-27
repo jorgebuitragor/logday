@@ -1,9 +1,13 @@
 # Primer sync / migración de datos existentes — Requirements
 
-Estado: en diseño — **bloqueado**, ver "Depende de" abajo. No
-implementar hasta que esas dependencias estén resueltas (decisión
-explícita del usuario, para no construir esto sobre una base todavía
-inestable).
+Estado: implementado. Los tres bloqueos de "Depende de" (offline queue
+completo, CRDT, mapeo de `DailyEntry`) ya estaban resueltos en el
+código cuando se retomó este spec — quedaron desactualizados respecto
+a sesiones de trabajo posteriores a cuando se escribieron, no
+reflejaban el estado real. Alcance también ampliado respecto a la v0:
+"Alcance por entidad" dejaba fuera el contenido de `Note` y toda
+`DailyEntry` por depender de CRDT — ya no aplica, ver `design.md`
+"Alcance ampliado".
 
 ## Contexto
 
@@ -27,29 +31,23 @@ para un spec aparte:
 
 Este es ese spec.
 
-## Depende de
+## Depende de (histórico — los tres ya resueltos al implementar)
 
-Bloqueante — no arrancar la implementación hasta que esté resuelto:
-
-- **`sync-servidor` completo**: "Cursor y reconciliación" (para que
-  cualquier conflicto que la migración deje sin resolver se termine
-  de corregir solo, ver "Regla de conflicto" abajo) y "Escritura y
-  cola offline" replicado a las 5 entidades que todavía solo tienen a
-  `Task` (`Note`, `OvertimeEntry`, `OvertimeMonthMeta`,
-  `CalendarEvent`, `AbsenceDay`).
-- **CRDT** (`specs/sync-servidor` fase "CRDT"): el contenido de `Note`
-  y de las entradas diarias es texto largo vía Yjs, no metadata — la
-  migración de ese contenido no puede hacerse hasta que ese mecanismo
-  exista.
-- **Entradas diarias sin mapear todavía**: a diferencia de las otras 6
-  entidades, `DailyEntry` nunca se agregó a
-  `specs/sync-servidor` "Mapeo de entidades" — ni tiene un tipo local
-  dedicado (`parseDailyFile`/`serializeDailyFile` en
-  `src/lib/dailyFileFormat.ts` trabajan sobre `Record<string, string>`
-  fecha → markdown, no un tipo `DailyEntry`) ni funciones de
-  (de)serialización hacia el payload REST de `logday-server`
-  (`internal/dailyentry`). Ese mapeo es prerequisito de este spec, no
-  parte de él.
+- **`sync-servidor` completo**: "Cursor y reconciliación" y
+  "Escritura y cola offline" para las 6 entidades — resuelto,
+  confirmado leyendo `appStore.ts` (`syncCreateNote`/
+  `syncCreateOvertimeEntry`/`syncCreateCalendarEvent`/
+  `syncCreateAbsenceDay`/`syncPatchOvertimeMonthMeta` siguen el mismo
+  patrón try/catch/enqueue que `syncCreateTask`, y `reconcileSync` ya
+  existe y corre en cada `syncNow`/reconexión).
+- **CRDT**: resuelto — `src/lib/noteContentSync.ts` y
+  `src/lib/dailyContentSync.ts` ya implementan el mecanismo completo
+  (`Y.Text` bajo la key `"content"`, verificado contra el protocolo
+  real de `logday-server`/`logday-web`).
+- **`DailyEntry` sin mapear**: resuelto — `DailyEntryApiResponse` en
+  `syncMapping.ts`, `putDailyEntryContentRemote`/
+  `listDailyEntriesRemote` en `sync.ts`, y toda la sincronización
+  normal (no solo migración) de `DailyEntry` ya funciona.
 
 ## Contexto técnico ya confirmado
 
@@ -63,9 +61,13 @@ Bloqueante — no arrancar la implementación hasta que esté resuelto:
   `updated_at` de "ahora" para decidir ese conflicto — ver "Regla de
   conflicto" abajo, por qué eso sería peligroso.
 - No existe `GET /tasks/{id}` (ni el equivalente para las otras
-  entidades) — solo `GET /tasks` (lista completa). Cualquier chequeo
-  de "¿esto ya existe en el servidor?" tiene que hacerse contra la
-  lista completa, no una consulta puntual.
+  entidades) — solo `GET /tasks` (lista completa, sin paginar,
+  confirmado en `logday-server`). Cualquier chequeo de "¿esto ya
+  existe en el servidor?" tiene que hacerse contra la lista completa,
+  no una consulta puntual. `sync.ts` no tenía wrappers cliente para
+  estos `GET` (solo `syncChangesRemote`, el delta) — se agregaron
+  `list*Remote` nuevos para las 7 entidades, uso exclusivo de esta
+  migración (el flujo normal de sync sigue usando el delta).
 
 ## Requisitos (EARS)
 
@@ -120,17 +122,21 @@ Bloqueante — no arrancar la implementación hasta que esté resuelto:
 ### Alcance por entidad
 
 - El sistema DEBERÁ migrar `Task`, `OvertimeEntry`,
-  `OvertimeMonthMeta`, `CalendarEvent`, `AbsenceDay` y la metadata de
-  `Note` (título, carpeta, tags, `pinned` — no el contenido).
-- El sistema NO DEBERÁ migrar contenido de `Note` ni de entradas
-  diarias en la primera versión de este spec — depende de CRDT (ver
-  "Depende de"). Puede ser una fase separada dentro de este mismo spec
-  una vez CRDT exista, no bloquea migrar el resto.
+  `OvertimeMonthMeta`, `CalendarEvent`, `AbsenceDay`, metadata de
+  `Note` (título, carpeta, tags, `pinned`), **y también** el contenido
+  CRDT de `Note` y `DailyEntry` completo (ampliado respecto a la v0
+  de este spec — ver `design.md` "Alcance ampliado" para el mecanismo:
+  bootstrapea un `Y.Doc` desde el texto plano local y lo manda por el
+  mismo canal CRDT que usa una edición normal).
+- Para `Note`/`DailyEntry`: si el id/fecha ya existe remoto pero sin
+  contenido (una migración anterior que se interrumpió después de
+  crear la metadata pero antes de mandar el contenido), el sistema
+  DEBERÁ completar el contenido faltante sin volver a tocar la
+  metadata ya existente. Si el remoto ya tiene contenido no vacío, se
+  saltea entero — nunca se pisa.
 
 ## Fuera de este spec
 
-- Migrar el contenido CRDT de `Note`/entradas diarias — fase futura
-  dentro de este mismo spec, ver "Alcance por entidad".
 - Cualquier UI de resolución manual de conflictos — mismo principio
   rector que `sync-servidor`, ver "Regla de conflicto" arriba: el
   cliente nunca pisa nada que ya exista del lado del servidor durante

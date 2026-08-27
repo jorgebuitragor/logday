@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Monitor, Globe, Puzzle, Smartphone, HelpCircle } from 'lucide-react';
+import { Monitor, Globe, Puzzle, Smartphone, HelpCircle, AlertCircle, RefreshCw, LogOut } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import { Language } from '../../types/common';
@@ -38,8 +38,8 @@ function relativeTime(iso: string, language: Language): string {
  *  sin servidor no hay sesión que listar. */
 export function DevicesPanel() {
   const {
-    devices, syncConfig, language, confirmDestructiveActions,
-    loadDevices, revokeDeviceAction,
+    devices, devicesError, syncConfig, language, confirmDestructiveActions,
+    loadDevices, revokeDeviceAction, syncDisconnect,
   } = useAppStore();
 
   useEffect(() => { loadDevices(); }, [loadDevices]);
@@ -52,7 +52,26 @@ export function DevicesPanel() {
         {t(language, 'extras', 'devicesTitle')}
       </p>
       <div className="divide-y divide-[var(--border-card)] rounded-xl border border-[var(--border-card)]">
-        {devices.length === 0 ? (
+        {devices.length === 0 && devicesError ? (
+          <div className="flex items-center justify-between gap-2 px-3 py-2.5">
+            <div className="flex items-center gap-1.5 text-[11px] text-red-400">
+              <AlertCircle size={12} className="shrink-0" />
+              <span>{devicesError.message}</span>
+            </div>
+            {/* "expired" no es reintentable — reintentar con el mismo
+                access token muerto repite el mismo 401 para siempre
+                (bug real: el botón "Reintentar" no hacía nada visible).
+                Ahí se ofrece Desconectar en vez de Reintentar, que es
+                lo que el propio mensaje ya le pide al usuario hacer. */}
+            <button
+              onClick={() => void (devicesError.kind === 'expired' ? syncDisconnect() : loadDevices())}
+              className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            >
+              {devicesError.kind === 'expired' ? <LogOut size={11} /> : <RefreshCw size={11} />}
+              {t(language, 'extras', devicesError.kind === 'expired' ? 'syncDisconnect' : 'devicesRetry')}
+            </button>
+          </div>
+        ) : devices.length === 0 ? (
           <p className="px-3 py-2.5 text-[11px] text-[var(--text-hint)]">{t(language, 'extras', 'devicesLoading')}</p>
         ) : (
           devices.map((d) => {

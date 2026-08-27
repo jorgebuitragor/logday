@@ -20,7 +20,7 @@ import { parseDailyFile, serializeDailyFile } from '../lib/dailyFileFormat';
 import { generateOvertimeXlsx } from '../lib/overtimeExcel';
 import { fs, pickFolder, pickFile, saveDialog, SearchResult } from '../lib/invoke';
 import {
-  login as syncLogin, SyncApiError, normalizeServerUrl, syncChangesRemote, SyncChange,
+  login as syncLogin, refreshToken as refreshTokenRemote, SyncApiError, normalizeServerUrl, syncChangesRemote, SyncChange,
   createTaskRemote, patchTaskRemote, deleteTaskRemote,
   createNoteRemote, patchNoteRemote, deleteNoteRemote, pushNoteContentRemote,
   createCalendarEventRemote, patchCalendarEventRemote, deleteCalendarEventRemote,
@@ -30,6 +30,7 @@ import {
   putDailyEntryContentRemote, deleteDailyEntryRemote,
   listDevicesRemote, revokeDeviceRemote, DeviceResponse,
 } from '../lib/sync';
+import type { MigrationProgress } from '../lib/syncMigration';
 import {
   taskToCreatePayload, taskFieldsToPatchPayload, taskFromApiResponse, TaskApiResponse, TaskCreatePayload, TaskPatchPayload,
   noteToCreatePayload, noteFieldsToPatchPayload, noteFromApiResponse, NoteApiResponse, NoteCreatePayload, NotePatchPayload,
@@ -53,7 +54,7 @@ import {
   dateFromISO,
 } from '../lib/colombianHolidays';
 
-interface AppState {
+export interface AppState {
   // Config
   basePath: string | null;
   configDir: string | null;
@@ -139,8 +140,11 @@ interface AppState {
   syncErrorMsg: string;
   isSyncOpen: boolean;
   devices: DeviceResponse[];
+  devicesError: { kind: 'expired' | 'generic'; message: string } | null;
   lastSyncedAt: string | null;
   syncNowInProgress: boolean;
+  syncMigrationStatus: 'idle' | 'running' | 'done' | 'error';
+  syncMigrationProgress: MigrationProgress;
 
   // ── Actions ──────────────────────────────────────────────────
 
@@ -271,14 +275,21 @@ interface AppState {
   loadDevices: () => Promise<void>;
   revokeDeviceAction: (id: string) => Promise<void>;
   syncNow: () => Promise<void>;
+  syncMigrateExisting: () => Promise<void>;
 }
 
 // ── Helpers ────────────────────────────────────────────────────
 
 const projectsDir = (base: string) => `${base}/projects`;
-const projectDir = (base: string, p: string) => `${base}/projects/${p}`;
-const notesDir = (base: string) => `${base}/notes`;
-const noteFolderDir = (base: string, folder: string) => `${base}/notes/${folder}`;
+// Exportados (no solo usados acá): syncMigration.ts lee el disco
+// directo con estas mismas funciones para enumerar TODO lo local sin
+// pasar por loadTasks/loadNotes — esas acciones reemplazan tasks/notes
+// (scopeadas a activeProject/activeNoteFolder), así que llamarlas con
+// project/folder=null en medio de una migración de fondo cambiaría lo
+// que el usuario está viendo ahora mismo en Kanban/Notes.
+export const projectDir = (base: string, p: string) => `${base}/projects/${p}`;
+export const notesDir = (base: string) => `${base}/notes`;
+export const noteFolderDir = (base: string, folder: string) => `${base}/notes/${folder}`;
 const configFilePath = (dir: string) => `${dir}/config.json`;
 const taskFilePath = (base: string, project: string, id: string) =>
   `${base}/projects/${project}/${id}.md`;
@@ -295,10 +306,10 @@ const dailyMonthFilePath = (base: string, year: string, month: string) =>
 
 // ── Overtime helpers ──────────────────────────────────────────
 
-const overtimeBaseDir = (base: string) => `${base}/overtime`;
+export const overtimeBaseDir = (base: string) => `${base}/overtime`;
 const overtimeMonthDir = (base: string, year: string, month: string) =>
   `${base}/overtime/${year}/${month}`;
-const overtimeMonthFilePath = (base: string, year: string, month: string) =>
+export const overtimeMonthFilePath = (base: string, year: string, month: string) =>
   `${base}/overtime/${year}/${month}/${year}-${month}.md`;
 
 // Guard para evitar cargas concurrentes del mismo mes
@@ -350,7 +361,7 @@ async function persistConfig(get: SyncGet): Promise<void> {
   });
 }
 
-async function readTaskFromPath(filePath: string): Promise<Task | null> {
+export async function readTaskFromPath(filePath: string): Promise<Task | null> {
   try {
     const raw = await fs.readFile(filePath);
     return parseFrontmatter(raw, filePath);
@@ -359,13 +370,30 @@ async function readTaskFromPath(filePath: string): Promise<Task | null> {
   }
 }
 
-async function readNoteFromPath(filePath: string): Promise<Note | null> {
+export async function readNoteFromPath(filePath: string): Promise<Note | null> {
   try {
     const raw = await fs.readFile(filePath);
     return parseNote(raw, filePath);
   } catch {
     return null;
   }
+}
+
+/** Recorre `notes/` recursivamente buscando subcarpetas. Antes vivía
+ *  como closure adentro de `loadNoteFolders` — se saca a nivel de
+ *  módulo (misma lógica, sin cambios) para que `syncMigration.ts`
+ *  también la use, leyendo disco directo sin pasar por el `set()` de
+ *  esa acción. */
+export async function scanNoteFolders(dirPath: string, prefix: string): Promise<string[]> {
+  const entries = await fs.listDir(dirPath).catch(() => []);
+  const result: string[] = [];
+  for (const e of (entries as { name: string; path: string; is_dir: boolean }[]).filter((entry) => entry.is_dir)) {
+    const fullPath = prefix ? `${prefix}/${e.name}` : e.name;
+    result.push(fullPath);
+    const children = await scanNoteFolders(`${dirPath}/${e.name}`, fullPath);
+    result.push(...children);
+  }
+  return result;
 }
 
 function parseSearchResults(results: SearchResult[]): Task[] {
@@ -439,17 +467,124 @@ export function applyThemeToDOM(theme: Theme, animate = false, customThemes: Cus
 }
 
 // ── Sync (logday-server): escritura con cola offline ───────────────
-// Al crear/editar/borrar una task localmente, si sync está
+// Al crear/editar/borrar una entidad localmente, si sync está
 // configurado se intenta mandar la escritura al servidor. Sin
 // conexión (o si el envío falla) queda en cola (syncQueue.ts) para
 // reintentar al reconectar — el archivo en disco ya es la fuente de
 // verdad para la UI, esto es solo el side-channel hacia el servidor
-// (ver specs/sync-servidor/design.md). Por ahora solo Task tiene esta
-// integración — Note/Overtime/Calendar/Absence quedan para una
-// siguiente pasada sobre el mismo patrón.
+// (ver specs/sync-servidor/design.md).
 
-type SyncGet = () => AppState;
-type SyncSet = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void;
+export type SyncGet = () => AppState;
+export type SyncSet = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void;
+
+// El access token dura poco (15 min por default) y hasta ahora nada lo
+// renovaba: pasado ese rato, cualquier llamada (sync ahora, migrar,
+// listar sesiones, drenar la cola) fallaba con 401 sin ningún intento
+// de recuperación — el usuario terminaba teniendo que desconectar y
+// volver a conectar a mano una y otra vez (encontrado probando: el
+// panel de sesiones se quedaba en "cargando" para siempre por esto
+// mismo). logday-web ya resuelve esto (su propio `withAuth` en
+// src/store/appStore.ts) — este es el mismo patrón para Desktop:
+// intenta la llamada, y si el server responde 401, usa el
+// refresh_token (que sync sí guarda, pero hasta ahora nadie usaba)
+// para pedir un access token nuevo y reintenta una sola vez.
+//
+// El refresh token es de un solo uso y rota en cada llamada — si dos
+// llamadas pisan 401 casi al mismo tiempo (p. ej. reconcileSync y
+// drainSyncQueue corriendo juntos) y cada una pide su propio refresh,
+// la segunda reutiliza un refresh token que la primera ya rotó y el
+// servidor lo detecta como reuso y revoca el dispositivo entero (mismo
+// mecanismo de seguridad que ya documentamos en logday-web). Por eso
+// el refresh se comparte acá también: la primera 401 dispara la
+// llamada real y guarda la promesa; cualquier otra 401 que llegue
+// mientras tanto espera esa misma promesa en vez de disparar la suya.
+let inFlightSyncRefresh: Promise<{ access_token: string; refresh_token: string }> | null = null;
+
+function refreshSyncTokenOnce(baseUrl: string, refreshTokenValue: string) {
+  if (!inFlightSyncRefresh) {
+    inFlightSyncRefresh = refreshTokenRemote(baseUrl, refreshTokenValue).finally(() => {
+      inFlightSyncRefresh = null;
+    });
+  }
+  return inFlightSyncRefresh;
+}
+
+/** Envoltorio de cualquier llamada autenticada a logday-server —
+ *  reemplaza el uso directo de `syncConfig.accessToken` en las
+ *  funciones de sync de abajo y en syncMigration.ts. Si el access
+ *  token está vencido, renueva y reintenta una sola vez; si el
+ *  refresh también falla (refresh token vencido o revocado),
+ *  desconecta el sync local en vez de fallar en silencio — ahí sí
+ *  hace falta que el usuario vuelva a conectar a mano, no hay forma
+ *  de evitarlo sin la contraseña (que nunca se guarda).
+ *
+ *  Bug real encontrado probando (visto en los logs del server: dos
+ *  `POST /auth/refresh` en el mismo segundo, uno 200 y el otro 401,
+ *  y el dispositivo desaparecía de la lista de sesiones): el guard de
+ *  `inFlightSyncRefresh` de arriba solo protege llamadas que se
+ *  solapan MIENTRAS un refresh está en vuelo. No alcanza para una
+ *  llamada "rezagada" — otra que arrancó casi junto pero llega a este
+ *  punto un poco después, cuando el refresh de la primera YA terminó
+ *  (el guard ya se reseteó a null) — esa rezagada seguía usando el
+ *  `syncConfig` que había capturado al entrar a la función, con el
+ *  refresh token viejo, y lo mandaba igual: el servidor lo ve como
+ *  reuso de un token ya rotado y revoca el dispositivo. Por eso acá
+ *  abajo se relee `get().syncConfig` de nuevo en cada paso en vez de
+ *  seguir usando la captura del principio — si otra llamada ya
+ *  refrescó mientras esta seguía en vuelo, usa lo que haya AHORA. */
+export async function withSyncAuth<T>(get: SyncGet, set: SyncSet, fn: (token: string) => Promise<T>): Promise<T> {
+  const initialCfg = get().syncConfig;
+  if (!initialCfg.enabled || !initialCfg.accessToken) throw new Error('sync not connected');
+  try {
+    return await fn(initialCfg.accessToken);
+  } catch (e) {
+    if (!(e instanceof SyncApiError && e.status === 401)) throw e;
+
+    // Puede que el access token ya se haya renovado del lado de otra
+    // llamada mientras esta seguía en vuelo — probar con el que haya
+    // ahora antes de gastar (y arriesgar) un refresh nuevo.
+    const afterFirstFailure = get().syncConfig;
+    if (afterFirstFailure.accessToken && afterFirstFailure.accessToken !== initialCfg.accessToken) {
+      try {
+        return await fn(afterFirstFailure.accessToken);
+      } catch { /* el token "nuevo" tampoco sirvió — sigue abajo con un refresh real */ }
+    }
+
+    const beforeRefresh = get().syncConfig;
+    if (!beforeRefresh.refreshToken) throw e;
+
+    let tokens: { access_token: string; refresh_token: string };
+    try {
+      tokens = await refreshSyncTokenOnce(beforeRefresh.serverUrl, beforeRefresh.refreshToken);
+    } catch (refreshErr) {
+      // Acá SÍ hay que distinguir el motivo del fallo: /auth/refresh
+      // responde 401 en los tres casos donde el refresh token está
+      // realmente muerto (vencido, revocado, o reuso detectado —
+      // confirmado en logday-server/internal/auth/handlers.go) — ahí no
+      // hay nada que hacer sin la contraseña, corresponde desconectar.
+      // Pero `sync_request` (comando Rust) rechaza con un error plano,
+      // no un SyncApiError, ante cualquier falla de red (server
+      // inalcanzable, timeout, DNS) — eso es transitorio, no una
+      // sesión muerta. Tratarlo igual que un 401 (bug encontrado
+      // probando: el usuario reportaba la sesión cerrándose sola cada
+      // pocos minutos, incluso tras reiniciar la app — coincidía con
+      // cada vencimiento del access token de 15 min más cualquier hipo
+      // de red hacia el server) tiraba a la basura un refresh token
+      // todavía válido por un problema que se iba a resolver solo en el
+      // próximo intento.
+      if (refreshErr instanceof SyncApiError && refreshErr.status === 401) {
+        get().syncDisconnect();
+        set({ syncErrorMsg: t(get().language, 'extras', 'syncSessionExpiredMsg') });
+      }
+      throw e;
+    }
+
+    const nextCfg: SyncConfig = { ...get().syncConfig, accessToken: tokens.access_token, refreshToken: tokens.refresh_token };
+    localStorage.setItem('syncConfig', JSON.stringify(nextCfg));
+    set({ syncConfig: nextCfg });
+    return await fn(tokens.access_token);
+  }
+}
 
 const TASK_FIELD_MAP: Record<string, string> = {
   title: 'title', taskCode: 'task_code', status: 'status', tags: 'tags', project: 'project',
@@ -490,7 +625,7 @@ async function syncCreateTask(get: SyncGet, set: SyncSet, task: Task): Promise<v
     return;
   }
   try {
-    const response = await createTaskRemote(syncConfig.serverUrl, syncConfig.accessToken, payload);
+    const response = await withSyncAuth(get, set, (token) => createTaskRemote(syncConfig.serverUrl, token, payload));
     applyTaskResponse(get, set, task.id, queuedAt, response);
   } catch {
     syncQueue.enqueue('task', task.id, 'create', payload as unknown as Record<string, unknown>);
@@ -507,14 +642,14 @@ async function syncPatchTask(get: SyncGet, set: SyncSet, taskId: string, fields:
     return;
   }
   try {
-    const response = await patchTaskRemote(syncConfig.serverUrl, syncConfig.accessToken, taskId, payload);
+    const response = await withSyncAuth(get, set, (token) => patchTaskRemote(syncConfig.serverUrl, token, taskId, payload));
     applyTaskResponse(get, set, taskId, queuedAt, response);
   } catch {
     syncQueue.enqueue('task', taskId, 'patch', payload as unknown as Record<string, unknown>);
   }
 }
 
-async function syncDeleteTask(get: SyncGet, taskId: string): Promise<void> {
+async function syncDeleteTask(get: SyncGet, set: SyncSet, taskId: string): Promise<void> {
   const { syncConfig, syncConnectionStatus } = get();
   if (!syncConfig.enabled) return;
   if (syncConnectionStatus !== 'connected') {
@@ -522,7 +657,7 @@ async function syncDeleteTask(get: SyncGet, taskId: string): Promise<void> {
     return;
   }
   try {
-    await deleteTaskRemote(syncConfig.serverUrl, syncConfig.accessToken, taskId);
+    await withSyncAuth(get, set, (token) => deleteTaskRemote(syncConfig.serverUrl, token, taskId));
   } catch {
     syncQueue.enqueue('task', taskId, 'delete');
   }
@@ -615,7 +750,7 @@ export async function syncNoteContent(get: SyncGet, set: SyncSet, note: Note, yd
   }
   const queuedAt = new Date().toISOString();
   try {
-    const response = await pushNoteContentRemote(syncConfig.serverUrl, syncConfig.accessToken, note.id, updateB64);
+    const response = await withSyncAuth(get, set, (token) => pushNoteContentRemote(syncConfig.serverUrl, token, note.id, updateB64));
     applyNoteResponse(get, set, note.id, queuedAt, response);
   } catch {
     contentSyncQueue.enqueue('note', note.id, updateB64);
@@ -646,14 +781,14 @@ async function pushDailyContentUpdate(get: SyncGet, set: SyncSet, date: string, 
     return;
   }
   try {
-    const response = await putDailyEntryContentRemote(syncConfig.serverUrl, syncConfig.accessToken, date, updateB64);
+    const response = await withSyncAuth(get, set, (token) => putDailyEntryContentRemote(syncConfig.serverUrl, token, date, updateB64));
     if (response.content_state) await applyDailyEntryContentUpdate(get, set, date, response.content_state);
   } catch {
     contentSyncQueue.enqueue('daily_entry', date, updateB64);
   }
 }
 
-async function syncDeleteDailyEntry(get: SyncGet, date: string): Promise<void> {
+async function syncDeleteDailyEntry(get: SyncGet, set: SyncSet, date: string): Promise<void> {
   const { syncConfig, syncConnectionStatus } = get();
   if (!syncConfig.enabled) return;
   if (syncConnectionStatus !== 'connected') {
@@ -661,7 +796,7 @@ async function syncDeleteDailyEntry(get: SyncGet, date: string): Promise<void> {
     return;
   }
   try {
-    await deleteDailyEntryRemote(syncConfig.serverUrl, syncConfig.accessToken, date);
+    await withSyncAuth(get, set, (token) => deleteDailyEntryRemote(syncConfig.serverUrl, token, date));
   } catch {
     syncQueue.enqueue('daily_entry', date, 'delete');
   }
@@ -673,10 +808,10 @@ async function drainContentSyncQueue(get: SyncGet, set: SyncSet): Promise<void> 
   await contentSyncQueue.drain(async (entity, key, updateB64) => {
     const queuedAt = new Date().toISOString();
     if (entity === 'note') {
-      const response = await pushNoteContentRemote(syncConfig.serverUrl, syncConfig.accessToken, key, updateB64);
+      const response = await withSyncAuth(get, set, (token) => pushNoteContentRemote(syncConfig.serverUrl, token, key, updateB64));
       applyNoteResponse(get, set, key, queuedAt, response);
     } else {
-      const response = await putDailyEntryContentRemote(syncConfig.serverUrl, syncConfig.accessToken, key, updateB64);
+      const response = await withSyncAuth(get, set, (token) => putDailyEntryContentRemote(syncConfig.serverUrl, token, key, updateB64));
       if (response.content_state) await applyDailyEntryContentUpdate(get, set, key, response.content_state);
     }
   });
@@ -698,7 +833,7 @@ async function syncCreateNote(get: SyncGet, set: SyncSet, note: Note): Promise<v
     return;
   }
   try {
-    const response = await createNoteRemote(syncConfig.serverUrl, syncConfig.accessToken, payload);
+    const response = await withSyncAuth(get, set, (token) => createNoteRemote(syncConfig.serverUrl, token, payload));
     applyNoteResponse(get, set, note.id, queuedAt, response);
   } catch {
     syncQueue.enqueue('note', note.id, 'create', payload as unknown as Record<string, unknown>);
@@ -715,14 +850,14 @@ async function syncPatchNote(get: SyncGet, set: SyncSet, noteId: string, fields:
     return;
   }
   try {
-    const response = await patchNoteRemote(syncConfig.serverUrl, syncConfig.accessToken, noteId, payload);
+    const response = await withSyncAuth(get, set, (token) => patchNoteRemote(syncConfig.serverUrl, token, noteId, payload));
     applyNoteResponse(get, set, noteId, queuedAt, response);
   } catch {
     syncQueue.enqueue('note', noteId, 'patch', payload as unknown as Record<string, unknown>);
   }
 }
 
-async function syncDeleteNote(get: SyncGet, noteId: string): Promise<void> {
+async function syncDeleteNote(get: SyncGet, set: SyncSet, noteId: string): Promise<void> {
   const { syncConfig, syncConnectionStatus } = get();
   if (!syncConfig.enabled) return;
   if (syncConnectionStatus !== 'connected') {
@@ -730,7 +865,7 @@ async function syncDeleteNote(get: SyncGet, noteId: string): Promise<void> {
     return;
   }
   try {
-    await deleteNoteRemote(syncConfig.serverUrl, syncConfig.accessToken, noteId);
+    await withSyncAuth(get, set, (token) => deleteNoteRemote(syncConfig.serverUrl, token, noteId));
   } catch {
     syncQueue.enqueue('note', noteId, 'delete');
   }
@@ -780,7 +915,7 @@ async function syncCreateCalendarEvent(get: SyncGet, set: SyncSet, event: Calend
     return;
   }
   try {
-    const response = await createCalendarEventRemote(syncConfig.serverUrl, syncConfig.accessToken, payload);
+    const response = await withSyncAuth(get, set, (token) => createCalendarEventRemote(syncConfig.serverUrl, token, payload));
     applyCalendarEventResponse(get, set, event.id, queuedAt, response);
   } catch {
     syncQueue.enqueue('calendar_event', event.id, 'create', payload as unknown as Record<string, unknown>);
@@ -797,14 +932,14 @@ async function syncPatchCalendarEvent(get: SyncGet, set: SyncSet, eventId: strin
     return;
   }
   try {
-    const response = await patchCalendarEventRemote(syncConfig.serverUrl, syncConfig.accessToken, eventId, payload);
+    const response = await withSyncAuth(get, set, (token) => patchCalendarEventRemote(syncConfig.serverUrl, token, eventId, payload));
     applyCalendarEventResponse(get, set, eventId, queuedAt, response);
   } catch {
     syncQueue.enqueue('calendar_event', eventId, 'patch', payload as unknown as Record<string, unknown>);
   }
 }
 
-async function syncDeleteCalendarEvent(get: SyncGet, eventId: string): Promise<void> {
+async function syncDeleteCalendarEvent(get: SyncGet, set: SyncSet, eventId: string): Promise<void> {
   const { syncConfig, syncConnectionStatus } = get();
   if (!syncConfig.enabled) return;
   if (syncConnectionStatus !== 'connected') {
@@ -812,7 +947,7 @@ async function syncDeleteCalendarEvent(get: SyncGet, eventId: string): Promise<v
     return;
   }
   try {
-    await deleteCalendarEventRemote(syncConfig.serverUrl, syncConfig.accessToken, eventId);
+    await withSyncAuth(get, set, (token) => deleteCalendarEventRemote(syncConfig.serverUrl, token, eventId));
   } catch {
     syncQueue.enqueue('calendar_event', eventId, 'delete');
   }
@@ -860,7 +995,7 @@ async function syncCreateAbsenceDay(get: SyncGet, set: SyncSet, absence: Absence
     return;
   }
   try {
-    const response = await createAbsenceDayRemote(syncConfig.serverUrl, syncConfig.accessToken, payload);
+    const response = await withSyncAuth(get, set, (token) => createAbsenceDayRemote(syncConfig.serverUrl, token, payload));
     applyAbsenceDayResponse(get, set, absence.id, queuedAt, response);
   } catch {
     syncQueue.enqueue('absence_day', absence.id, 'create', payload as unknown as Record<string, unknown>);
@@ -877,14 +1012,14 @@ async function syncPatchAbsenceDay(get: SyncGet, set: SyncSet, absenceId: string
     return;
   }
   try {
-    const response = await patchAbsenceDayRemote(syncConfig.serverUrl, syncConfig.accessToken, absenceId, payload);
+    const response = await withSyncAuth(get, set, (token) => patchAbsenceDayRemote(syncConfig.serverUrl, token, absenceId, payload));
     applyAbsenceDayResponse(get, set, absenceId, queuedAt, response);
   } catch {
     syncQueue.enqueue('absence_day', absenceId, 'patch', payload as unknown as Record<string, unknown>);
   }
 }
 
-async function syncDeleteAbsenceDay(get: SyncGet, absenceId: string): Promise<void> {
+async function syncDeleteAbsenceDay(get: SyncGet, set: SyncSet, absenceId: string): Promise<void> {
   const { syncConfig, syncConnectionStatus } = get();
   if (!syncConfig.enabled) return;
   if (syncConnectionStatus !== 'connected') {
@@ -892,7 +1027,7 @@ async function syncDeleteAbsenceDay(get: SyncGet, absenceId: string): Promise<vo
     return;
   }
   try {
-    await deleteAbsenceDayRemote(syncConfig.serverUrl, syncConfig.accessToken, absenceId);
+    await withSyncAuth(get, set, (token) => deleteAbsenceDayRemote(syncConfig.serverUrl, token, absenceId));
   } catch {
     syncQueue.enqueue('absence_day', absenceId, 'delete');
   }
@@ -945,7 +1080,7 @@ async function syncCreateOvertimeEntry(get: SyncGet, set: SyncSet, entry: Overti
     return;
   }
   try {
-    const response = await createOvertimeEntryRemote(syncConfig.serverUrl, syncConfig.accessToken, payload);
+    const response = await withSyncAuth(get, set, (token) => createOvertimeEntryRemote(syncConfig.serverUrl, token, payload));
     applyOvertimeEntryResponse(get, set, entry.id, queuedAt, response);
   } catch {
     syncQueue.enqueue('overtime_entry', entry.id, 'create', payload as unknown as Record<string, unknown>);
@@ -962,14 +1097,14 @@ async function syncPatchOvertimeEntry(get: SyncGet, set: SyncSet, entryId: strin
     return;
   }
   try {
-    const response = await patchOvertimeEntryRemote(syncConfig.serverUrl, syncConfig.accessToken, entryId, payload);
+    const response = await withSyncAuth(get, set, (token) => patchOvertimeEntryRemote(syncConfig.serverUrl, token, entryId, payload));
     applyOvertimeEntryResponse(get, set, entryId, queuedAt, response);
   } catch {
     syncQueue.enqueue('overtime_entry', entryId, 'patch', payload as unknown as Record<string, unknown>);
   }
 }
 
-async function syncDeleteOvertimeEntry(get: SyncGet, entryId: string): Promise<void> {
+async function syncDeleteOvertimeEntry(get: SyncGet, set: SyncSet, entryId: string): Promise<void> {
   const { syncConfig, syncConnectionStatus } = get();
   if (!syncConfig.enabled) return;
   if (syncConnectionStatus !== 'connected') {
@@ -977,7 +1112,7 @@ async function syncDeleteOvertimeEntry(get: SyncGet, entryId: string): Promise<v
     return;
   }
   try {
-    await deleteOvertimeEntryRemote(syncConfig.serverUrl, syncConfig.accessToken, entryId);
+    await withSyncAuth(get, set, (token) => deleteOvertimeEntryRemote(syncConfig.serverUrl, token, entryId));
   } catch {
     syncQueue.enqueue('overtime_entry', entryId, 'delete');
   }
@@ -1017,7 +1152,7 @@ async function syncPatchOvertimeMonthMeta(get: SyncGet, set: SyncSet, yearMonth:
     return;
   }
   try {
-    const response = await patchOvertimeMonthMetaRemote(syncConfig.serverUrl, syncConfig.accessToken, yearMonth, payload);
+    const response = await withSyncAuth(get, set, (token) => patchOvertimeMonthMetaRemote(syncConfig.serverUrl, token, yearMonth, payload));
     applyOvertimeMonthMetaResponse(get, set, yearMonth, queuedAt, response);
   } catch {
     syncQueue.enqueue('overtime_month_meta', yearMonth, 'patch', payload as unknown as Record<string, unknown>);
@@ -1503,7 +1638,7 @@ async function reconcileSync(get: SyncGet, set: SyncSet): Promise<void> {
   if (!syncConfig.enabled) return;
   const cursor = getSyncCursor();
   try {
-    const changes = await syncChangesRemote(syncConfig.serverUrl, syncConfig.accessToken, cursor);
+    const changes = await withSyncAuth(get, set, (token) => syncChangesRemote(syncConfig.serverUrl, token, cursor));
     await applyRemoteChanges(get, set, changes);
     if (changes.length > 0) {
       setSyncCursor(changes.reduce((m, c) => Math.max(m, c.seq), cursor));
@@ -1514,7 +1649,7 @@ async function reconcileSync(get: SyncGet, set: SyncSet): Promise<void> {
     set({ lastSyncedAt: new Date().toISOString() });
   } catch (e) {
     if (e instanceof SyncApiError && e.status === 410) {
-      const changes = await syncChangesRemote(syncConfig.serverUrl, syncConfig.accessToken, 0);
+      const changes = await withSyncAuth(get, set, (token) => syncChangesRemote(syncConfig.serverUrl, token, 0));
       await applyRemoteChanges(get, set, changes);
       setSyncCursor(changes.reduce((m, c) => Math.max(m, c.seq), 0));
       set({ lastSyncedAt: new Date().toISOString() });
@@ -1829,8 +1964,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   syncErrorMsg: '',
   isSyncOpen: false,
   devices: [],
+  devicesError: null,
   lastSyncedAt: null,
   syncNowInProgress: false,
+  syncMigrationStatus: 'idle',
+  // Objeto literal, no emptyMigrationProgress() de syncMigration.ts a
+  // propósito — ese módulo importa de este archivo (projectDir,
+  // readTaskFromPath, etc.) para leer disco sin pasar por las
+  // acciones que sí tocan el estado visible; importarlo acá de vuelta
+  // en el estado inicial (no dinámico, a diferencia de la acción de
+  // abajo) crearía un ciclo real en tiempo de carga del módulo.
+  syncMigrationProgress: { done: 0, total: 0, migrated: 0, skipped: 0, failed: 0 },
   overtimeEntries: [],
   overtimeMonth: new Date().toISOString().slice(0, 7),
   overtimeMonths: [],
@@ -2246,7 +2390,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       description: task.title,
     });
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
-    void syncDeleteTask(get, task.id);
+    void syncDeleteTask(get, set, task.id);
   },
 
   setActiveTask: (task) => set({ activeTask: task, activeCalendarEvent: null }),
@@ -2274,20 +2418,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const nDir = notesDir(basePath);
       await fs.createDir(nDir).catch(() => {});
-
-      async function scanFolders(dirPath: string, prefix: string): Promise<string[]> {
-        const entries = await fs.listDir(dirPath).catch(() => []);
-        const result: string[] = [];
-        for (const e of (entries as { name: string; path: string; is_dir: boolean }[]).filter(e => e.is_dir)) {
-          const fullPath = prefix ? `${prefix}/${e.name}` : e.name;
-          result.push(fullPath);
-          const children = await scanFolders(`${dirPath}/${e.name}`, fullPath);
-          result.push(...children);
-        }
-        return result;
-      }
-
-      const folders = await scanFolders(nDir, '');
+      const folders = await scanNoteFolders(nDir, '');
       set({ noteFolders: folders });
     } catch (e) {
       console.error('loadNoteFolders error:', e);
@@ -2590,7 +2721,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       notes: state.notes.filter((n) => n.id !== note.id),
       activeNote: state.activeNote?.id === note.id ? null : state.activeNote,
     }));
-    void syncDeleteNote(get, note.id);
+    void syncDeleteNote(get, set, note.id);
     if (showToast) {
       get().showToast({
         kind: 'success',
@@ -2895,7 +3026,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeDailyDate: s.activeDailyDate === date ? null : s.activeDailyDate,
       };
     });
-    void syncDeleteDailyEntry(get, date);
+    void syncDeleteDailyEntry(get, set, date);
     get().showToast({
       kind: 'success',
       title: t(language, 'toast', 'dailyDeleted'),
@@ -3072,7 +3203,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const [year, month] = ym.split('-');
     const path = overtimeMonthFilePath(base, year, month);
     await fs.writeFile(path, `---\n${JSON.stringify({ entries }, null, 2)}\n---\n`);
-    void syncDeleteOvertimeEntry(get, id);
+    void syncDeleteOvertimeEntry(get, set, id);
     get().showToast({
       kind: 'success',
       title: t(language, 'toast', 'overtimeDeleted'),
@@ -3435,24 +3566,52 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  // Solo limpia lo sensible/de la sesión (tokens, deviceId) — server
+  // URL y email quedan, para no obligar a retipearlos en el próximo
+  // "Conectar" (bug real: se perdían con cada desconexión, incluida
+  // la automática por refresh token vencido, así que el usuario los
+  // reescribía cada vez que la sesión se caía).
   syncDisconnect: () => {
     stopReconcileInterval();
     disconnectRealtime();
-    const cfg: SyncConfig = { enabled: false, serverUrl: '', email: '', accessToken: '', refreshToken: '', deviceId: '' };
+    const { serverUrl, email } = get().syncConfig;
+    const cfg: SyncConfig = { enabled: false, serverUrl, email, accessToken: '', refreshToken: '', deviceId: '' };
     localStorage.setItem('syncConfig', JSON.stringify(cfg));
-    set({ syncConfig: cfg, syncConnectionStatus: 'disconnected', syncErrorMsg: '', lastSyncedAt: null, devices: [] });
+    set({ syncConfig: cfg, syncConnectionStatus: 'disconnected', syncErrorMsg: '', lastSyncedAt: null, devices: [], devicesError: null });
   },
 
   toggleSync: () => set((s) => ({ isSyncOpen: !s.isSyncOpen })),
   openSettingsSyncTab: () => set({ isSyncOpen: true, isSettingsOpen: true }),
 
+  // Antes, cualquier falla acá (typicamente un 401 por access token
+  // vencido — esta app todavía no lo renueva solo, ver syncNow) se
+  // tragaba en silencio: devices se quedaba vacío para siempre y
+  // DevicesPanel muestra "Cargando sesiones…" mientras esté vacío, sin
+  // distinguir "todavía cargando" de "falló y se rindió" — quedaba
+  // pegado en "cargando" para siempre. Ahora el fallo deja un mensaje
+  // legible en devicesError, que la UI usa para mostrar un botón de
+  // reintentar en vez de un loader eterno.
   loadDevices: async () => {
-    const { syncConfig } = get();
+    const { syncConfig, language } = get();
     if (!syncConfig.enabled || !syncConfig.accessToken) return;
+    set({ devicesError: null });
     try {
-      const devices = await listDevicesRemote(syncConfig.serverUrl, syncConfig.accessToken);
-      set({ devices });
-    } catch { /* sin conexión momentánea — la lista se queda con lo que ya tenía */ }
+      const devices = await withSyncAuth(get, set, (token) => listDevicesRemote(syncConfig.serverUrl, token));
+      set({ devices, devicesError: null });
+    } catch (e) {
+      const expired = e instanceof SyncApiError && e.status === 401;
+      // "expired" no es reintentable — el access token está muerto de
+      // verdad, reintentar con el mismo token solo repite el mismo 401
+      // para siempre (bug real, encontrado probando: el botón
+      // "Reintentar" no hacía nada visible). La UI le ofrece
+      // Desconectar en vez de Reintentar para este caso específico.
+      set({
+        devicesError: {
+          kind: expired ? 'expired' : 'generic',
+          message: t(language, 'extras', expired ? 'devicesErrorExpired' : 'devicesErrorGeneric'),
+        },
+      });
+    }
   },
 
   // Revocar el propio dispositivo invalida ya mismo el access/refresh
@@ -3464,7 +3623,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!syncConfig.enabled || !syncConfig.accessToken) return;
     const isSelf = id === syncConfig.deviceId;
     try {
-      await revokeDeviceRemote(syncConfig.serverUrl, syncConfig.accessToken, id);
+      await withSyncAuth(get, set, (token) => revokeDeviceRemote(syncConfig.serverUrl, token, id));
       if (isSelf) { get().syncDisconnect(); return; }
       set({ devices: get().devices.filter((d) => d.id !== id) });
     } catch { /* deja la lista como estaba, el usuario puede reintentar */ }
@@ -3485,6 +3644,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     } finally {
       set({ syncNowInProgress: false });
     }
+  },
+
+  // Sube lo que ya existía en disco antes de conectar sync — ver
+  // specs/sync-primer-sincronizacion. Import dinámico a propósito:
+  // syncMigration.ts importa de este archivo (projectDir,
+  // readTaskFromPath, etc., para leer disco sin pasar por acciones
+  // que sí tocan el estado visible) — un import estático acá crearía
+  // un ciclo real; uno dinámico se resuelve recién cuando la acción
+  // corre, con ambos módulos ya inicializados.
+  syncMigrateExisting: async () => {
+    if (!get().syncConfig.enabled || get().syncMigrationStatus === 'running') return;
+    const { migrateExistingData } = await import('../lib/syncMigration');
+    const result = await migrateExistingData(get, set);
+    const status = get().syncMigrationStatus;
+    get().showToast({
+      kind: status === 'error' ? 'error' : 'success',
+      title: t(get().language, 'extras', status === 'error' ? 'migrationErrorTitle' : 'migrationDoneTitle'),
+      description: `${result.migrated} ${t(get().language, 'extras', 'migrationMigratedSuffix')} · ${result.skipped} ${t(get().language, 'extras', 'migrationSkippedSuffix')}${result.failed ? ` · ${result.failed} ${t(get().language, 'extras', 'migrationFailedSuffix')}` : ''}`,
+      durationMs: 5000,
+    });
   },
 
   // ── Calendar Events ────────────────────────────────────────────
@@ -3533,7 +3712,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const next = get().calendarEvents.filter((e) => e.id !== id);
     await fs.writeFile(path, JSON.stringify(next, null, 2));
     set({ calendarEvents: next });
-    void syncDeleteCalendarEvent(get, id);
+    void syncDeleteCalendarEvent(get, set, id);
   },
 
   // ── Absences ───────────────────────────────────────────────────
@@ -3580,7 +3759,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const next = get().absenceDays.filter((a) => a.id !== id);
     await fs.writeFile(path, JSON.stringify(next, null, 2));
     set({ absenceDays: next });
-    void syncDeleteAbsenceDay(get, id);
+    void syncDeleteAbsenceDay(get, set, id);
   },
 
   // ── Papelera de reciclaje ────────────────────────────────────

@@ -46,7 +46,7 @@ export function ShortcutsSettingsTab() {
               </div>
               <button
                 onClick={() => setRecordingFor(isRecording ? null : key)}
-                className={`min-w-[80px] rounded-lg border px-3 py-1 text-center text-xs font-mono transition ${
+                className={`w-[180px] shrink-0 overflow-hidden whitespace-nowrap rounded-lg border px-3 py-1 text-center text-xs font-mono transition-colors ${
                   isRecording
                     ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400 animate-pulse'
                     : 'border-[var(--border-card)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-indigo-500/50 hover:text-indigo-400'

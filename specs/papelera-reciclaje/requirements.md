@@ -1,10 +1,14 @@
 # Papelera de reciclaje — Requirements
 
 Estado: implementado (baseline) — local por instalación y compartida
-entre instalaciones de Logday Desktop del mismo usuario. Compartida
-entre servicios (`logday-web`, mobile) queda pendiente, ver
-"Fuera de alcance" abajo y los specs equivalentes en `logday-server` y
-`logday-web` (`specs/papelera-compartida/requirements.md` en ambos).
+entre instalaciones de Logday Desktop del mismo usuario. `logday-web`
+ya implementó el mismo mecanismo del lado propio (ver
+`specs/papelera-compartida/requirements.md` de ese repo) — cada
+servicio sigue con su propia papelera local, no una unificada. Mobile
+sigue sin implementar. Ver "Fuera de alcance" abajo y el spec
+equivalente en `logday-server` (`specs/papelera-compartida/requirements.md`)
+para las preguntas abiertas del lado servidor, que ninguno de los dos
+clientes resolvió.
 
 ## Contexto
 
@@ -79,10 +83,11 @@ papelera real.
 
 ## Fuera de alcance (pendiente)
 
-- Papelera compartida entre **servicios** (`logday-web`, mobile) — hoy
-  cada servicio tendría su propia papelera local si la implementara;
-  ver `specs/papelera-compartida/requirements.md` en `logday-server` y
-  `logday-web` para el estado de esa extensión.
+- Papelera compartida entre **servicios** — `logday-web` ya implementó
+  el mismo mecanismo del lado propio (ver
+  `specs/papelera-compartida/requirements.md` de ese repo), pero cada
+  servicio sigue con su propia papelera local, no una vista unificada
+  entre ambos. Mobile sigue sin implementar.
 - Borrados masivos (`deleteDailyMonth` y equivalentes) — quedan
   permanentes, sin pasar por la papelera.
 - Un endpoint de hard-delete real en el servidor — "vaciar papelera"

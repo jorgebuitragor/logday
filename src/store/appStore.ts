@@ -3605,6 +3605,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // para siempre (bug real, encontrado probando: el botón
       // "Reintentar" no hacía nada visible). La UI le ofrece
       // Desconectar en vez de Reintentar para este caso específico.
+      console.error('[loadDevices] falló GET /devices:', e);
       set({
         devicesError: {
           kind: expired ? 'expired' : 'generic',

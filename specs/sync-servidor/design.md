@@ -1,6 +1,11 @@
 # Sync con servidor — Diseño
 
-Estado: en diseño — no implementado.
+Estado: implementado. La sección "CRDT" de abajo describe el diseño
+*original* (integración directa con `@tiptap/extension-collaboration`)
+— se revisó durante la implementación tras encontrar que el shared
+type resultante (`Y.XmlFragment`) no es compatible con el protocolo
+real del servidor (`Y.Text` plano). Ver el bloque "Decisión revisada"
+al final de esa sección para el diseño que realmente se construyó.
 
 ## Capa de red: comandos Rust propios, no `fetch`/`WebSocket` del navegador
 
@@ -144,6 +149,55 @@ construir el puente Tiptap↔Yjs a mano:
 
 Dependencia nueva: `yjs` (paquete npm, no hay wrapper de Tauri
 necesario acá — es lógica pura en JS, no I/O de red directo).
+
+**Decisión revisada** (lo de arriba es el diseño original, descartado
+al implementar): `@tiptap/extension-collaboration` nunca se agregó.
+El bloqueante se encontró recién al validar contra un servidor real —
+la extensión de Tiptap representa el documento como `Y.XmlFragment`
+(un shared type estructurado, con nodos/marcas), pero el servidor
+(`Deln0r/ygo`, `internal/crdt/text.go`) y `logday-web`
+(`src/lib/yText.ts`, ya validado end-to-end antes que Desktop) usan
+`Y.Text` **plano** bajo la key `"content"` — son shared types
+distintos dentro de un `Y.Doc`, Yjs no los fusiona entre sí. Seguir
+con Tiptap Collaboration habría dejado a Desktop sincronizando contra
+sí mismo, nunca contra lo que web/servidor esperan.
+
+Lo que se construyó en su lugar (`src/lib/noteContentSync.ts`,
+`dailyContentSync.ts`, `contentSyncQueue.ts`):
+
+- Un `Y.Doc` con un único `Y.Text` (key `"content"`) por nota/entrada
+  diaria — no integrado al estado interno de Tiptap. El editor sigue
+  siendo la fuente de verdad visible (Markdown en curso); el `Y.Doc`
+  es un espejo que se actualiza **al guardar**, no por keystroke.
+- `applyTextEdit(doc, oldValue, newValue)` calcula el diff entre el
+  Markdown anterior y el nuevo en cada guardado y lo aplica al
+  `Y.Text` — puerto directo de `applyTextareaEdit` de `logday-web`
+  (mismo problema, misma solución ya validada ahí primero).
+- Estado Yjs persistido en un archivo `.ydoc` hermano del `.md`
+  (`noteContentStatePath`/equivalente diario), serializado completo
+  con `Y.encodeStateAsUpdate` — no un log incremental.
+- `contentSyncQueue.ts`: cola separada de `syncQueue.ts` (la de campos
+  LWW), coalescida por entidad — varios guardados seguidos de la misma
+  nota solo mandan el último estado, no un update por keystroke.
+- Un `Y.Doc` por documento *actualmente abierto* en el editor (remount
+  vía `key` en `App.tsx`, mismo patrón que `OvertimeEditor`) — evita
+  que el contenido de una nota se filtre a otra al cambiar rápido
+  entre ellas. El resto de notas no mantiene su `Y.Doc` vivo en
+  memoria (se hidrata on-demand al abrir, como ya preveía este
+  diseño).
+
+Validado manualmente: nota creada en Desktop con contenido visible en
+`logday-web`, y edición hecha en `logday-web` reflejada en Desktop
+(contenido del editor y archivo `.ydoc` verificados a nivel de byte,
+decodifican igual con `yjs` puro en ambos lados).
+
+**Hueco conocido, no resuelto por este cambio**: si el pull periódico
+de `/sync/changes` corre entre que el usuario borra una entidad
+localmente y el servidor confirma el `DELETE`, el registro puede
+"revivir" localmente — no hay tombstone local que distinga "borrado
+por mí, todavía no confirmado" de "nunca borrado". No es específico de
+CRDT/contenido, aplica al motor de sync en general
+(`applyRemoteTaskChange`/`NoteChange`/etc.).
 
 ## Fuera de este diseño
 

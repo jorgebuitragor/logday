@@ -1,6 +1,12 @@
 # Sync con servidor — Requirements
 
-Estado: en diseño
+Estado: implementado — las 7 entidades (`Task`, `Note`, `OvertimeEntry`,
+`OvertimeMonthMeta`, `CalendarEvent`, `AbsenceDay`, entrada diaria)
+sincronizan create/patch/delete, cursor+reconciliación y tiempo real
+(WS), todas validadas contra un server real. Ver `tasks.md` para el
+detalle por fase y `design.md` para las decisiones revisadas durante
+la implementación (el mecanismo CRDT en particular cambió respecto a
+lo diseñado acá — ver su sección "CRDT").
 
 ## Contexto
 
@@ -151,7 +157,8 @@ no los redefine.
   `design.md`.
 - Migración de datos existentes (usuarios que ya tienen meses de
   archivos locales) hacia un servidor recién configurado — primer
-  sync completo, probablemente requiere su propio spec.
+  sync completo, probablemente requiere su propio spec. **Hecho**: ver
+  [`sync-primer-sincronizacion/`](../sync-primer-sincronizacion/requirements.md).
 - Multi-dispositivo dentro de la misma sesión de escritorio (no
   aplica: cada instalación de Logday Desktop es un único dispositivo).
 - Cualquier UI de resolución manual de conflictos — deliberadamente

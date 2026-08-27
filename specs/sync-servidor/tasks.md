@@ -1,8 +1,12 @@
 # Sync con servidor — Tareas
 
-Estado: en progreso — "Config y auth" implementado, pendiente de
-confirmación visual en la app real (ver "Punto de retomada" al final).
-`logday-server` ya implementa
+Estado: implementado. Las 7 entidades (Task, Note, OvertimeEntry,
+OvertimeMonthMeta, CalendarEvent, AbsenceDay, DailyEntry) sincronizan
+create/patch/delete, cursor+reconciliación, tiempo real (WS) y — para
+Note/DailyEntry — contenido largo vía CRDT, todo validado contra un
+server real. Migración de datos existentes y renovación automática de
+sesión también implementadas (ver "Estado final" al final de este
+archivo). `logday-server` ya implementa
 [`lww-por-campo`](https://github.com/jorgebuitragor/logday-server/tree/main/specs/lww-por-campo)
 (mergeado a `main`, release `v1.1.0`) — el `PATCH` parcial ya existe
 del lado servidor, este spec ya no está bloqueado por eso.
@@ -31,7 +35,9 @@ del lado servidor, este spec ya no está bloqueado por eso.
 - [x] Decidir backoff de reconexión WS: exponencial con techo en 30s,
       reintento indefinido.
 - [x] Decidir mecanismo CRDT: `@tiptap/extension-collaboration` + `yjs`,
-      aprovechando que el editor ya usa Tiptap.
+      aprovechando que el editor ya usa Tiptap. Ver "CRDT" más abajo
+      (decisión revisada al implementar — el shared type de esa
+      extensión no es compatible con el protocolo real del servidor).
 - [x] Decidir principio de resolución de conflictos: el cliente nunca
       decide ni pregunta — siempre sobreescribe con lo que el servidor
       devuelve.
@@ -40,10 +46,12 @@ del lado servidor, este spec ya no está bloqueado por eso.
 
 ### Dependencias nuevas
 
-- [ ] Agregar `@tauri-apps/plugin-websocket` (+ permiso en
+- [x] Agregar `@tauri-apps/plugin-websocket` (+ permiso en
       `src-tauri/capabilities/default.json`). REST no agrega
       dependencia JS nueva — son comandos Rust.
-- [ ] Agregar `yjs`, `@tiptap/extension-collaboration`.
+- [x] Agregar `yjs`. `@tiptap/extension-collaboration` **no** se
+      agregó — decisión revisada al implementar CRDT, ver esa sección
+      más abajo y `design.md`.
 
 ### Comandos Rust (REST)
 
@@ -94,14 +102,22 @@ del lado servidor, este spec ya no está bloqueado por eso.
 
 ### Escritura y cola offline
 
-Implementado y validado contra un server real para Task (create vía
-cola offline, patch en vivo, delete — los tres probados a mano por el
-usuario y confirmados por `curl` del lado del servidor). Replicado
-(mismo patrón, `tsc`/lint en verde, pendiente de validación manual en
-la app) a Note, CalendarEvent, AbsenceDay y OvertimeEntry.
-OvertimeMonthMeta queda pendiente — desajuste de modelo local (un
-único objeto global `{colaborador, cedula}`) vs. servidor (uno por
-`year_month`), ver `specs/sync-primer-sincronizacion`.
+Implementado y validado contra un server real para las 7 entidades:
+Task fue la primera (create vía cola offline, patch en vivo, delete —
+probados a mano por el usuario y confirmados por `curl` del lado del
+servidor); Note, CalendarEvent, AbsenceDay y OvertimeEntry replicaron
+el mismo patrón y también quedaron validadas. OvertimeMonthMeta y
+DailyEntry, que habían quedado pendientes por un desajuste de modelo
+local (`OvertimeMonthMeta` es un único objeto global
+`{colaborador, cedula}` vs. un registro por `year_month` del lado
+servidor — ver `specs/sync-primer-sincronizacion`), se resolvieron: el
+mapeo/HTTP ya existía sin usar en `syncMapping.ts`/`sync.ts`, solo
+faltaba el wiring (`dispatchQueuedWrite`, `applyRemoteChanges`, hook en
+`setOvertimeMeta` con debounce). Local se trata como "la meta del mes
+visible" — un cambio remoto de otro mes se ignora a propósito.
+Validado contra el server real (logs + DB): `PATCH` de
+overtime-month-meta y `PUT`/`DELETE`/`PUT` de daily-entries con fecha
+real (create, editar, borrar, revivir).
 
 - [x] `src/lib/syncQueue.ts`: cola persistida en **`localStorage`**
       (no `configDir` — corrección ya hecha en design.md, este bullet
@@ -125,8 +141,8 @@ OvertimeMonthMeta queda pendiente — desajuste de modelo local (un
       `saveOvertimeEntry`/`deleteOvertimeEntry`): conectado y sin cola
       → envío directo, con "sobreescribir con la respuesta" vía
       `applyXResponse`; sin conexión o si el envío falla →
-      `syncQueue.enqueue`. Falta solo OvertimeMonthMeta (ver nota de
-      arriba).
+      `syncQueue.enqueue`. OvertimeMonthMeta usa el mismo patrón desde
+      `setOvertimeMeta` (ver nota de arriba).
 - [x] Regla de prioridad cola vs. respuesta tardía — `applyXResponse`
       (una por entidad) solo sobreescribe cada campo local si no hay
       una entrada en cola más nueva para ese mismo campo
@@ -145,14 +161,14 @@ OvertimeMonthMeta queda pendiente — desajuste de modelo local (un
 
 ### Cursor y reconciliación
 
-Implementado y validado contra un server real para Task (curl
-simulando un cambio remoto, reconectar, verlo aparecer solo — ver
-nota de validación más abajo). Replicado (mismo patrón, `tsc`/lint en
-verde, pendiente de validación manual) a Note, CalendarEvent,
-AbsenceDay y OvertimeEntry. OvertimeMonthMeta y DailyEntry se ignoran
-a propósito en `applyRemoteChanges` (comentario en el código marca el
-motivo de cada uno — desajuste de modelo el primero, sin tipo local el
-segundo).
+Implementado y validado contra un server real para las 7 entidades:
+Task primero (curl simulando un cambio remoto, reconectar, verlo
+aparecer solo — ver nota de validación más abajo), luego Note,
+CalendarEvent, AbsenceDay y OvertimeEntry con el mismo patrón.
+OvertimeMonthMeta y DailyEntry, que en un momento se ignoraban a
+propósito en `applyRemoteChanges` (desajuste de modelo el primero, sin
+tipo local el segundo), ya se resolvieron y están wireados igual que
+el resto — ver la nota en "Escritura y cola offline" arriba.
 
 - [x] Persistir `seq` local — `localStorage`, clave `syncCursor`
       (`getSyncCursor`/`setSyncCursor` en `appStore.ts`), mismo
@@ -172,9 +188,10 @@ segundo).
       OvertimeEntry vive en archivos por mes — el array en memoria
       solo se actualiza si el mes remoto es el que el usuario tiene
       abierto, para no pisarle la vista actual con datos de otro mes.
-      Note: `content` nunca se toca acá (CRDT, fase pendiente) — se
-      preserva el contenido local, vacío para una nota nueva creada
-      desde un cambio remoto.
+      Note: `content` nunca se toca acá — viaja por el mecanismo CRDT
+      separado (ver sección "CRDT" más abajo), no por
+      `/sync/changes`. Este pull preserva el contenido local, vacío
+      para una nota nueva creada desde un cambio remoto.
 - [x] Manejo de "cursor inválido": un `410` de `/sync/changes`
       descarta el cursor guardado y reintenta con `since=0` (full
       resync). Las escrituras locales no confirmadas quedan
@@ -191,71 +208,141 @@ hiciera nada más — confirma el sentido que faltaba (antes solo Desktop
 
 ### Tiempo real
 
-- [ ] Conexión WS vía `@tauri-apps/plugin-websocket`, mensaje de auth
-      inicial, backoff de reconexión.
-- [ ] Al recibir aviso: disparar reconciliación vía `/sync/changes`
-      (no aplicar el payload del aviso directamente).
+- [x] Conexión WS vía `@tauri-apps/plugin-websocket`, mensaje de auth
+      inicial, backoff de reconexión (`1s..30s`, reset al primer
+      mensaje que pruebe que la conexión sigue viva autenticada). El
+      poll de 30s sigue activo como red de respaldo, no se retiró.
+      `init()` reconecta solo si hay sesión guardada, sin volver a
+      entrar a Ajustes tras reiniciar la app.
+- [x] Al recibir aviso: dispara reconciliación vía `/sync/changes`
+      (`reconcileSync`), no aplica el payload del aviso directamente.
+      Bugs encontrados y corregidos validando contra el server real:
+      un cierre "sucio" del socket (`CloseNow` tras auth fallido) lo
+      serializa el plugin como string plano, no `{type:'Close'}` — sin
+      manejarlo la conexión quedaba huérfana y bloqueaba todo
+      reintento futuro; el backoff no se resetea en un cierre, solo en
+      mensajes que confirman sesión viva, o un token inválido
+      reintentaría cada 1s sin escalar; `beforeunload` desconecta el
+      socket al recargar/cerrar el webview.
 
 ### CRDT (contenido de notas y entradas diarias)
 
-- [ ] Integrar `@tiptap/extension-collaboration` en `RichTextEditor.tsx`
-      con un `Y.Doc` por documento abierto.
-- [ ] Serializar (`encodeStateAsUpdate`) y mandar a
-      `POST /notes/:id/content` / equivalente de entradas diarias al
-      guardar.
-- [ ] Aplicar updates remotos (`Y.applyUpdate`) recibidos por
-      `/sync/changes` o WS sin perder la posición del cursor si el
-      documento está abierto.
-- [ ] Confirmar que la derivación a Markdown en disco (formato local
-      existente) sigue funcionando a partir del estado de Tiptap, sin
-      cambios en el formato de archivo.
+El diseño original (`@tiptap/extension-collaboration` integrado en
+`RichTextEditor.tsx`) se descartó al implementar — ver "Decisión
+revisada" en `design.md`, sección CRDT, para el porqué (shared type
+incompatible con el protocolo real del servidor). Lo implementado:
+
+- [x] `Y.Doc` con un `Y.Text` plano (key `"content"`, misma key que
+      `ygo` del lado servidor y `logday-web`) por nota/entrada diaria
+      — no integrado al estado interno de Tiptap. `applyTextEdit`
+      diffea Markdown anterior vs. nuevo en cada guardado y lo aplica
+      al `Y.Text`, puerto directo de `applyTextareaEdit` de
+      `logday-web`.
+- [x] Serializar (`Y.encodeStateAsUpdate`) y mandar a
+      `POST /notes/:id/content` (Note) / `PUT` de daily-entries
+      (entrada diaria) al guardar, vía `contentSyncQueue.ts` —
+      coalescida por entidad, no un update por keystroke.
+- [x] Aplicar updates remotos (`Y.applyUpdate`) recibidos por
+      `/sync/changes` o WS — como el `Y.Doc` no vive dentro de Tiptap,
+      no hay posición de cursor que preservar en el sentido original
+      del diseño; si el documento está abierto, se re-hidrata desde el
+      estado actualizado.
+- [x] Confirmado: la derivación a Markdown en disco sigue funcionando
+      sin cambios de formato — el `Y.Doc` es un espejo que se
+      actualiza al guardar, el Markdown sigue siendo la fuente de
+      verdad del archivo local.
+
+Validado manualmente: nota creada en Desktop con contenido visible en
+`logday-web`, y edición hecha en `logday-web` reflejada en Desktop
+(contenido + archivo `.ydoc` verificados a nivel de byte).
+
+**Hueco conocido, no resuelto**: si el pull periódico de
+`/sync/changes` corre entre que el usuario borra una entidad
+localmente y el servidor confirma el `DELETE`, el registro puede
+revivir localmente — no hay tombstone local que lo evite. No es
+específico de CRDT, aplica al motor de sync en general.
+
+### Sesión y migración (no estaban en el checklist original)
+
+- [x] `withSyncAuth` renueva el access token en silencio contra el
+      refresh token cuando vence, en vez de fallar con 401 sin
+      recuperarse. Bugs encontrados y corregidos validando contra un
+      server real: una llamada rezagada podía reusar un refresh token
+      ya rotado por otra llamada, y el servidor revocaba el
+      dispositivo entero; un error de red al renovar (no
+      necesariamente un refresh token muerto) desconectaba la sesión
+      igual que un 401 genuino — causaba cierres de sesión cada pocos
+      minutos, coincidiendo con cada vencimiento del access token de
+      15 min más cualquier hipo de red.
+- [x] Migración de datos existentes: `src/lib/syncMigration.ts` sube a
+      un servidor recién conectado todo lo que ya existía en local
+      (tasks, notes con contenido CRDT, overtime, daily entries)
+      sin pisar nada que el servidor ya tenga. Extiende el alcance de
+      `sync-primer-sincronizacion/design.md` (esa spec dejaba
+      contenido de Note/DailyEntry para una fase futura) — ver ese
+      spec, ya actualizado para reflejar la implementación real.
+- [x] Panel de sesiones activas en la pestaña Sync (`GET`/`DELETE
+      /devices`, mismo endpoint que ya usa `logday-web`): lista
+      dispositivos, marca la sesión actual comparando contra
+      `syncConfig.deviceId`, revocar la propia sesión desconecta el
+      sync local de inmediato.
+- [x] Sincronización manual (botón "Sincronizar ahora", estilo
+      Bitwarden): llama al mismo `reconcileSync`/drenado de cola que
+      ya corre solo, con feedback visible y enfriamiento de 8s entre
+      clicks.
+- [x] Confirmación al desconectar (mismo patrón
+      `useConfirmDelete`/`ConfirmDeleteModal` que el resto de la app).
 
 ### Validación
 
-- [ ] `tsc` en verde (`pnpm install` en esta rama desde el merge de
-      feature/1.1.0 — ver "Punto de retomada").
+- [x] `tsc`/`cargo check`/`eslint`/`vite build` en verde en cada
+      commit de esta rama.
 - [ ] Prueba manual: dos instancias de la app (o una app + `curl`
       directo al servidor) editando la misma tarea en campos distintos
       sin verse, offline y reconectando, confirmando que ninguna
-      edición se pierde y no aparece ningún diálogo de conflicto.
+      edición se pierde y no aparece ningún diálogo de conflicto. No
+      se hizo esta prueba puntual — lo más parecido validado fue
+      Desktop + `curl`/`logday-web` en momentos distintos, no dos
+      clientes escribiendo en simultáneo real.
 - [ ] Prueba manual: dos notas editando el mismo párrafo en simultáneo
       contra un servidor real, confirmar merge CRDT visible (texto de
-      ambos, no uno pisando al otro).
+      ambos, no uno pisando al otro). Lo validado fue Desktop
+      creando/editando y `logday-web` editando después (secuencial,
+      no simultáneo) — el merge CRDT en sí nunca se estresó con
+      escritura concurrente real.
 - [ ] Prueba manual offline→online: editar sin red, cerrar la app,
       reabrir, reconectar — confirmar que la cola persistida se drena
       igual.
 
-## Punto de retomada (2026-08-23)
+## Estado final (2026-08-27)
 
-"Config y auth", "Mapeo de entidades", "Escritura y cola offline" y
-"Cursor y reconciliación" están implementados para las 5 entidades con
-mapeo local completo (Task, Note, CalendarEvent, AbsenceDay,
-OvertimeEntry). Task está **validado a mano contra un server real**
-(create/patch/delete en ambos sentidos, incluyendo un cambio remoto
-simulado por `curl` apareciendo solo al reconectar). Las otras 4 están
-replicadas con el mismo patrón, `tsc`/lint en verde, pero **todavía
-sin ese mismo checkpoint visual** — el próximo paso es exactamente eso:
-levantar la app, conectar el tab Sync, y probar crear/editar/borrar
-una nota, un evento de calendario, un día de ausencia y una entrada de
-horas extra, confirmando que aparecen/se actualizan en el servidor
-(y, simulando un cambio remoto por `curl`, que vuelven a aparecer acá).
+Todas las fases de este spec están implementadas: Config y auth,
+Mapeo de entidades, Escritura y cola offline, Cursor y reconciliación,
+Tiempo real, CRDT, y las extras que se sumaron en el camino (Sesión y
+migración). Las 7 entidades sincronizan de punta a punta y quedaron
+validadas contra un servidor real en algún momento del desarrollo —
+ver el detalle de validación de cada sección arriba.
 
-1. Levantar `logday-server` (Docker o `go run`) y la app Tauri
-   (`pnpm tauri dev` en `task-manager`, rama `feature/sync-servidor`).
-2. Ajustes → tab Sync → conectar contra el server local
-   (`admin@example.com` / `test-password-123` si se bootstrapeó con
-   esas env vars).
-3. Probar las 4 entidades nuevas (ver checklist arriba). Si algo
-   falla, mismo patrón de debugging que ya sirvió para el bug de Note
-   con título vacío: revisar si el problema es de conexión (el estado
-   `syncConnectionStatus` no persiste entre reinicios de la app, solo
-   `syncConfig.enabled` — reconectar antes de sospechar del código) o
-   un rechazo del servidor por un campo requerido que el modelo local
-   permite dejar vacío/inválido.
-4. Pendiente después de este checkpoint: "Tiempo real" (WS en vez del
-   poll de 30s), "CRDT" (contenido de notas y dailys), y
-   OvertimeMonthMeta (bloqueado por el desajuste de modelo, ver
-   `specs/sync-primer-sincronizacion`).
+Lo que sigue genuinamente abierto, no por falta de tiempo sino porque
+son huecos/decisiones reales:
 
-Se acordó con el usuario trabajar por fases con checkpoints visuales
-antes de cada fase siguiente.
+- **Tombstone de deletes en carrera** (ver nota en "CRDT" arriba): un
+  pull de `/sync/changes` que corre justo entre un delete local y su
+  confirmación del servidor puede revivir el registro. Aplica a las 7
+  entidades, no solo a las que tienen CRDT.
+- **Las 3 pruebas manuales de "Validación"** sin marcar — multi-cliente
+  concurrente real (misma entidad, dos escritores al mismo tiempo) y
+  offline→online tras cerrar/reabrir la app nunca se estresaron
+  literalmente como describe cada bullet.
+- **Papelera compartida entre servicios** (no solo entre instalaciones
+  Desktop) — deliberadamente fuera de este spec, ver
+  `specs/papelera-reciclaje/requirements.md` de este repo y los specs
+  equivalentes en `logday-server`/`logday-web`.
+
+Este archivo dejó de actualizarse por varios commits seguidos (última
+edición real: 2026-08-23, con trabajo real hasta el 2026-08-26) —
+ver `git log --oneline -- specs/sync-servidor/` de este repo si hace
+falta reconstruir qué pasó en qué commit. Iba en contra de la
+convención del propio `specs/README.md` ("actualiza el spec en el
+mismo PR que el código") — esta actualización es la puesta al día,
+no una fase nueva.

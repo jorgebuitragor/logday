@@ -808,7 +808,7 @@ export function DailyEditor() {
     <>
     <div className="flex flex-1 flex-col overflow-hidden bg-[var(--bg-base)]">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-2.5">
+      <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">
             {formatLongDate(activeDailyDate, language)}

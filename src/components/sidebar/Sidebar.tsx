@@ -589,7 +589,7 @@ export function Sidebar() {
   return (
     <div className="flex h-full shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)] text-xs" style={{ width: 'var(--logday-sidebar-w)' }}>
       {/* App header */}
-      <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-3">
+      <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
         <button
           onClick={() => setSection('dashboard')}
           className="flex items-center gap-2"

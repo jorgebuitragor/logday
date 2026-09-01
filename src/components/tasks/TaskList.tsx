@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, memo } from 'react';
-import { Plus, Circle, Clock, CheckCircle2, Calendar, AlertTriangle } from 'lucide-react';
+import { Plus, Circle, Clock, CheckCircle2, Calendar, AlertTriangle, CheckSquare } from 'lucide-react';
 import { Task, TaskStatus } from '../../types/task';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../store/appStore';
@@ -302,7 +302,7 @@ export function TaskList() {
       onContextMenu={(e) => { e.preventDefault(); setEmptyCtxMenu({ x: e.clientX, y: e.clientY }); }}
     >
       {/* Header */}
-      <div className="border-b border-[var(--border)] px-6 py-4">
+      <div className="border-b border-[var(--border)] px-4 py-3">
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-lg font-semibold text-[var(--text-primary)] capitalize">{title}</h1>
           <button
@@ -344,7 +344,7 @@ export function TaskList() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-            <div className="text-4xl">📭</div>
+            <CheckSquare size={36} className="text-[var(--text-faint)]" strokeWidth={1.5} />
             <p className="text-sm text-[var(--text-hint)]">
               {filter === 'all' ? t(language, 'tasks', 'emptyAll') : `${t(language, 'tasks', 'emptyFilter')} "${filter}".`}
             </p>

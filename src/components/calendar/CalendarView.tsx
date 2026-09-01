@@ -218,7 +218,7 @@ export function CalendarView() {
       onContextMenu={(e) => { e.preventDefault(); setEmptyCtxMenu({ x: e.clientX, y: e.clientY }); }}
     >
       {/* Header */}
-      <div className="border-b border-[var(--border)] px-6 py-4 flex items-center justify-between">
+      <div className="border-b border-[var(--border)] px-4 py-3 flex items-center justify-between">
         <h1 className="text-lg font-semibold text-[var(--text-primary)]">{t(language, 'tasks', 'calendarTitle')}</h1>
         <div className="flex items-center gap-3">
           <button onClick={prevMonth} className="rounded-lg p-1.5 text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition">

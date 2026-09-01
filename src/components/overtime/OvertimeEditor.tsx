@@ -170,7 +170,7 @@ export function OvertimeEditor({ entry, onClose }: Props) {
         </ModalOverlay>
       )}
       {/* Barra superior */}
-      <div className={`flex items-center justify-between border-b px-4 py-2.5 ${
+      <div className={`flex items-center justify-between border-b px-4 py-3 ${
         entry
           ? 'border-[var(--border)] bg-[var(--bg-base)]'
           : 'border-indigo-500/20 bg-indigo-500/[0.06]'

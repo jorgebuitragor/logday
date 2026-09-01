@@ -1583,7 +1583,7 @@ export function NoteEditor() {
         />
       )}
       {/* Toolbar */}
-      <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-2.5">
+      <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
         <div className="flex items-center gap-1">
           <button
             onClick={() => toggleNotePin(activeNote)}

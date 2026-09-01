@@ -9,6 +9,8 @@
     "dialog:allow-open",
     "dialog:allow-save",
     "notification:default",
-    "websocket:default"
+    "websocket:default",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

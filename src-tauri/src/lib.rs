@@ -524,7 +524,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_websocket::init())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            // El updater no existe en mobile — se registra acá (no al
+            // nivel del builder) siguiendo el patrón oficial del plugin,
+            // que necesita el AppHandle ya construido.
+            #[cfg(desktop)]
+            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+
             let show_item = MenuItem::with_id(app, "show", "Mostrar Logday", true, None::<&str>)?;
             let new_note_item = MenuItem::with_id(app, "new_note", "Nueva nota", true, None::<&str>)?;
             let new_task_item = MenuItem::with_id(app, "new_task", "Nueva tarea", true, None::<&str>)?;

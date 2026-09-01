@@ -18,11 +18,17 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+# Versión exacta (no "2" suelto) — evitaba que el crate de Rust y
+# @tauri-apps/api (JS) resolvieran minors distintos por su cuenta
+# (visto en pnpm tauri dev: "tauri (v2.10.3) : @tauri-apps/api
+# (v2.11.1)"), ver specs/actualizaciones-automaticas/design.md.
+tauri = { version = "=2.10.3", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-websocket = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 dirs-next = "2"
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }

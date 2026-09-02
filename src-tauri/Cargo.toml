@@ -1,6 +1,6 @@
 [package]
 name = "logday"
-version = "1.0.0"
+version = "1.0.1"
 description = "Logday — local task and notes manager with markdown files"
 authors = ["Jorge Buitrago"]
 edition = "2021"

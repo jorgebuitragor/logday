@@ -49,7 +49,7 @@ export function AbsenceListModal({ onClose }: { onClose: () => void }) {
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
           {sorted.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
-              <CalendarOff size={20} className="mb-2 text-[var(--text-hint)]" />
+              <CalendarOff size={36} className="mb-3 text-[var(--text-faint)]" strokeWidth={1.5} />
               <p className="text-xs text-[var(--text-hint)]">{t(language, 'absence', 'listEmpty')}</p>
             </div>
           ) : (

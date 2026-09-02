@@ -10,6 +10,7 @@ import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
 import { ModalOverlay } from './ModalOverlay';
 import { ModalPanel } from './ModalPanel';
+import { SensitiveDataConsentModal } from './SensitiveDataConsentModal';
 import { Z_MODAL } from '../../lib/zIndex';
 
 interface Props {
@@ -24,7 +25,10 @@ interface Props {
 const ABSENCE_TYPES: AbsenceType[] = ['incapacidad', 'vacaciones', 'otro'];
 
 export function AbsenceModal({ initialDate, onClose, zIndex = Z_MODAL }: Props) {
-  const { language, absenceDays, saveAbsenceDay, saveAbsenceDayRange, deleteAbsenceDay, confirmDestructiveActions, showToast } = useAppStore();
+  const {
+    language, absenceDays, saveAbsenceDay, saveAbsenceDayRange, deleteAbsenceDay, confirmDestructiveActions, showToast,
+    syncConfig, sensitiveDataAccepted, acceptSensitiveDataConsent,
+  } = useAppStore();
 
   const [mode, setMode] = useState<'single' | 'range'>('single');
   const [date, setDate] = useState(initialDate ?? toISO(new Date()));
@@ -33,6 +37,7 @@ export function AbsenceModal({ initialDate, onClose, zIndex = Z_MODAL }: Props) 
   const [note, setNote] = useState(existing?.note ?? '');
   const [rangeStart, setRangeStart] = useState(date);
   const [rangeEnd, setRangeEnd] = useState(date);
+  const [showSensitiveConsent, setShowSensitiveConsent] = useState(false);
   const confirmDeleteDialog = useConfirmDelete<true>(confirmDestructiveActions);
 
   // Al cambiar la fecha (modo "un día"), si ya existe una ausencia
@@ -49,7 +54,21 @@ export function AbsenceModal({ initialDate, onClose, zIndex = Z_MODAL }: Props) 
 
   const rangeValid = mode === 'single' || dateFromISO(rangeEnd).getTime() >= dateFromISO(rangeStart).getTime();
 
+  // "incapacidad" es dato sensible de salud — con sync activo, exige
+  // un consentimiento aparte del general (specs/cumplimiento-datos-
+  // personales/), pedido una sola vez por cuenta. Sin sync (100%
+  // local) el dato nunca sale del disco, no aplica.
+  const needsSensitiveConsent = type === 'incapacidad' && syncConfig.enabled && !sensitiveDataAccepted;
+
   const handleSave = async () => {
+    if (needsSensitiveConsent) {
+      setShowSensitiveConsent(true);
+      return;
+    }
+    await doSave();
+  };
+
+  const doSave = async () => {
     if (mode === 'single') {
       await saveAbsenceDay({ id: existing?.id ?? uuidv4(), date, type, note: note.trim() || undefined });
       showToast({ kind: 'success', title: t(language, 'absence', 'savedToast') });
@@ -191,6 +210,21 @@ export function AbsenceModal({ initialDate, onClose, zIndex = Z_MODAL }: Props) 
           zIndex={zIndex + 10}
           onCancel={confirmDeleteDialog.cancel}
           onConfirm={() => { confirmDeleteDialog.cancel(); void doDelete(); }}
+        />
+      )}
+
+      {showSensitiveConsent && (
+        <SensitiveDataConsentModal
+          language={language}
+          zIndex={zIndex + 10}
+          onCancel={() => setShowSensitiveConsent(false)}
+          onAccept={() => {
+            void (async () => {
+              await acceptSensitiveDataConsent();
+              setShowSensitiveConsent(false);
+              await doSave();
+            })();
+          }}
         />
       )}
     </ModalOverlay>

@@ -15,8 +15,9 @@ del release (`fs.openUrl(releaseInfo.html_url)`). De ahí en más todo es
 manual: descargar el instalador correcto, cerrar la app, instalarlo,
 volver a abrirla.
 
-La app se distribuye a colaboradores de la FCV, no solo a Jorge — este
-flujo manual es el mismo tipo de fricción repetida que ya preocupó
+La app es software libre pensado para cualquier persona que la
+necesite, no solo para Jorge — este flujo manual es el mismo tipo de
+fricción repetida que ya preocupó
 antes en este proyecto (sesión de renovación de sesión de sync: "temo
 que los usuarios vean este problema reiteradamente"). El pedido acá es
 que la app pueda avisar sola de una actualización, y opcionalmente

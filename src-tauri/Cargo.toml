@@ -3,6 +3,7 @@ name = "logday"
 version = "1.0.1"
 description = "Logday — local task and notes manager with markdown files"
 authors = ["Jorge Buitrago"]
+license = "AGPL-3.0-or-later"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

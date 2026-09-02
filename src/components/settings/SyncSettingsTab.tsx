@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Upload, Eye, EyeOff, RefreshCw, Check, CheckCircle2, AlertCircle, CloudOff, Database } from 'lucide-react';
+import { Upload, Eye, EyeOff, RefreshCw, Check, CheckCircle2, AlertCircle, CloudOff, Database, ShieldCheck, Download, UserX } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import { Language } from '../../types/common';
+import { getPolicyRemote } from '../../lib/sync';
 import { DevicesPanel } from './DevicesPanel';
 import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
@@ -37,9 +38,41 @@ export function SyncSettingsTab() {
     lastSyncedAt, syncNowInProgress, syncNow,
     syncMigrationStatus, syncMigrationProgress, syncMigrateExisting,
     language, confirmDestructiveActions,
+    exportMyData, deleteMyAccount,
   } = useAppStore();
 
   const confirmDisconnectDialog = useConfirmDelete<true>(confirmDestructiveActions);
+
+  const [policyViewText, setPolicyViewText] = useState<string | null>(null);
+  const [loadingPolicy, setLoadingPolicy] = useState(false);
+  const handleViewPolicy = async () => {
+    if (policyViewText !== null) { setPolicyViewText(null); return; }
+    setLoadingPolicy(true);
+    try {
+      const policy = await getPolicyRemote(syncConfig.serverUrl);
+      setPolicyViewText(policy.text);
+    } finally {
+      setLoadingPolicy(false);
+    }
+  };
+
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteAccountError, setDeleteAccountError] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const handleDeleteAccount = async () => {
+    setDeletingAccount(true);
+    setDeleteAccountError('');
+    try {
+      await deleteMyAccount(deletePassword);
+      setShowDeleteAccount(false);
+      setDeletePassword('');
+    } catch {
+      setDeleteAccountError(t(language, 'settings', 'deleteAccountError'));
+    } finally {
+      setDeletingAccount(false);
+    }
+  };
 
   // El label de "hace X" es derivado de Date.now() en cada render —
   // sin este tick se queda pegado al valor de la última vez que algo
@@ -176,7 +209,66 @@ export function SyncSettingsTab() {
           </div>
         </div>
 
+        {/* Privacidad y datos — solo tiene sentido con sync activo, ver
+            specs/cumplimiento-datos-personales/. */}
+        <div>
+          <p className="mb-1.5 text-[10px] font-medium uppercase tracking-widest text-[var(--text-hint)]">
+            {t(language, 'settings', 'privacyTitle')}
+          </p>
+          <div className="divide-y divide-[var(--border-card)] overflow-hidden rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)]">
+            <button
+              onClick={() => void handleViewPolicy()}
+              disabled={loadingPolicy}
+              className="flex w-full items-center gap-2 px-4 py-2.5 text-xs text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] disabled:opacity-60"
+            >
+              <ShieldCheck size={13} />
+              {t(language, 'settings', 'privacyViewPolicy')}
+            </button>
+            {policyViewText !== null && (
+              <div className="max-h-48 overflow-y-auto whitespace-pre-wrap px-4 py-3 text-[11px] leading-relaxed text-[var(--text-secondary)]">
+                {policyViewText}
+              </div>
+            )}
+            <button
+              onClick={() => void exportMyData()}
+              className="flex w-full items-center gap-2 px-4 py-2.5 text-xs text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)]"
+            >
+              <Download size={13} />
+              {t(language, 'settings', 'exportDataButton')}
+            </button>
+            <button
+              onClick={() => setShowDeleteAccount(true)}
+              className="flex w-full items-center gap-2 px-4 py-2.5 text-xs text-red-400 transition hover:bg-red-500/10"
+            >
+              <UserX size={13} />
+              {t(language, 'settings', 'deleteAccountButton')}
+            </button>
+          </div>
+        </div>
+
         <DevicesPanel />
+        {showDeleteAccount && (
+          <ConfirmDeleteModal
+            title={t(language, 'settings', 'deleteAccountConfirmTitle')}
+            message={
+              <div className="space-y-2">
+                <p>{t(language, 'settings', 'deleteAccountConfirmMessage')}</p>
+                <input
+                  type="password"
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  placeholder={t(language, 'settings', 'deleteAccountPasswordPlaceholder')}
+                  className="w-full rounded-lg border border-[var(--border-card)] bg-[var(--bg-surface)] px-2.5 py-1.5 text-xs text-[var(--text-primary)] focus:border-red-500 focus:outline-none"
+                />
+                {deleteAccountError && <p className="text-red-400">{deleteAccountError}</p>}
+              </div>
+            }
+            cancelLabel={t(language, 'extras', 'devicesCancel')}
+            confirmLabel={deletingAccount ? '…' : t(language, 'settings', 'deleteAccountButton')}
+            onCancel={() => { setShowDeleteAccount(false); setDeletePassword(''); setDeleteAccountError(''); }}
+            onConfirm={() => { if (!deletingAccount) void handleDeleteAccount(); }}
+          />
+        )}
         {confirmDisconnectDialog.isOpen && (
           <ConfirmDeleteModal
             title={t(language, 'extras', 'syncDisconnectConfirmTitle')}

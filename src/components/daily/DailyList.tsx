@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, ChevronLeft, ChevronRight, CalendarPlus, CalendarOff, ListChecks, Trash2, Copy, Check, FileText, FileDown, FileType2 } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, CalendarPlus, CalendarOff, CalendarDays, ListChecks, Trash2, Copy, Check, FileText, FileDown, FileType2 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../store/appStore';
 import { toISO } from '../../lib/colombianHolidays';
@@ -356,6 +356,7 @@ export function DailyList() {
       >
         {monthDates.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+            <CalendarDays size={36} className="mb-3 text-[var(--text-faint)]" strokeWidth={1.5} />
             <p className="text-sm text-[var(--text-hint)]">{t(language, 'dailys', 'emptyMonth')}</p>
             <p className="mt-1 text-xs text-[var(--text-faint)]">
               {t(language, 'dailys', 'emptyMonthHint')}

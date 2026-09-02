@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Plus, Pin, Search, Copy, CopyPlus, Trash2, FolderInput, FolderOpen, ChevronRight, Download, Pencil, Tag, X, ArrowUpDown, Upload, Loader2 } from 'lucide-react';
+import { Plus, Pin, Search, Copy, CopyPlus, Trash2, FolderInput, FolderOpen, ChevronRight, Download, Pencil, Tag, X, ArrowUpDown, Upload, Loader2, Notebook } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../store/appStore';
 import { Note } from '../../types/note';
@@ -503,6 +503,7 @@ export function NoteList() {
         )}
         {sorted.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+            <Notebook size={36} className="mb-3 text-[var(--text-faint)]" strokeWidth={1.5} />
             <p className="text-sm text-[var(--text-hint)]">{tFn(language, 'notes', 'emptyNotes')}</p>
             <p className="mt-1 text-xs text-[var(--text-faint)]">
               {tFn(language, 'notes', 'emptyHint')}

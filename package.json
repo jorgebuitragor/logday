@@ -2,6 +2,7 @@
   "name": "tauri-app",
   "private": true,
   "version": "1.0.1",
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "packageManager": "pnpm@11.17.0",
   "scripts": {

@@ -31,6 +31,8 @@ import {
   patchOvertimeMonthMetaRemote,
   putDailyEntryContentRemote, deleteDailyEntryRemote,
   listDevicesRemote, revokeDeviceRemote, DeviceResponse,
+  TokenResponse, getPolicyRemote, acceptPolicyRemote, acceptSensitiveDataRemote,
+  exportAccountRemote, deleteAccountRemote,
 } from '../lib/sync';
 import type { MigrationProgress } from '../lib/syncMigration';
 import {
@@ -151,6 +153,9 @@ export interface AppState {
   syncMigrationStatus: 'idle' | 'running' | 'done' | 'error';
   syncMigrationProgress: MigrationProgress;
 
+  policyGate: { text: string; version: number } | null;
+  sensitiveDataAccepted: boolean;
+
   updateInfo: { version: string; body?: string } | null;
   updateStatus: 'idle' | 'available' | 'downloading' | 'ready';
   autoUpdateEnabled: boolean;
@@ -165,6 +170,11 @@ export interface AppState {
   installUpdate: () => Promise<void>;
   setAutoUpdateEnabled: (enabled: boolean) => void;
   postponeUpdateRestart: () => void;
+  acceptPolicyGate: () => Promise<void>;
+  rejectPolicyGate: () => void;
+  acceptSensitiveDataConsent: () => Promise<void>;
+  exportMyData: () => Promise<void>;
+  deleteMyAccount: (password: string) => Promise<void>;
 
   // Tasks
   loadProjects: () => Promise<void>;
@@ -515,7 +525,7 @@ export type SyncSet = (partial: Partial<AppState> | ((state: AppState) => Partia
 // el refresh se comparte acá también: la primera 401 dispara la
 // llamada real y guarda la promesa; cualquier otra 401 que llegue
 // mientras tanto espera esa misma promesa en vez de disparar la suya.
-let inFlightSyncRefresh: Promise<{ access_token: string; refresh_token: string }> | null = null;
+let inFlightSyncRefresh: Promise<TokenResponse> | null = null;
 
 function refreshSyncTokenOnce(baseUrl: string, refreshTokenValue: string) {
   if (!inFlightSyncRefresh) {
@@ -570,7 +580,7 @@ export async function withSyncAuth<T>(get: SyncGet, set: SyncSet, fn: (token: st
     const beforeRefresh = get().syncConfig;
     if (!beforeRefresh.refreshToken) throw e;
 
-    let tokens: { access_token: string; refresh_token: string };
+    let tokens: TokenResponse;
     try {
       tokens = await refreshSyncTokenOnce(beforeRefresh.serverUrl, beforeRefresh.refreshToken);
     } catch (refreshErr) {
@@ -599,7 +609,28 @@ export async function withSyncAuth<T>(get: SyncGet, set: SyncSet, fn: (token: st
     const nextCfg: SyncConfig = { ...get().syncConfig, accessToken: tokens.access_token, refreshToken: tokens.refresh_token };
     localStorage.setItem('syncConfig', JSON.stringify(nextCfg));
     set({ syncConfig: nextCfg });
+    void evaluatePolicyGate(set, beforeRefresh.serverUrl, tokens);
     return await fn(tokens.access_token);
+  }
+}
+
+// Evalúa si hay que mostrar el gate de consentimiento (política nueva
+// sin aceptar) a partir de una respuesta de login/refresh — ver
+// specs/cumplimiento-datos-personales/. login/refresh solo traen el
+// número de versión vigente, no el texto — se trae aparte vía GET
+// /policy, y solo cuando de verdad hace falta mostrarlo.
+async function evaluatePolicyGate(set: SyncSet, serverUrl: string, tokens: TokenResponse): Promise<void> {
+  set({ sensitiveDataAccepted: tokens.sensitive_data_accepted });
+  if (tokens.policy_accepted_version === tokens.policy_version) {
+    set({ policyGate: null });
+    return;
+  }
+  try {
+    const policy = await getPolicyRemote(serverUrl);
+    set({ policyGate: { text: policy.text, version: policy.version } });
+  } catch {
+    // Sin red justo en este momento — se reintenta solo en el próximo
+    // login/refresh, no hay nada más que hacer acá.
   }
 }
 
@@ -2094,6 +2125,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   // en el estado inicial (no dinámico, a diferencia de la acción de
   // abajo) crearía un ciclo real en tiempo de carga del módulo.
   syncMigrationProgress: { done: 0, total: 0, migrated: 0, skipped: 0, failed: 0 },
+
+  policyGate: null,
+  sensitiveDataAccepted: true,
 
   updateInfo: null,
   updateStatus: 'idle',
@@ -3729,6 +3763,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
       localStorage.setItem('syncConfig', JSON.stringify(cfg));
       set({ syncConfig: cfg, syncConnectionStatus: 'connected' });
+      void evaluatePolicyGate(set, normalizedUrl, tokens);
       // Primero manda lo local pendiente, después trae lo remoto —
       // así una edición local recién hecha no se pisa a sí misma con
       // el eco de su propia respuesta llegando por /sync/changes
@@ -3756,7 +3791,57 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { serverUrl, email } = get().syncConfig;
     const cfg: SyncConfig = { enabled: false, serverUrl, email, accessToken: '', refreshToken: '', deviceId: '' };
     localStorage.setItem('syncConfig', JSON.stringify(cfg));
-    set({ syncConfig: cfg, syncConnectionStatus: 'disconnected', syncErrorMsg: '', lastSyncedAt: null, devices: [], devicesError: null });
+    set({
+      syncConfig: cfg, syncConnectionStatus: 'disconnected', syncErrorMsg: '', lastSyncedAt: null,
+      devices: [], devicesError: null, policyGate: null, sensitiveDataAccepted: true,
+    });
+  },
+
+  // "Rechazar" en el gate de consentimiento — sin aceptar la política
+  // no hay forma de seguir usando el sync (requirements.md), así que
+  // esto es un logout, no solo cerrar el diálogo.
+  rejectPolicyGate: () => {
+    get().syncDisconnect();
+  },
+
+  acceptPolicyGate: async () => {
+    const gate = get().policyGate;
+    if (!gate) return;
+    const { serverUrl } = get().syncConfig;
+    await withSyncAuth(get, set, (token) => acceptPolicyRemote(serverUrl, token, gate.version));
+    set({ policyGate: null });
+  },
+
+  acceptSensitiveDataConsent: async () => {
+    const { serverUrl } = get().syncConfig;
+    await withSyncAuth(get, set, (token) => acceptSensitiveDataRemote(serverUrl, token));
+    set({ sensitiveDataAccepted: true });
+  },
+
+  // "Exportar mis datos" — derecho de acceso/portabilidad
+  // (specs/cumplimiento-datos-personales/). Mismo patrón que el
+  // backup local de DataSettingsTab.tsx: pedir dónde guardar y volcar
+  // el JSON tal cual llega del servidor, sin reprocesarlo.
+  exportMyData: async () => {
+    const { serverUrl } = get().syncConfig;
+    const data = await withSyncAuth(get, set, (token) => exportAccountRemote(serverUrl, token));
+    const dest = await saveDialog({
+      defaultPath: `logday-datos-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (!dest) return;
+    await fs.writeFile(dest, JSON.stringify(data, null, 2));
+    get().showToast({ kind: 'success', title: t(get().language, 'settings', 'exportDataDoneTitle') });
+  },
+
+  // "Eliminar mi cuenta" — derecho de supresión. Borra la cuenta del
+  // lado del servidor y desconecta localmente; los archivos locales
+  // (fuente de verdad local-first) no se tocan, esto solo borra el
+  // lado servidor.
+  deleteMyAccount: async (password: string) => {
+    const { serverUrl } = get().syncConfig;
+    await withSyncAuth(get, set, (token) => deleteAccountRemote(serverUrl, token, password));
+    get().syncDisconnect();
   },
 
   toggleSync: () => set((s) => ({ isSyncOpen: !s.isSyncOpen })),

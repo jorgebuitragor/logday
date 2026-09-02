@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Download, Trash2, X, User, Pencil, Eye, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Download, Trash2, X, User, Pencil, Eye, Loader2, Timer } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../store/appStore';
 import { OvertimeEntry } from '../../types/overtime';
@@ -142,6 +142,7 @@ export function OvertimeList({ onEdit, activeEntryId }: Props) {
       >
         {overtimeEntries.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-[var(--text-hint)]">
+            <Timer size={36} className="text-[var(--text-faint)]" strokeWidth={1.5} />
             <p className="text-sm">{t(language, 'overtime', 'emptyMonth')}</p>
             <button
               onClick={() => onEdit(null)}

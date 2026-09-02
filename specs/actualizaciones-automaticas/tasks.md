@@ -27,9 +27,12 @@ al menos un tag `v*` real).
 
 - [x] `.github/workflows/release.yml`, disparado por tag `v*`, matriz
       macOS (arm64) + Windows, usando `tauri-apps/tauri-action`.
-- [ ] Confirmar que sube instaladores + `latest.json` al GitHub Release
-      del tag — no probado todavía, requiere cortar un tag real (ver
-      "Validación").
+- [x] Confirmar que sube instaladores + `latest.json` al GitHub Release
+      del tag — probado con el tag real `v1.0.1`: el run terminó en
+      verde y el Release en borrador quedó con `.dmg`, `.app.tar.gz`
+      (+ `.sig`), `.msi`/`.exe` (+ `.sig`) y `latest.json` con las 4
+      plataformas y firmas válidas (verificado bajando el asset y
+      confirmando el comentario "signature from tauri secret key").
 
 ## Frontend
 

@@ -41,7 +41,7 @@
     "createUpdaterArtifacts": true,
     "publisher": "Jorge Buitrago",
     "copyright": "© 2026 Jorge Buitrago",
-    "shortDescription": "Proyecto sin animo de lucro para colaboradores de la FCV",
+    "shortDescription": "Software libre de gestión personal — tareas, notas, horas extra y actividad diaria",
     "longDescription": "Logday es una aplicación de escritorio para gestionar tareas, notas, horas extra y actividad diaria. Almacena todo localmente en archivos Markdown, con soporte para vista Kanban, calendario y exportación a PDF.",
     "icon": [
       "icons/32x32.png",

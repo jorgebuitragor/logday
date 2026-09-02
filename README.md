@@ -158,4 +158,4 @@ Logday esta optimizada para flujo local-first: primero archivos locales, luego s
 
 ## Licencia
 
-Proyecto interno/no lucrativo para colaboradores de la FCV (ver metadata del bundle en la configuracion de Tauri).
+[AGPL-3.0-or-later](./LICENSE). Software libre: cualquier persona u organización puede usarlo, modificarlo y auto-hospedar su propia instancia. Si ofreces una versión modificada como servicio a terceros, el AGPL exige publicar también ese código modificado (copyleft de red) — ver el texto completo de la licencia para el detalle.

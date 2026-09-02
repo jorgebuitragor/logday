@@ -4,6 +4,8 @@ import * as Y from 'yjs';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import TauriWebSocket from '@tauri-apps/plugin-websocket';
+import { check as checkUpdateRemote, Update as TauriUpdate } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
 import { Task } from '../types/task';
 import { Note } from '../types/note';
 import { OvertimeEntry, OvertimeMonthMeta } from '../types/overtime';
@@ -149,11 +151,20 @@ export interface AppState {
   syncMigrationStatus: 'idle' | 'running' | 'done' | 'error';
   syncMigrationProgress: MigrationProgress;
 
+  updateInfo: { version: string; body?: string } | null;
+  updateStatus: 'idle' | 'available' | 'downloading' | 'ready';
+  autoUpdateEnabled: boolean;
+  updateRestartAt: number | null;
+
   // ── Actions ──────────────────────────────────────────────────
 
   init: () => Promise<void>;
   setupBasePath: () => Promise<void>;
   changeBasePath: () => Promise<void>;
+  checkForUpdates: () => Promise<boolean>;
+  installUpdate: () => Promise<void>;
+  setAutoUpdateEnabled: (enabled: boolean) => void;
+  postponeUpdateRestart: () => void;
 
   // Tasks
   loadProjects: () => Promise<void>;
@@ -1751,6 +1762,75 @@ function stopTrashPurgeInterval(): void {
   }
 }
 
+// ── Actualizaciones automáticas ────────────────────────────────────
+// Ver specs/actualizaciones-automaticas/. Reemplaza el chequeo casero
+// anterior (comando Rust `check_update` contra la API de GitHub, sin
+// descarga/instalación) por el plugin oficial de Tauri, que sí puede
+// descargar, verificar firma e instalar sin salir de la app.
+//
+// El objeto `Update` que devuelve `check()` no es serializable (tiene
+// métodos) — se guarda acá, a nivel de módulo, igual que
+// `inFlightSyncRefresh` más arriba; el estado reactivo del store solo
+// refleja los datos planos (versión/notas) que la UI necesita.
+let pendingUpdate: TauriUpdate | null = null;
+const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4h
+const UPDATE_AUTO_RESTART_DELAY_MS = 60_000;
+let updateCheckIntervalId: ReturnType<typeof setInterval> | null = null;
+
+// Tira el error hacia arriba a propósito — la usa el botón manual de
+// Ajustes ("Buscar actualizaciones"), que sí necesita distinguir "ya
+// estás al día" de "falló el chequeo" para avisarle al usuario que
+// pidió el chequeo a propósito. `performUpdateCheck` de abajo es el
+// wrapper que se usa para el chequeo en segundo plano, donde un fallo
+// nunca debe ser visible (requirements.md "Chequeo").
+async function runUpdateCheck(get: SyncGet, set: SyncSet): Promise<boolean> {
+  // No pisar una instalación ya en curso o lista para reiniciar.
+  const status = get().updateStatus;
+  if (status === 'downloading' || status === 'ready') return status === 'ready';
+
+  const update = await checkUpdateRemote();
+  if (!update) {
+    pendingUpdate = null;
+    set({ updateInfo: null, updateStatus: 'idle' });
+    return false;
+  }
+  const yaAvisado = pendingUpdate?.version === update.version;
+  pendingUpdate = update;
+  set({ updateInfo: { version: update.version, body: update.body }, updateStatus: 'available' });
+  if (!yaAvisado) {
+    // Ya se había avisado de esta misma versión en un chequeo
+    // anterior — no repetir el toast/auto-instalación en cada ciclo.
+    if (get().autoUpdateEnabled) {
+      void get().installUpdate();
+    } else {
+      get().showToast({
+        kind: 'info',
+        title: t(get().language, 'settings', 'updateAvailable'),
+        description: `v${update.version}`,
+        durationMs: 6000,
+      });
+    }
+  }
+  return true;
+}
+
+async function performUpdateCheck(get: SyncGet, set: SyncSet): Promise<void> {
+  try {
+    await runUpdateCheck(get, set);
+  } catch {
+    // Silencioso a propósito (requirements.md "Chequeo"): sin red o con
+    // GitHub caído, no debe interrumpir el uso normal ni mostrar un
+    // error global — se reintenta en el próximo ciclo.
+  }
+}
+
+function startUpdateCheckInterval(get: SyncGet, set: SyncSet): void {
+  if (updateCheckIntervalId) return;
+  updateCheckIntervalId = setInterval(() => {
+    void performUpdateCheck(get, set);
+  }, UPDATE_CHECK_INTERVAL_MS);
+}
+
 // ── Tiempo real (WebSocket) ──────────────────────────────────────
 // Ver specs/sync-servidor "Tiempo real"/"Reconexión WebSocket" — el
 // diseño (backoff, protocolo) ya estaba escrito ahí, esto lo
@@ -2014,6 +2094,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   // en el estado inicial (no dinámico, a diferencia de la acción de
   // abajo) crearía un ciclo real en tiempo de carga del módulo.
   syncMigrationProgress: { done: 0, total: 0, migrated: 0, skipped: 0, failed: 0 },
+
+  updateInfo: null,
+  updateStatus: 'idle',
+  autoUpdateEnabled: (() => {
+    try { return JSON.parse(localStorage.getItem('autoUpdateEnabled') || 'false'); }
+    catch { return false; }
+  })(),
+  updateRestartAt: null,
+
   overtimeEntries: [],
   overtimeMonth: new Date().toISOString().slice(0, 7),
   overtimeMonths: [],
@@ -2128,6 +2217,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
         }
       }
+
+      // Independiente de basePath/sync — chequeo de actualizaciones,
+      // ver specs/actualizaciones-automaticas/. No bloquea isLoading
+      // (fire-and-forget) ni interrumpe el arranque si falla.
+      void performUpdateCheck(get, set);
+      startUpdateCheckInterval(get, set);
     } catch (e) {
       console.error('Init error:', e);
     } finally {
@@ -2169,6 +2264,45 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadNoteFolders();
     await get().loadTasks(null);
     await get().loadNotes(null);
+  },
+
+  checkForUpdates: () => runUpdateCheck(get, set),
+
+  installUpdate: async () => {
+    if (!pendingUpdate) return;
+    set({ updateStatus: 'downloading' });
+    try {
+      await pendingUpdate.downloadAndInstall();
+    } catch {
+      // Vuelve a 'available' (no un estado 'error' aparte) para que el
+      // botón "Actualizar ahora" quede disponible de nuevo — el toast
+      // ya avisa del fallo puntual.
+      set({ updateStatus: 'available' });
+      get().showToast({
+        kind: 'error',
+        title: t(get().language, 'settings', 'updateErrorTitle'),
+      });
+      return;
+    }
+    if (get().autoUpdateEnabled) {
+      // Nunca reiniciar sin avisar (requirements.md "Actualización
+      // automática") — UpdateRestartBanner.tsx muestra la cuenta
+      // regresiva y la opción de posponer.
+      set({ updateStatus: 'ready', updateRestartAt: Date.now() + UPDATE_AUTO_RESTART_DELAY_MS });
+    } else {
+      // Instalación manual: el usuario ya pidió "Actualizar ahora" a
+      // propósito, reinicia directo sin cuenta regresiva.
+      await relaunch();
+    }
+  },
+
+  setAutoUpdateEnabled: (enabled) => {
+    localStorage.setItem('autoUpdateEnabled', JSON.stringify(enabled));
+    set({ autoUpdateEnabled: enabled });
+  },
+
+  postponeUpdateRestart: () => {
+    set({ updateRestartAt: Date.now() + UPDATE_AUTO_RESTART_DELAY_MS });
   },
 
   // ── Tasks ──────────────────────────────────────────────────

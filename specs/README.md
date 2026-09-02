@@ -39,4 +39,4 @@ tres archivos:
 | Sync con servidor (logday-server) | implementado | [`sync-servidor/`](./sync-servidor/requirements.md) |
 | Primer sync / migración de datos existentes | implementado | [`sync-primer-sincronizacion/`](./sync-primer-sincronizacion/requirements.md) |
 | Papelera de reciclaje | implementado (baseline) | [`papelera-reciclaje/`](./papelera-reciclaje/requirements.md) |
-| Actualizaciones automáticas | en diseño | [`actualizaciones-automaticas/`](./actualizaciones-automaticas/requirements.md) |
+| Actualizaciones automáticas | implementado, sin validar con release real | [`actualizaciones-automaticas/`](./actualizaciones-automaticas/requirements.md) |

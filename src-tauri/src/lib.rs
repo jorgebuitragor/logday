@@ -21,13 +21,6 @@ pub struct SearchResult {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ReleaseInfo {
-    pub tag_name: String,
-    pub html_url: String,
-    pub body: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct UrlMeta {
     pub title: String,
     pub description: String,
@@ -438,31 +431,6 @@ fn git_run(cwd: String, args: Vec<String>) -> Result<String, String> {
     }
 }
 
-/// Fetches the latest GitHub release info for update checking
-#[tauri::command]
-async fn check_update() -> Result<ReleaseInfo, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .user_agent("logday-app")
-        .build()
-        .map_err(|e| e.to_string())?;
-    let resp: serde_json::Value = client
-        .get("https://api.github.com/repos/jorgebuitragor/logday/releases/latest")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
-    let tag_name = resp["tag_name"].as_str().unwrap_or("").to_string();
-    let html_url = resp["html_url"].as_str().unwrap_or("").to_string();
-    let body = resp["body"].as_str().unwrap_or("").to_string();
-    if tag_name.is_empty() {
-        return Err("No releases found".to_string());
-    }
-    Ok(ReleaseInfo { tag_name, html_url, body })
-}
-
 /// Opens a URL in the default system browser
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
@@ -631,7 +599,6 @@ pub fn run() {
             search_tasks,
             open_in_system,
             open_url,
-            check_update,
             write_clipboard,
             read_file_binary,
             write_file_binary,

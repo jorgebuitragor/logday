@@ -89,6 +89,7 @@ export function Sidebar() {
     toggleSearch,
     toggleSidebar,
     toggleSettings,
+    updateStatus,
     setSection,
     selectNoteFolder,
     createNoteFolder,
@@ -577,10 +578,13 @@ export function Sidebar() {
         </button>
         <button
           onClick={toggleSettings}
-          className="rounded-lg p-2 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+          className="relative rounded-lg p-2 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
           title={t(language, 'sidebar', 'settingsBtn')}
         >
           <Settings size={18} />
+          {(updateStatus === 'available' || updateStatus === 'downloading' || updateStatus === 'ready') && (
+            <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-indigo-400" />
+          )}
         </button>
       </div>
     );
@@ -1335,9 +1339,14 @@ export function Sidebar() {
       <div className="mt-auto border-t border-[var(--border)] px-2 py-2 space-y-0.5">
         <button
           onClick={toggleSettings}
-          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+          className="relative flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
         >
-          <Settings size={14} />
+          <span className="relative">
+            <Settings size={14} />
+            {(updateStatus === 'available' || updateStatus === 'downloading' || updateStatus === 'ready') && (
+              <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-indigo-400" />
+            )}
+          </span>
           <span>{t(language, 'settings', 'title')}</span>
         </button>
         {basePath && (

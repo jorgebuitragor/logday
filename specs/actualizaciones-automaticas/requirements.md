@@ -1,6 +1,7 @@
 # Actualizaciones automáticas — Requirements
 
-Estado: en diseño
+Estado: implementado, pendiente de validar contra un release real (ver
+`tasks.md` "Validación").
 
 ## Contexto
 

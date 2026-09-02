@@ -72,16 +72,6 @@ export function fetchUrlMetadata(url: string): Promise<UrlMeta> {
   return invoke('fetch_url_metadata', { url });
 }
 
-export interface ReleaseInfo {
-  tag_name: string;
-  html_url: string;
-  body: string;
-}
-
-export function checkUpdate(): Promise<ReleaseInfo> {
-  return invoke('check_update');
-}
-
 // ── Sync con servidor propio (logday-server) ─────────────────────────────────
 export interface SyncHttpResponse {
   status: number;

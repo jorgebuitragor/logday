@@ -2,10 +2,15 @@ name: Release
 
 # Dispara con un tag `v*` (mismo esquema que ya se usa, ver
 # specs/actualizaciones-automaticas/design.md). Compila para macOS
-# (Apple Silicon) y Windows, firma los artefactos del updater con los
-# secrets TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD,
+# (Apple Silicon), Windows y Linux, firma los artefactos del updater
+# con los secrets TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD,
 # y sube instaladores + latest.json como un Release en borrador —
 # publicarlo a mano después de revisar los artefactos.
+#
+# Linux fijado a ubuntu-22.04 (no ubuntu-latest) — mismo criterio que
+# la doc oficial de Tauri: evita que un salto futuro de versión de
+# Ubuntu en el runner cambie el nombre del paquete webkit2gtk por
+# debajo nuestro sin darnos cuenta.
 on:
   push:
     tags:
@@ -25,9 +30,18 @@ jobs:
           - platform: windows-latest
             args: ''
             rust-target: ''
+          - platform: ubuntu-22.04
+            args: ''
+            rust-target: ''
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Instalar dependencias del sistema (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
 
       - name: Instalar Node
         uses: actions/setup-node@v4

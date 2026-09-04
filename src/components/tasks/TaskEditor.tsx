@@ -78,6 +78,14 @@ export function TaskEditor() {
   const save = useCallback(
     async (patch: Partial<Task>) => {
       if (!activeTask) return;
+      // scheduleSave programa este `save` (vía setTimeout, 800ms) cerrando
+      // sobre el `activeTask` de ese momento — un setTimeout plano no se
+      // cancela solo al desmontar ni al borrar la task. Si la task se
+      // borró mientras el guardado estaba en vuelo, sin este chequeo
+      // updateTask() resucita el archivo (fs.writeFile incondicional).
+      // Mismo bug que NoteEditor.tsx, mismo fix: chequear el store en
+      // vivo antes de escribir.
+      if (!useAppStore.getState().tasks.some((t) => t.id === activeTask.id)) return;
       const updated: Task = { ...activeTask, ...patch };
       await updateTask(updated);
       setIsDirty(false);

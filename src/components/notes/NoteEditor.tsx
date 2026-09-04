@@ -1107,7 +1107,17 @@ export function NoteEditor() {
         clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = null;
         const latestNote = activeNoteRef.current;
-        if (latestNote && editor) {
+        // Si la nota se borró (deleteNote ya la sacó de `notes` y puso
+        // `activeNote: null`, lo que desmonta este editor), activeNoteRef
+        // sigue apuntando a la nota borrada — es un snapshot síncrono que
+        // no se limpia solo. Sin este chequeo, el flush de abajo reescribe
+        // el archivo local de la nota que se acaba de borrar (updateNote
+        // hace fs.writeFile incondicional) y la resucita — bug real: no se
+        // podía borrar una nota con una edición sin guardar en los últimos
+        // 600ms (el caso común: escribís algo y borrás antes de que el
+        // debounce corra solo).
+        const stillExists = latestNote && useAppStore.getState().notes.some((n) => n.id === latestNote.id);
+        if (stillExists && editor) {
           try {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const md = normalizeEditorMarkdown((editor.storage as any).markdown.getMarkdown() as string);

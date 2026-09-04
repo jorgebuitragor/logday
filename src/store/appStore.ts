@@ -1236,75 +1236,92 @@ function diffOvertimeEntryFields(prev: OvertimeEntry | undefined, next: Overtime
   return fields;
 }
 
+// Envuelve TODO el drenado en withSyncAuth (no solo tomar el
+// accessToken una vez, como antes) — bug real encontrado: el access
+// token dura ~15 min (ver comentario de refreshSyncTokenOnce arriba),
+// así que reconectar después de estar offline más que eso mandaba
+// estas llamadas con un token ya vencido. El servidor respondía 401
+// (un 4xx), sendQueuedWrite lo clasificaba como "permanent-failure" (el
+// mismo trato que un payload inválido) y la entrada se sacaba de la
+// cola SIN haber llegado a pegarle al servidor — el delete/create/patch
+// encolado se perdía en silencio. Para un delete de nota, el
+// reconcileSync que corre justo después (ver drainSyncQueue) la
+// encontraba todavía viva en el servidor y la recreaba localmente: "la
+// borro, se reconecta, y vuelve a aparecer" — no es el bug ya conocido
+// de resurrección de tombstones (esa es una carrera con el timing del
+// pull), este pasaba siempre que el token estuviera vencido al
+// reconectar.
 async function dispatchQueuedWrite(get: SyncGet, set: SyncSet, write: syncQueue.QueuedWrite): Promise<void> {
-  const { serverUrl, accessToken } = get().syncConfig;
+  await withSyncAuth(get, set, async (accessToken) => {
+    const { serverUrl } = get().syncConfig;
 
-  if (write.entity === 'note') {
+    if (write.entity === 'note') {
+      if (write.op === 'create') {
+        applyNoteResponse(get, set, write.entityId, write.queuedAt, await createNoteRemote(serverUrl, accessToken, write.fields as unknown as NoteCreatePayload));
+      } else if (write.op === 'patch') {
+        applyNoteResponse(get, set, write.entityId, write.queuedAt, await patchNoteRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as NotePatchPayload));
+      } else {
+        await deleteNoteRemote(serverUrl, accessToken, write.entityId);
+      }
+      return;
+    }
+    if (write.entity === 'calendar_event') {
+      if (write.op === 'create') {
+        applyCalendarEventResponse(get, set, write.entityId, write.queuedAt, await createCalendarEventRemote(serverUrl, accessToken, write.fields as unknown as CalendarEventCreatePayload));
+      } else if (write.op === 'patch') {
+        applyCalendarEventResponse(get, set, write.entityId, write.queuedAt, await patchCalendarEventRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as CalendarEventPatchPayload));
+      } else {
+        await deleteCalendarEventRemote(serverUrl, accessToken, write.entityId);
+      }
+      return;
+    }
+    if (write.entity === 'absence_day') {
+      if (write.op === 'create') {
+        applyAbsenceDayResponse(get, set, write.entityId, write.queuedAt, await createAbsenceDayRemote(serverUrl, accessToken, write.fields as unknown as AbsenceDayCreatePayload));
+      } else if (write.op === 'patch') {
+        applyAbsenceDayResponse(get, set, write.entityId, write.queuedAt, await patchAbsenceDayRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as AbsenceDayPatchPayload));
+      } else {
+        await deleteAbsenceDayRemote(serverUrl, accessToken, write.entityId);
+      }
+      return;
+    }
+    if (write.entity === 'overtime_entry') {
+      if (write.op === 'create') {
+        applyOvertimeEntryResponse(get, set, write.entityId, write.queuedAt, await createOvertimeEntryRemote(serverUrl, accessToken, write.fields as unknown as OvertimeEntryCreatePayload));
+      } else if (write.op === 'patch') {
+        applyOvertimeEntryResponse(get, set, write.entityId, write.queuedAt, await patchOvertimeEntryRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as OvertimeEntryPatchPayload));
+      } else {
+        await deleteOvertimeEntryRemote(serverUrl, accessToken, write.entityId);
+      }
+      return;
+    }
+    if (write.entity === 'overtime_month_meta') {
+      // Sin create — PATCH crea-si-no-existe (ver syncMapping.ts), y sin
+      // delete tampoco: no hay acción local que borre la meta de un mes.
+      if (write.op === 'patch') {
+        applyOvertimeMonthMetaResponse(get, set, write.entityId, write.queuedAt, await patchOvertimeMonthMetaRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as OvertimeMonthMetaPatchPayload));
+      }
+      return;
+    }
+    if (write.entity === 'daily_entry') {
+      // Solo delete acá — el contenido va por contentSyncQueue (CRDT), no
+      // por esta cola de create/patch/delete.
+      if (write.op === 'delete') {
+        await deleteDailyEntryRemote(serverUrl, accessToken, write.entityId);
+      }
+      return;
+    }
+    if (write.entity !== 'task') return;
     if (write.op === 'create') {
-      applyNoteResponse(get, set, write.entityId, write.queuedAt, await createNoteRemote(serverUrl, accessToken, write.fields as unknown as NoteCreatePayload));
+      const response = await createTaskRemote(serverUrl, accessToken, write.fields as unknown as TaskCreatePayload);
+      applyTaskResponse(get, set, write.entityId, write.queuedAt, response);
     } else if (write.op === 'patch') {
-      applyNoteResponse(get, set, write.entityId, write.queuedAt, await patchNoteRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as NotePatchPayload));
+      const response = await patchTaskRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as TaskPatchPayload);
+      applyTaskResponse(get, set, write.entityId, write.queuedAt, response);
     } else {
-      await deleteNoteRemote(serverUrl, accessToken, write.entityId);
+      await deleteTaskRemote(serverUrl, accessToken, write.entityId);
     }
-    return;
-  }
-  if (write.entity === 'calendar_event') {
-    if (write.op === 'create') {
-      applyCalendarEventResponse(get, set, write.entityId, write.queuedAt, await createCalendarEventRemote(serverUrl, accessToken, write.fields as unknown as CalendarEventCreatePayload));
-    } else if (write.op === 'patch') {
-      applyCalendarEventResponse(get, set, write.entityId, write.queuedAt, await patchCalendarEventRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as CalendarEventPatchPayload));
-    } else {
-      await deleteCalendarEventRemote(serverUrl, accessToken, write.entityId);
-    }
-    return;
-  }
-  if (write.entity === 'absence_day') {
-    if (write.op === 'create') {
-      applyAbsenceDayResponse(get, set, write.entityId, write.queuedAt, await createAbsenceDayRemote(serverUrl, accessToken, write.fields as unknown as AbsenceDayCreatePayload));
-    } else if (write.op === 'patch') {
-      applyAbsenceDayResponse(get, set, write.entityId, write.queuedAt, await patchAbsenceDayRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as AbsenceDayPatchPayload));
-    } else {
-      await deleteAbsenceDayRemote(serverUrl, accessToken, write.entityId);
-    }
-    return;
-  }
-  if (write.entity === 'overtime_entry') {
-    if (write.op === 'create') {
-      applyOvertimeEntryResponse(get, set, write.entityId, write.queuedAt, await createOvertimeEntryRemote(serverUrl, accessToken, write.fields as unknown as OvertimeEntryCreatePayload));
-    } else if (write.op === 'patch') {
-      applyOvertimeEntryResponse(get, set, write.entityId, write.queuedAt, await patchOvertimeEntryRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as OvertimeEntryPatchPayload));
-    } else {
-      await deleteOvertimeEntryRemote(serverUrl, accessToken, write.entityId);
-    }
-    return;
-  }
-  if (write.entity === 'overtime_month_meta') {
-    // Sin create — PATCH crea-si-no-existe (ver syncMapping.ts), y sin
-    // delete tampoco: no hay acción local que borre la meta de un mes.
-    if (write.op === 'patch') {
-      applyOvertimeMonthMetaResponse(get, set, write.entityId, write.queuedAt, await patchOvertimeMonthMetaRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as OvertimeMonthMetaPatchPayload));
-    }
-    return;
-  }
-  if (write.entity === 'daily_entry') {
-    // Solo delete acá — el contenido va por contentSyncQueue (CRDT), no
-    // por esta cola de create/patch/delete.
-    if (write.op === 'delete') {
-      await deleteDailyEntryRemote(serverUrl, accessToken, write.entityId);
-    }
-    return;
-  }
-  if (write.entity !== 'task') return;
-  if (write.op === 'create') {
-    const response = await createTaskRemote(serverUrl, accessToken, write.fields as unknown as TaskCreatePayload);
-    applyTaskResponse(get, set, write.entityId, write.queuedAt, response);
-  } else if (write.op === 'patch') {
-    const response = await patchTaskRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as TaskPatchPayload);
-    applyTaskResponse(get, set, write.entityId, write.queuedAt, response);
-  } else {
-    await deleteTaskRemote(serverUrl, accessToken, write.entityId);
-  }
+  });
 }
 
 /** Un 4xx del servidor (ej. un create con un campo requerido vacío)

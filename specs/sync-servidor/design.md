@@ -288,13 +288,16 @@ reabrir la nota, y el siguiente guardado mandaba un `Y.Doc` sin ella
   todavía no. El cambio de `mdContent` causado por el update remoto no
   programa otro guardado: el `.md` ya lo escribió el store.
 
-Encontrado en la validación y sin resolver acá (ya pasaba antes): al
-abrir una nota, el efecto de `mdContent` programa un guardado con el
-contenido cargado (`normalizedContent`), que no es lo que devuelve
-`getMarkdown()`. `applyEditorEdit` toma esa diferencia de representación
-como una edición y agrega un `\n` final al `Y.Text` (es el `\n` sin
-explicar del diagnóstico del merge). Además, `updateNote` cambia
-`updated` solo por abrir la nota.
+Encontrado en la validación (ya pasaba antes): al abrir una nota, el
+efecto de `mdContent` programaba un guardado con el contenido cargado
+(`normalizedContent`), que no es lo que devuelve `getMarkdown()`.
+`applyEditorEdit` tomaba esa diferencia de representación como una
+edición y agregaba un `\n` final al `Y.Text` (es el `\n` sin explicar del
+diagnóstico del merge). Además, `updateNote` cambiaba `updated` solo por
+abrir la nota. Corregido aparte: el efecto de `mdContent` solo guarda
+ediciones del usuario (`userEditedMarkdownRef`), así que tampoco hace
+falta una marca para el update remoto. Ver "Guardado acumulado" en
+`specs/notas-link-preview/design.md`.
 
 Sigue fuera: las entradas diarias no tienen editor con `Y.Doc` vivo
 (se editan con `saveDailyEntry`, que hidrata desde disco en cada

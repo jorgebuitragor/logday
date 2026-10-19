@@ -332,10 +332,20 @@ export function NoteEditor() {
   // Llegó contenido remoto desde el último guardado: el guardado pendiente
   // toma el Markdown vivo en vez del acumulado (ver takePendingNote).
   const remoteSinceLastTakeRef = useRef(false);
-  // Markdown que puso un update remoto en `mdContent`. El efecto de
-  // `mdContent` no programa un guardado por ese valor: el store ya escribió
-  // el `.md` y, si había texto local, applyRemoteContent ya lo programó.
-  const remoteMarkdownRef = useRef<string | null>(null);
+  // El último cambio de `mdContent` es una edición del usuario (Tiptap, el
+  // textarea del modo fuente o un cambio de bloque vía
+  // syncMarkdownToEditor). El efecto de `mdContent` solo programa un
+  // guardado si es así. Los demás cambios no son ediciones: el estado
+  // inicial al montar, la carga de la nota, un update remoto y el cambio a
+  // modo fuente. Guardar al abrir cambiaba `updated` y metía en el Y.Text la
+  // diferencia de representación entre el contenido cargado y
+  // `getMarkdown()` (un `\n` final). Se marca lo que sí es edición, y no lo
+  // que no lo es, porque la corrida del efecto al montar (con `''`) no pasa
+  // por ninguna llamada a `setMdContent`. Marcarla como "no edición" dejaba
+  // pendiente un guardado de `''`, que borraba el Y.Text y lo reinsertaba
+  // entero. Si una edición no cambia el valor, la marca queda puesta y, como
+  // mucho, el siguiente cambio guarda de más: nunca se pierde un guardado.
+  const userEditedMarkdownRef = useRef(false);
   // La nota se desmontó: un update remoto que llegue tarde lo aplica el
   // store en el `.ydoc` en disco, no este editor en el Y.Doc que se libera.
   const disposedRef = useRef(false);
@@ -429,7 +439,7 @@ export function NoteEditor() {
         suppressNextEditorMarkdownSyncRef.current = false;
         return;
       }
-      remoteMarkdownRef.current = null;
+      userEditedMarkdownRef.current = true;
       setMdContent(md);
       // Cierra menús desplegables al escribir
       setShowBlockMenu(false);
@@ -1304,7 +1314,6 @@ export function NoteEditor() {
       editorBaseMarkdownRef.current = shown;
       remoteGenerationRef.current += 1;
       remoteSinceLastTakeRef.current = true;
-      remoteMarkdownRef.current = shown;
       setMdContent(shown);
     }
     // El Y.Doc en memoria tiene texto local que el servidor y el `.md` no
@@ -1367,12 +1376,11 @@ export function NoteEditor() {
   useEffect(() => {
     if (skipNextContentSaveRef.current) {
       skipNextContentSaveRef.current = false;
+      userEditedMarkdownRef.current = false;
       return;
     }
-    if (remoteMarkdownRef.current !== null && mdContent === remoteMarkdownRef.current) {
-      remoteMarkdownRef.current = null;
-      return;
-    }
+    if (!userEditedMarkdownRef.current) return;
+    userEditedMarkdownRef.current = false;
     schedulesSave({ content: mdContent });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mdContent]);
@@ -1509,6 +1517,7 @@ export function NoteEditor() {
   }, [blockContextMenu]);
 
   const syncMarkdownToEditor = useCallback((nextMarkdown: string) => {
+    userEditedMarkdownRef.current = true;
     setMdContent(nextMarkdown);
     if (viewMode !== 'source') {
       suppressNextEditorMarkdownSyncRef.current = true;
@@ -2688,7 +2697,7 @@ export function NoteEditor() {
                 ref={sourceTextareaRef}
                 value={mdContent}
                 onChange={(e) => {
-                  remoteMarkdownRef.current = null;
+                  userEditedMarkdownRef.current = true;
                   setMdContent(e.target.value);
                 }}
                 className="note-source-textarea w-full h-full min-h-[400px] resize-none bg-transparent font-mono text-sm text-[var(--text-secondary)] outline-none leading-relaxed placeholder-[var(--text-faint)]"

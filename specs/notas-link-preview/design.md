@@ -120,6 +120,29 @@ antes cada llamada reemplazaba el guardado pendiente con
 antes de 600ms descartaba el título — "Titulo rapido" quedaba como "Sin
 título" en disco y en el servidor.
 
+Abrir una nota no la guarda (req. §3.1, 19 oct 2026). El efecto de carga
+pone el contenido en `mdContent`, y el efecto de `mdContent` programaba un
+guardado como si fuera una edición. Ese guardado cambiaba `updated` (y lo
+mandaba por PATCH) solo por abrir la nota. Además, el contenido cargado
+(`normalizedContent`) no es lo que devuelve `getMarkdown()`, y
+`applyEditorEdit` tomaba esa diferencia de representación como una
+edición: metía un `\n` final en el `Y.Text` y lo subía al servidor. Ahora
+el efecto de `mdContent` solo programa un guardado si el último cambio fue
+una edición del usuario (`userEditedMarkdownRef`). Las tres vías de edición
+son el `onUpdate` de Tiptap, el textarea del modo fuente y
+`syncMarkdownToEditor`, y son las que ponen la marca. Los demás cambios
+(estado inicial al montar, carga, update remoto, cambio a modo fuente) no
+programan guardado. Así, cambiar a modo fuente tampoco guarda.
+
+Se marca lo que sí es edición y no lo que no lo es. El primer intento marcó
+la carga como "no edición" y la validación en vivo mostró el problema: la
+corrida del efecto al montar, con el `''` inicial, no pasa por ninguna
+llamada a `setMdContent`. Antes la tapaba el guardado de la carga; sin él,
+quedaba pendiente un guardado de `''` que borraba el `Y.Text` y lo
+reinsertaba entero en la representación de Tiptap. Si una edición no
+cambia el valor, la marca queda puesta y, como mucho, el siguiente cambio
+guarda de más: nunca se pierde un guardado.
+
 ## 4. Flujo: Importación de notas
 
 ```

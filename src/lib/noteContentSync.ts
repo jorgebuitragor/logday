@@ -1,4 +1,5 @@
 import * as Y from 'yjs';
+import diff from 'fast-diff';
 import { fs } from './invoke';
 
 // ── Sync de contenido de notas vía CRDT (Yjs) ────────────────────────────
@@ -41,35 +42,192 @@ export function getContentText(doc: Y.Doc): string {
   return doc.getText(CONTENT_KEY).toString();
 }
 
+/** Un cambio sobre un texto, en coordenadas del texto original: en `index`
+ *  se borran `deleteCount` caracteres y se inserta `insert`. */
+interface TextChange {
+  index: number;
+  deleteCount: number;
+  insert: string;
+}
+
+/** `fast-diff` puede agotar la pila con surrogates UTF-16 sueltos (visto al
+ *  probar con texto aleatorio). Un guardado nunca debe fallar por eso: en ese
+ *  caso se cae a una sola ventana prefijo/sufijo, que es peor para el merge
+ *  pero siempre termina. */
+function safeDiff(oldValue: string, newValue: string): diff.Diff[] {
+  try {
+    return diff(oldValue, newValue);
+  } catch {
+    let start = 0;
+    const minLen = Math.min(oldValue.length, newValue.length);
+    while (start < minLen && oldValue[start] === newValue[start]) start++;
+    let oldEnd = oldValue.length;
+    let newEnd = newValue.length;
+    while (oldEnd > start && newEnd > start && oldValue[oldEnd - 1] === newValue[newEnd - 1]) {
+      oldEnd--;
+      newEnd--;
+    }
+    const result: diff.Diff[] = [[diff.EQUAL, oldValue.slice(0, start)]];
+    if (oldEnd > start) result.push([diff.DELETE, oldValue.slice(start, oldEnd)]);
+    if (newEnd > start) result.push([diff.INSERT, newValue.slice(start, newEnd)]);
+    result.push([diff.EQUAL, oldValue.slice(oldEnd)]);
+    return result.filter(([, text]) => text.length > 0);
+  }
+}
+
+/** Cambios para pasar de `oldValue` a `newValue`, ordenados y sin solaparse.
+ *  Usa un diff real (Myers, vía `fast-diff`) en vez de una sola ventana
+ *  prefijo/sufijo: con la ventana, si el primer y el último carácter
+ *  difieren (p. ej. se antepone texto y además cambia el `\n` final), el
+ *  "diff mínimo" degenera en borrar todo y reinsertar todo. Bug real (19 oct
+ *  2026): Desktop antepuso "[DESK] " mientras Web agregaba " [WEB]" al final;
+ *  la reinserción completa dejó el texto de Web anclado a caracteres ya
+ *  borrados y el merge lo puso al principio. */
+function diffChanges(oldValue: string, newValue: string): TextChange[] {
+  const changes: TextChange[] = [];
+  let index = 0;
+  for (const [op, text] of safeDiff(oldValue, newValue)) {
+    if (op === diff.EQUAL) {
+      index += text.length;
+    } else if (op === diff.DELETE) {
+      changes.push({ index, deleteCount: text.length, insert: '' });
+      index += text.length;
+    } else {
+      // Un borrado seguido de una inserción en el mismo punto es un reemplazo.
+      const last = changes[changes.length - 1];
+      if (last && last.insert === '' && last.index + last.deleteCount === index) last.insert = text;
+      else changes.push({ index, deleteCount: 0, insert: text });
+    }
+  }
+  return changes;
+}
+
+/** Aplica `changes` (en coordenadas del texto actual del `Y.Text`) en una
+ *  sola transacción. Van de atrás hacia adelante para que los índices de los
+ *  cambios anteriores sigan siendo válidos. En un reemplazo se inserta antes
+ *  de borrar: así el texto nuevo queda anclado a su vecino izquierdo y no
+ *  detrás de las lápidas de lo borrado. */
+function applyChanges(doc: Y.Doc, changes: TextChange[]): void {
+  if (changes.length === 0) return;
+  const yText = doc.getText(CONTENT_KEY);
+  doc.transact(() => {
+    for (let i = changes.length - 1; i >= 0; i -= 1) {
+      const { index, deleteCount, insert } = changes[i];
+      if (insert) yText.insert(index, insert);
+      if (deleteCount > 0) yText.delete(index + insert.length, deleteCount);
+    }
+  });
+}
+
 /**
- * Aplica una edición del Markdown de una nota al `Y.Text` del doc como un
- * diff mínimo (prefijo/sufijo común), no reemplazando todo el texto en cada
- * guardado — así dos ediciones concurrentes en partes distintas del texto
- * se mezclan bien en vez de pisarse. Puerto directo de
- * `applyTextareaEdit` en logday-web/src/lib/yText.ts (ahí aplicado a un
- * `<textarea>`; acá al Markdown serializado del editor Tiptap) — mismo
- * algoritmo, tiene que producir las mismas operaciones Yjs para que ambos
- * clientes mergeen igual.
+ * Aplica una edición al `Y.Text` del doc como un diff de verdad, no
+ * reemplazando todo el texto en cada guardado — así dos ediciones
+ * concurrentes en partes distintas del texto se mezclan bien en vez de
+ * pisarse. `oldValue` tiene que ser el texto actual del `Y.Text`.
+ * Equivale a `applyTextareaEdit` de logday-web/src/lib/yText.ts para el caso
+ * de una sola tecla (ahí el prefijo/sufijo basta: el textarea es el mismo
+ * texto que el `Y.Text`), pero no degenera en un reemplazo completo cuando
+ * el cambio toca el principio y el final a la vez.
  */
 export function applyTextEdit(doc: Y.Doc, oldValue: string, newValue: string): void {
   if (oldValue === newValue) return;
-  const yText = doc.getText(CONTENT_KEY);
+  applyChanges(doc, diffChanges(oldValue, newValue));
+}
 
-  let start = 0;
-  const minLen = Math.min(oldValue.length, newValue.length);
-  while (start < minLen && oldValue[start] === newValue[start]) start++;
+/** Tramo de la alineación entre dos textos: `[base, base + baseLen)` del
+ *  primero corresponde a `[current, current + currentLen)` del segundo.
+ *  `equal` indica si son el mismo texto carácter a carácter. */
+interface AlignedSpan {
+  base: number;
+  baseLen: number;
+  current: number;
+  currentLen: number;
+  equal: boolean;
+}
 
-  let oldEnd = oldValue.length;
-  let newEnd = newValue.length;
-  while (oldEnd > start && newEnd > start && oldValue[oldEnd - 1] === newValue[newEnd - 1]) {
-    oldEnd--;
-    newEnd--;
+function alignTexts(baseValue: string, currentValue: string): AlignedSpan[] {
+  const spans: AlignedSpan[] = [];
+  let base = 0;
+  let current = 0;
+  for (const [op, text] of safeDiff(baseValue, currentValue)) {
+    const last = spans[spans.length - 1];
+    if (op === diff.EQUAL) {
+      spans.push({ base, baseLen: text.length, current, currentLen: text.length, equal: true });
+      base += text.length;
+      current += text.length;
+      continue;
+    }
+    // Borrados e inserciones contiguos forman un solo tramo distinto.
+    const span = last && !last.equal ? last : { base, baseLen: 0, current, currentLen: 0, equal: false };
+    if (span !== last) spans.push(span);
+    if (op === diff.DELETE) {
+      span.baseLen += text.length;
+      base += text.length;
+    } else {
+      span.currentLen += text.length;
+      current += text.length;
+    }
   }
+  return spans;
+}
 
-  doc.transact(() => {
-    if (oldEnd > start) yText.delete(start, oldEnd - start);
-    if (newEnd > start) yText.insert(start, newValue.slice(start, newEnd));
+/** Lleva una posición del texto base al texto actual. En los bordes de un
+ *  tramo distinto (o dentro de él) la posición es ambigua: `'before'` elige
+ *  la menor y `'after'` la mayor. */
+function mapPosition(spans: AlignedSpan[], pos: number, bias: 'before' | 'after'): number {
+  let result: number | null = null;
+  for (const s of spans) {
+    if (pos < s.base) break;
+    if (pos > s.base + s.baseLen) continue;
+    let candidate: number;
+    if (s.equal) candidate = s.current + (pos - s.base);
+    else if (pos === s.base) candidate = s.current;
+    else if (pos === s.base + s.baseLen) candidate = s.current + s.currentLen;
+    else candidate = bias === 'before' ? s.current : s.current + s.currentLen;
+    if (result === null) result = candidate;
+    else result = bias === 'before' ? Math.min(result, candidate) : Math.max(result, candidate);
+  }
+  return result ?? 0;
+}
+
+/**
+ * Aplica al `Y.Text` solo lo que el usuario cambió en el editor: el delta
+ * entre `baseValue` (lo que el editor mostraba antes, en su propia
+ * representación) y `newValue`, trasladado a las posiciones del `Y.Text`.
+ *
+ * Hace falta porque el editor de Desktop no devuelve el mismo texto que
+ * guarda el `Y.Text`: el round-trip Markdown de Tiptap no es identidad (pierde
+ * el `\n` final, escapa `[` como `\[`, cambia marcadores de listas y énfasis),
+ * y además `parseNote` recorta el contenido del `.md`. Diffear el `Y.Text`
+ * contra `getMarkdown()` mete esas diferencias de representación como si
+ * fueran ediciones, y reescribe texto que escribió otro cliente (p. ej.
+ * "[WEB]" de logday-web pasa a "\[WEB\]") aunque el usuario no lo haya tocado.
+ * Así, todo lo que no editó el usuario queda tal cual en el `Y.Text`.
+ */
+export function applyEditorEdit(doc: Y.Doc, baseValue: string, newValue: string): void {
+  if (baseValue === newValue) return;
+  const currentValue = getContentText(doc);
+  if (baseValue === currentValue) {
+    applyTextEdit(doc, currentValue, newValue);
+    return;
+  }
+  const spans = alignTexts(baseValue, currentValue);
+  const changes = diffChanges(baseValue, newValue).map((change): TextChange => {
+    if (change.deleteCount === 0) {
+      return { index: mapPosition(spans, change.index, 'before'), deleteCount: 0, insert: change.insert };
+    }
+    const start = mapPosition(spans, change.index, 'after');
+    const end = mapPosition(spans, change.index + change.deleteCount, 'before');
+    return { index: start, deleteCount: Math.max(0, end - start), insert: change.insert };
   });
+  // La traslación es monótona, pero se recorta por las dudas para que
+  // ningún cambio se meta en el tramo del siguiente.
+  for (let i = changes.length - 2; i >= 0; i -= 1) {
+    const limit = changes[i + 1].index;
+    if (changes[i].index > limit) changes[i].index = limit;
+    changes[i].deleteCount = Math.min(changes[i].deleteCount, limit - changes[i].index);
+  }
+  applyChanges(doc, changes);
 }
 
 /** Bytes del `.ydoc` hermano de una nota, si existe. `null` si la nota

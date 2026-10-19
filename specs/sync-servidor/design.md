@@ -169,10 +169,11 @@ Lo que se construyó en su lugar (`src/lib/noteContentSync.ts`,
   diaria — no integrado al estado interno de Tiptap. El editor sigue
   siendo la fuente de verdad visible (Markdown en curso); el `Y.Doc`
   es un espejo que se actualiza **al guardar**, no por keystroke.
-- `applyTextEdit(doc, oldValue, newValue)` calcula el diff entre el
-  Markdown anterior y el nuevo en cada guardado y lo aplica al
-  `Y.Text` — puerto directo de `applyTextareaEdit` de `logday-web`
-  (mismo problema, misma solución ya validada ahí primero).
+- En cada guardado se aplica al `Y.Text` solo lo que cambió el
+  usuario (`applyEditorEdit`, ver "Diff y representación del editor"
+  abajo). La primera versión era un puerto directo de
+  `applyTextareaEdit` de `logday-web` (una sola ventana prefijo/sufijo
+  contra el texto del `Y.Text`) y resultó incorrecta para Desktop.
 - Estado Yjs persistido en un archivo `.ydoc` hermano del `.md`
   (`noteContentStatePath`/equivalente diario), serializado completo
   con `Y.encodeStateAsUpdate` — no un log incremental.
@@ -190,6 +191,41 @@ Validado manualmente: nota creada en Desktop con contenido visible en
 `logday-web`, y edición hecha en `logday-web` reflejada en Desktop
 (contenido del editor y archivo `.ydoc` verificados a nivel de byte,
 decodifican igual con `yjs` puro en ambos lados).
+
+**Diff y representación del editor** (corrección del 19 oct 2026): en
+`logday-web` el `<textarea>` muestra exactamente el texto del `Y.Text`,
+así que una ventana prefijo/sufijo por tecla basta. En Desktop no: el
+editor es Tiptap, y su Markdown (`getMarkdown()`) no es el mismo texto
+que guarda el `Y.Text`. El round-trip de tiptap-markdown pierde el `\n`
+final, escapa `[` como `\[` y cambia los marcadores de listas y énfasis,
+y además `parseNote` recorta el contenido del `.md`. Diffear el `Y.Text`
+contra `getMarkdown()` mezclaba esas diferencias con la edición real. Si
+tocaban el principio y el final del texto, el "diff mínimo" degeneraba en
+borrar todo y reinsertar todo. Bug real: Desktop antepuso `[DESK] ` y
+`logday-web` agregó ` [WEB]` al final al mismo tiempo, y el merge dejó
+`[WEB]` al principio, porque quedó anclado a caracteres que Desktop había
+borrado. Con el mismo mecanismo, un borrado concurrente desde Web se
+perdía: Desktop reinsertaba una copia del texto. El servidor (`ygo`) no
+tenía nada que ver: `yjs` da el mismo resultado con los mismos updates.
+
+Lo que se hace ahora (`noteContentSync.ts`):
+
+- `applyTextEdit` usa un diff real (Myers, vía `fast-diff`) en vez de
+  una sola ventana. Con eso, cada diferencia queda como una edición
+  local chica. Lo usan las entradas diarias y la migración.
+- `applyEditorEdit(doc, base, nuevo)` aplica solo el delta del
+  usuario. Diffea `base` contra `nuevo` en el espacio del editor (`base`
+  es el `getMarkdown()` justo después de cargar la nota, o el del último
+  guardado) y traslada esas posiciones al `Y.Text` con una alineación
+  `base`↔`Y.Text`. Lo que el usuario no tocó queda tal cual en el
+  `Y.Text`, incluido texto que escribió otro cliente con otra
+  representación (`[WEB]` no pasa a `\[WEB\]`).
+
+Queda fuera: el `Y.Doc` de una nota abierta todavía no recibe los
+updates remotos (`applyNoteContentUpdate` solo actualiza el `.ydoc` en
+disco y el store). Mientras está abierta, la edición del otro cliente
+no se ve hasta reabrirla. El merge en el servidor sí es correcto. Las
+entradas diarias usan solo el diff Myers, sin el delta del editor.
 
 **Hueco conocido, no resuelto por este cambio**: si el pull periódico
 de `/sync/changes` corre entre que el usuario borra una entidad

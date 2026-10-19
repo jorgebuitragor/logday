@@ -34,6 +34,10 @@ tareas 5+ son pendientes reales (backlog), derivadas de
         título y contenido pendientes en vez de que un guardado pise al
         otro; el flush al desmontar incluye lo pendiente. Fix del título
         perdido al escribir título + cuerpo en menos de 600ms.
+  - [x] 3.5 Abrir una nota no la guarda (req. §3.1): el efecto de
+        `mdContent` solo guarda ediciones del usuario
+        (`userEditedMarkdownRef`). Validado en vivo contra un
+        logday-server local (ver `specs/sync-servidor/tasks.md`).
 
 - [x] **4. Importar notas** (req. §4)
   - [x] 4.1 `pickMarkdownFiles()` en `src/lib/invoke.ts` (file picker nativo

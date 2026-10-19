@@ -136,6 +136,10 @@ retroalimentación visual previa a navegar.
 - CUANDO el editor se desmonta (cambio de nota, salir de Notas) con
   cambios pendientes, el sistema DEBERÁ guardar todos los campos
   pendientes, no solo el contenido.
+- CUANDO el usuario abre una nota y no la edita, el sistema NO DEBERÁ
+  guardarla: ni reescribir el `.md`, ni cambiar `updated`, ni mandar
+  cambios al servidor (metadata ni contenido CRDT). Cargar el contenido en
+  el editor no es una edición.
 
 ## 4. Importar notas desde archivo
 

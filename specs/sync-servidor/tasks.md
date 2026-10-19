@@ -286,6 +286,9 @@ incompatible con el protocolo real del servidor). Lo implementado:
   - [x] Debounce: el guardado pendiente toma el Markdown vivo si llegó
         contenido remoto; el cambio de `mdContent` causado por lo remoto
         no programa un guardado extra.
+  - [x] Abrir una nota ya no la guarda (19 oct 2026): metía un `\n`
+        final en el `Y.Text` y cambiaba `updated`. Ver
+        `specs/notas-link-preview/` (req. §3.1, tarea 3.5).
   - [x] Serializar el documento bloque por bloque para reparsearlo:
         `getMarkdown()` (con `CompactParagraph`) fundía los párrafos al
         reparsear. Se encontró en la validación en vivo.
@@ -294,7 +297,10 @@ incompatible con el protocolo real del servidor). Lo implementado:
         `dist/` real en Chrome headless (IPC de Tauri simulado, la red
         por `fetch` al mismo servidor), no con el `.app` nativo: no hubo
         acceso de control a la ventana del `.app` de QA. Casos: (1) con
-        la nota abierta, una edición de Web aparece sola en ~1 s; (2)
+        la nota abierta, una edición de Web aparece sola en el siguiente
+        pull de `/sync/changes` (en el arnés no hay WebSocket, así que es
+        el poll de 30 s; el "~1 s" de la primera corrida venía del eco del
+        guardado espurio al abrir la nota, corregido después); (2)
         Desktop escribe sin pausa (el debounce no llega a guardar)
         mientras Web edita otro párrafo: lo remoto aparece, lo local
         sigue de corrido donde estaba el cursor, y Desktop, servidor y

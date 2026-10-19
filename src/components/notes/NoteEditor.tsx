@@ -952,15 +952,72 @@ export function NoteEditor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Campos pendientes del debounce, acumulados. Título y contenido
+  // comparten un único timer de 600ms; antes cada llamada reemplazaba el
+  // patch pendiente en vez de sumarse, así que escribir el título y empezar
+  // el cuerpo antes de 600ms descartaba el título — bug real (19 oct 2026):
+  // "Titulo rapido" quedó como "Sin título" en disco y en el servidor. Ahora
+  // cada cambio se fusiona aquí y el guardado escribe todo lo acumulado.
+  const pendingPatchRef = useRef<Partial<Note>>({});
+  // El "promote title" (Enter en la primera línea) no conoce el contenido
+  // final hasta que el editor propaga la transacción, así que pide leerlo
+  // del editor en el momento de guardar en vez de pasarlo en el patch.
+  const pendingContentFromEditorRef = useRef(false);
+  // Mismo patrón que `activeNoteRef`: el timer puede haberse programado
+  // desde un closure con `editor` todavía null (schedulesSave está
+  // memoizado), así que se lee el editor vigente al disparar.
+  const editorRef = useRef(editor);
+  editorRef.current = editor;
+
+  const readEditorMarkdown = (): string | null => {
+    const instance = editorRef.current;
+    if (!instance) return null;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return normalizeEditorMarkdown((instance.storage as any).markdown.getMarkdown() as string);
+    } catch {
+      return null; // editor ya destruido
+    }
+  };
+
+  // Vacía lo acumulado y lo aplica sobre la versión más reciente de la nota
+  // en el store (no sobre un snapshot de un render viejo, que pisaría tags o
+  // pin cambiados mientras tanto). Devuelve null si la nota ya no está en el
+  // store: se borró, y guardarla la resucitaría (ver el flush al desmontar).
+  const takePendingNote = (): Note | null => {
+    const patch = pendingPatchRef.current;
+    const contentFromEditor = pendingContentFromEditorRef.current;
+    pendingPatchRef.current = {};
+    pendingContentFromEditorRef.current = false;
+    const noteId = activeNoteRef.current?.id;
+    const latest = useAppStore.getState().notes.find((n) => n.id === noteId);
+    if (!latest) return null;
+    if (contentFromEditor) {
+      const md = readEditorMarkdown();
+      if (md !== null) patch.content = md;
+    }
+    return { ...latest, ...patch };
+  };
+
+  const scheduleFlush = () => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      const hadContent = 'content' in pendingPatchRef.current || pendingContentFromEditorRef.current;
+      const updated = takePendingNote();
+      if (!updated) return;
+      updateNote(updated);
+      if (hadContent) void pushContentUpdate(updated, updated.content);
+    }, 600);
+  };
+
   const schedulesSave = useCallback(
     (patch: Partial<Note>) => {
       if (!activeNote) return;
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = setTimeout(() => {
-        const updated = { ...activeNote, ...patch };
-        updateNote(updated);
-        if ('content' in patch) void pushContentUpdate(updated, patch.content as string);
-      }, 600);
+      pendingPatchRef.current = { ...pendingPatchRef.current, ...patch };
+      // Un contenido explícito es posterior al "promote title" que pidió
+      // leerlo del editor, así que lo reemplaza.
+      if ('content' in patch) pendingContentFromEditorRef.current = false;
+      scheduleFlush();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [activeNote, updateNote]
@@ -1021,20 +1078,9 @@ export function NoteEditor() {
     editor.view.dispatch(tr);
 
     // Guardar título + contenido juntos tras la propagación del update
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    const titleToSave = newTitle;
-    const editorInstance = editor;
-    saveTimeoutRef.current = setTimeout(() => {
-      const freshNote = useAppStore.getState().activeNote;
-      if (!freshNote || !editorInstance) return;
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const currentMd = normalizeEditorMarkdown((editorInstance.storage as any).markdown.getMarkdown() as string);
-        const flushed = { ...freshNote, title: titleToSave, content: currentMd };
-        updateNote(flushed);
-        void pushContentUpdate(flushed, currentMd);
-      } catch { /* editor destroyed */ }
-    }, 600);
+    pendingPatchRef.current = { ...pendingPatchRef.current, title: newTitle };
+    pendingContentFromEditorRef.current = true;
+    scheduleFlush();
 
     // Redimensionar el textarea del título
     requestAnimationFrame(() => {
@@ -1106,25 +1152,23 @@ export function NoteEditor() {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = null;
-        const latestNote = activeNoteRef.current;
         // Si la nota se borró (deleteNote ya la sacó de `notes` y puso
         // `activeNote: null`, lo que desmonta este editor), activeNoteRef
         // sigue apuntando a la nota borrada — es un snapshot síncrono que
-        // no se limpia solo. Sin este chequeo, el flush de abajo reescribe
-        // el archivo local de la nota que se acaba de borrar (updateNote
-        // hace fs.writeFile incondicional) y la resucita — bug real: no se
-        // podía borrar una nota con una edición sin guardar en los últimos
-        // 600ms (el caso común: escribís algo y borrás antes de que el
-        // debounce corra solo).
-        const stillExists = latestNote && useAppStore.getState().notes.some((n) => n.id === latestNote.id);
-        if (stillExists && editor) {
-          try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const md = normalizeEditorMarkdown((editor.storage as any).markdown.getMarkdown() as string);
-            const flushed = { ...latestNote, content: md };
-            void updateNote(flushed);
-            pending = pushContentUpdate(flushed, md);
-          } catch { /* editor ya destruido */ }
+        // no se limpia solo. takePendingNote la busca en el store en vivo y
+        // devuelve null: sin ese chequeo, el flush de abajo reescribe el
+        // archivo local de la nota que se acaba de borrar (updateNote hace
+        // fs.writeFile incondicional) y la resucita — bug real: no se podía
+        // borrar una nota con una edición sin guardar en los últimos 600ms
+        // (el caso común: escribes algo y borras antes de que el debounce
+        // corra solo). Lo pendiente (p. ej. un título recién escrito) entra
+        // en el mismo guardado que el contenido, en vez de perderse.
+        const flushedNote = takePendingNote();
+        const md = readEditorMarkdown();
+        if (flushedNote && md !== null) {
+          const flushed = { ...flushedNote, content: md };
+          void updateNote(flushed);
+          pending = pushContentUpdate(flushed, md);
         }
       }
       // Solo se destruye el Y.Doc después de que el flush pendiente (si lo

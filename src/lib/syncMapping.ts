@@ -125,10 +125,24 @@ export interface NoteApiResponse extends NoteCreatePayload {
   deleted_at?: string;
 }
 
+// Desktop permite una nota sin título (createNote la deja en '', y el
+// usuario puede borrar el título después), pero logday-server exige un
+// title no vacío tanto en el create como en el PATCH
+// (internal/note/handlers.go, validateNotePatch) y responde 400. Ese 400
+// no se arregla reintentando: la cola lo descarta como permanent-failure
+// y el cambio se pierde. Se manda el mismo placeholder que logday-web usa
+// al crear ("Sin título"), solo en el payload — el archivo y el estado
+// locales conservan el título real, vacío o no.
+const UNTITLED_NOTE_TITLE = 'Sin título';
+
+function serverNoteTitle(title: string | undefined): string {
+  return title && title.trim() ? title : UNTITLED_NOTE_TITLE;
+}
+
 export function noteToCreatePayload(note: Note): NoteCreatePayload {
   return {
     id: note.id,
-    title: note.title,
+    title: serverNoteTitle(note.title),
     folder: note.folder,
     tags: note.tags,
     created: note.created,
@@ -140,7 +154,7 @@ export function noteToCreatePayload(note: Note): NoteCreatePayload {
 
 export function noteFieldsToPatchPayload(fields: Partial<Note>): NotePatchPayload {
   const payload: NotePatchPayload = { updated_at: nowIso() };
-  if ('title' in fields) payload.title = fields.title;
+  if ('title' in fields) payload.title = serverNoteTitle(fields.title);
   if ('folder' in fields) payload.folder = fields.folder;
   if ('tags' in fields) payload.tags = fields.tags;
   if ('created' in fields) payload.created = fields.created;

@@ -158,6 +158,15 @@ real (create, editar, borrar, revivir).
       (mismo placeholder que ya usa logday-web, no toca el archivo
       local), y `syncQueue.drainQueue` distingue fallo permanente
       (4xx, se descarta) de transitorio (excepción, corta el drenado).
+- [x] Mismo bug, en el PATCH: el servidor también rechaza `title: ""`
+      en `validateNotePatch`, y borrar el título de una nota mandaba ese
+      PATCH, que la cola descartaba como permanent-failure sin dejar
+      rastro. El placeholder `'Sin título'` se movió a `syncMapping.ts`
+      (`noteToCreatePayload` y `noteFieldsToPatchPayload`), así cubre
+      create, patch y la migración inicial. `sendQueuedWrite` ahora
+      deja un `console.warn` con entidad, operación, id y status de cada
+      escritura descartada por un 4xx (sin el payload, que puede llevar
+      títulos o tags del usuario).
 
 ### Cursor y reconciliación
 

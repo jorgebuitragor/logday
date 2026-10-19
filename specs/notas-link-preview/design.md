@@ -91,11 +91,34 @@ Al disparar:
 3. Se agenda un guardado combinado (título + contenido) 600ms después,
    leyendo el markdown fresco directamente del storage del editor en ese
    momento (no el `mdContent` de React, que podría no haberse actualizado
-   aún).
+   aún) — vía `pendingContentFromEditorRef`, ver abajo.
 
 Esto evita una condición de carrera donde guardar título y contenido por
 separado podría persistir un estado intermedio inconsistente si el usuario
 sigue escribiendo rápido.
+
+### Guardado acumulado (req. §3.1)
+
+Todos los guardados del editor (título desde el textarea, contenido desde
+`mdContent`, y la promoción de título) comparten un único timer de 600ms
+(`saveTimeoutRef`), pero **no** comparten un único patch: cada cambio se
+fusiona en `pendingPatchRef` (`Partial<Note>`) y el timer, al disparar,
+escribe todo lo acumulado de una vez (`takePendingNote` + `scheduleFlush`).
+La base del guardado es la nota vigente en el store (`notes.find(id)`), no
+el `activeNote` capturado en el closure del render en que se agendó.
+
+- La promoción de título marca `pendingContentFromEditorRef`: el contenido
+  se lee del editor al disparar. Un `content` explícito posterior (vía
+  `schedulesSave`) apaga esa marca, por ser más reciente.
+- El flush al desmontar usa el mismo `takePendingNote`: guarda los campos
+  pendientes + el markdown actual del editor, y no guarda nada si la nota
+  ya no está en el store (se borró; guardarla la resucitaría).
+
+Bug que motivó esto (19 oct 2026, validado en vivo con un build de QA):
+antes cada llamada reemplazaba el guardado pendiente con
+`{ ...activeNote, ...patch }`; escribir el título y empezar el cuerpo
+antes de 600ms descartaba el título — "Titulo rapido" quedaba como "Sin
+título" en disco y en el servidor.
 
 ## 4. Flujo: Importación de notas
 

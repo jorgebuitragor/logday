@@ -868,13 +868,8 @@ async function drainContentSyncQueue(get: SyncGet, set: SyncSet): Promise<void> 
 async function syncCreateNote(get: SyncGet, set: SyncSet, note: Note): Promise<void> {
   const { syncConfig, syncConnectionStatus } = get();
   if (!syncConfig.enabled) return;
-  // Desktop permite crear una nota sin título (createNote la deja en
-  // '', el usuario lo escribe después) — pero el server exige un
-  // title no vacío (internal/note/handlers.go) y rechaza el create
-  // con 400. Mismo placeholder que logday-web ya usa para esto ("Sin
-  // título"), solo en el payload que se manda — el archivo/estado
-  // local siguen con el título real (vacío o no) tal cual.
-  const payload = noteToCreatePayload(note.title.trim() ? note : { ...note, title: 'Sin título' });
+  // Un título vacío sale como "Sin título" — ver noteToCreatePayload.
+  const payload = noteToCreatePayload(note);
   const queuedAt = new Date().toISOString();
   if (syncConnectionStatus !== 'connected') {
     syncQueue.enqueue('note', note.id, 'create', payload as unknown as Record<string, unknown>);
@@ -1337,6 +1332,12 @@ async function sendQueuedWrite(get: SyncGet, set: SyncSet, write: syncQueue.Queu
     return 'ok';
   } catch (e) {
     if (e instanceof SyncApiError && e.status >= 400 && e.status < 500) {
+      // Se descarta igual (ver arriba), pero no en silencio: sin este log,
+      // un cambio perdido por un payload que el servidor rechaza (p. ej. el
+      // `title: ""` de una nota, ya corregido en syncMapping.ts) no dejaba
+      // ningún rastro para diagnosticarlo.
+      // Sin `write.fields`: pueden llevar títulos o tags del usuario.
+      console.warn(`[sync] escritura descartada por el servidor (${e.status}): ${write.entity} ${write.op} ${write.entityId} — ${e.message}`);
       return 'permanent-failure';
     }
     throw e;

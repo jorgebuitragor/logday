@@ -30,6 +30,10 @@ tareas 5+ son pendientes reales (backlog), derivadas de
   - [x] 3.2 Transacción ProseMirror que separa título/cuerpo.
   - [x] 3.3 Guardado combinado debounced con `skipNextContentSaveRef` para
         evitar guardado parcial.
+  - [x] 3.4 Guardado acumulado (req. §3.1): `pendingPatchRef` fusiona
+        título y contenido pendientes en vez de que un guardado pise al
+        otro; el flush al desmontar incluye lo pendiente. Fix del título
+        perdido al escribir título + cuerpo en menos de 600ms.
 
 - [x] **4. Importar notas** (req. §4)
   - [x] 4.1 `pickMarkdownFiles()` en `src/lib/invoke.ts` (file picker nativo

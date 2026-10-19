@@ -126,6 +126,17 @@ retroalimentación visual previa a navegar.
 - SI la nota ya tiene título, este atajo NO DEBERÁ activarse (Enter se
   comporta normalmente).
 
+### 3.1 Guardado debounced de título y contenido
+
+- CUANDO el usuario edita el título y el contenido dentro de la misma
+  ventana de debounce (600ms) — p. ej. escribe el título, presiona Enter y
+  empieza el cuerpo de inmediato —, el sistema DEBERÁ persistir ambos
+  cambios: ningún cambio pendiente de un campo DEBERÁ descartarse por un
+  guardado posterior de otro campo.
+- CUANDO el editor se desmonta (cambio de nota, salir de Notas) con
+  cambios pendientes, el sistema DEBERÁ guardar todos los campos
+  pendientes, no solo el contenido.
+
 ## 4. Importar notas desde archivo
 
 ### 4.1 Vía selector de archivos

@@ -221,11 +221,85 @@ Lo que se hace ahora (`noteContentSync.ts`):
   `Y.Text`, incluido texto que escribió otro cliente con otra
   representación (`[WEB]` no pasa a `\[WEB\]`).
 
-Queda fuera: el `Y.Doc` de una nota abierta todavía no recibe los
-updates remotos (`applyNoteContentUpdate` solo actualiza el `.ydoc` en
-disco y el store). Mientras está abierta, la edición del otro cliente
-no se ve hasta reabrirla. El merge en el servidor sí es correcto. Las
-entradas diarias usan solo el diff Myers, sin el delta del editor.
+Las entradas diarias usan solo el diff Myers, sin el delta del editor.
+
+**Updates remotos en la nota abierta** (19 oct 2026): antes,
+`applyNoteContentUpdate` aplicaba el `content_state` al `.ydoc` en disco
+y reescribía el `.md`, pero no tocaba el `Y.Doc` en memoria del
+`NoteEditor` montado. La edición del otro cliente no se veía hasta
+reabrir la nota, y el siguiente guardado mandaba un `Y.Doc` sin ella
+(el servidor la conservaba igual, por el merge).
+
+- **Registro de notas abiertas** (`noteContentSync.ts`):
+  `registerOpenNoteDoc(noteId, handler)` lo llama el `NoteEditor` al
+  montar, y la función que devuelve lo da de baja al desmontar. Se
+  eligió un registro y no un evento del store: así el store le pregunta
+  al editor si la nota está abierta y, si lo está, le deja el `.ydoc`.
+  Hay un solo escritor del `.ydoc` por nota abierta. Con dos (el store
+  mezclando el `.ydoc` de disco y el editor persistiendo el `Y.Doc`
+  vivo), uno podía pisar al otro con un estado sin las ediciones
+  locales.
+- **Store** (`applyNoteContentUpdate`): primero intenta
+  `deliverToOpenNote`. Si la nota está abierta, el editor aplica el
+  update, persiste el `.ydoc` y devuelve el texto del `Y.Text`. Si no,
+  se sigue mezclando con el `.ydoc` en disco como antes. En los dos
+  casos el store reescribe el `.md` y `content` con ese texto.
+- **Editor** (`NoteEditor.tsx`, `applyRemoteContent`). Espera la
+  hidratación del `Y.Doc` y después hace todo en un solo tramo
+  síncrono, sin otra tecla en el medio:
+  1. Si hay texto local sin guardar (el Markdown actual difiere de la
+     base de `applyEditorEdit`), lo aplica antes al `Y.Doc` con
+     `applyEditorEdit`. Es lo mismo que haría el guardado, pero sin la
+     red. Así la base queda igual al texto local, y lo que cambie el
+     update es solo lo remoto.
+  2. `Y.applyUpdate`. Si el `Y.Text` no cambió (el eco de un push
+     propio), termina ahí.
+  3. Lleva el cambio `Y.Text` antes → después al texto del editor con
+     `rebaseText`: la misma traslación de `applyEditorEdit`, pero en
+     sentido contrario (del espacio del `Y.Text` al del editor). Lo que
+     el editor tiene con otra representación (como `\[`) y el update no
+     toca queda intacto.
+  4. Modo WYSIWYG o dividido: el texto destino no es `getMarkdown()`.
+     Con `CompactParagraph`, cada párrafo se serializa como una sola
+     línea, así que `<p>A</p><p>B</p>` y `<p>A<br>B</p>` dan casi el
+     mismo Markdown, y al reparsearlo (`breaks: true`) los párrafos se
+     funden. Se encontró en la validación en vivo: la nota abierta
+     pasaba de dos párrafos a uno con `<br>`. Por eso el destino es el
+     documento serializado bloque por bloque y unido con línea en
+     blanco (los párrafos vacíos van como `<p></p>`), que sí se
+     reparsea al mismo documento. Ese Markdown se parsea con el parser
+     de tiptap-markdown y en ProseMirror se reemplaza solo el tramo
+     que cambió (`findDiffStart`/`findDiffEnd`). El cursor se traslada
+     con el mapeo de la transacción, así que no se mueve si el cambio
+     remoto está en otra parte. La transacción lleva
+     `addToHistory: false`: Ctrl+Z no deshace la edición del otro
+     cliente. Modo fuente (textarea): el destino es el texto del
+     textarea, que se reemplaza, y la selección se traslada con los
+     mismos cambios.
+  5. La base de `applyEditorEdit` pasa a ser el Markdown que el editor
+     devuelve después del cambio. Así el siguiente guardado ve solo lo
+     que el usuario cambie de ahí en adelante y no revierte lo remoto.
+- **Debounce**: si había un guardado pendiente, su `content` puede ser
+  de antes del update (el `useEffect` de `mdContent` corre después del
+  render). Por eso el editor marca que llegó contenido remoto, y el
+  guardado toma el Markdown vivo del editor en vez del valor acumulado
+  en `pendingPatchRef`. Si en el paso 1 había texto local, se programa
+  un guardado, porque el `Y.Doc` en memoria tiene algo que el servidor
+  todavía no. El cambio de `mdContent` causado por el update remoto no
+  programa otro guardado: el `.md` ya lo escribió el store.
+
+Encontrado en la validación y sin resolver acá (ya pasaba antes): al
+abrir una nota, el efecto de `mdContent` programa un guardado con el
+contenido cargado (`normalizedContent`), que no es lo que devuelve
+`getMarkdown()`. `applyEditorEdit` toma esa diferencia de representación
+como una edición y agrega un `\n` final al `Y.Text` (es el `\n` sin
+explicar del diagnóstico del merge). Además, `updateNote` cambia
+`updated` solo por abrir la nota.
+
+Sigue fuera: las entradas diarias no tienen editor con `Y.Doc` vivo
+(se editan con `saveDailyEntry`, que hidrata desde disco en cada
+guardado), así que no tienen este problema de la misma forma. Logday
+Web tiene el mismo hueco en su `docRef` y se resuelve en su repo.
 
 **Hueco conocido, no resuelto por este cambio**: si el pull periódico
 de `/sync/changes` corre entre que el usuario borra una entidad
@@ -242,4 +316,5 @@ CRDT/contenido, aplica al motor de sync en general
 - Manejo de múltiples `Y.Doc` en memoria simultáneamente si el usuario
   tiene muchas notas abiertas — se asume que solo el documento
   actualmente abierto en el editor mantiene su `Y.Doc` vivo; el resto
-  se hidrata on-demand al abrir.
+  se hidrata on-demand al abrir. (El registro de notas abiertas admite
+  varias, pero hoy el editor monta una sola a la vez.)

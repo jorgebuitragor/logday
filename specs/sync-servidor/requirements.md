@@ -108,6 +108,16 @@ no los redefine.
 - El cliente DEBERÁ mantener el documento Yjs como fuente de verdad
   para la edición en curso de esos campos, derivando el Markdown
   guardado en disco a partir de su estado — no al revés.
+- CUANDO llegue un `content_state` remoto de una nota que está abierta
+  en el editor, el cliente DEBERÁ aplicarlo al documento Yjs de esa
+  nota y mostrar el texto resultante en el editor, sin que el usuario
+  tenga que cerrarla y reabrirla.
+- Al reflejar un update remoto en el editor, el cliente NO DEBERÁ
+  perder lo que el usuario escribió y todavía no se guardó (debounce en
+  curso), ni mover el cursor si el cambio remoto no lo toca, ni dejar
+  el cambio remoto en el historial de deshacer del usuario.
+- El siguiente guardado local después de un update remoto NO DEBERÁ
+  revertir ese update: solo DEBERÁ aplicar lo que el usuario cambió.
 
 ### Cola de escrituras offline
 

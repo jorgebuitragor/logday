@@ -248,19 +248,27 @@ incompatible con el protocolo real del servidor). Lo implementado:
 
 - [x] `Y.Doc` con un `Y.Text` plano (key `"content"`, misma key que
       `ygo` del lado servidor y `logday-web`) por nota/entrada diaria
-      — no integrado al estado interno de Tiptap. `applyTextEdit`
-      diffea Markdown anterior vs. nuevo en cada guardado y lo aplica
-      al `Y.Text`, puerto directo de `applyTextareaEdit` de
-      `logday-web`.
+      — no integrado al estado interno de Tiptap. En cada guardado se
+      aplica al `Y.Text` el cambio del Markdown (ver el ítem de abajo
+      sobre el diff).
+- [x] Diff real y delta del editor (19 oct 2026): `applyTextEdit` usa
+      `fast-diff` (Myers) en vez de una sola ventana prefijo/sufijo, y
+      `NoteEditor.tsx` guarda con `applyEditorEdit`, que solo aplica
+      lo que cambió el usuario desde la carga o el último guardado. La
+      versión anterior, un puerto de `applyTextareaEdit`, diffeaba el
+      `Y.Text` contra `getMarkdown()`, que no es el mismo texto. Una
+      edición simultánea Desktop+Web dejaba la de Web en el lugar
+      equivocado, y un borrado concurrente desde Web se perdía. Ver
+      "Diff y representación del editor" en `design.md`.
 - [x] Serializar (`Y.encodeStateAsUpdate`) y mandar a
       `POST /notes/:id/content` (Note) / `PUT` de daily-entries
       (entrada diaria) al guardar, vía `contentSyncQueue.ts` —
       coalescida por entidad, no un update por keystroke.
 - [x] Aplicar updates remotos (`Y.applyUpdate`) recibidos por
-      `/sync/changes` o WS — como el `Y.Doc` no vive dentro de Tiptap,
-      no hay posición de cursor que preservar en el sentido original
-      del diseño; si el documento está abierto, se re-hidrata desde el
-      estado actualizado.
+      `/sync/changes` o WS al `.ydoc` en disco y al store. **Corrección
+      (19 oct 2026):** el `Y.Doc` de una nota *abierta* no se
+      re-hidrata. La edición del otro cliente aparece recién al
+      reabrir la nota (ver pendientes al final).
 - [x] Confirmado: la derivación a Markdown en disco sigue funcionando
       sin cambios de formato — el `Y.Doc` es un espejo que se
       actualiza al guardar, el Markdown sigue siendo la fuente de
@@ -348,6 +356,11 @@ son huecos/decisiones reales:
   concurrente real (misma entidad, dos escritores al mismo tiempo) y
   offline→online tras cerrar/reabrir la app nunca se estresaron
   literalmente como describe cada bullet.
+- **El `Y.Doc` de una nota abierta no recibe updates remotos**: el
+  merge en el servidor es correcto, pero mientras la nota está abierta
+  la edición del otro cliente no se ve hasta reabrirla. Requiere
+  aplicar el update al `Y.Doc` vivo y refrescar el editor sin perder
+  el cursor.
 - **Papelera compartida entre servicios** (no solo entre instalaciones
   Desktop) — deliberadamente fuera de este spec, ver
   `specs/papelera-reciclaje/requirements.md` de este repo y los specs

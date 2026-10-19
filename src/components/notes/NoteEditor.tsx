@@ -73,7 +73,7 @@ import sql from 'highlight.js/lib/languages/sql';
 import typescript from 'highlight.js/lib/languages/typescript';
 import yaml from 'highlight.js/lib/languages/yaml';
 import * as Y from 'yjs';
-import { readPersistedUpdate, getContentText, applyTextEdit } from '../../lib/noteContentSync';
+import { readPersistedUpdate, getContentText, applyTextEdit, applyEditorEdit } from '../../lib/noteContentSync';
 import { useAppStore, syncNoteContent } from '../../store/appStore';
 import { Note } from '../../types/note';
 import { ExportModal } from './ExportModal';
@@ -313,9 +313,15 @@ export function NoteEditor() {
   // `Note.content` es un `Y.Text` plano (ver noteContentSync.ts), no un
   // documento estructurado; el editor sigue siendo el Tiptap normal de
   // siempre, y el contenido se refleja hacia el `Y.Doc` como un diff de
-  // texto en cada guardado (`applyTextEdit`), igual que hace logday-web.
+  // texto en cada guardado (`applyEditorEdit`), igual que hace logday-web.
   const ydocRef = useRef<Y.Doc | null>(null);
   if (!ydocRef.current) ydocRef.current = new Y.Doc();
+  // Markdown del editor (tal como lo serializa Tiptap) que ya está reflejado
+  // en el Y.Doc: el de la carga y luego el de cada guardado. El guardado
+  // aplica al Y.Text solo el delta entre esto y el Markdown nuevo, no la
+  // diferencia completa contra el Y.Text — ver applyEditorEdit. `null`
+  // mientras el editor no cargó la nota.
+  const editorBaseMarkdownRef = useRef<string | null>(null);
   // Promesa de hidratación del Y.Doc (sidecar local o bootstrap desde el
   // contenido actual) — el guardado espera esto antes de diffear, para no
   // correr contra un Y.Text todavía vacío por una hidratación en curso.
@@ -938,16 +944,21 @@ export function NoteEditor() {
 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Refleja `newContent` hacia el Y.Doc de esta nota como un diff de texto
-  // (ver applyTextEdit en noteContentSync.ts) y lo manda/encola. Espera
-  // ydocReadyRef primero — diffear contra un Y.Text que todavía no terminó
-  // de hidratarse (sidecar local, o bootstrap desde el contenido actual)
-  // produciría un diff contra una base incorrecta.
+  // Refleja `newContent` hacia el Y.Doc de esta nota y lo manda/encola.
+  // Solo se aplica lo que cambió el usuario desde el último guardado (ver
+  // applyEditorEdit en noteContentSync.ts): diffear el Y.Text contra
+  // `getMarkdown()` mete las diferencias de representación de Tiptap como si
+  // fueran ediciones. Espera ydocReadyRef primero — diffear contra un Y.Text
+  // que todavía no terminó de hidratarse (sidecar local, o bootstrap desde el
+  // contenido actual) produciría un diff contra una base incorrecta.
   const pushContentUpdate = useCallback(async (note: Note, newContent: string) => {
     await ydocReadyRef.current;
     const ydoc = ydocRef.current;
     if (!ydoc) return;
-    applyTextEdit(ydoc, getContentText(ydoc), newContent);
+    const base = editorBaseMarkdownRef.current;
+    if (base === null) applyTextEdit(ydoc, getContentText(ydoc), newContent);
+    else applyEditorEdit(ydoc, base, newContent);
+    editorBaseMarkdownRef.current = newContent;
     await syncNoteContent(useAppStore.getState, useAppStore.setState, note, ydoc);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1103,6 +1114,11 @@ export function NoteEditor() {
     suppressNextEditorMarkdownSyncRef.current = true;
     editor.commands.setContent(normalizedContent);
     setMdContent(normalizedContent);
+    // La base del delta es lo que el editor devuelve tras cargar, no
+    // `normalizedContent`: Tiptap ya lo reserializa (escapes, `\n` final) y
+    // esas diferencias no son ediciones del usuario.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    editorBaseMarkdownRef.current = normalizeEditorMarkdown((editor.storage as any).markdown.getMarkdown() as string);
     // Auto-focus el título cuando la nota está vacía (recién creada)
     if (!activeNote.title && !activeNote.content) {
       setTimeout(() => titleRef.current?.focus(), 50);

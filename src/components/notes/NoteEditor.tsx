@@ -43,7 +43,7 @@ import {
 } from 'lucide-react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { TextSelection } from '@tiptap/pm/state';
-import { Extension } from '@tiptap/core';
+import { Extension, createDocument } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import UnderlineExt from '@tiptap/extension-underline';
@@ -73,7 +73,10 @@ import sql from 'highlight.js/lib/languages/sql';
 import typescript from 'highlight.js/lib/languages/typescript';
 import yaml from 'highlight.js/lib/languages/yaml';
 import * as Y from 'yjs';
-import { readPersistedUpdate, getContentText, applyTextEdit, applyEditorEdit } from '../../lib/noteContentSync';
+import {
+  readPersistedUpdate, getContentText, applyTextEdit, applyEditorEdit, rebaseText, mapTextIndex,
+  registerOpenNoteDoc, persistYDoc, base64ToBytes,
+} from '../../lib/noteContentSync';
 import { useAppStore, syncNoteContent } from '../../store/appStore';
 import { Note } from '../../types/note';
 import { ExportModal } from './ExportModal';
@@ -322,6 +325,20 @@ export function NoteEditor() {
   // diferencia completa contra el Y.Text — ver applyEditorEdit. `null`
   // mientras el editor no cargó la nota.
   const editorBaseMarkdownRef = useRef<string | null>(null);
+  // Cuántos updates remotos cambiaron el texto de esta nota (ver
+  // applyRemoteContent): pushContentUpdate lo compara para saber si su
+  // contenido quedó viejo mientras esperaba.
+  const remoteGenerationRef = useRef(0);
+  // Llegó contenido remoto desde el último guardado: el guardado pendiente
+  // toma el Markdown vivo en vez del acumulado (ver takePendingNote).
+  const remoteSinceLastTakeRef = useRef(false);
+  // Markdown que puso un update remoto en `mdContent`. El efecto de
+  // `mdContent` no programa un guardado por ese valor: el store ya escribió
+  // el `.md` y, si había texto local, applyRemoteContent ya lo programó.
+  const remoteMarkdownRef = useRef<string | null>(null);
+  // La nota se desmontó: un update remoto que llegue tarde lo aplica el
+  // store en el `.ydoc` en disco, no este editor en el Y.Doc que se libera.
+  const disposedRef = useRef(false);
   // Promesa de hidratación del Y.Doc (sidecar local o bootstrap desde el
   // contenido actual) — el guardado espera esto antes de diffear, para no
   // correr contra un Y.Text todavía vacío por una hidratación en curso.
@@ -334,6 +351,10 @@ export function NoteEditor() {
   // mismo patrón que `titleIsPresentRef` más abajo.
   const activeNoteRef = useRef<Note | null>(null);
   activeNoteRef.current = activeNote;
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
+  const mdContentRef = useRef(mdContent);
+  mdContentRef.current = mdContent;
 
   const editor = useEditor({
     extensions: [
@@ -408,6 +429,7 @@ export function NoteEditor() {
         suppressNextEditorMarkdownSyncRef.current = false;
         return;
       }
+      remoteMarkdownRef.current = null;
       setMdContent(md);
       // Cierra menús desplegables al escribir
       setShowBlockMenu(false);
@@ -952,9 +974,17 @@ export function NoteEditor() {
   // que todavía no terminó de hidratarse (sidecar local, o bootstrap desde el
   // contenido actual) produciría un diff contra una base incorrecta.
   const pushContentUpdate = useCallback(async (note: Note, newContent: string) => {
+    const generation = remoteGenerationRef.current;
     await ydocReadyRef.current;
     const ydoc = ydocRef.current;
     if (!ydoc) return;
+    // Si en la espera entró un update remoto, `newContent` es de antes y
+    // aplicarlo contra la base nueva revertiría lo remoto. Lo local de ese
+    // momento ya está en el Y.Doc (applyRemoteContent lo aplica antes del
+    // update), así que basta con lo que muestra el editor ahora.
+    if (generation !== remoteGenerationRef.current) {
+      newContent = readLocalMarkdown() ?? editorBaseMarkdownRef.current ?? newContent;
+    }
     const base = editorBaseMarkdownRef.current;
     if (base === null) applyTextEdit(ydoc, getContentText(ydoc), newContent);
     else applyEditorEdit(ydoc, base, newContent);
@@ -991,6 +1021,13 @@ export function NoteEditor() {
     }
   };
 
+  // Markdown que el usuario tiene en pantalla ahora: el del textarea en el
+  // modo fuente (ahí el editor Tiptap no se actualiza hasta salir) y el de
+  // Tiptap en los otros dos.
+  const readLocalMarkdown = (): string | null => (
+    viewModeRef.current === 'source' ? mdContentRef.current : readEditorMarkdown()
+  );
+
   // Vacía lo acumulado y lo aplica sobre la versión más reciente de la nota
   // en el store (no sobre un snapshot de un render viejo, que pisaría tags o
   // pin cambiados mientras tanto). Devuelve null si la nota ya no está en el
@@ -1007,6 +1044,13 @@ export function NoteEditor() {
       const md = readEditorMarkdown();
       if (md !== null) patch.content = md;
     }
+    // Lo acumulado puede ser de antes de un update remoto (el efecto de
+    // `mdContent` corre después del render): se guarda lo que se ve ahora,
+    // que ya incluye lo remoto, para no revertirlo.
+    if (remoteSinceLastTakeRef.current && 'content' in patch) {
+      patch.content = readLocalMarkdown() ?? patch.content;
+    }
+    remoteSinceLastTakeRef.current = false;
     return { ...latest, ...patch };
   };
 
@@ -1156,6 +1200,130 @@ export function NoteEditor() {
     return () => { cancelled = true; };
   }, [activeNote?.id]);
 
+  // Markdown del documento de Tiptap que, al parsearse, vuelve a dar el mismo
+  // documento. `getMarkdown()` no sirve para eso: con CompactParagraph cada
+  // párrafo sale como una sola línea, así que "<p>A</p><p>B</p>" y
+  // "<p>A<br>B</p>" dan casi el mismo texto, y al reparsearlo los párrafos se
+  // funden en uno (con `breaks: true`, un `\n` suelto es un salto de línea).
+  // Acá cada bloque de primer nivel se serializa por separado y se unen con
+  // una línea en blanco, como en Markdown estándar. Un párrafo vacío no
+  // sobrevive al parseo como línea vacía, así que va como HTML.
+  const serializeBlocksForParse = (instance: NonNullable<typeof editor>): string => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const serializer = (instance.storage as any).markdown.serializer;
+    const { doc } = instance.state;
+    const blocks: string[] = [];
+    doc.forEach((block) => {
+      if (block.type.name === 'paragraph' && block.content.size === 0) {
+        blocks.push('<p></p>');
+        return;
+      }
+      blocks.push((serializer.serialize(doc.type.create(null, block)) as string).replace(/\n+$/, ''));
+    });
+    return blocks.join('\n\n');
+  };
+
+  // Muestra en pantalla el cambio que un update remoto hizo al Y.Text
+  // (`before` → `after`). `local` es el Markdown del textarea en el modo
+  // fuente; en los otros modos se usa serializeBlocksForParse. Devuelve el
+  // Markdown que queda en pantalla, en la representación de
+  // `readLocalMarkdown` (la de la base del delta). En Tiptap reemplaza solo
+  // el tramo que cambió: el cursor se traslada con el mapeo de la
+  // transacción y no se mueve si lo remoto está en otra parte.
+  // `addToHistory: false` para que Ctrl+Z no deshaga la edición del otro
+  // cliente, y `preventUpdate` porque no es una edición del usuario
+  // (onUpdate cerraría menús y programaría un guardado).
+  const showRemoteContent = (before: string, after: string, local: string): string => {
+    if (viewModeRef.current === 'source') {
+      const { text, changes } = rebaseText(before, after, local);
+      // El textarea es controlado: si su valor ya es el nuevo cuando React
+      // re-renderiza, no lo toca y la selección trasladada se conserva.
+      const textarea = sourceTextareaRef.current;
+      if (textarea && textarea.value === local) {
+        const start = mapTextIndex(changes, textarea.selectionStart);
+        const end = mapTextIndex(changes, textarea.selectionEnd);
+        textarea.value = text;
+        textarea.setSelectionRange(start, end);
+      }
+      return text;
+    }
+    const instance = editorRef.current;
+    if (!instance) return local;
+    const { text } = rebaseText(before, after, serializeBlocksForParse(instance));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const html = (instance.storage as any).markdown.parser.parse(text) as string;
+    const nextDoc = createDocument(html, instance.schema);
+    const { doc } = instance.state;
+    const start = doc.content.findDiffStart(nextDoc.content);
+    if (start !== null) {
+      let { a: endA, b: endB } = doc.content.findDiffEnd(nextDoc.content)!;
+      // Si el tramo distinto es una repetición (p. ej. "aa" → "aaa"), los
+      // finales calculados desde atrás pueden quedar antes del inicio.
+      const overlap = start - Math.min(endA, endB);
+      if (overlap > 0) {
+        endA += overlap;
+        endB += overlap;
+      }
+      const tr = instance.state.tr
+        .replace(start, endA, nextDoc.slice(start, endB))
+        .setMeta('addToHistory', false)
+        .setMeta('preventUpdate', true);
+      instance.view.dispatch(tr);
+    }
+    return readEditorMarkdown() ?? local;
+  };
+
+  // Aplica al Y.Doc abierto un `content_state` remoto que entrega el store
+  // (ver registerOpenNoteDoc en noteContentSync.ts), lo muestra y persiste
+  // el `.ydoc`. Después del await todo es síncrono: ninguna tecla puede
+  // quedar entre leer el texto local y actualizar la base del delta.
+  const applyRemoteContent = async (contentStateB64: string): Promise<string | null> => {
+    await ydocReadyRef.current;
+    const note = activeNoteRef.current;
+    const ydoc = ydocRef.current;
+    // Se desmontó durante la espera: el store lo aplica en disco.
+    if (disposedRef.current || !ydoc || !note) return null;
+    const base = editorBaseMarkdownRef.current;
+    const local = base === null ? null : readLocalMarkdown();
+    // Lo que el usuario escribió y todavía no se guardó entra primero al
+    // Y.Doc, igual que en un guardado. Así la base queda igual a lo que se
+    // ve, y el cambio que produce el update es solo lo remoto.
+    const hadLocalEdits = base !== null && local !== null && local !== base;
+    if (hadLocalEdits) {
+      applyEditorEdit(ydoc, base, local);
+      editorBaseMarkdownRef.current = local;
+    }
+    const before = getContentText(ydoc);
+    Y.applyUpdate(ydoc, base64ToBytes(contentStateB64));
+    const after = getContentText(ydoc);
+    let shown = local;
+    if (before !== after && local !== null) {
+      shown = showRemoteContent(before, after, local);
+      // La base pasa a ser lo que se ve después del cambio: el siguiente
+      // guardado aplica solo lo que el usuario cambie de acá en adelante.
+      editorBaseMarkdownRef.current = shown;
+      remoteGenerationRef.current += 1;
+      remoteSinceLastTakeRef.current = true;
+      remoteMarkdownRef.current = shown;
+      setMdContent(shown);
+    }
+    // El Y.Doc en memoria tiene texto local que el servidor y el `.md` no
+    // tienen todavía: se programa el guardado de siempre para mandarlo.
+    if (hadLocalEdits && shown !== null) schedulesSave({ content: shown });
+    if (hadLocalEdits || before !== after) await persistYDoc(note.filePath, ydoc);
+    return after;
+  };
+  const applyRemoteContentRef = useRef(applyRemoteContent);
+  applyRemoteContentRef.current = applyRemoteContent;
+
+  // Mientras la nota está abierta, el store le entrega a este editor los
+  // `content_state` remotos en vez de mezclarlos en el `.ydoc` en disco.
+  useEffect(() => {
+    if (!activeNote) return;
+    return registerOpenNoteDoc(activeNote.id, (b64) => applyRemoteContentRef.current(b64));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeNote?.id]);
+
   // Flush del guardado pendiente + push de contenido + liberar el Y.Doc al
   // desmontar (cambio de nota vía `key`, o salir de la sección Notas). El
   // `setTimeout` de `schedulesSave` no se cancela solo con React — si no se
@@ -1163,6 +1331,7 @@ export function NoteEditor() {
   // 600ms se perdería del todo al cambiar de nota rápido.
   useEffect(() => {
     return () => {
+      disposedRef.current = true;
       const ydoc = ydocRef.current;
       let pending: Promise<void> | null = null;
       if (saveTimeoutRef.current) {
@@ -1198,6 +1367,10 @@ export function NoteEditor() {
   useEffect(() => {
     if (skipNextContentSaveRef.current) {
       skipNextContentSaveRef.current = false;
+      return;
+    }
+    if (remoteMarkdownRef.current !== null && mdContent === remoteMarkdownRef.current) {
+      remoteMarkdownRef.current = null;
       return;
     }
     schedulesSave({ content: mdContent });
@@ -2515,6 +2688,7 @@ export function NoteEditor() {
                 ref={sourceTextareaRef}
                 value={mdContent}
                 onChange={(e) => {
+                  remoteMarkdownRef.current = null;
                   setMdContent(e.target.value);
                 }}
                 className="note-source-textarea w-full h-full min-h-[400px] resize-none bg-transparent font-mono text-sm text-[var(--text-secondary)] outline-none leading-relaxed placeholder-[var(--text-faint)]"

@@ -269,6 +269,39 @@ incompatible con el protocolo real del servidor). Lo implementado:
       (19 oct 2026):** el `Y.Doc` de una nota *abierta* no se
       re-hidrata. La edición del otro cliente aparece recién al
       reabrir la nota (ver pendientes al final).
+- [x] Updates remotos en la nota abierta (19 oct 2026), ver "Updates
+      remotos en la nota abierta" en `design.md`:
+  - [x] `registerOpenNoteDoc`/`deliverToOpenNote` en
+        `noteContentSync.ts`: registro de notas abiertas por id.
+  - [x] `applyNoteContentUpdate` le entrega el `content_state` al
+        editor si la nota está abierta (un solo escritor del `.ydoc`) y
+        si no, lo mezcla en disco como antes.
+  - [x] `rebaseText` (traslación inversa a `applyEditorEdit`, del
+        `Y.Text` al Markdown del editor) y `mapTextIndex` para la
+        selección del textarea.
+  - [x] `NoteEditor`: aplica primero el texto local sin guardar, después
+        el update, refleja el cambio en Tiptap reemplazando solo el
+        tramo distinto (cursor por mapeo, sin entrar al historial) o en
+        el textarea del modo fuente, y mueve la base del delta.
+  - [x] Debounce: el guardado pendiente toma el Markdown vivo si llegó
+        contenido remoto; el cambio de `mdContent` causado por lo remoto
+        no programa un guardado extra.
+  - [x] Serializar el documento bloque por bloque para reparsearlo:
+        `getMarkdown()` (con `CompactParagraph`) fundía los párrafos al
+        reparsear. Se encontró en la validación en vivo.
+  - [x] Validación en vivo (19 oct 2026) contra un logday-server local
+        aislado, con Logday Web (`/app`) real. Desktop se probó con su
+        `dist/` real en Chrome headless (IPC de Tauri simulado, la red
+        por `fetch` al mismo servidor), no con el `.app` nativo: no hubo
+        acceso de control a la ventana del `.app` de QA. Casos: (1) con
+        la nota abierta, una edición de Web aparece sola en ~1 s; (2)
+        Desktop escribe sin pausa (el debounce no llega a guardar)
+        mientras Web edita otro párrafo: lo remoto aparece, lo local
+        sigue de corrido donde estaba el cursor, y Desktop, servidor y
+        Web terminan con el mismo texto; (3) modo fuente: el textarea
+        recibe lo remoto y el cursor se queda en su lugar. Con el
+        `dist/` de antes del cambio, los casos 1 y 2 no muestran nada
+        de lo remoto mientras la nota está abierta.
 - [x] Confirmado: la derivación a Markdown en disco sigue funcionando
       sin cambios de formato — el `Y.Doc` es un espejo que se
       actualiza al guardar, el Markdown sigue siendo la fuente de
@@ -356,11 +389,9 @@ son huecos/decisiones reales:
   concurrente real (misma entidad, dos escritores al mismo tiempo) y
   offline→online tras cerrar/reabrir la app nunca se estresaron
   literalmente como describe cada bullet.
-- **El `Y.Doc` de una nota abierta no recibe updates remotos**: el
-  merge en el servidor es correcto, pero mientras la nota está abierta
-  la edición del otro cliente no se ve hasta reabrirla. Requiere
-  aplicar el update al `Y.Doc` vivo y refrescar el editor sin perder
-  el cursor.
+- ~~**El `Y.Doc` de una nota abierta no recibe updates remotos**~~.
+  Resuelto el 19 oct 2026, ver "Updates remotos en la nota abierta" en
+  la sección CRDT. Logday Web tiene el mismo hueco en su repo.
 - **Papelera compartida entre servicios** (no solo entre instalaciones
   Desktop) — deliberadamente fuera de este spec, ver
   `specs/papelera-reciclaje/requirements.md` de este repo y los specs

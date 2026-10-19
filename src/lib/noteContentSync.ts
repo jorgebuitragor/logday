@@ -44,7 +44,7 @@ export function getContentText(doc: Y.Doc): string {
 
 /** Un cambio sobre un texto, en coordenadas del texto original: en `index`
  *  se borran `deleteCount` caracteres y se inserta `insert`. */
-interface TextChange {
+export interface TextChange {
   index: number;
   deleteCount: number;
   insert: string;
@@ -206,11 +206,15 @@ function mapPosition(spans: AlignedSpan[], pos: number, bias: 'before' | 'after'
  */
 export function applyEditorEdit(doc: Y.Doc, baseValue: string, newValue: string): void {
   if (baseValue === newValue) return;
-  const currentValue = getContentText(doc);
-  if (baseValue === currentValue) {
-    applyTextEdit(doc, currentValue, newValue);
-    return;
-  }
+  applyChanges(doc, translateEdit(baseValue, newValue, getContentText(doc)));
+}
+
+/** El delta `baseValue` → `newValue`, trasladado a las posiciones de
+ *  `currentValue` con una alineación `baseValue`↔`currentValue`. Lo que
+ *  difiere entre `baseValue` y `currentValue` sin que el delta lo toque
+ *  queda tal cual en `currentValue`. */
+function translateEdit(baseValue: string, newValue: string, currentValue: string): TextChange[] {
+  if (baseValue === currentValue) return diffChanges(baseValue, newValue);
   const spans = alignTexts(baseValue, currentValue);
   const changes = diffChanges(baseValue, newValue).map((change): TextChange => {
     if (change.deleteCount === 0) {
@@ -227,7 +231,48 @@ export function applyEditorEdit(doc: Y.Doc, baseValue: string, newValue: string)
     if (changes[i].index > limit) changes[i].index = limit;
     changes[i].deleteCount = Math.min(changes[i].deleteCount, limit - changes[i].index);
   }
-  applyChanges(doc, changes);
+  return changes;
+}
+
+/** Resultado de `rebaseText`: el texto nuevo y los cambios que se le
+ *  aplicaron al texto original, para trasladar posiciones (la selección
+ *  del textarea) con `mapTextIndex`. */
+export interface RebasedText {
+  text: string;
+  changes: TextChange[];
+}
+
+/**
+ * Lleva a `targetValue` el cambio `baseValue` → `newValue`. Es la
+ * traslación de `applyEditorEdit` en sentido contrario: ahí el delta va
+ * del editor al `Y.Text`, acá un update remoto va del `Y.Text` (antes →
+ * después de `Y.applyUpdate`) al Markdown que muestra el editor. Lo que el
+ * editor tiene con otra representación (`\[`, marcadores de listas) y el
+ * update no toca queda igual.
+ */
+export function rebaseText(baseValue: string, newValue: string, targetValue: string): RebasedText {
+  if (baseValue === newValue) return { text: targetValue, changes: [] };
+  const changes = translateEdit(baseValue, newValue, targetValue);
+  let text = targetValue;
+  for (let i = changes.length - 1; i >= 0; i -= 1) {
+    const { index, deleteCount, insert } = changes[i];
+    text = text.slice(0, index) + insert + text.slice(index + deleteCount);
+  }
+  return { text, changes };
+}
+
+/** Posición `index` del texto original trasladada a través de `changes`
+ *  (en orden y en coordenadas del original, como los devuelve
+ *  `rebaseText`). Una inserción justo en `index` queda después de la
+ *  posición, y una posición dentro de un tramo borrado va a su inicio. */
+export function mapTextIndex(changes: TextChange[], index: number): number {
+  let shift = 0;
+  for (const change of changes) {
+    if (index <= change.index) break;
+    if (index < change.index + change.deleteCount) return change.index + shift;
+    shift += change.insert.length - change.deleteCount;
+  }
+  return index + shift;
 }
 
 /** Bytes del `.ydoc` hermano de una nota, si existe. `null` si la nota
@@ -276,4 +321,41 @@ export async function applyIncomingContentState(
   const content = getContentText(doc);
   doc.destroy();
   return { content };
+}
+
+// ── Notas abiertas en el editor ─────────────────────────────────────────
+// Un `NoteEditor` montado tiene su propio `Y.Doc` en memoria. Un
+// `content_state` remoto de esa nota tiene que llegar a ese doc, no solo
+// al `.ydoc` en disco: si no, el usuario no ve la edición del otro cliente
+// hasta reabrir la nota. Se usa un registro (y no un evento del store)
+// para que el store sepa si la nota está abierta y, en ese caso, deje que
+// el editor sea el único que escribe su `.ydoc`. Con dos escritores, el
+// store podía persistir un estado sin las ediciones locales del editor.
+
+/** Aplica un `content_state` remoto (base64) al `Y.Doc` abierto, lo
+ *  persiste y devuelve el texto resultante del `Y.Text`. `null` si el
+ *  editor ya se estaba cerrando y no lo aplicó. */
+export type OpenNoteHandler = (contentStateB64: string) => Promise<string | null>;
+
+const openNoteHandlers = new Map<string, OpenNoteHandler>();
+
+/** Registra el `Y.Doc` abierto de una nota. Devuelve la baja, que solo
+ *  quita el registro si sigue siendo este handler (en un remontaje
+ *  rápido de la misma nota, el nuevo puede registrarse antes de que el
+ *  viejo se dé de baja). */
+export function registerOpenNoteDoc(noteId: string, handler: OpenNoteHandler): () => void {
+  openNoteHandlers.set(noteId, handler);
+  return () => {
+    if (openNoteHandlers.get(noteId) === handler) openNoteHandlers.delete(noteId);
+  };
+}
+
+/** Entrega un `content_state` (base64) al editor de la nota si está
+ *  abierta. `null` si no lo está (o se cerró en el medio): quien llama lo
+ *  aplica en disco con `applyIncomingContentState`. */
+export async function deliverToOpenNote(noteId: string, contentStateB64: string): Promise<{ content: string } | null> {
+  const handler = openNoteHandlers.get(noteId);
+  if (!handler) return null;
+  const content = await handler(contentStateB64);
+  return content === null ? null : { content };
 }

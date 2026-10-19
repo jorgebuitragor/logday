@@ -47,7 +47,7 @@ import {
 import * as syncQueue from '../lib/syncQueue';
 import * as contentSyncQueue from '../lib/contentSyncQueue';
 import * as trash from '../lib/trash';
-import { bytesToBase64, persistYDoc, applyIncomingContentState, noteContentStatePath } from '../lib/noteContentSync';
+import { bytesToBase64, persistYDoc, applyIncomingContentState, deliverToOpenNote, noteContentStatePath } from '../lib/noteContentSync';
 import { persistDailyYDoc, applyIncomingDailyContentState, getContentText as getDailyContentText, applyTextEdit as applyDailyTextEdit, loadPersistedDailyYDoc, deleteDailyContentState } from '../lib/dailyContentSync';
 import { parseFrontmatter, serializeTask, parseNote, serializeNote, formatDate } from '../lib/markdown';
 import { t } from '../lib/i18n';
@@ -758,19 +758,21 @@ function applyNoteResponse(get: SyncGet, set: SyncSet, entityId: string, sinceIs
 }
 
 /** Aplica un `content_state` (CRDT, base64) recibido del servidor —
- *  creación/patch propio (echo) o /sync/changes — al `.ydoc` local y
- *  reescribe `content` + el `.md` en disco. Misma operación sin importar si
- *  la nota está abierta en el editor ahora mismo: no hay forma de tocar el
- *  `Y.Doc` en memoria de un NoteEditor montado desde acá (sin WebSocket
- *  todavía, ver reconcileSync) — si el usuario la tiene abierta, ve el
- *  contenido fusionado la próxima vez que la abra. Colaboración en vivo
- *  depende de la fase "Tiempo real" (fuera de este diseño). */
+ *  creación/patch propio (echo) o /sync/changes — al estado CRDT de la
+ *  nota y reescribe `content` + el `.md` en disco. Si la nota está abierta
+ *  en el editor, el update va a su `Y.Doc` vivo (el editor lo muestra y
+ *  persiste el `.ydoc`); si no, se mezcla con el `.ydoc` en disco. Ver
+ *  "Updates remotos en la nota abierta" en specs/sync-servidor/design.md. */
 async function applyNoteContentUpdate(get: SyncGet, set: SyncSet, noteId: string, contentStateB64: string): Promise<void> {
   const note = get().notes.find((n) => n.id === noteId);
   if (!note) return;
-  const { content } = await applyIncomingContentState(note.filePath, contentStateB64);
-  if (content === note.content) return;
-  const updated = { ...note, content };
+  const { content } = (await deliverToOpenNote(noteId, contentStateB64))
+    ?? (await applyIncomingContentState(note.filePath, contentStateB64));
+  // El editor pudo guardar mientras tanto: se compara y se reescribe sobre
+  // la nota vigente, no sobre la de antes del await.
+  const latest = get().notes.find((n) => n.id === noteId);
+  if (!latest || content === latest.content) return;
+  const updated = { ...latest, content };
   await fs.writeFile(updated.filePath, serializeNote(updated));
   set((state) => ({
     notes: state.notes.map((n) => (n.id === noteId ? updated : n)),

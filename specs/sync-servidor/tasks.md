@@ -163,10 +163,15 @@ real (create, editar, borrar, revivir).
       PATCH, que la cola descartaba como permanent-failure sin dejar
       rastro. El placeholder `'Sin título'` se movió a `syncMapping.ts`
       (`noteToCreatePayload` y `noteFieldsToPatchPayload`), así cubre
-      create, patch y la migración inicial. `sendQueuedWrite` ahora
-      deja un `console.warn` con entidad, operación, id y status de cada
-      escritura descartada por un 4xx (sin el payload, que puede llevar
-      títulos o tags del usuario).
+      create, patch y la migración inicial. El placeholder solo va en
+      el payload, pero no es invisible localmente: el eco del servidor
+      (`applyNoteResponse`) lo trae de vuelta al estado local y el
+      siguiente guardado lo escribe en el `.md` (observado en vivo el
+      19 oct 2026). Se acepta porque la UI ya muestra "Sin título" para
+      un título vacío y `parseNote` hace lo mismo al cargar.
+      `sendQueuedWrite` ahora deja un `console.warn` con entidad,
+      operación, id y status de cada escritura descartada por un 4xx
+      (sin el payload, que puede llevar títulos o tags del usuario).
 
 ### Cursor y reconciliación
 

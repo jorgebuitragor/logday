@@ -131,8 +131,11 @@ export interface NoteApiResponse extends NoteCreatePayload {
 // (internal/note/handlers.go, validateNotePatch) y responde 400. Ese 400
 // no se arregla reintentando: la cola lo descarta como permanent-failure
 // y el cambio se pierde. Se manda el mismo placeholder que logday-web usa
-// al crear ("Sin título"), solo en el payload — el archivo y el estado
-// locales conservan el título real, vacío o no.
+// al crear ("Sin título"). Esto solo cambia el payload, pero el eco del
+// servidor (applyNoteResponse) trae "Sin título" de vuelta al estado local,
+// y el próximo guardado lo escribe en el .md. Es aceptable: la UI ya muestra
+// "Sin título" para un título vacío, y parseNote convierte "" en
+// "Sin título" al cargar.
 const UNTITLED_NOTE_TITLE = 'Sin título';
 
 function serverNoteTitle(title: string | undefined): string {

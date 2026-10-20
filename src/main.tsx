@@ -2,6 +2,12 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 
+// Overlay de re-renders en vivo, solo en desarrollo — import dinámico para
+// que ni siquiera se incluya en el bundle de producción.
+if (import.meta.env.DEV) {
+  import("react-scan").then(({ scan }) => scan());
+}
+
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {error: Error | null}> {
   constructor(props: {children: React.ReactNode}) {
     super(props);

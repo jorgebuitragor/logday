@@ -108,7 +108,7 @@ Configuracion principal:
 ## Requisitos
 
 - Node.js 20+
-- npm 10+
+- pnpm 9+
 - Rust estable
 - Tauri CLI 2
 
@@ -116,15 +116,15 @@ Configuracion principal:
 
 Instalar dependencias:
 
-	npm install
+	pnpm install
 
 Iniciar en modo desarrollo (frontend + app escritorio):
 
-	npm run tauri dev
+	pnpm tauri dev
 
 Build del frontend:
 
-	npm run build
+	pnpm build
 
 Chequeo rapido del backend Rust:
 
@@ -134,7 +134,7 @@ Chequeo rapido del backend Rust:
 
 Generar binarios/instaladores con Tauri:
 
-	npm run tauri build
+	pnpm tauri build
 
 ## Troubleshooting comun
 
@@ -146,7 +146,7 @@ Si Vite no levanta por conflicto de puerto:
 
 Luego reinicia:
 
-	npm run tauri dev
+	pnpm tauri dev
 
 ### Reinicios dobles en desarrollo
 
@@ -158,4 +158,4 @@ Logday esta optimizada para flujo local-first: primero archivos locales, luego s
 
 ## Licencia
 
-Proyecto interno/no lucrativo para colaboradores de la FCV (ver metadata del bundle en la configuracion de Tauri).
+[AGPL-3.0-or-later](./LICENSE). Software libre: cualquier persona u organización puede usarlo, modificarlo y auto-hospedar su propia instancia. Si ofreces una versión modificada como servicio a terceros, el AGPL exige publicar también ese código modificado (copyleft de red) — ver el texto completo de la licencia para el detalle.

@@ -21,10 +21,127 @@ pub struct SearchResult {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ReleaseInfo {
-    pub tag_name: String,
-    pub html_url: String,
-    pub body: String,
+pub struct UrlMeta {
+    pub title: String,
+    pub description: String,
+    pub domain: String,
+}
+
+// ── URL metadata helpers ─────────────────────────────────────────────────────
+
+fn extract_domain(url: &str) -> String {
+    let without_scheme = url.splitn(2, "://").nth(1).unwrap_or(url);
+    let domain = without_scheme.splitn(2, '/').next().unwrap_or(without_scheme);
+    domain.split(':').next().unwrap_or(domain).to_string()
+}
+
+fn find_attr_value(tag: &str, attr: &str) -> Option<String> {
+    let tag_l = tag.to_lowercase();
+    let attr_l = attr.to_lowercase();
+    for q in ['"', '\''] {
+        let pat = format!("{}={}", attr_l, q);
+        if let Some(idx) = tag_l.find(&pat) {
+            let after = &tag[idx + pat.len()..];
+            if let Some(end) = after.find(q) {
+                let v = after[..end].trim().to_string();
+                if !v.is_empty() {
+                    return Some(v);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn extract_meta(html: &str, key: &str) -> Option<String> {
+    let html_l = html.to_lowercase();
+    let key_l = key.to_lowercase();
+    let mut pos = 0;
+    while pos < html_l.len() {
+        match html_l[pos..].find("<meta") {
+            None => break,
+            Some(rel) => {
+                let abs = pos + rel;
+                let end = html_l[abs..].find('>').map(|e| abs + e + 1).unwrap_or(html_l.len());
+                let tag = &html[abs..end.min(html_l.len())];
+                let name = find_attr_value(tag, "name").unwrap_or_default().to_lowercase();
+                let prop = find_attr_value(tag, "property").unwrap_or_default().to_lowercase();
+                if name == key_l || prop == key_l {
+                    if let Some(c) = find_attr_value(tag, "content") {
+                        return Some(html_decode(&c));
+                    }
+                }
+                pos = end;
+            }
+        }
+    }
+    None
+}
+
+fn extract_title_tag(html: &str) -> Option<String> {
+    let html_l = html.to_lowercase();
+    if let Some(start) = html_l.find("<title") {
+        if let Some(gt) = html_l[start..].find('>') {
+            let cs = start + gt + 1;
+            if let Some(end) = html_l[cs..].find("</title>") {
+                let t = html[cs..cs + end].trim().to_string();
+                if !t.is_empty() {
+                    return Some(html_decode(&t));
+                }
+            }
+        }
+    }
+    None
+}
+
+fn html_decode(s: &str) -> String {
+    s.replace("&amp;", "&")
+     .replace("&lt;", "<")
+     .replace("&gt;", ">")
+     .replace("&quot;", "\"")
+     .replace("&#39;", "'")
+     .replace("&apos;", "'")
+     .replace("&nbsp;", " ")
+     .replace("&#x27;", "'")
+}
+
+fn truncate_text(s: &str, max: usize) -> String {
+    let mut chars = s.chars();
+    let taken: String = chars.by_ref().take(max).collect();
+    if chars.next().is_some() { format!("{}\u{2026}", taken) } else { taken }
+}
+
+/// Fetches a URL (bypassing WebView CORS) and extracts page title + description.
+#[tauri::command]
+async fn fetch_url_metadata(url: String) -> Result<UrlMeta, String> {
+    let domain = extract_domain(&url);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .user_agent("Mozilla/5.0 (compatible; Logday/1.0)")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let html = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .text()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let title = extract_meta(&html, "og:title")
+        .or_else(|| extract_title_tag(&html))
+        .unwrap_or_else(|| domain.clone());
+
+    let description = extract_meta(&html, "og:description")
+        .or_else(|| extract_meta(&html, "description"))
+        .unwrap_or_default();
+
+    Ok(UrlMeta {
+        title: truncate_text(&title, 100),
+        description: truncate_text(&description, 200),
+        domain,
+    })
 }
 
 /// Returns the app's local data directory for storing config.json
@@ -217,6 +334,50 @@ fn read_file_binary(path: String) -> Result<String, String> {
     Ok(STANDARD.encode(bytes))
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SyncHttpResponse {
+    pub status: u16,
+    pub body: String,
+}
+
+/// Makes an HTTP request to a user-configured logday-server instance
+/// (self-hosted sync backend). Runs on the Rust side so it bypasses
+/// WebView CORS restrictions — logday-server doesn't implement CORS
+/// on purpose (see its specs/arquitectura-inicial), same rationale as
+/// fetch_image_base64 below. Returns the raw status/body; all
+/// protocol logic (auth headers, JSON parsing, retries) lives in
+/// src/lib/sync.ts, not here.
+#[tauri::command]
+async fn sync_request(
+    base_url: String,
+    method: String,
+    path: String,
+    token: Option<String>,
+    body: Option<String>,
+) -> Result<SyncHttpResponse, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let method = reqwest::Method::from_bytes(method.as_bytes())
+        .map_err(|e| format!("invalid HTTP method {method}: {e}"))?;
+    let url = format!("{}{}", base_url.trim_end_matches('/'), path);
+
+    let mut req = client.request(method, &url);
+    if let Some(t) = token {
+        req = req.bearer_auth(t);
+    }
+    if let Some(b) = body {
+        req = req.header("Content-Type", "application/json").body(b);
+    }
+
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
+    let text = resp.text().await.map_err(|e| e.to_string())?;
+    Ok(SyncHttpResponse { status, body: text })
+}
+
 /// Downloads an external URL and returns its contents as a base64-encoded string.
 /// Runs on the Rust side so it bypasses WebView CORS restrictions.
 #[tauri::command]
@@ -268,31 +429,6 @@ fn git_run(cwd: String, args: Vec<String>) -> Result<String, String> {
     } else {
         Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
     }
-}
-
-/// Fetches the latest GitHub release info for update checking
-#[tauri::command]
-async fn check_update() -> Result<ReleaseInfo, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .user_agent("logday-app")
-        .build()
-        .map_err(|e| e.to_string())?;
-    let resp: serde_json::Value = client
-        .get("https://api.github.com/repos/jorgebuitragor/logday/releases/latest")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
-    let tag_name = resp["tag_name"].as_str().unwrap_or("").to_string();
-    let html_url = resp["html_url"].as_str().unwrap_or("").to_string();
-    let body = resp["body"].as_str().unwrap_or("").to_string();
-    if tag_name.is_empty() {
-        return Err("No releases found".to_string());
-    }
-    Ok(ReleaseInfo { tag_name, html_url, body })
 }
 
 /// Opens a URL in the default system browser
@@ -355,7 +491,15 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_websocket::init())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            // El updater no existe en mobile — se registra acá (no al
+            // nivel del builder) siguiendo el patrón oficial del plugin,
+            // que necesita el AppHandle ya construido.
+            #[cfg(desktop)]
+            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+
             let show_item = MenuItem::with_id(app, "show", "Mostrar Logday", true, None::<&str>)?;
             let new_note_item = MenuItem::with_id(app, "new_note", "Nueva nota", true, None::<&str>)?;
             let new_task_item = MenuItem::with_id(app, "new_task", "Nueva tarea", true, None::<&str>)?;
@@ -455,12 +599,13 @@ pub fn run() {
             search_tasks,
             open_in_system,
             open_url,
-            check_update,
             write_clipboard,
             read_file_binary,
             write_file_binary,
             fetch_image_base64,
             git_run,
+            sync_request,
+            fetch_url_metadata,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

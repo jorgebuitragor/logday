@@ -83,6 +83,16 @@ export function refreshToken(baseUrl: string, refreshTokenValue: string): Promis
   });
 }
 
+/** Revoca este dispositivo en el servidor (POST /auth/logout). El
+ *  servidor revoca el device aunque el refresh token ya se haya rotado
+ *  en un refresh en vuelo, y desde ese momento el access token tampoco
+ *  sirve. */
+export function logoutRemote(baseUrl: string, refreshTokenValue: string): Promise<void> {
+  return request<void>(baseUrl, 'POST', '/auth/logout', {
+    body: { refresh_token: refreshTokenValue },
+  });
+}
+
 export interface DeviceResponse {
   id: string;
   device_name: string;

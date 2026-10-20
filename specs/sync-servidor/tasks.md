@@ -365,15 +365,24 @@ específico de CRDT, aplica al motor de sync en general.
       se hizo esta prueba puntual — lo más parecido validado fue
       Desktop + `curl`/`logday-web` en momentos distintos, no dos
       clientes escribiendo en simultáneo real.
-- [ ] Prueba manual: dos notas editando el mismo párrafo en simultáneo
+- [x] Prueba manual: dos notas editando el mismo párrafo en simultáneo
       contra un servidor real, confirmar merge CRDT visible (texto de
       ambos, no uno pisando al otro). Lo validado fue Desktop
       creando/editando y `logday-web` editando después (secuencial,
       no simultáneo) — el merge CRDT en sí nunca se estresó con
       escritura concurrente real.
-- [ ] Prueba manual offline→online: editar sin red, cerrar la app,
+      **Validado el 19 y 20 oct 2026** con un `.app` de QA y logday-web
+      contra un servidor local. La primera prueba reprodujo un mal
+      merge (la edición de Web caía al principio), corregido en el PR
+      #3 (diff contra el delta del editor). Con el fix, el texto de los
+      dos queda en su lugar y un borrado concurrente desde Web se
+      respeta. El PR #4 (la nota abierta recibe las ediciones remotas)
+      también se validó en vivo en la app nativa, en ambas direcciones.
+- [x] Prueba manual offline→online: editar sin red, cerrar la app,
       reabrir, reconectar — confirmar que la cola persistida se drena
-      igual.
+      igual. **Validado el 19 oct 2026**: nota nueva y edición hechas
+      sin red, app cerrada y reabierta con el token ya vencido; al
+      reconectar, refresh y drenado completos.
 
 ## Estado final (2026-08-27)
 

@@ -411,6 +411,58 @@ export async function readNoteFromPath(filePath: string): Promise<Note | null> {
  *  módulo (misma lógica, sin cambios) para que `syncMigration.ts`
  *  también la use, leyendo disco directo sin pasar por el `set()` de
  *  esa acción. */
+// Un cambio remoto (feed /sync/changes, WebSocket, o el eco de la propia
+// migración) puede traer una task/nota que no está en `tasks`/`notes`:
+// esas listas solo tienen lo de la vista actual (proyecto o carpeta
+// activos). Antes eso se trataba como "nunca existió acá", con tres
+// bugs reales encontrados el 20 oct 2026 al probar la migración con la
+// carpeta "ideas" abierta mientras subían notas de "masivo":
+//   1. el archivo local se reescribía con `content: ''` (y una task
+//      perdía sus `linked_paths`), o sea, la copia local se vaciaba;
+//   2. un borrado remoto se ignoraba y el archivo local quedaba vivo;
+//   3. el registro se agregaba a la lista visible aunque fuera de otra
+//      carpeta/proyecto, y dos cambios casi simultáneos del mismo id lo
+//      agregaban dos veces.
+// Así que, si no está en la lista, se busca en disco antes de decidir.
+async function findLocalTask(basePath: string, projects: string[], id: string, projectHint?: string): Promise<Task | null> {
+  const candidates = [projectHint, ...projects].filter((p, i, all): p is string => !!p && all.indexOf(p) === i);
+  for (const project of candidates) {
+    const path = taskFilePath(basePath, project, id);
+    if (await fs.exists(path).catch(() => false)) return readTaskFromPath(path);
+  }
+  return null;
+}
+
+async function findLocalNote(basePath: string, id: string, folderHint?: string): Promise<Note | null> {
+  const tryFolder = async (folder: string) => {
+    const path = noteFilePath(basePath, folder, id);
+    return (await fs.exists(path).catch(() => false)) ? readNoteFromPath(path) : null;
+  };
+  const tried = new Set<string>();
+  for (const folder of [folderHint, '']) {
+    if (folder === undefined || tried.has(folder)) continue;
+    tried.add(folder);
+    const found = await tryFolder(folder);
+    if (found) return found;
+  }
+  for (const folder of await scanNoteFolders(notesDir(basePath), '')) {
+    if (tried.has(folder)) continue;
+    const found = await tryFolder(folder);
+    if (found) return found;
+  }
+  return null;
+}
+
+// Misma regla que loadTasks/loadNotes para decidir qué entra en la
+// lista visible.
+function taskInView(project: string, activeProject: string | null): boolean {
+  return !activeProject || project === activeProject || project.startsWith(activeProject + '/');
+}
+
+function noteInView(folder: string, activeNoteFolder: string | null): boolean {
+  return activeNoteFolder === null || folder === activeNoteFolder;
+}
+
 export async function scanNoteFolders(dirPath: string, prefix: string): Promise<string[]> {
   const entries = await fs.listDir(dirPath).catch(() => []);
   const result: string[] = [];
@@ -1381,7 +1433,9 @@ function setSyncCursor(seq: number): void {
 async function applyRemoteTaskChange(get: SyncGet, set: SyncSet, change: SyncChange): Promise<void> {
   const { basePath } = get();
   if (!basePath) return;
-  const existing = get().tasks.find((t) => t.id === change.id);
+  const projectHint = change.deleted ? undefined : (change.data as TaskApiResponse | null)?.project;
+  const existing = get().tasks.find((t) => t.id === change.id)
+    ?? (await findLocalTask(basePath, get().projects, change.id, projectHint)) ?? undefined;
 
   if (change.deleted) {
     if (!existing) return; // nunca existió acá, nada que borrar
@@ -1415,18 +1469,25 @@ async function applyRemoteTaskChange(get: SyncGet, set: SyncSet, change: SyncCha
 
   const finalTask = merged as unknown as Task;
   await fs.writeFile(filePath, serializeTask(finalTask));
-  set((state) => ({
-    tasks: existing
-      ? state.tasks.map((t) => (t.id === change.id ? finalTask : t))
-      : [finalTask, ...state.tasks],
-    activeTask: state.activeTask?.id === change.id ? finalTask : state.activeTask,
-  }));
+  const visible = taskInView(finalTask.project, get().activeProject);
+  set((state) => {
+    // Se decide con el estado de este momento, no con el de antes de
+    // los await: otro cambio del mismo id pudo haberla agregado ya.
+    const listed = state.tasks.some((t) => t.id === change.id);
+    let tasks = state.tasks;
+    if (listed && visible) tasks = tasks.map((t) => (t.id === change.id ? finalTask : t));
+    else if (listed) tasks = tasks.filter((t) => t.id !== change.id);
+    else if (visible) tasks = [finalTask, ...tasks];
+    return { tasks, activeTask: state.activeTask?.id === change.id ? finalTask : state.activeTask };
+  });
 }
 
 async function applyRemoteNoteChange(get: SyncGet, set: SyncSet, change: SyncChange): Promise<void> {
   const { basePath } = get();
   if (!basePath) return;
-  const existing = get().notes.find((n) => n.id === change.id);
+  const folderHint = change.deleted ? undefined : (change.data as NoteApiResponse | null)?.folder;
+  const existing = get().notes.find((n) => n.id === change.id)
+    ?? (await findLocalNote(basePath, change.id, folderHint)) ?? undefined;
 
   if (change.deleted) {
     if (!existing) return;
@@ -1469,12 +1530,17 @@ async function applyRemoteNoteChange(get: SyncGet, set: SyncSet, change: SyncCha
   const finalNote = merged as unknown as Note;
   if (!existing && finalNote.folder) await fs.createDir(noteFolderDir(basePath, finalNote.folder)).catch(() => {});
   await fs.writeFile(filePath, serializeNote(finalNote));
-  set((state) => ({
-    notes: existing
-      ? state.notes.map((n) => (n.id === change.id ? finalNote : n))
-      : [finalNote, ...state.notes],
-    activeNote: state.activeNote?.id === change.id ? finalNote : state.activeNote,
-  }));
+  const visible = noteInView(finalNote.folder, get().activeNoteFolder);
+  set((state) => {
+    // Igual que en applyRemoteTaskChange: decidir con el estado actual,
+    // no con el de antes de los await.
+    const listed = state.notes.some((n) => n.id === change.id);
+    let notes = state.notes;
+    if (listed && visible) notes = notes.map((n) => (n.id === change.id ? finalNote : n));
+    else if (listed) notes = notes.filter((n) => n.id !== change.id);
+    else if (visible) notes = [finalNote, ...notes];
+    return { notes, activeNote: state.activeNote?.id === change.id ? finalNote : state.activeNote };
+  });
   const contentState = (change.data as NoteApiResponse).content_state;
   if (contentState) void applyNoteContentUpdate(get, set, change.id, contentState);
 }

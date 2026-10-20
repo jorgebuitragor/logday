@@ -60,7 +60,7 @@ export function useLinkPreview(
         if (found) {
           const plainBody = found.content
             .replace(/^#{1,6}\s+.*/gm, '')   // strip headings
-            .replace(/[*_~`\[\]()]/g, ' ')   // strip most markdown symbols
+            .replace(/[*_~`[\]()]/g, ' ')   // strip most markdown symbols
             .replace(/\s+/g, ' ')
             .trim();
           internalNote = {

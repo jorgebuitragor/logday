@@ -185,7 +185,7 @@ export function TaskEditor() {
           message={
             <>
               {t(language, 'tasks', 'confirmDeleteMsg')}{' '}
-              <span className="font-medium text-[var(--text-primary)]">"{activeTask.title}"</span>
+              <span className="font-medium text-[var(--text-primary)]">&quot;{activeTask.title}&quot;</span>
             </>
           }
           cancelLabel={t(language, 'tasks', 'cancel')}

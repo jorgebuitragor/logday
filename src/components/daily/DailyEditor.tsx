@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Copy, Check, X, Plus, GripVertical, Trash2, ListTodo } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../../store/appStore';
+import { syncPanel, type PanelState } from '../../lib/dailyContentSync';
 import { Task } from '../../types/task';
 import {
   toISO,
@@ -698,49 +699,82 @@ export function DailyEditor() {
   }, [prevISO]);
 
 
-  // Sincronizar hoy
-  useEffect(() => {
-    if (activeDailyDate) {
-      setTodayActs(dailyEntries[activeDailyDate] ?? '');
-    }
-  }, [activeDailyDate]);
+  // Cada panel lleva dos textos en refs: la base (lo último que vino del
+  // store: lo cargado, lo remoto o lo ya guardado) y lo que muestra el
+  // editor. Al guardar se manda solo el delta base → editor
+  // (saveDailyEntry/applyDailyEditorEdit), y lo que llega del store se
+  // lleva al editor rebasando lo escrito desde la base. Antes "Hoy" solo
+  // se sincronizaba al cambiar de día y el guardado mandaba el texto
+  // completo: una edición remota del día abierto no aparecía, y la
+  // siguiente tecla la borraba del CRDT. "Anterior" se resincronizaba con
+  // cualquier cambio del store y pisaba lo que se estaba escribiendo.
+  const today = useRef({ date: null as string | null, base: '', text: '' });
+  const prev = useRef({ date: null as string | null, base: '', text: '' });
+  const incomingToday = activeDailyDate ? (dailyEntries[activeDailyDate] ?? '') : '';
+  const incomingPrev = prevISO ? (dailyEntries[prevISO] ?? '') : '';
 
-  // Sincronizar día anterior cuando se carga
   useEffect(() => {
-    if (prevISO !== null) {
-      setPrevActs(dailyEntries[prevISO] ?? '');
-    }
-  }, [prevISO, dailyEntries]);
+    const next = syncPanel(today.current, activeDailyDate, incomingToday);
+    if (next !== null) setTodayActs(next);
+  }, [activeDailyDate, incomingToday]);
+
+  useEffect(() => {
+    const next = syncPanel(prev.current, prevISO, incomingPrev);
+    if (next !== null) setPrevActs(next);
+  }, [prevISO, incomingPrev]);
 
   const previewText = useMemo(() => {
     if (!activeDailyDate || !prevDate) return '';
     return buildDailyCopyText(prevDate, prevActs, dateFromISO(activeDailyDate), todayActs);
   }, [activeDailyDate, prevDate, prevActs, todayActs]);
 
+  // Guarda lo que haya en el editor en este momento (no lo que capturó
+  // el setTimeout): si llegó algo remoto mientras corría el debounce, el
+  // texto del editor ya está rebasado sobre eso.
+  const flushPanel = useCallback(
+    async (panel: PanelState) => {
+      const { date, base, text } = panel;
+      if (!date || text === base) return;
+      // La base pasa a ser lo enviado antes de guardar: cuando el store
+      // devuelva el texto mezclado, el efecto de arriba solo lleva al
+      // editor la parte remota, no vuelve a aplicar la edición propia.
+      panel.base = text;
+      try {
+        await saveDailyEntry(date, text, base);
+      } catch (e) {
+        if (panel.date === date && panel.base === text) panel.base = base;
+        throw e;
+      }
+    },
+    [saveDailyEntry]
+  );
+
   const handleTodayChange = useCallback(
     (val: string) => {
       setTodayActs(val);
+      today.current.text = val;
       if (!activeDailyDate) return;
       if (todaySave.current) clearTimeout(todaySave.current);
       setSaving(true);
       todaySave.current = setTimeout(async () => {
-        await saveDailyEntry(activeDailyDate, val);
+        await flushPanel(today.current);
         setSaving(false);
       }, 800);
     },
-    [activeDailyDate, saveDailyEntry]
+    [activeDailyDate, flushPanel]
   );
 
   const handlePrevChange = useCallback(
     (val: string) => {
       setPrevActs(val);
+      prev.current.text = val;
       if (!prevISO) return;
       if (prevSave.current) clearTimeout(prevSave.current);
       prevSave.current = setTimeout(async () => {
-        await saveDailyEntry(prevISO, val);
+        await flushPanel(prev.current);
       }, 800);
     },
-    [prevISO, saveDailyEntry]
+    [prevISO, flushPanel]
   );
 
   // ── Arrastrar actividades entre el panel "anterior" y el de "hoy" ──────────
@@ -765,8 +799,8 @@ export function DailyEditor() {
     if (!activeDailyDate) return;
     if (todaySave.current) { clearTimeout(todaySave.current); todaySave.current = null; }
     if (prevSave.current) { clearTimeout(prevSave.current); prevSave.current = null; }
-    await saveDailyEntry(activeDailyDate, todayActs);
-    if (prevISO) await saveDailyEntry(prevISO, prevActs);
+    await flushPanel(today.current);
+    await flushPanel(prev.current);
     const text = await copyDailyFormat(activeDailyDate);
     await writeToClipboard(text);
     setCopied(true);

@@ -48,7 +48,7 @@ import * as syncQueue from '../lib/syncQueue';
 import * as contentSyncQueue from '../lib/contentSyncQueue';
 import * as trash from '../lib/trash';
 import { bytesToBase64, persistYDoc, applyIncomingContentState, deliverToOpenNote, noteContentStatePath } from '../lib/noteContentSync';
-import { persistDailyYDoc, applyIncomingDailyContentState, getContentText as getDailyContentText, applyTextEdit as applyDailyTextEdit, loadPersistedDailyYDoc, deleteDailyContentState } from '../lib/dailyContentSync';
+import { applyIncomingDailyContentState, applyDailyEditorEdit, deleteDailyContentState } from '../lib/dailyContentSync';
 import { parseFrontmatter, serializeTask, parseNote, serializeNote, formatDate } from '../lib/markdown';
 import { t } from '../lib/i18n';
 import {
@@ -217,7 +217,11 @@ export interface AppState {
   // Dailys
   loadDailyMonths: () => Promise<void>;
   loadDailyMonth: (yearMonth: string) => Promise<void>;
-  saveDailyEntry: (date: string, activities: string) => Promise<void>;
+  /** Guarda lo que el usuario cambió en el editor de un día. `baseText`
+   *  es el texto desde el que editó (lo último que el editor cargó o
+   *  guardó); sin él se toma lo que hay en disco. Devuelve el texto ya
+   *  mezclado con lo remoto, que es lo que el editor debe mostrar. */
+  saveDailyEntry: (date: string, activities: string, baseText?: string) => Promise<string>;
   setActiveDailyDate: (date: string | null) => void;
   setActiveDailyMonth: (yearMonth: string) => void;
   createTodayDaily: () => void;
@@ -859,23 +863,10 @@ export async function syncNoteContent(get: SyncGet, set: SyncSet, note: Note, yd
   }
 }
 
-/** Push del diff CRDT de un daily entry — mismo patrón que
- *  syncNoteContent, pero sin componente propio: vive enteramente acá
- *  porque saveDailyEntry (appStore.ts) ya recibe la llamada debounced
- *  800ms desde DailyEditor.tsx, no hace falta un Y.Doc por componente
- *  como el de NoteEditor.tsx. `oldText`/`newText` son solo un atajo para
- *  saltar el trabajo si no cambió nada — el diff real siempre se hace
- *  contra el contenido ya persistido en el `.ydoc` (getDailyContentText),
- *  nunca contra `oldText` directamente. */
-async function pushDailyContentUpdate(get: SyncGet, set: SyncSet, date: string, oldText: string, newText: string): Promise<void> {
-  const { basePath } = get();
-  if (!basePath || oldText === newText) return;
-  const ydoc = (await loadPersistedDailyYDoc(basePath, date)) ?? new Y.Doc();
-  applyDailyTextEdit(ydoc, getDailyContentText(ydoc), newText);
-  await persistDailyYDoc(basePath, date, ydoc);
-  const updateB64 = bytesToBase64(Y.encodeStateAsUpdate(ydoc));
-  ydoc.destroy();
-
+/** Manda al servidor el update CRDT de un daily entry ya aplicado al
+ *  `.ydoc` local (ver applyDailyEditorEdit en saveDailyEntry). Sin red,
+ *  queda en la cola de contenido. */
+async function pushDailyContentUpdate(get: SyncGet, set: SyncSet, date: string, updateB64: string): Promise<void> {
   const { syncConfig, syncConnectionStatus } = get();
   if (!syncConfig.enabled) return;
   if (syncConnectionStatus !== 'connected') {
@@ -3202,9 +3193,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     finally { loadingDailyMonths.delete(yearMonth); }
   },
 
-  saveDailyEntry: async (date, activities) => {
+  saveDailyEntry: async (date, activities, baseText) => {
     const { basePath } = get();
-    if (!basePath) return;
+    if (!basePath) return activities;
     const year = date.slice(0, 4);
     const month = date.slice(5, 7);
     const yearMonth = `${year}-${month}`;
@@ -3217,18 +3208,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       existing = parseDailyFile(raw);
     } catch { /* archivo nuevo */ }
 
-    const updated = { ...existing, [date]: activities };
+    // Solo el delta del usuario va al CRDT; lo que se guarda en disco y
+    // en el store es el resultado ya mezclado con lo remoto que el
+    // editor todavía no tenía (ver applyDailyEditorEdit).
+    const base = baseText ?? existing[date] ?? '';
+    const { merged, updateB64 } = await applyDailyEditorEdit(basePath, date, base, activities);
+
+    const updated = { ...existing, [date]: merged };
     await fs.createDir(dailyMonthDir(basePath, year, month));
     await fs.writeFile(fp, serializeDailyFile(updated, yearMonth));
 
     set((s) => ({
-      dailyEntries: { ...s.dailyEntries, [date]: activities },
+      dailyEntries: { ...s.dailyEntries, [date]: merged },
       dailyMonths: s.dailyMonths.includes(yearMonth)
         ? s.dailyMonths
         : [yearMonth, ...s.dailyMonths].sort().reverse(),
     }));
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
-    void pushDailyContentUpdate(get, set, date, existing[date] ?? '', activities);
+    if (updateB64) void pushDailyContentUpdate(get, set, date, updateB64);
+    return merged;
   },
 
   setActiveDailyDate: (date) => set({ activeDailyDate: date }),

@@ -3312,7 +3312,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     await fs.writeFile(fp, serializeDailyFile(existing, yearMonth));
     await deleteDailyContentState(basePath, date);
     set((s) => {
-      const { [date]: _removed, ...rest } = s.dailyEntries;
+      const rest = { ...s.dailyEntries };
+      delete rest[date];
       return {
         dailyEntries: rest,
         activeDailyDate: s.activeDailyDate === date ? null : s.activeDailyDate,

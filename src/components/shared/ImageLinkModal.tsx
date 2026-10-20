@@ -91,7 +91,7 @@ function ImageModal({ onInsert, onClose }: Omit<ImageModalProps, 'mode'>) {
         setIsLoading(false);
       };
       reader.readAsDataURL(file);
-    } catch (err) {
+    } catch {
       setError(t(language, 'extras', 'processFileError'));
       setIsLoading(false);
     }

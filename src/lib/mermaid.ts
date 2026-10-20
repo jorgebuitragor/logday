@@ -51,7 +51,7 @@ export async function renderMermaidSvg(code: string, prefix = 'mermaid') {
     return result;
   } catch (error) {
     // Re-throw Mermaid errors so they bubble up to the caller
-    throw new Error(`Mermaid render error: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Mermaid render error: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
 }
 
@@ -84,7 +84,7 @@ export async function renderMermaidPngDataUrl(code: string): Promise<string | nu
           ctx.drawImage(image, 0, 0);
           clearTimeout(timeoutId);
           resolve(canvas.toDataURL('image/png'));
-        } catch (err) {
+        } catch {
           clearTimeout(timeoutId);
           resolve(null);
         }

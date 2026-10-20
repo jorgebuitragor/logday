@@ -327,7 +327,7 @@ export function NoteList() {
   const sorted = useMemo(
     () => [...filtered].sort((a, b) => {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-      let cmp = 0;
+      let cmp: number;
       if (sortBy === 'title') cmp = a.title.localeCompare(b.title, 'es', { sensitivity: 'base' });
       else if (sortBy === 'created') cmp = a.created.localeCompare(b.created);
       else cmp = a.updated.localeCompare(b.updated);
@@ -754,7 +754,7 @@ export function NoteList() {
             <>
               {tFn(language, 'notes', 'confirmDeleteMsg')}{' '}
               <span className="font-medium text-[var(--text-primary)]">
-                "{confirmDeleteNoteDialog.pending.title || tFn(language, 'notes', 'untitled')}"
+                &quot;{confirmDeleteNoteDialog.pending.title || tFn(language, 'notes', 'untitled')}&quot;
               </span>
               ? {tFn(language, 'notes', 'confirmDeleteDesc')}
             </>

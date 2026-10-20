@@ -43,6 +43,7 @@ import {
 } from 'lucide-react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { TextSelection } from '@tiptap/pm/state';
+import type { Mark } from '@tiptap/pm/model';
 import { Extension, createDocument } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
@@ -486,7 +487,7 @@ export function NoteEditor() {
     }
 
     const pane = editorPaneRef.current;
-    let root: HTMLElement | null = null;
+    let root: HTMLElement | null;
     try {
       root = editor ? (editor.view.dom as HTMLElement) : null;
     } catch {
@@ -538,7 +539,7 @@ export function NoteEditor() {
   }, [editor, mermaidRenderedHeights, viewMode]);
 
   const applyMermaidPlaceholderHeight = useCallback((index: number, height: number) => {
-    let root: HTMLElement | null = null;
+    let root: HTMLElement | null;
     try {
       root = editor ? (editor.view.dom as HTMLElement) : null;
     } catch {
@@ -569,7 +570,7 @@ export function NoteEditor() {
     }
 
     const pane = editorPaneRef.current;
-    let root: HTMLElement | null = null;
+    let root: HTMLElement | null;
     try {
       root = editor ? (editor.view.dom as HTMLElement) : null;
     } catch {
@@ -1605,7 +1606,7 @@ export function NoteEditor() {
     const target = blocks[targetIndex];
     if (!target) return;
 
-    let nextMarkdown = mdContent;
+    let nextMarkdown: string;
     if (direction === 'up') {
       const before = mdContent.slice(0, target.start);
       const targetText = mdContent.slice(target.start, target.end);
@@ -1823,7 +1824,7 @@ export function NoteEditor() {
             <>
               {tFn(language, 'notes', 'confirmDeleteMsg')}{' '}
               <span className="font-medium text-[var(--text-primary)]">
-                "{activeNote.title || tFn(language, 'notes', 'untitled')}"
+                &quot;{activeNote.title || tFn(language, 'notes', 'untitled')}&quot;
               </span>
               ? {tFn(language, 'notes', 'confirmDeleteDesc')}
             </>
@@ -2666,10 +2667,10 @@ export function NoteEditor() {
                     editor.chain().command(({ tr, state }) => {
                       const linkType = state.schema.marks['link'];
                       if (!linkType) return false;
-                      const changes: Array<{ from: number; to: number; text: string; mark: any }> = [];
+                      const changes: Array<{ from: number; to: number; text: string; mark: Mark }> = [];
                       state.doc.descendants((node, pos) => {
                         if (!node.isText) return;
-                        const mark = node.marks.find((m: any) => m.type === linkType && m.attrs.href === oldHref);
+                        const mark = node.marks.find((m) => m.type === linkType && m.attrs.href === oldHref);
                         if (mark) changes.push({ from: pos, to: pos + node.nodeSize, text: node.text ?? '', mark });
                       });
                       for (let i = changes.length - 1; i >= 0; i--) {

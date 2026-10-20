@@ -181,6 +181,10 @@ function mapPosition(spans: AlignedSpan[], pos: number, bias: 'before' | 'after'
     if (pos > s.base + s.baseLen) continue;
     let candidate: number;
     if (s.equal) candidate = s.current + (pos - s.base);
+    // Tramo que solo existe en `current` (texto insertado ahí): la
+    // posición queda antes o después de esa inserción según el sesgo
+    // (ver insertBias en translateEdit).
+    else if (s.baseLen === 0) candidate = bias === 'before' ? s.current : s.current + s.currentLen;
     else if (pos === s.base) candidate = s.current;
     else if (pos === s.base + s.baseLen) candidate = s.current + s.currentLen;
     else candidate = bias === 'before' ? s.current : s.current + s.currentLen;
@@ -212,13 +216,23 @@ export function applyEditorEdit(doc: Y.Doc, baseValue: string, newValue: string)
 /** El delta `baseValue` → `newValue`, trasladado a las posiciones de
  *  `currentValue` con una alineación `baseValue`↔`currentValue`. Lo que
  *  difiere entre `baseValue` y `currentValue` sin que el delta lo toque
- *  queda tal cual en `currentValue`. */
-function translateEdit(baseValue: string, newValue: string, currentValue: string): TextChange[] {
+ *  queda tal cual en `currentValue`.
+ *
+ *  `insertBias` decide el empate cuando una inserción del delta cae justo
+ *  donde `currentValue` ya insertó algo: 'before' la deja antes, 'after'
+ *  después. Los dos sentidos tienen que coincidir en "lo local queda antes
+ *  de lo remoto": applyEditorEdit (delta local sobre el Y.Text con lo
+ *  remoto) usa 'before', y rebaseText (delta remoto sobre el texto local
+ *  del editor) usa 'after'. Si no, el editor mostraba un orden y el
+ *  Y.Text guardaba otro — p. ej. en un daily, el usuario escribiendo al
+ *  final del último ítem mientras Web agregaba uno nuevo terminaba con el
+ *  texto pegado al ítem de Web. */
+function translateEdit(baseValue: string, newValue: string, currentValue: string, insertBias: 'before' | 'after' = 'before'): TextChange[] {
   if (baseValue === currentValue) return diffChanges(baseValue, newValue);
   const spans = alignTexts(baseValue, currentValue);
   const changes = diffChanges(baseValue, newValue).map((change): TextChange => {
     if (change.deleteCount === 0) {
-      return { index: mapPosition(spans, change.index, 'before'), deleteCount: 0, insert: change.insert };
+      return { index: mapPosition(spans, change.index, insertBias), deleteCount: 0, insert: change.insert };
     }
     const start = mapPosition(spans, change.index, 'after');
     const end = mapPosition(spans, change.index + change.deleteCount, 'before');
@@ -252,7 +266,7 @@ export interface RebasedText {
  */
 export function rebaseText(baseValue: string, newValue: string, targetValue: string): RebasedText {
   if (baseValue === newValue) return { text: targetValue, changes: [] };
-  const changes = translateEdit(baseValue, newValue, targetValue);
+  const changes = translateEdit(baseValue, newValue, targetValue, 'after');
   let text = targetValue;
   for (let i = changes.length - 1; i >= 0; i -= 1) {
     const { index, deleteCount, insert } = changes[i];

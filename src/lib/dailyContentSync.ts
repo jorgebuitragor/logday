@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 import { fs } from './invoke';
-import { getContentText, applyTextEdit, bytesToBase64, base64ToBytes } from './noteContentSync';
+import { getContentText, applyTextEdit, applyEditorEdit, rebaseText, bytesToBase64, base64ToBytes } from './noteContentSync';
 
 // ── Sync de contenido de Daily entries vía CRDT (Yjs) ────────────────────
 // Mismo mecanismo que Note.content (ver noteContentSync.ts) — la key CRDT
@@ -12,7 +12,44 @@ import { getContentText, applyTextEdit, bytesToBase64, base64ToBytes } from './n
 // del mes, ver dailyFileFormat.ts), así que el `.ydoc` es un archivo
 // hermano nuevo junto al archivo del mes, nombrado por fecha.
 
-export { applyTextEdit, getContentText };
+export { applyTextEdit, getContentText, rebaseText };
+
+/**
+ * Aplica al `.ydoc` del día solo lo que cambió el usuario en el editor
+ * (`baseText` → `newText`), no el texto completo. El editor puede estar
+ * mostrando una versión vieja del día (llegó una edición remota mientras
+ * se escribía): diffear su texto completo contra el `Y.Text` interpretaba
+ * lo remoto que el editor todavía no tenía como "borrado por el usuario"
+ * y lo eliminaba — mismo bug que se corrigió en notas (applyEditorEdit,
+ * specs/sync-servidor). Devuelve el texto ya mezclado y el update a mandar
+ * al servidor (`null` si no cambió nada).
+ *
+ * Si el día todavía no tiene `.ydoc` (un daily de antes del sync), se
+ * siembra con `baseText` antes de aplicar el delta, como hace la
+ * migración con las notas.
+ */
+export async function applyDailyEditorEdit(
+  basePath: string,
+  date: string,
+  baseText: string,
+  newText: string,
+): Promise<{ merged: string; updateB64: string | null }> {
+  let doc = await loadPersistedDailyYDoc(basePath, date);
+  if (!doc) {
+    doc = new Y.Doc();
+    if (baseText) applyTextEdit(doc, '', baseText);
+  }
+  const before = getContentText(doc);
+  applyEditorEdit(doc, baseText, newText);
+  const merged = getContentText(doc);
+  let updateB64: string | null = null;
+  if (merged !== before) {
+    await persistDailyYDoc(basePath, date, doc);
+    updateB64 = bytesToBase64(Y.encodeStateAsUpdate(doc));
+  }
+  doc.destroy();
+  return { merged, updateB64 };
+}
 
 export function dailyContentStatePath(basePath: string, date: string): string {
   const year = date.slice(0, 4);
@@ -65,4 +102,30 @@ export async function applyIncomingDailyContentState(
   const content = getContentText(doc);
   doc.destroy();
   return { content };
+}
+
+// ── Estado de un panel del editor de Dailys (DailyEditor.tsx) ──
+
+export interface PanelState {
+  date: string | null;
+  base: string;
+  text: string;
+}
+
+/** Lleva al panel lo que llegó del store para su día. Devuelve el texto
+ *  que debe mostrar el editor, o `null` si no cambia nada. Al cambiar de
+ *  día se carga tal cual; si es el mismo día, lo que el usuario escribió
+ *  desde la base se rebasa sobre lo nuevo en vez de pisarse. */
+export function syncPanel(panel: PanelState, date: string | null, incoming: string): string | null {
+  if (panel.date !== date) {
+    panel.date = date;
+    panel.base = incoming;
+    panel.text = incoming;
+    return incoming;
+  }
+  if (!date || incoming === panel.base) return null;
+  const next = panel.text === panel.base ? incoming : rebaseText(panel.base, incoming, panel.text).text;
+  panel.base = incoming;
+  panel.text = next;
+  return next;
 }

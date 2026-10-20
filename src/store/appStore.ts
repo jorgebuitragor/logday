@@ -30,7 +30,7 @@ import {
   createOvertimeEntryRemote, patchOvertimeEntryRemote, deleteOvertimeEntryRemote,
   patchOvertimeMonthMetaRemote,
   putDailyEntryContentRemote, deleteDailyEntryRemote,
-  listDevicesRemote, revokeDeviceRemote, DeviceResponse,
+  listDevicesRemote, revokeDeviceRemote, logoutRemote, DeviceResponse,
   TokenResponse, getPolicyRemote, acceptPolicyRemote, acceptSensitiveDataRemote,
   exportAccountRemote, deleteAccountRemote,
 } from '../lib/sync';
@@ -3872,7 +3872,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   syncDisconnect: () => {
     stopReconcileInterval();
     disconnectRealtime();
-    const { serverUrl, email } = get().syncConfig;
+    const { serverUrl, email, refreshToken: currentRefreshToken } = get().syncConfig;
+    // Revocar el device en el servidor, no solo olvidar los tokens: si
+    // no, el refresh token (30 días) seguiría vivo en el servidor. Sin
+    // esperar la respuesta: desconectar tiene que funcionar offline o
+    // con el servidor caído (en ese caso el device queda listado y se
+    // puede revocar desde Opciones de otro cliente o el panel). Cuando
+    // la sesión ya murió (refresh 401, cuenta borrada, device revocado)
+    // el servidor responde sin efecto.
+    if (serverUrl && currentRefreshToken) {
+      logoutRemote(serverUrl, currentRefreshToken).catch(() => {});
+    }
     const cfg: SyncConfig = { enabled: false, serverUrl, email, accessToken: '', refreshToken: '', deviceId: '' };
     localStorage.setItem('syncConfig', JSON.stringify(cfg));
     set({

@@ -19,6 +19,7 @@ import { fs } from '../../lib/invoke';
 import { t } from '../../lib/i18n';
 import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
+import { useFieldDrafts } from '../../hooks/useFieldDrafts';
 
 const STATUS_OPTIONS: { value: TaskStatus; color: string }[] = [
   { value: 'todo', color: 'text-zinc-400 bg-zinc-400/10' },
@@ -26,17 +27,49 @@ const STATUS_OPTIONS: { value: TaskStatus; color: string }[] = [
   { value: 'done', color: 'text-green-400 bg-green-400/10' },
 ];
 
+// Valores del formulario como strings, como los guarda useFieldDrafts.
+type TaskFields = {
+  title: string;
+  content: string;
+  taskCode: string;
+  status: string;
+  due: string;
+  project: string;
+  tags: string;
+};
+
+function taskFields(task: Task): TaskFields {
+  return {
+    title: task.title,
+    content: task.content,
+    taskCode: task.taskCode || '',
+    status: task.status,
+    due: task.due || '',
+    project: task.project,
+    tags: JSON.stringify(task.tags),
+  };
+}
+
+/** Un campo del formulario de vuelta a su forma en la task. */
+function fieldPatch(field: keyof TaskFields, value: string): Partial<Task> {
+  switch (field) {
+    case 'taskCode':
+      return { taskCode: value || undefined };
+    case 'due':
+      return { due: value || undefined };
+    case 'status':
+      return { status: value as TaskStatus };
+    case 'tags':
+      return { tags: JSON.parse(value) as string[] };
+    default:
+      return { [field]: value };
+  }
+}
+
 export function TaskEditor() {
   const { activeTask, updateTask, deleteTask, setActiveTask, projects, addLinkedPath, removeLinkedPath, language, confirmDestructiveActions, tasks } =
     useAppStore();
 
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
-  const [status, setStatus] = useState<TaskStatus>('todo');
-  const [due, setDue] = useState('');
-  const [tags, setTags] = useState<string[]>([]);
-  const [project, setProject] = useState('inbox');
-  const [taskCode, setTaskCode] = useState('');
   const [newTag, setNewTag] = useState('');
   const [showTagInput, setShowTagInput] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
@@ -46,6 +79,23 @@ export function TaskEditor() {
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tagInputRef = useRef<HTMLInputElement>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
+  // Campos de texto editados y todavía sin guardar (debounce de 800 ms), y
+  // la task a la que pertenecen.
+  const pending = useRef<{ taskId: string; fields: Set<keyof TaskFields> } | null>(null);
+
+  // Antes el formulario se hidrataba solo al cambiar de task: un cambio
+  // que llegaba por sync de otro cliente no aparecía, y al editar ese
+  // campo se escribía sobre el valor viejo y se pisaba lo remoto. Con los
+  // borradores, un campo sin tocar adopta lo que trae el store y uno
+  // editado conserva lo escrito (ver lib/fieldDrafts.ts).
+  const { values, edit, commit } = useFieldDrafts(activeTask?.id ?? null, activeTask ? taskFields(activeTask) : null);
+  const title = values?.title ?? '';
+  const content = values?.content ?? '';
+  const status = (values?.status ?? 'todo') as TaskStatus;
+  const due = values?.due ?? '';
+  const tags = JSON.parse(values?.tags ?? '[]') as string[];
+  const project = values?.project ?? 'inbox';
+  const taskCode = values?.taskCode ?? '';
 
   // Cerrar menú de proyecto al hacer clic fuera
   useEffect(() => {
@@ -57,78 +107,86 @@ export function TaskEditor() {
     return () => window.removeEventListener('mousedown', handler);
   }, [showProjectMenu]);
 
-  // Sync state when active task changes
-  useEffect(() => {
-    if (!activeTask) return;
-    setTitle(activeTask.title);
-    setContent(activeTask.content);
-    setStatus(activeTask.status);
-    setDue(activeTask.due || '');
-    setTags([...activeTask.tags]);
-    setProject(activeTask.project);
-    setTaskCode(activeTask.taskCode || '');
-    setIsDirty(false);
-  }, [activeTask?.id]);
-
   useEffect(() => {
     if (showTagInput) tagInputRef.current?.focus();
   }, [showTagInput]);
 
-  // Auto-save debounced
+  // Guarda `patch` sobre la task tal como está ahora en el store, no sobre
+  // el `activeTask` del render que programó el guardado: si entre medio
+  // llegó un cambio remoto, mezclar con la task vieja lo revertía en los
+  // campos que el usuario no tocó.
   const save = useCallback(
-    async (patch: Partial<Task>) => {
-      if (!activeTask) return;
-      // scheduleSave programa este `save` (vía setTimeout, 800ms) cerrando
-      // sobre el `activeTask` de ese momento — un setTimeout plano no se
-      // cancela solo al desmontar ni al borrar la task. Si la task se
-      // borró mientras el guardado estaba en vuelo, sin este chequeo
+    async (taskId: string, patch: Partial<Task>) => {
+      // Si la task se borró mientras el guardado estaba en vuelo,
       // updateTask() resucita el archivo (fs.writeFile incondicional).
       // Mismo bug que NoteEditor.tsx, mismo fix: chequear el store en
       // vivo antes de escribir.
-      if (!useAppStore.getState().tasks.some((t) => t.id === activeTask.id)) return;
-      const updated: Task = { ...activeTask, ...patch };
-      await updateTask(updated);
+      const live = useAppStore.getState().tasks.find((t) => t.id === taskId);
+      if (live) await updateTask({ ...live, ...patch });
       setIsDirty(false);
     },
-    [activeTask, updateTask]
+    [updateTask]
   );
 
-  const scheduleSave = (patch: Partial<Task>) => {
+  // Confirma los campos de texto pendientes y guarda los que cambiaron.
+  const flushPending = () => {
     clearTimeout(saveTimeout.current ?? undefined);
-    saveTimeout.current = setTimeout(() => save(patch), 800);
+    const p = pending.current;
+    pending.current = null;
+    if (!p) return;
+    let patch: Partial<Task> = {};
+    for (const field of p.fields) {
+      const value = commit(field);
+      if (value !== null) patch = { ...patch, ...fieldPatch(field, value) };
+    }
+    if (Object.keys(patch).length > 0) void save(p.taskId, patch);
+    else setIsDirty(false);
+  };
+
+  // Al cambiar de task (o cerrar el editor), lo pendiente se guarda en la
+  // task que se estaba editando antes de rehidratar el formulario.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => flushPending(), [activeTask?.id]);
+
+  const scheduleSave = (field: keyof TaskFields) => {
+    if (!activeTask) return;
+    if (pending.current && pending.current.taskId !== activeTask.id) flushPending();
+    pending.current ??= { taskId: activeTask.id, fields: new Set() };
+    pending.current.fields.add(field);
+    clearTimeout(saveTimeout.current ?? undefined);
+    saveTimeout.current = setTimeout(flushPending, 800);
     setIsDirty(true);
   };
 
+  // Campos de un solo clic (estado, fecha, proyecto, tags): se guardan ya.
+  const saveNow = (field: keyof TaskFields, value: string) => {
+    if (!activeTask) return;
+    edit(field, value);
+    const toSend = commit(field);
+    if (toSend !== null) void save(activeTask.id, fieldPatch(field, toSend));
+  };
+
   const handleTitleChange = (v: string) => {
-    setTitle(v);
-    scheduleSave({ title: v });
+    edit('title', v);
+    scheduleSave('title');
   };
 
   const handleContentChange = (v: string) => {
-    setContent(v);
-    scheduleSave({ content: v });
+    edit('content', v);
+    scheduleSave('content');
   };
 
-  const handleStatusChange = (v: TaskStatus) => {
-    setStatus(v);
-    save({ status: v });
-  };
+  const handleStatusChange = (v: TaskStatus) => saveNow('status', v);
 
-  const handleDueChange = (v: string) => {
-    setDue(v);
-    save({ due: v || undefined });
-  };
+  const handleDueChange = (v: string) => saveNow('due', v);
 
-  const handleProjectChange = (v: string) => {
-    setProject(v);
-    save({ project: v });
-  };
+  const handleProjectChange = (v: string) => saveNow('project', v);
 
   const handleTaskCodeChange = (v: string) => {
     // Allow only URL-safe characters: letters, digits, hyphens, underscores
     const cleaned = v.replace(/[^a-zA-Z0-9\-_]/g, '').toUpperCase();
-    setTaskCode(cleaned);
-    scheduleSave({ taskCode: cleaned || undefined });
+    edit('taskCode', cleaned);
+    scheduleSave('taskCode');
   };
 
   const isDuplicateCode = useMemo(
@@ -138,9 +196,7 @@ export function TaskEditor() {
 
   const handleAddTag = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && newTag.trim()) {
-      const updated = [...new Set([...tags, newTag.trim()])];
-      setTags(updated);
-      save({ tags: updated });
+      saveNow('tags', JSON.stringify([...new Set([...tags, newTag.trim()])]));
       setNewTag('');
       setShowTagInput(false);
     }
@@ -151,9 +207,7 @@ export function TaskEditor() {
   };
 
   const handleRemoveTag = (tag: string) => {
-    const updated = tags.filter((t) => t !== tag);
-    setTags(updated);
-    save({ tags: updated });
+    saveNow('tags', JSON.stringify(tags.filter((t) => t !== tag)));
   };
 
   const handleDelete = async () => {

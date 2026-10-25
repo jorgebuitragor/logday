@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Logday",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "identifier": "com.jorgebuitrago.logday",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "pnpm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "pnpm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -27,12 +27,21 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM5RDMyQzk5QzA4NDlBMjMKUldRam1vVEFtU3pUT1dHNDJCRGFWTjZXOTZPTzgvemwyTjN3NnZiN2pvU2w2a3R1b29wYmg5SVAK",
+      "endpoints": [
+        "https://github.com/jorgebuitragor/logday/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "publisher": "Jorge Buitrago",
     "copyright": "© 2026 Jorge Buitrago",
-    "shortDescription": "Proyecto sin animo de lucro para colaboradores de la FCV",
+    "shortDescription": "Software libre de gestión personal — tareas, notas, horas extra y actividad diaria",
     "longDescription": "Logday es una aplicación de escritorio para gestionar tareas, notas, horas extra y actividad diaria. Almacena todo localmente en archivos Markdown, con soporte para vista Kanban, calendario y exportación a PDF.",
     "icon": [
       "icons/32x32.png",
@@ -40,6 +49,9 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "signingIdentity": "-"
+    }
   }
 }

@@ -62,14 +62,32 @@ export const fs = {
     invoke('open_url', { url }),
 };
 
-export interface ReleaseInfo {
-  tag_name: string;
-  html_url: string;
+export interface UrlMeta {
+  title: string;
+  description: string;
+  domain: string;
+}
+
+export function fetchUrlMetadata(url: string): Promise<UrlMeta> {
+  return invoke('fetch_url_metadata', { url });
+}
+
+// ── Sync con servidor propio (logday-server) ─────────────────────────────────
+export interface SyncHttpResponse {
+  status: number;
   body: string;
 }
 
-export function checkUpdate(): Promise<ReleaseInfo> {
-  return invoke('check_update');
+/** HTTP request a un logday-server configurado por el usuario, ejecutada
+ *  del lado Rust (evita CORS — ver comentario en src-tauri/src/lib.rs). */
+export function syncRequest(params: {
+  baseUrl: string;
+  method: string;
+  path: string;
+  token?: string;
+  body?: string;
+}): Promise<SyncHttpResponse> {
+  return invoke('sync_request', params);
 }
 
 // ── Notificaciones del sistema ───────────────────────────────────────────────
@@ -99,4 +117,14 @@ export async function pickFolder(): Promise<string | null> {
 export async function pickFile(multiple = false): Promise<string | string[] | null> {
   const result = await openDialog({ multiple });
   return result as string | string[] | null;
+}
+
+/** Opens a native file picker filtered to markdown/text files; returns array of paths */
+export async function pickMarkdownFiles(): Promise<string[] | null> {
+  const result = await openDialog({
+    multiple: true,
+    filters: [{ name: 'Markdown', extensions: ['md', 'txt'] }],
+  });
+  if (!result) return null;
+  return Array.isArray(result) ? result : [result];
 }

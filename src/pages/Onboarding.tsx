@@ -47,7 +47,7 @@ export function Onboarding() {
           <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl overflow-hidden mb-4">
             <img src={logo} alt="Logday" className="h-full w-full object-cover" />
           </div>
-          <h1 className="text-3xl font-bold text-[var(--text-primary)] tracking-tight">Logday</h1>
+          <h1 className="brand-wordmark text-3xl">log<span className="accent">day</span></h1>
           <p className="mt-2 text-[var(--text-muted)] text-sm">Tu gestor de tareas local, en archivos markdown.</p>
         </div>
 

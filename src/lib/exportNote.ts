@@ -1,6 +1,6 @@
 import { save } from '@tauri-apps/plugin-dialog';
 import { fs } from './invoke';
-import { Note } from '../types';
+import { Note } from '../types/note';
 import jsPDF from 'jspdf';
 import { renderMermaidPngDataUrl } from './mermaid';
 import { nameToEmoji } from 'gemoji';
@@ -80,8 +80,12 @@ function parseInlineSpans(raw: string): InlineSpan[] {
 
   const spans: InlineSpan[] = [];
   // Token regex — longer delimiters first
+  // \x02, \x03 y \x04 son marcadores internos que pone el propio
+  // exportador alrededor de spans ya procesados: los caracteres de
+  // control son intencionales.
   const TOKEN_RE =
-    /(\*\*\*[\s\S]+?\*\*\*|\*\*[\s\S]+?\*\*|\*[\s\S]+?\*|==[\s\S]+?==|~~[\s\S]+?~~|`[^`]+`|\x02[\s\S]*?\x02|\x03[\s\S]*?\x03|\x04[\s\S]*?\x04|\[([^\]]+)\]\([^)]*\)|[^*~`\x02\x03\x04\[]+|\[)/g;
+    // eslint-disable-next-line no-control-regex
+    /(\*\*\*[\s\S]+?\*\*\*|\*\*[\s\S]+?\*\*|\*[\s\S]+?\*|==[\s\S]+?==|~~[\s\S]+?~~|`[^`]+`|\x02[\s\S]*?\x02|\x03[\s\S]*?\x03|\x04[\s\S]*?\x04|\[([^\]]+)\]\([^)]*\)|[^*~`\x02\x03\x04[]+|\[)/g;
 
   let match: RegExpExecArray | null;
   while ((match = TOKEN_RE.exec(text)) !== null) {
@@ -205,7 +209,7 @@ function parseBlocks(rawContent: string): Block[] {
     }
 
     // Horizontal rule: ---, ***, ___ (alone on line)
-    if (/^(\-{3,}|\*{3,}|_{3,})\s*$/.test(line) && !isTableRow(line)) {
+    if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(line) && !isTableRow(line)) {
       blocks.push({ type: 'rule' });
       i++;
       continue;

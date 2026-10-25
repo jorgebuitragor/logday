@@ -1,0 +1,323 @@
+# Sync con servidor — Diseño
+
+Estado: implementado. La sección "CRDT" de abajo describe el diseño
+*original* (integración directa con `@tiptap/extension-collaboration`)
+— se revisó durante la implementación tras encontrar que el shared
+type resultante (`Y.XmlFragment`) no es compatible con el protocolo
+real del servidor (`Y.Text` plano). Ver el bloque "Decisión revisada"
+al final de esa sección para el diseño que realmente se construyó.
+
+## Capa de red: comandos Rust propios, no `fetch`/`WebSocket` del navegador
+
+**Decisión revisada** (la primera versión de este documento proponía
+`@tauri-apps/plugin-http`/`-websocket`; se descarta tras revisar
+`src-tauri` — ver abajo por qué): REST vía comandos Tauri propios en
+`src-tauri/src/lib.rs` usando `reqwest` (ya es dependencia del
+proyecto — `Cargo.toml:22`), exactamente el mismo patrón que
+`fetch_image_base64` (`src-tauri/src/lib.rs:220-238`, mismo comentario
+de justificación: "Runs on the Rust side so it bypasses WebView CORS
+restrictions"). No se agrega `@tauri-apps/plugin-http`: sería una
+segunda forma de hacer lo mismo que el proyecto ya resuelve a mano.
+
+**Por qué, no `fetch` nativo del webview**: `logday-server` no
+implementa CORS a propósito (ver `arquitectura-inicial`, "un único
+contenedor, cero configuración obligatoria" — un allowlist de
+orígenes por instancia contradice ese objetivo). Un origen Tauri
+haciendo `fetch` contra el host que el usuario configuró choca con la
+falta de `Access-Control-Allow-Origin`. Un comando Rust no pasa por el
+webview, así que no está sujeto a CORS en absoluto.
+
+**WebSocket** (`/ws`, autenticación por mensaje, reconexión con
+backoff): a diferencia de REST, acá no hay precedente en el repo. Dos
+opciones:
+1. Replicar el patrón "a mano" (tarea Rust en background con
+   `tokio-tungstenite`, reenviando mensajes al frontend vía eventos
+   Tauri) — más consistente con el resto del código, pero es
+   significativamente más superficie de Rust nueva (conexión
+   persistente, reconexión, manejo de errores, todo sin un plugin que
+   ya lo resuelva).
+2. **Elegida**: `@tauri-apps/plugin-websocket` — sí se agrega como
+   dependencia, porque acá no hay una convención propia que romper (a
+   diferencia de HTTP) y reimplementar reconexión+framing de WS a mano
+   en Rust no se justifica cuando el plugin oficial ya lo cubre.
+
+## Ubicación del código
+
+Nuevo módulo `src/lib/sync.ts` (+ `src/lib/syncQueue.ts` para la cola,
+ver abajo), paralelo a `src/lib/invoke.ts` — mismo rol: encapsula I/O
+externo (red, en vez de filesystem) detrás de funciones puras que el
+store consume, llamando a los nuevos comandos Rust vía `invoke()`
+igual que el resto de `invoke.ts`. `appStore.ts` sigue siendo la única
+fuente de verdad in-memory; `sync.ts` nunca muta estado directamente.
+
+**Corrección tras revisar `SettingsModal.tsx`**: `GitModal.tsx` existe
+en el repo pero no se importa desde ningún lado (`grep` confirma cero
+referencias fuera del propio archivo) — es código huérfano. La UI de
+Git real vive **inline dentro de `SettingsModal.tsx`** (1320 líneas),
+como un tab más del union type `SettingsTab` (`'general' | 'work' |
+'shortcuts' | 'data' | 'git' | 'about'`), con su propio bloque
+`{settingsTab === 'git' && (() => { ... })()}` y estado local
+`useState` prefijado (`gitEnabled`, `gitRemote`, ...) que se
+inicializa desde el store y se guarda con un botón "Guardar". El tab
+de sync sigue exactamente ese patrón: agregar `'sync'` al union type,
+una entrada en `SETTINGS_TABS`, y un bloque `{settingsTab === 'sync'
+&& ...}` con estado `sync*` — no un componente ni modal separado.
+Cuando `feature/1.1.0` (que sí separa esto en
+`components/settings/*Tab.tsx`) se mergee a `develop`, migrar este
+bloque a su propio archivo es un refactor mecánico aparte, no
+bloqueante.
+
+## Cola de escrituras offline
+
+**Persistencia**: `localStorage`, no solo en memoria — tiene que
+sobrevivir un cierre de la app mientras hay escrituras pendientes de
+enviar. **Corrección**: la primera versión de este documento proponía
+un archivo en `configDir`, pero `appStore.ts` no persiste nada así
+hoy — todo el estado de config (`gitConfig`, `shortcuts`, `folderTags`,
+`overtimeMeta`, ...) usa `localStorage` con `JSON.parse`/`stringify`
+directo (ver `appStore.ts:365-372` para `gitConfig`, el caso más
+parecido). La cola sigue ese mismo mecanismo — introducir un archivo
+separado solo para esto rompería la consistencia sin una razón real
+(el tamaño esperado de la cola, minutos u horas de ediciones offline,
+está lejos del límite de `localStorage`). El token de sesión (ver
+"Config y auth" en `requirements.md`) también se guarda así: ningún
+otro dato del store tiene un mecanismo de storage "seguro" distinto, y
+git ya guarda ahí su remote/credenciales de identidad — inventar uno
+nuevo solo para el token de sync sería inconsistente con el resto de
+la app. Estructura:
+
+```ts
+type QueuedWrite = {
+  id: string;            // uuid de la entrada en cola, no el id de la entidad
+  entity: EntityType;    // 'task' | 'note' | 'overtime_entry' | ...
+  entityId: string;
+  fields: Record<string, unknown>;
+  updatedAt: string;      // rfc3339, generado al momento de la edición
+  queuedAt: string;
+};
+```
+
+**Drenado**: en orden de `queuedAt`, un `PATCH` a la vez (no en
+paralelo — evita reordenar escrituras al mismo campo por timing de
+red).
+
+**Regla de sobreescritura vs. cola pendiente** (el matiz señalado en la
+conversación con el usuario, ver `requirements.md`): al recibir la
+respuesta de un `PATCH` ya drenado, el cliente sobreescribe su estado
+local **campo por campo**, pero solo para los campos donde no exista
+ya otra entrada en cola con `queuedAt` posterior para ese mismo
+`(entity, entityId, field)`. Si existe, se descarta ese campo de la
+respuesta — la entrada más nueva en cola es, por definición, la
+edición vigente del usuario, y su propio `PATCH` (cuando se drene) va
+a traer el estado final real. Sin esta regla, una respuesta tardía de
+una escritura vieja podría pisar una edición más reciente todavía no
+enviada.
+
+## Reconexión WebSocket
+
+Backoff exponencial con techo: `1s, 2s, 4s, 8s, 16s, 30s` (cap), reset
+a `1s` en cuanto una conexión se establece con éxito. Reintento
+indefinido mientras haya sesión configurada — no hay límite de
+intentos, es una app de escritorio de uso diario, no un job con
+timeout.
+
+## CRDT: `Note.content` y contenido de entradas diarias
+
+El editor de notas ya usa Tiptap (`@tiptap/core` + extensiones,
+`RichTextEditor.tsx`, `NoteEditor.tsx`). Tiptap tiene una extensión
+oficial de colaboración basada en Yjs
+(`@tiptap/extension-collaboration`) — encaja directo, no hay que
+construir el puente Tiptap↔Yjs a mano:
+
+- Cada nota/entrada diaria con contenido CRDT mantiene un `Y.Doc`
+  propio en memoria mientras se edita.
+- `@tiptap/extension-collaboration` conecta ese `Y.Doc` al editor —
+  las ediciones del usuario ya quedan expresadas como operaciones Yjs
+  automáticamente, sin lógica propia de diffing.
+- Al guardar: se serializa el estado del `Y.Doc`
+  (`Y.encodeStateAsUpdate`) y se manda al endpoint CRDT dedicado
+  (`POST /notes/:id/content`, ver `esquema-datos/design.md` del repo
+  `logday-server` — separado del `PATCH` de metadata LWW).
+- Al recibir una actualización remota (vía `/sync/changes` o WS), se
+  aplica al `Y.Doc` local (`Y.applyUpdate`) — Tiptap re-renderiza solo
+  lo que cambió, sin pisar la posición del cursor si el usuario está
+  editando en simultáneo.
+- El Markdown que se guarda en disco (formato local existente, sin
+  cambios) se deriva del estado del editor Tiptap, igual que hoy — el
+  `Y.Doc` es la fuente de verdad para colaboración, el Markdown sigue
+  siendo la fuente de verdad para el archivo local.
+
+Dependencia nueva: `yjs` (paquete npm, no hay wrapper de Tauri
+necesario acá — es lógica pura en JS, no I/O de red directo).
+
+**Decisión revisada** (lo de arriba es el diseño original, descartado
+al implementar): `@tiptap/extension-collaboration` nunca se agregó.
+El bloqueante se encontró recién al validar contra un servidor real —
+la extensión de Tiptap representa el documento como `Y.XmlFragment`
+(un shared type estructurado, con nodos/marcas), pero el servidor
+(`Deln0r/ygo`, `internal/crdt/text.go`) y `logday-web`
+(`src/lib/yText.ts`, ya validado end-to-end antes que Desktop) usan
+`Y.Text` **plano** bajo la key `"content"` — son shared types
+distintos dentro de un `Y.Doc`, Yjs no los fusiona entre sí. Seguir
+con Tiptap Collaboration habría dejado a Desktop sincronizando contra
+sí mismo, nunca contra lo que web/servidor esperan.
+
+Lo que se construyó en su lugar (`src/lib/noteContentSync.ts`,
+`dailyContentSync.ts`, `contentSyncQueue.ts`):
+
+- Un `Y.Doc` con un único `Y.Text` (key `"content"`) por nota/entrada
+  diaria — no integrado al estado interno de Tiptap. El editor sigue
+  siendo la fuente de verdad visible (Markdown en curso); el `Y.Doc`
+  es un espejo que se actualiza **al guardar**, no por keystroke.
+- En cada guardado se aplica al `Y.Text` solo lo que cambió el
+  usuario (`applyEditorEdit`, ver "Diff y representación del editor"
+  abajo). La primera versión era un puerto directo de
+  `applyTextareaEdit` de `logday-web` (una sola ventana prefijo/sufijo
+  contra el texto del `Y.Text`) y resultó incorrecta para Desktop.
+- Estado Yjs persistido en un archivo `.ydoc` hermano del `.md`
+  (`noteContentStatePath`/equivalente diario), serializado completo
+  con `Y.encodeStateAsUpdate` — no un log incremental.
+- `contentSyncQueue.ts`: cola separada de `syncQueue.ts` (la de campos
+  LWW), coalescida por entidad — varios guardados seguidos de la misma
+  nota solo mandan el último estado, no un update por keystroke.
+- Un `Y.Doc` por documento *actualmente abierto* en el editor (remount
+  vía `key` en `App.tsx`, mismo patrón que `OvertimeEditor`) — evita
+  que el contenido de una nota se filtre a otra al cambiar rápido
+  entre ellas. El resto de notas no mantiene su `Y.Doc` vivo en
+  memoria (se hidrata on-demand al abrir, como ya preveía este
+  diseño).
+
+Validado manualmente: nota creada en Desktop con contenido visible en
+`logday-web`, y edición hecha en `logday-web` reflejada en Desktop
+(contenido del editor y archivo `.ydoc` verificados a nivel de byte,
+decodifican igual con `yjs` puro en ambos lados).
+
+**Diff y representación del editor** (corrección del 19 oct 2026): en
+`logday-web` el `<textarea>` muestra exactamente el texto del `Y.Text`,
+así que una ventana prefijo/sufijo por tecla basta. En Desktop no: el
+editor es Tiptap, y su Markdown (`getMarkdown()`) no es el mismo texto
+que guarda el `Y.Text`. El round-trip de tiptap-markdown pierde el `\n`
+final, escapa `[` como `\[` y cambia los marcadores de listas y énfasis,
+y además `parseNote` recorta el contenido del `.md`. Diffear el `Y.Text`
+contra `getMarkdown()` mezclaba esas diferencias con la edición real. Si
+tocaban el principio y el final del texto, el "diff mínimo" degeneraba en
+borrar todo y reinsertar todo. Bug real: Desktop antepuso `[DESK] ` y
+`logday-web` agregó ` [WEB]` al final al mismo tiempo, y el merge dejó
+`[WEB]` al principio, porque quedó anclado a caracteres que Desktop había
+borrado. Con el mismo mecanismo, un borrado concurrente desde Web se
+perdía: Desktop reinsertaba una copia del texto. El servidor (`ygo`) no
+tenía nada que ver: `yjs` da el mismo resultado con los mismos updates.
+
+Lo que se hace ahora (`noteContentSync.ts`):
+
+- `applyTextEdit` usa un diff real (Myers, vía `fast-diff`) en vez de
+  una sola ventana. Con eso, cada diferencia queda como una edición
+  local chica. Lo usan las entradas diarias y la migración.
+- `applyEditorEdit(doc, base, nuevo)` aplica solo el delta del
+  usuario. Diffea `base` contra `nuevo` en el espacio del editor (`base`
+  es el `getMarkdown()` justo después de cargar la nota, o el del último
+  guardado) y traslada esas posiciones al `Y.Text` con una alineación
+  `base`↔`Y.Text`. Lo que el usuario no tocó queda tal cual en el
+  `Y.Text`, incluido texto que escribió otro cliente con otra
+  representación (`[WEB]` no pasa a `\[WEB\]`).
+
+Las entradas diarias usan solo el diff Myers, sin el delta del editor.
+
+**Updates remotos en la nota abierta** (19 oct 2026): antes,
+`applyNoteContentUpdate` aplicaba el `content_state` al `.ydoc` en disco
+y reescribía el `.md`, pero no tocaba el `Y.Doc` en memoria del
+`NoteEditor` montado. La edición del otro cliente no se veía hasta
+reabrir la nota, y el siguiente guardado mandaba un `Y.Doc` sin ella
+(el servidor la conservaba igual, por el merge).
+
+- **Registro de notas abiertas** (`noteContentSync.ts`):
+  `registerOpenNoteDoc(noteId, handler)` lo llama el `NoteEditor` al
+  montar, y la función que devuelve lo da de baja al desmontar. Se
+  eligió un registro y no un evento del store: así el store le pregunta
+  al editor si la nota está abierta y, si lo está, le deja el `.ydoc`.
+  Hay un solo escritor del `.ydoc` por nota abierta. Con dos (el store
+  mezclando el `.ydoc` de disco y el editor persistiendo el `Y.Doc`
+  vivo), uno podía pisar al otro con un estado sin las ediciones
+  locales.
+- **Store** (`applyNoteContentUpdate`): primero intenta
+  `deliverToOpenNote`. Si la nota está abierta, el editor aplica el
+  update, persiste el `.ydoc` y devuelve el texto del `Y.Text`. Si no,
+  se sigue mezclando con el `.ydoc` en disco como antes. En los dos
+  casos el store reescribe el `.md` y `content` con ese texto.
+- **Editor** (`NoteEditor.tsx`, `applyRemoteContent`). Espera la
+  hidratación del `Y.Doc` y después hace todo en un solo tramo
+  síncrono, sin otra tecla en el medio:
+  1. Si hay texto local sin guardar (el Markdown actual difiere de la
+     base de `applyEditorEdit`), lo aplica antes al `Y.Doc` con
+     `applyEditorEdit`. Es lo mismo que haría el guardado, pero sin la
+     red. Así la base queda igual al texto local, y lo que cambie el
+     update es solo lo remoto.
+  2. `Y.applyUpdate`. Si el `Y.Text` no cambió (el eco de un push
+     propio), termina ahí.
+  3. Lleva el cambio `Y.Text` antes → después al texto del editor con
+     `rebaseText`: la misma traslación de `applyEditorEdit`, pero en
+     sentido contrario (del espacio del `Y.Text` al del editor). Lo que
+     el editor tiene con otra representación (como `\[`) y el update no
+     toca queda intacto.
+  4. Modo WYSIWYG o dividido: el texto destino no es `getMarkdown()`.
+     Con `CompactParagraph`, cada párrafo se serializa como una sola
+     línea, así que `<p>A</p><p>B</p>` y `<p>A<br>B</p>` dan casi el
+     mismo Markdown, y al reparsearlo (`breaks: true`) los párrafos se
+     funden. Se encontró en la validación en vivo: la nota abierta
+     pasaba de dos párrafos a uno con `<br>`. Por eso el destino es el
+     documento serializado bloque por bloque y unido con línea en
+     blanco (los párrafos vacíos van como `<p></p>`), que sí se
+     reparsea al mismo documento. Ese Markdown se parsea con el parser
+     de tiptap-markdown y en ProseMirror se reemplaza solo el tramo
+     que cambió (`findDiffStart`/`findDiffEnd`). El cursor se traslada
+     con el mapeo de la transacción, así que no se mueve si el cambio
+     remoto está en otra parte. La transacción lleva
+     `addToHistory: false`: Ctrl+Z no deshace la edición del otro
+     cliente. Modo fuente (textarea): el destino es el texto del
+     textarea, que se reemplaza, y la selección se traslada con los
+     mismos cambios.
+  5. La base de `applyEditorEdit` pasa a ser el Markdown que el editor
+     devuelve después del cambio. Así el siguiente guardado ve solo lo
+     que el usuario cambie de ahí en adelante y no revierte lo remoto.
+- **Debounce**: si había un guardado pendiente, su `content` puede ser
+  de antes del update (el `useEffect` de `mdContent` corre después del
+  render). Por eso el editor marca que llegó contenido remoto, y el
+  guardado toma el Markdown vivo del editor en vez del valor acumulado
+  en `pendingPatchRef`. Si en el paso 1 había texto local, se programa
+  un guardado, porque el `Y.Doc` en memoria tiene algo que el servidor
+  todavía no. El cambio de `mdContent` causado por el update remoto no
+  programa otro guardado: el `.md` ya lo escribió el store.
+
+Encontrado en la validación (ya pasaba antes): al abrir una nota, el
+efecto de `mdContent` programaba un guardado con el contenido cargado
+(`normalizedContent`), que no es lo que devuelve `getMarkdown()`.
+`applyEditorEdit` tomaba esa diferencia de representación como una
+edición y agregaba un `\n` final al `Y.Text` (es el `\n` sin explicar del
+diagnóstico del merge). Además, `updateNote` cambiaba `updated` solo por
+abrir la nota. Corregido aparte: el efecto de `mdContent` solo guarda
+ediciones del usuario (`userEditedMarkdownRef`), así que tampoco hace
+falta una marca para el update remoto. Ver "Guardado acumulado" en
+`specs/notas-link-preview/design.md`.
+
+Sigue fuera: las entradas diarias no tienen editor con `Y.Doc` vivo
+(se editan con `saveDailyEntry`, que hidrata desde disco en cada
+guardado), así que no tienen este problema de la misma forma. Logday
+Web tiene el mismo hueco en su `docRef` y se resuelve en su repo.
+
+**Hueco conocido, no resuelto por este cambio**: si el pull periódico
+de `/sync/changes` corre entre que el usuario borra una entidad
+localmente y el servidor confirma el `DELETE`, el registro puede
+"revivir" localmente — no hay tombstone local que distinga "borrado
+por mí, todavía no confirmado" de "nunca borrado". No es específico de
+CRDT/contenido, aplica al motor de sync en general
+(`applyRemoteTaskChange`/`NoteChange`/etc.).
+
+## Fuera de este diseño
+
+- Migración/primer sync completo de una instalación con meses de
+  archivos locales — spec aparte, mencionado en `requirements.md`.
+- Manejo de múltiples `Y.Doc` en memoria simultáneamente si el usuario
+  tiene muchas notas abiertas — se asume que solo el documento
+  actualmente abierto en el editor mantiene su `Y.Doc` vivo; el resto
+  se hidrata on-demand al abrir. (El registro de notas abiertas admite
+  varias, pero hoy el editor monta una sola a la vez.)

@@ -1,11 +1,54 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
+import * as Y from 'yjs';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Task, Note, AppConfig, ViewMode, Theme, ActiveSection, StartupScreen, Language, Shortcuts, DEFAULT_SHORTCUTS, OvertimeEntry, OvertimeMonthMeta, GitConfig, GitStatus, GitRemoteStatus, AppToast, ToastKind, CalendarEvent } from '../types';
+import TauriWebSocket from '@tauri-apps/plugin-websocket';
+import { check as checkUpdateRemote, Update as TauriUpdate } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
+import { Task } from '../types/task';
+import { Note } from '../types/note';
+import { OvertimeEntry, OvertimeMonthMeta } from '../types/overtime';
+import { CalendarEvent } from '../types/calendar';
+import { AbsenceDay, AbsenceType } from '../types/absence';
+import { Theme, BuiltInTheme, CustomTheme } from '../types/theme';
+import { GitConfig, GitStatus, GitRemoteStatus } from '../types/git';
+import { SyncConfig, SyncConnectionStatus } from '../types/sync';
+import { AppConfig, ViewMode, ActiveSection, StartupScreen, Shortcuts, DEFAULT_SHORTCUTS } from '../types/config';
+import { Language, AppToast, ToastKind } from '../types/common';
+import { deriveCustomThemeVars } from '../lib/themeColor';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
+import { parseDailyFile, serializeDailyFile } from '../lib/dailyFileFormat';
 import { generateOvertimeXlsx } from '../lib/overtimeExcel';
 import { fs, pickFolder, pickFile, saveDialog, SearchResult } from '../lib/invoke';
+import {
+  login as syncLogin, refreshToken as refreshTokenRemote, SyncApiError, normalizeServerUrl, syncChangesRemote, SyncChange,
+  createTaskRemote, patchTaskRemote, deleteTaskRemote,
+  createNoteRemote, patchNoteRemote, deleteNoteRemote, pushNoteContentRemote,
+  createCalendarEventRemote, patchCalendarEventRemote, deleteCalendarEventRemote,
+  createAbsenceDayRemote, patchAbsenceDayRemote, deleteAbsenceDayRemote,
+  createOvertimeEntryRemote, patchOvertimeEntryRemote, deleteOvertimeEntryRemote,
+  patchOvertimeMonthMetaRemote,
+  putDailyEntryContentRemote, deleteDailyEntryRemote,
+  listDevicesRemote, revokeDeviceRemote, logoutRemote, DeviceResponse,
+  TokenResponse, getPolicyRemote, acceptPolicyRemote, acceptSensitiveDataRemote,
+  exportAccountRemote, deleteAccountRemote,
+} from '../lib/sync';
+import type { MigrationProgress } from '../lib/syncMigration';
+import {
+  taskToCreatePayload, taskFieldsToPatchPayload, taskFromApiResponse, TaskApiResponse, TaskCreatePayload, TaskPatchPayload,
+  noteToCreatePayload, noteFieldsToPatchPayload, noteFromApiResponse, NoteApiResponse, NoteCreatePayload, NotePatchPayload,
+  calendarEventToCreatePayload, calendarEventFieldsToPatchPayload, calendarEventFromApiResponse, CalendarEventApiResponse, CalendarEventCreatePayload, CalendarEventPatchPayload,
+  absenceDayToCreatePayload, absenceDayFieldsToPatchPayload, absenceDayFromApiResponse, AbsenceDayApiResponse, AbsenceDayCreatePayload, AbsenceDayPatchPayload,
+  overtimeEntryToCreatePayload, overtimeEntryFieldsToPatchPayload, overtimeEntryFromApiResponse, OvertimeEntryApiResponse, OvertimeEntryCreatePayload, OvertimeEntryPatchPayload,
+  overtimeMonthMetaFieldsToPatchPayload, overtimeMonthMetaFromApiResponse, OvertimeMonthMetaApiResponse, OvertimeMonthMetaPatchPayload,
+  DailyEntryApiResponse,
+} from '../lib/syncMapping';
+import * as syncQueue from '../lib/syncQueue';
+import * as contentSyncQueue from '../lib/contentSyncQueue';
+import * as trash from '../lib/trash';
+import { bytesToBase64, persistYDoc, applyIncomingContentState, deliverToOpenNote, noteContentStatePath } from '../lib/noteContentSync';
+import { applyIncomingDailyContentState, applyDailyEditorEdit, deleteDailyContentState } from '../lib/dailyContentSync';
 import { parseFrontmatter, serializeTask, parseNote, serializeNote, formatDate } from '../lib/markdown';
 import { t } from '../lib/i18n';
 import {
@@ -15,7 +58,7 @@ import {
   dateFromISO,
 } from '../lib/colombianHolidays';
 
-interface AppState {
+export interface AppState {
   // Config
   basePath: string | null;
   configDir: string | null;
@@ -54,6 +97,7 @@ interface AppState {
   // Calendar Events
   calendarEvents: CalendarEvent[];
   activeCalendarEvent: CalendarEvent | null;
+  absenceDays: AbsenceDay[];
 
   // UI
   currentView: ViewMode;
@@ -75,8 +119,15 @@ interface AppState {
   // Accesibilidad
   animationsEnabled: boolean;
 
+  // Menú lateral
+  sidebarLabelsVisible: boolean;
+
+  // Papelera de reciclaje
+  trashAutoPurgeEnabled: boolean;
+
   // Theme + Settings
   theme: Theme;
+  customThemes: CustomTheme[];
   startupScreen: StartupScreen;
   language: Language;
   fontSize: number;
@@ -90,11 +141,40 @@ interface AppState {
   lastCommitTime: string | null;
   isGitOpen: boolean;
 
+  // Sync (logday-server)
+  syncConfig: SyncConfig;
+  syncConnectionStatus: SyncConnectionStatus;
+  syncErrorMsg: string;
+  isSyncOpen: boolean;
+  devices: DeviceResponse[];
+  devicesError: { kind: 'expired' | 'generic'; message: string } | null;
+  lastSyncedAt: string | null;
+  syncNowInProgress: boolean;
+  syncMigrationStatus: 'idle' | 'running' | 'done' | 'error';
+  syncMigrationProgress: MigrationProgress;
+
+  policyGate: { text: string; version: number } | null;
+  sensitiveDataAccepted: boolean;
+
+  updateInfo: { version: string; body?: string } | null;
+  updateStatus: 'idle' | 'available' | 'downloading' | 'ready';
+  autoUpdateEnabled: boolean;
+  updateRestartAt: number | null;
+
   // ── Actions ──────────────────────────────────────────────────
 
   init: () => Promise<void>;
   setupBasePath: () => Promise<void>;
   changeBasePath: () => Promise<void>;
+  checkForUpdates: () => Promise<boolean>;
+  installUpdate: () => Promise<void>;
+  setAutoUpdateEnabled: (enabled: boolean) => void;
+  postponeUpdateRestart: () => void;
+  acceptPolicyGate: () => Promise<void>;
+  rejectPolicyGate: () => void;
+  acceptSensitiveDataConsent: () => Promise<void>;
+  exportMyData: () => Promise<void>;
+  deleteMyAccount: (password: string) => Promise<void>;
 
   // Tasks
   loadProjects: () => Promise<void>;
@@ -131,11 +211,17 @@ interface AppState {
   replaceFolderTags: (tags: Record<string, string[]>) => void;
   moveNoteFolder: (folder: string, targetParent: string) => Promise<void>;
   duplicateNoteFolder: (folder: string, targetParent: string | null) => Promise<void>;
+  importNotesFromPaths: (paths: string[]) => Promise<void>;
+  importNotesFromContent: (files: Array<{ name: string; content: string }>) => Promise<void>;
 
   // Dailys
   loadDailyMonths: () => Promise<void>;
   loadDailyMonth: (yearMonth: string) => Promise<void>;
-  saveDailyEntry: (date: string, activities: string) => Promise<void>;
+  /** Guarda lo que el usuario cambió en el editor de un día. `baseText`
+   *  es el texto desde el que editó (lo último que el editor cargó o
+   *  guardó); sin él se toma lo que hay en disco. Devuelve el texto ya
+   *  mezclado con lo remoto, que es lo que el editor debe mostrar. */
+  saveDailyEntry: (date: string, activities: string, baseText?: string) => Promise<string>;
   setActiveDailyDate: (date: string | null) => void;
   setActiveDailyMonth: (yearMonth: string) => void;
   createTodayDaily: () => void;
@@ -159,6 +245,12 @@ interface AppState {
   saveCalendarEvent: (event: CalendarEvent) => Promise<void>;
   deleteCalendarEvent: (id: string) => Promise<void>;
 
+  // Absences
+  loadAbsenceDays: () => Promise<void>;
+  saveAbsenceDay: (absence: AbsenceDay) => Promise<void>;
+  saveAbsenceDayRange: (startDate: string, endDate: string, type: AbsenceType, note?: string) => Promise<void>;
+  deleteAbsenceDay: (id: string) => Promise<void>;
+
   // UI
   setSection: (section: ActiveSection) => Promise<void>;
   setView: (view: ViewMode) => void;
@@ -176,7 +268,19 @@ interface AppState {
   setWorkWeekDays: (days: 5 | 6) => Promise<void>;
   setHolidaysAsNonWork: (enabled: boolean) => Promise<void>;
   setAnimationsEnabled: (enabled: boolean) => Promise<void>;
+  setSidebarLabelsVisible: (visible: boolean) => Promise<void>;
+  setTrashAutoPurgeEnabled: (enabled: boolean) => Promise<void>;
+  listTrash: () => Promise<trash.TrashListItem[]>;
+  restoreFromTrash: (entity: trash.TrashEntity, key: string) => Promise<void>;
+  deleteTrashItemForever: (entity: trash.TrashEntity, key: string) => Promise<void>;
+  emptyTrash: () => Promise<void>;
   setTheme: (theme: Theme) => void;
+  createCustomTheme: (input: { name: string; base: 'dark' | 'light'; accent: string; bgTint: string; textTint: string; intensity: number }) => CustomTheme;
+  renameCustomTheme: (id: string, name: string) => void;
+  duplicateCustomTheme: (id: string) => void;
+  deleteCustomTheme: (id: string) => void;
+  updateCustomTheme: (id: string, patch: Partial<Omit<CustomTheme, 'id' | 'createdAt'>>) => void;
+  replaceCustomThemes: (customThemes: CustomTheme[]) => void;
   setStartupScreen: (screen: StartupScreen) => Promise<void>;
   setLanguage: (lang: Language) => Promise<void>;
   setFontSize: (size: number) => void;
@@ -192,14 +296,30 @@ interface AppState {
   gitFetch: () => Promise<void>;
   toggleGit: () => void;
   openSettingsGitTab: () => void;
+
+  // Sync (logday-server)
+  syncConnect: (serverUrl: string, email: string, password: string) => Promise<void>;
+  syncDisconnect: () => void;
+  toggleSync: () => void;
+  openSettingsSyncTab: () => void;
+  loadDevices: () => Promise<void>;
+  revokeDeviceAction: (id: string) => Promise<void>;
+  syncNow: () => Promise<void>;
+  syncMigrateExisting: () => Promise<void>;
 }
 
 // ── Helpers ────────────────────────────────────────────────────
 
 const projectsDir = (base: string) => `${base}/projects`;
-const projectDir = (base: string, p: string) => `${base}/projects/${p}`;
-const notesDir = (base: string) => `${base}/notes`;
-const noteFolderDir = (base: string, folder: string) => `${base}/notes/${folder}`;
+// Exportados (no solo usados acá): syncMigration.ts lee el disco
+// directo con estas mismas funciones para enumerar TODO lo local sin
+// pasar por loadTasks/loadNotes — esas acciones reemplazan tasks/notes
+// (scopeadas a activeProject/activeNoteFolder), así que llamarlas con
+// project/folder=null en medio de una migración de fondo cambiaría lo
+// que el usuario está viendo ahora mismo en Kanban/Notes.
+export const projectDir = (base: string, p: string) => `${base}/projects/${p}`;
+export const notesDir = (base: string) => `${base}/notes`;
+export const noteFolderDir = (base: string, folder: string) => `${base}/notes/${folder}`;
 const configFilePath = (dir: string) => `${dir}/config.json`;
 const taskFilePath = (base: string, project: string, id: string) =>
   `${base}/projects/${project}/${id}.md`;
@@ -216,33 +336,15 @@ const dailyMonthFilePath = (base: string, year: string, month: string) =>
 
 // ── Overtime helpers ──────────────────────────────────────────
 
-const overtimeBaseDir = (base: string) => `${base}/overtime`;
+export const overtimeBaseDir = (base: string) => `${base}/overtime`;
 const overtimeMonthDir = (base: string, year: string, month: string) =>
   `${base}/overtime/${year}/${month}`;
-const overtimeMonthFilePath = (base: string, year: string, month: string) =>
+export const overtimeMonthFilePath = (base: string, year: string, month: string) =>
   `${base}/overtime/${year}/${month}/${year}-${month}.md`;
 
 // Guard para evitar cargas concurrentes del mismo mes
 const loadingDailyMonths = new Set<string>();
 const loadingOvertimeMonths = new Set<string>();
-
-function parseDailyFile(content: string): Record<string, string> {
-  const entries: Record<string, string> = {};
-  const parts = content.split(/^## (\d{4}-\d{2}-\d{2})\s*$/m);
-  for (let i = 1; i < parts.length; i += 2) {
-    // Eliminar separadores "---" que quedan al final de cada bloque
-    const raw = (parts[i + 1] || '').trim().replace(/(\n*---\s*)+$/, '').trim();
-    entries[parts[i].trim()] = raw;
-  }
-  return entries;
-}
-
-function serializeDailyFile(entries: Record<string, string>, yearMonth: string): string {
-  const sorted = Object.keys(entries).sort().reverse();
-  const header = `# ${yearMonth}\n\n`;
-  if (sorted.length === 0) return header;
-  return header + sorted.map((d) => `## ${d}\n\n${entries[d]}`).join('\n\n---\n\n') + '\n';
-}
 
 async function loadConfig(dir: string): Promise<AppConfig | null> {
   try {
@@ -258,7 +360,39 @@ async function saveConfig(dir: string, cfg: AppConfig): Promise<void> {
   await fs.writeFile(configFilePath(dir), JSON.stringify(cfg, null, 2));
 }
 
-async function readTaskFromPath(filePath: string): Promise<Task | null> {
+/** Arma el snapshot completo de `AppConfig` desde el estado actual y lo
+ *  persiste — un solo lugar, en vez de que cada setter reconstruya el
+ *  objeto a mano (bug real: los setters más viejos no incluían campos
+ *  agregados después, así que cambiar una opción vieja podía pisar en
+ *  silencio una más nueva — ver setTrashAutoPurgeEnabled más abajo, es
+ *  el motivo por el que se consolidó esto acá). Se llama DESPUÉS de que
+ *  el setter ya hizo su propio `set(...)`, así que `get()` ya refleja el
+ *  valor nuevo — no hace falta un parámetro de patch. */
+async function persistConfig(get: SyncGet): Promise<void> {
+  const {
+    configDir, basePath, startupScreen, language, confirmDestructiveActions,
+    notificationsEnabled, defaultReminderMinutes, workWeekDays, holidaysAsNonWork,
+    animationsEnabled, trashAutoPurgeEnabled, sidebarLabelsVisible, activeProject, activeNoteFolder,
+  } = get();
+  if (!configDir || !basePath) return;
+  await saveConfig(configDir, {
+    basePath,
+    startupScreen,
+    language,
+    confirmDestructiveActions,
+    notificationsEnabled,
+    defaultReminderMinutes,
+    workWeekDays,
+    holidaysAsNonWork,
+    animationsEnabled,
+    trashAutoPurgeEnabled,
+    sidebarLabelsVisible,
+    lastOpenedProject: activeProject ?? undefined,
+    lastOpenedNoteFolder: activeNoteFolder ?? undefined,
+  });
+}
+
+export async function readTaskFromPath(filePath: string): Promise<Task | null> {
   try {
     const raw = await fs.readFile(filePath);
     return parseFrontmatter(raw, filePath);
@@ -267,13 +401,82 @@ async function readTaskFromPath(filePath: string): Promise<Task | null> {
   }
 }
 
-async function readNoteFromPath(filePath: string): Promise<Note | null> {
+export async function readNoteFromPath(filePath: string): Promise<Note | null> {
   try {
     const raw = await fs.readFile(filePath);
     return parseNote(raw, filePath);
   } catch {
     return null;
   }
+}
+
+/** Recorre `notes/` recursivamente buscando subcarpetas. Antes vivía
+ *  como closure adentro de `loadNoteFolders` — se saca a nivel de
+ *  módulo (misma lógica, sin cambios) para que `syncMigration.ts`
+ *  también la use, leyendo disco directo sin pasar por el `set()` de
+ *  esa acción. */
+// Un cambio remoto (feed /sync/changes, WebSocket, o el eco de la propia
+// migración) puede traer una task/nota que no está en `tasks`/`notes`:
+// esas listas solo tienen lo de la vista actual (proyecto o carpeta
+// activos). Antes eso se trataba como "nunca existió acá", con tres
+// bugs reales encontrados el 20 oct 2026 al probar la migración con la
+// carpeta "ideas" abierta mientras subían notas de "masivo":
+//   1. el archivo local se reescribía con `content: ''` (y una task
+//      perdía sus `linked_paths`), o sea, la copia local se vaciaba;
+//   2. un borrado remoto se ignoraba y el archivo local quedaba vivo;
+//   3. el registro se agregaba a la lista visible aunque fuera de otra
+//      carpeta/proyecto, y dos cambios casi simultáneos del mismo id lo
+//      agregaban dos veces.
+// Así que, si no está en la lista, se busca en disco antes de decidir.
+async function findLocalTask(basePath: string, projects: string[], id: string, projectHint?: string): Promise<Task | null> {
+  const candidates = [projectHint, ...projects].filter((p, i, all): p is string => !!p && all.indexOf(p) === i);
+  for (const project of candidates) {
+    const path = taskFilePath(basePath, project, id);
+    if (await fs.exists(path).catch(() => false)) return readTaskFromPath(path);
+  }
+  return null;
+}
+
+async function findLocalNote(basePath: string, id: string, folderHint?: string): Promise<Note | null> {
+  const tryFolder = async (folder: string) => {
+    const path = noteFilePath(basePath, folder, id);
+    return (await fs.exists(path).catch(() => false)) ? readNoteFromPath(path) : null;
+  };
+  const tried = new Set<string>();
+  for (const folder of [folderHint, '']) {
+    if (folder === undefined || tried.has(folder)) continue;
+    tried.add(folder);
+    const found = await tryFolder(folder);
+    if (found) return found;
+  }
+  for (const folder of await scanNoteFolders(notesDir(basePath), '')) {
+    if (tried.has(folder)) continue;
+    const found = await tryFolder(folder);
+    if (found) return found;
+  }
+  return null;
+}
+
+// Misma regla que loadTasks/loadNotes para decidir qué entra en la
+// lista visible.
+function taskInView(project: string, activeProject: string | null): boolean {
+  return !activeProject || project === activeProject || project.startsWith(activeProject + '/');
+}
+
+function noteInView(folder: string, activeNoteFolder: string | null): boolean {
+  return activeNoteFolder === null || folder === activeNoteFolder;
+}
+
+export async function scanNoteFolders(dirPath: string, prefix: string): Promise<string[]> {
+  const entries = await fs.listDir(dirPath).catch(() => []);
+  const result: string[] = [];
+  for (const e of (entries as { name: string; path: string; is_dir: boolean }[]).filter((entry) => entry.is_dir)) {
+    const fullPath = prefix ? `${prefix}/${e.name}` : e.name;
+    result.push(fullPath);
+    const children = await scanNoteFolders(`${dirPath}/${e.name}`, fullPath);
+    result.push(...children);
+  }
+  return result;
 }
 
 function parseSearchResults(results: SearchResult[]): Task[] {
@@ -292,13 +495,37 @@ export function applyAnimationsToDOM(enabled: boolean) {
   document.documentElement.classList.toggle('no-animations', !enabled);
 }
 
-export function applyThemeToDOM(theme: Theme, animate = false) {
-  const resolved =
-    theme === 'system'
-      ? window.matchMedia('(prefers-color-scheme: dark)').matches
-        ? 'dark'
-        : 'light'
-      : theme;
+const CUSTOM_THEME_VARS = [
+  '--bg-base', '--bg-panel', '--bg-surface', '--bg-secondary', '--bg-hover', '--bg-elevated', '--bg-input',
+  '--border', '--border-card', '--border-high',
+  '--text-primary', '--text-body', '--text-secondary', '--text-tertiary', '--text-muted', '--text-hint', '--text-faint',
+  '--accent', '--accent-strong', '--accent-soft', '--accent-ink', '--accent-inline', '--accent-link', '--accent-code',
+] as const;
+
+const TINTED_BUILTIN_THEMES: BuiltInTheme[] = ['high-contrast', 'visual-rest', 'sepia', 'oled', 'nordic'];
+
+export function applyCustomThemeToDOM(customTheme: CustomTheme | null) {
+  const root = document.documentElement.style;
+  if (!customTheme) {
+    CUSTOM_THEME_VARS.forEach((v) => root.removeProperty(v));
+    return;
+  }
+  const vars = deriveCustomThemeVars(customTheme);
+  Object.entries(vars).forEach(([k, v]) => root.setProperty(k, v));
+}
+
+export function applyThemeToDOM(theme: Theme, animate = false, customThemes: CustomTheme[] = []) {
+  let resolved: BuiltInTheme;
+  let custom: CustomTheme | null = null;
+
+  if (theme.startsWith('custom:')) {
+    custom = customThemes.find((t) => `custom:${t.id}` === theme) ?? null;
+    resolved = custom?.base ?? 'dark';
+  } else {
+    resolved = theme === 'system'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : (theme as BuiltInTheme);
+  }
 
   if (animate) {
     document.documentElement.classList.add('theme-animating');
@@ -308,6 +535,11 @@ export function applyThemeToDOM(theme: Theme, animate = false) {
   }
 
   document.documentElement.dataset.theme = resolved;
+  applyCustomThemeToDOM(custom);
+  document.documentElement.classList.toggle(
+    'theme-tinted',
+    custom !== null || TINTED_BUILTIN_THEMES.includes(resolved),
+  );
 
   try {
     const nativeTheme = theme === 'system' ? null : (resolved === 'dark' ? 'dark' : 'light');
@@ -316,6 +548,1563 @@ export function applyThemeToDOM(theme: Theme, animate = false) {
     // Puede ejecutarse fuera del contexto Tauri (tests o navegador)
   }
 }
+
+// ── Sync (logday-server): escritura con cola offline ───────────────
+// Al crear/editar/borrar una entidad localmente, si sync está
+// configurado se intenta mandar la escritura al servidor. Sin
+// conexión (o si el envío falla) queda en cola (syncQueue.ts) para
+// reintentar al reconectar — el archivo en disco ya es la fuente de
+// verdad para la UI, esto es solo el side-channel hacia el servidor
+// (ver specs/sync-servidor/design.md).
+
+export type SyncGet = () => AppState;
+export type SyncSet = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void;
+
+// El access token dura poco (15 min por default) y hasta ahora nada lo
+// renovaba: pasado ese rato, cualquier llamada (sync ahora, migrar,
+// listar sesiones, drenar la cola) fallaba con 401 sin ningún intento
+// de recuperación — el usuario terminaba teniendo que desconectar y
+// volver a conectar a mano una y otra vez (encontrado probando: el
+// panel de sesiones se quedaba en "cargando" para siempre por esto
+// mismo). logday-web ya resuelve esto (su propio `withAuth` en
+// src/store/appStore.ts) — este es el mismo patrón para Desktop:
+// intenta la llamada, y si el server responde 401, usa el
+// refresh_token (que sync sí guarda, pero hasta ahora nadie usaba)
+// para pedir un access token nuevo y reintenta una sola vez.
+//
+// El refresh token es de un solo uso y rota en cada llamada — si dos
+// llamadas pisan 401 casi al mismo tiempo (p. ej. reconcileSync y
+// drainSyncQueue corriendo juntos) y cada una pide su propio refresh,
+// la segunda reutiliza un refresh token que la primera ya rotó y el
+// servidor lo detecta como reuso y revoca el dispositivo entero (mismo
+// mecanismo de seguridad que ya documentamos en logday-web). Por eso
+// el refresh se comparte acá también: la primera 401 dispara la
+// llamada real y guarda la promesa; cualquier otra 401 que llegue
+// mientras tanto espera esa misma promesa en vez de disparar la suya.
+let inFlightSyncRefresh: Promise<TokenResponse> | null = null;
+
+function refreshSyncTokenOnce(baseUrl: string, refreshTokenValue: string) {
+  if (!inFlightSyncRefresh) {
+    inFlightSyncRefresh = refreshTokenRemote(baseUrl, refreshTokenValue).finally(() => {
+      inFlightSyncRefresh = null;
+    });
+  }
+  return inFlightSyncRefresh;
+}
+
+/** Envoltorio de cualquier llamada autenticada a logday-server —
+ *  reemplaza el uso directo de `syncConfig.accessToken` en las
+ *  funciones de sync de abajo y en syncMigration.ts. Si el access
+ *  token está vencido, renueva y reintenta una sola vez; si el
+ *  refresh también falla (refresh token vencido o revocado),
+ *  desconecta el sync local en vez de fallar en silencio — ahí sí
+ *  hace falta que el usuario vuelva a conectar a mano, no hay forma
+ *  de evitarlo sin la contraseña (que nunca se guarda).
+ *
+ *  Bug real encontrado probando (visto en los logs del server: dos
+ *  `POST /auth/refresh` en el mismo segundo, uno 200 y el otro 401,
+ *  y el dispositivo desaparecía de la lista de sesiones): el guard de
+ *  `inFlightSyncRefresh` de arriba solo protege llamadas que se
+ *  solapan MIENTRAS un refresh está en vuelo. No alcanza para una
+ *  llamada "rezagada" — otra que arrancó casi junto pero llega a este
+ *  punto un poco después, cuando el refresh de la primera YA terminó
+ *  (el guard ya se reseteó a null) — esa rezagada seguía usando el
+ *  `syncConfig` que había capturado al entrar a la función, con el
+ *  refresh token viejo, y lo mandaba igual: el servidor lo ve como
+ *  reuso de un token ya rotado y revoca el dispositivo. Por eso acá
+ *  abajo se relee `get().syncConfig` de nuevo en cada paso en vez de
+ *  seguir usando la captura del principio — si otra llamada ya
+ *  refrescó mientras esta seguía en vuelo, usa lo que haya AHORA. */
+export async function withSyncAuth<T>(get: SyncGet, set: SyncSet, fn: (token: string) => Promise<T>): Promise<T> {
+  const initialCfg = get().syncConfig;
+  if (!initialCfg.enabled || !initialCfg.accessToken) throw new Error('sync not connected');
+  try {
+    return await fn(initialCfg.accessToken);
+  } catch (e) {
+    if (!(e instanceof SyncApiError && e.status === 401)) throw e;
+
+    // Puede que el access token ya se haya renovado del lado de otra
+    // llamada mientras esta seguía en vuelo — probar con el que haya
+    // ahora antes de gastar (y arriesgar) un refresh nuevo.
+    const afterFirstFailure = get().syncConfig;
+    if (afterFirstFailure.accessToken && afterFirstFailure.accessToken !== initialCfg.accessToken) {
+      try {
+        return await fn(afterFirstFailure.accessToken);
+      } catch { /* el token "nuevo" tampoco sirvió — sigue abajo con un refresh real */ }
+    }
+
+    const beforeRefresh = get().syncConfig;
+    if (!beforeRefresh.refreshToken) throw e;
+
+    let tokens: TokenResponse;
+    try {
+      tokens = await refreshSyncTokenOnce(beforeRefresh.serverUrl, beforeRefresh.refreshToken);
+    } catch (refreshErr) {
+      // Acá SÍ hay que distinguir el motivo del fallo: /auth/refresh
+      // responde 401 en los tres casos donde el refresh token está
+      // realmente muerto (vencido, revocado, o reuso detectado —
+      // confirmado en logday-server/internal/auth/handlers.go) — ahí no
+      // hay nada que hacer sin la contraseña, corresponde desconectar.
+      // Pero `sync_request` (comando Rust) rechaza con un error plano,
+      // no un SyncApiError, ante cualquier falla de red (server
+      // inalcanzable, timeout, DNS) — eso es transitorio, no una
+      // sesión muerta. Tratarlo igual que un 401 (bug encontrado
+      // probando: el usuario reportaba la sesión cerrándose sola cada
+      // pocos minutos, incluso tras reiniciar la app — coincidía con
+      // cada vencimiento del access token de 15 min más cualquier hipo
+      // de red hacia el server) tiraba a la basura un refresh token
+      // todavía válido por un problema que se iba a resolver solo en el
+      // próximo intento.
+      if (refreshErr instanceof SyncApiError && refreshErr.status === 401) {
+        get().syncDisconnect();
+        set({ syncErrorMsg: t(get().language, 'extras', 'syncSessionExpiredMsg') });
+      }
+      throw e;
+    }
+
+    const nextCfg: SyncConfig = { ...get().syncConfig, accessToken: tokens.access_token, refreshToken: tokens.refresh_token };
+    localStorage.setItem('syncConfig', JSON.stringify(nextCfg));
+    set({ syncConfig: nextCfg });
+    void evaluatePolicyGate(set, beforeRefresh.serverUrl, tokens);
+    return await fn(tokens.access_token);
+  }
+}
+
+// Evalúa si hay que mostrar el gate de consentimiento (política nueva
+// sin aceptar) a partir de una respuesta de login/refresh — ver
+// specs/cumplimiento-datos-personales/. login/refresh solo traen el
+// número de versión vigente, no el texto — se trae aparte vía GET
+// /policy, y solo cuando de verdad hace falta mostrarlo.
+async function evaluatePolicyGate(set: SyncSet, serverUrl: string, tokens: TokenResponse): Promise<void> {
+  set({ sensitiveDataAccepted: tokens.sensitive_data_accepted });
+  if (tokens.policy_accepted_version === tokens.policy_version) {
+    set({ policyGate: null });
+    return;
+  }
+  try {
+    const policy = await getPolicyRemote(serverUrl);
+    set({ policyGate: { text: policy.text, version: policy.version } });
+  } catch {
+    // Sin red justo en este momento — se reintenta solo en el próximo
+    // login/refresh, no hay nada más que hacer acá.
+  }
+}
+
+const TASK_FIELD_MAP: Record<string, string> = {
+  title: 'title', taskCode: 'task_code', status: 'status', tags: 'tags', project: 'project',
+  created: 'created', completedAt: 'completed_at', due: 'due', content: 'content',
+};
+
+/** Aplica la respuesta del servidor a la task local, campo por campo,
+ *  salteando cualquier campo que ya tenga una entrada más nueva en
+ *  cola ("Regla de prioridad cola vs. respuesta tardía" en
+ *  design.md) — esa entrada, cuando se drene, va a traer el valor
+ *  final real; pisarlo ahora con una respuesta vieja perdería la
+ *  edición todavía no enviada. */
+function applyTaskResponse(get: SyncGet, set: SyncSet, entityId: string, sinceIso: string, response: TaskApiResponse): void {
+  const current = get().tasks.find((t) => t.id === entityId);
+  if (!current) return; // se borró localmente mientras tanto, nada que actualizar
+  const mapped = taskFromApiResponse(response);
+  const merged = { ...current } as unknown as Record<string, unknown>;
+  const mappedRecord = mapped as unknown as Record<string, unknown>;
+  for (const [localKey, serverKey] of Object.entries(TASK_FIELD_MAP)) {
+    if (!syncQueue.hasNewerQueuedField('task', entityId, serverKey, sinceIso)) {
+      merged[localKey] = mappedRecord[localKey];
+    }
+  }
+  const updated = merged as unknown as Task;
+  set((state) => ({
+    tasks: state.tasks.map((t) => (t.id === entityId ? updated : t)),
+    activeTask: state.activeTask?.id === entityId ? updated : state.activeTask,
+  }));
+}
+
+async function syncCreateTask(get: SyncGet, set: SyncSet, task: Task): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  const payload = taskToCreatePayload(task);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('task', task.id, 'create', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await withSyncAuth(get, set, (token) => createTaskRemote(syncConfig.serverUrl, token, payload));
+    applyTaskResponse(get, set, task.id, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('task', task.id, 'create', payload as unknown as Record<string, unknown>);
+  }
+}
+
+async function syncPatchTask(get: SyncGet, set: SyncSet, taskId: string, fields: Partial<Task>): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled || Object.keys(fields).length === 0) return;
+  const payload = taskFieldsToPatchPayload(fields);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('task', taskId, 'patch', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await withSyncAuth(get, set, (token) => patchTaskRemote(syncConfig.serverUrl, token, taskId, payload));
+    applyTaskResponse(get, set, taskId, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('task', taskId, 'patch', payload as unknown as Record<string, unknown>);
+  }
+}
+
+async function syncDeleteTask(get: SyncGet, set: SyncSet, taskId: string): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('task', taskId, 'delete');
+    return;
+  }
+  try {
+    await withSyncAuth(get, set, (token) => deleteTaskRemote(syncConfig.serverUrl, token, taskId));
+  } catch {
+    syncQueue.enqueue('task', taskId, 'delete');
+  }
+}
+
+/** Solo los campos que de verdad cambiaron entre prev y next — un
+ *  PATCH mandando todo pisaría, en el servidor, cualquier edición
+ *  concurrente a un campo que acá ni se tocó (ver LWW por campo en
+ *  logday-server). */
+function diffTaskFields(prev: Task | undefined, next: Task): Partial<Task> {
+  if (!prev) return { ...next };
+  const fields: Partial<Task> = {};
+  if (prev.title !== next.title) fields.title = next.title;
+  if (prev.taskCode !== next.taskCode) fields.taskCode = next.taskCode;
+  if (prev.status !== next.status) fields.status = next.status;
+  if (JSON.stringify(prev.tags) !== JSON.stringify(next.tags)) fields.tags = next.tags;
+  if (prev.project !== next.project) fields.project = next.project;
+  if (prev.created !== next.created) fields.created = next.created;
+  if (prev.completedAt !== next.completedAt) fields.completedAt = next.completedAt;
+  if (prev.due !== next.due) fields.due = next.due;
+  if (prev.content !== next.content) fields.content = next.content;
+  return fields;
+}
+
+// ── Note (metadata) ──────────────────────────────────────────────
+// content queda afuera (CRDT, ver specs/sync-servidor "CRDT") — nunca
+// se lee ni se manda desde acá, se preserva el valor local tal cual.
+
+const NOTE_FIELD_MAP: Record<string, string> = {
+  title: 'title', folder: 'folder', tags: 'tags', created: 'created', updated: 'updated', pinned: 'pinned',
+};
+
+function applyNoteResponse(get: SyncGet, set: SyncSet, entityId: string, sinceIso: string, response: NoteApiResponse): void {
+  const current = get().notes.find((n) => n.id === entityId);
+  if (!current) return;
+  const mapped = noteFromApiResponse(response);
+  const merged = { ...current } as unknown as Record<string, unknown>;
+  const mappedRecord = mapped as unknown as Record<string, unknown>;
+  for (const [localKey, serverKey] of Object.entries(NOTE_FIELD_MAP)) {
+    if (!syncQueue.hasNewerQueuedField('note', entityId, serverKey, sinceIso)) {
+      merged[localKey] = mappedRecord[localKey];
+    }
+  }
+  const updated = merged as unknown as Note;
+  set((state) => ({
+    notes: state.notes.map((n) => (n.id === entityId ? updated : n)),
+    activeNote: state.activeNote?.id === entityId ? updated : state.activeNote,
+  }));
+  if (response.content_state) void applyNoteContentUpdate(get, set, entityId, response.content_state);
+}
+
+/** Aplica un `content_state` (CRDT, base64) recibido del servidor —
+ *  creación/patch propio (echo) o /sync/changes — al estado CRDT de la
+ *  nota y reescribe `content` + el `.md` en disco. Si la nota está abierta
+ *  en el editor, el update va a su `Y.Doc` vivo (el editor lo muestra y
+ *  persiste el `.ydoc`); si no, se mezcla con el `.ydoc` en disco. Ver
+ *  "Updates remotos en la nota abierta" en specs/sync-servidor/design.md. */
+async function applyNoteContentUpdate(get: SyncGet, set: SyncSet, noteId: string, contentStateB64: string): Promise<void> {
+  const note = get().notes.find((n) => n.id === noteId);
+  if (!note) return;
+  const { content } = (await deliverToOpenNote(noteId, contentStateB64))
+    ?? (await applyIncomingContentState(note.filePath, contentStateB64));
+  // El editor pudo guardar mientras tanto: se compara y se reescribe sobre
+  // la nota vigente, no sobre la de antes del await.
+  const latest = get().notes.find((n) => n.id === noteId);
+  if (!latest || content === latest.content) return;
+  const updated = { ...latest, content };
+  await fs.writeFile(updated.filePath, serializeNote(updated));
+  set((state) => ({
+    notes: state.notes.map((n) => (n.id === noteId ? updated : n)),
+    activeNote: state.activeNote?.id === noteId ? updated : state.activeNote,
+  }));
+}
+
+/** Push del estado Yjs completo de una nota — canal separado de
+ *  syncPatchNote (metadata/LWW). Persiste el `.ydoc` local siempre primero
+ *  (offline-safe, igual que el `.md`); si hay conexión intenta mandarlo ya,
+ *  si no (o falla) lo encola en contentSyncQueue — llamado desde
+ *  NoteEditor.tsx en cada guardado. La respuesta es la fila completa de la
+ *  nota (mismo shape que create/patch, ver logday-web api.ts
+ *  `postNoteContent`) — se enruta por `applyNoteResponse` para reusar el
+ *  mismo merge de metadata guardado-por-cola-pendiente y el enganche de
+ *  `content_state` que ya tienen create/patch. */
+export async function syncNoteContent(get: SyncGet, set: SyncSet, note: Note, ydoc: Y.Doc): Promise<void> {
+  await persistYDoc(note.filePath, ydoc);
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  const updateB64 = bytesToBase64(Y.encodeStateAsUpdate(ydoc));
+  if (syncConnectionStatus !== 'connected') {
+    contentSyncQueue.enqueue('note', note.id, updateB64);
+    return;
+  }
+  const queuedAt = new Date().toISOString();
+  try {
+    const response = await withSyncAuth(get, set, (token) => pushNoteContentRemote(syncConfig.serverUrl, token, note.id, updateB64));
+    applyNoteResponse(get, set, note.id, queuedAt, response);
+  } catch {
+    contentSyncQueue.enqueue('note', note.id, updateB64);
+  }
+}
+
+/** Manda al servidor el update CRDT de un daily entry ya aplicado al
+ *  `.ydoc` local (ver applyDailyEditorEdit en saveDailyEntry). Sin red,
+ *  queda en la cola de contenido. */
+async function pushDailyContentUpdate(get: SyncGet, set: SyncSet, date: string, updateB64: string): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  if (syncConnectionStatus !== 'connected') {
+    contentSyncQueue.enqueue('daily_entry', date, updateB64);
+    return;
+  }
+  try {
+    const response = await withSyncAuth(get, set, (token) => putDailyEntryContentRemote(syncConfig.serverUrl, token, date, updateB64));
+    if (response.content_state) await applyDailyEntryContentUpdate(get, set, date, response.content_state);
+  } catch {
+    contentSyncQueue.enqueue('daily_entry', date, updateB64);
+  }
+}
+
+async function syncDeleteDailyEntry(get: SyncGet, set: SyncSet, date: string): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('daily_entry', date, 'delete');
+    return;
+  }
+  try {
+    await withSyncAuth(get, set, (token) => deleteDailyEntryRemote(syncConfig.serverUrl, token, date));
+  } catch {
+    syncQueue.enqueue('daily_entry', date, 'delete');
+  }
+}
+
+async function drainContentSyncQueue(get: SyncGet, set: SyncSet): Promise<void> {
+  const { syncConfig } = get();
+  if (!syncConfig.enabled) return;
+  await contentSyncQueue.drain(async (entity, key, updateB64) => {
+    const queuedAt = new Date().toISOString();
+    if (entity === 'note') {
+      const response = await withSyncAuth(get, set, (token) => pushNoteContentRemote(syncConfig.serverUrl, token, key, updateB64));
+      applyNoteResponse(get, set, key, queuedAt, response);
+    } else {
+      const response = await withSyncAuth(get, set, (token) => putDailyEntryContentRemote(syncConfig.serverUrl, token, key, updateB64));
+      if (response.content_state) await applyDailyEntryContentUpdate(get, set, key, response.content_state);
+    }
+  });
+}
+
+async function syncCreateNote(get: SyncGet, set: SyncSet, note: Note): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  // Un título vacío sale como "Sin título" — ver noteToCreatePayload.
+  const payload = noteToCreatePayload(note);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('note', note.id, 'create', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await withSyncAuth(get, set, (token) => createNoteRemote(syncConfig.serverUrl, token, payload));
+    applyNoteResponse(get, set, note.id, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('note', note.id, 'create', payload as unknown as Record<string, unknown>);
+  }
+}
+
+async function syncPatchNote(get: SyncGet, set: SyncSet, noteId: string, fields: Partial<Note>): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled || Object.keys(fields).length === 0) return;
+  const payload = noteFieldsToPatchPayload(fields);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('note', noteId, 'patch', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await withSyncAuth(get, set, (token) => patchNoteRemote(syncConfig.serverUrl, token, noteId, payload));
+    applyNoteResponse(get, set, noteId, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('note', noteId, 'patch', payload as unknown as Record<string, unknown>);
+  }
+}
+
+async function syncDeleteNote(get: SyncGet, set: SyncSet, noteId: string): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('note', noteId, 'delete');
+    return;
+  }
+  try {
+    await withSyncAuth(get, set, (token) => deleteNoteRemote(syncConfig.serverUrl, token, noteId));
+  } catch {
+    syncQueue.enqueue('note', noteId, 'delete');
+  }
+}
+
+function diffNoteFields(prev: Note | undefined, next: Note): Partial<Note> {
+  if (!prev) return { ...next };
+  const fields: Partial<Note> = {};
+  if (prev.title !== next.title) fields.title = next.title;
+  if (prev.folder !== next.folder) fields.folder = next.folder;
+  if (JSON.stringify(prev.tags) !== JSON.stringify(next.tags)) fields.tags = next.tags;
+  if (prev.created !== next.created) fields.created = next.created;
+  if (prev.updated !== next.updated) fields.updated = next.updated;
+  if (prev.pinned !== next.pinned) fields.pinned = next.pinned;
+  return fields;
+}
+
+// ── CalendarEvent ────────────────────────────────────────────────
+
+const CALENDAR_EVENT_FIELD_MAP: Record<string, string> = {
+  title: 'title', date: 'date', time: 'time', description: 'description',
+  color: 'color', reminderMinutes: 'reminder_minutes', repeat: 'repeat',
+};
+
+function applyCalendarEventResponse(get: SyncGet, set: SyncSet, entityId: string, sinceIso: string, response: CalendarEventApiResponse): void {
+  const current = get().calendarEvents.find((e) => e.id === entityId);
+  if (!current) return;
+  const mapped = calendarEventFromApiResponse(response);
+  const merged = { ...current } as unknown as Record<string, unknown>;
+  const mappedRecord = mapped as unknown as Record<string, unknown>;
+  for (const [localKey, serverKey] of Object.entries(CALENDAR_EVENT_FIELD_MAP)) {
+    if (!syncQueue.hasNewerQueuedField('calendar_event', entityId, serverKey, sinceIso)) {
+      merged[localKey] = mappedRecord[localKey];
+    }
+  }
+  const updated = merged as unknown as CalendarEvent;
+  set((state) => ({ calendarEvents: state.calendarEvents.map((e) => (e.id === entityId ? updated : e)) }));
+}
+
+async function syncCreateCalendarEvent(get: SyncGet, set: SyncSet, event: CalendarEvent): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  const payload = calendarEventToCreatePayload(event);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('calendar_event', event.id, 'create', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await withSyncAuth(get, set, (token) => createCalendarEventRemote(syncConfig.serverUrl, token, payload));
+    applyCalendarEventResponse(get, set, event.id, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('calendar_event', event.id, 'create', payload as unknown as Record<string, unknown>);
+  }
+}
+
+async function syncPatchCalendarEvent(get: SyncGet, set: SyncSet, eventId: string, fields: Partial<CalendarEvent>): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled || Object.keys(fields).length === 0) return;
+  const payload = calendarEventFieldsToPatchPayload(fields);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('calendar_event', eventId, 'patch', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await withSyncAuth(get, set, (token) => patchCalendarEventRemote(syncConfig.serverUrl, token, eventId, payload));
+    applyCalendarEventResponse(get, set, eventId, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('calendar_event', eventId, 'patch', payload as unknown as Record<string, unknown>);
+  }
+}
+
+async function syncDeleteCalendarEvent(get: SyncGet, set: SyncSet, eventId: string): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('calendar_event', eventId, 'delete');
+    return;
+  }
+  try {
+    await withSyncAuth(get, set, (token) => deleteCalendarEventRemote(syncConfig.serverUrl, token, eventId));
+  } catch {
+    syncQueue.enqueue('calendar_event', eventId, 'delete');
+  }
+}
+
+function diffCalendarEventFields(prev: CalendarEvent | undefined, next: CalendarEvent): Partial<CalendarEvent> {
+  if (!prev) return { ...next };
+  const fields: Partial<CalendarEvent> = {};
+  if (prev.title !== next.title) fields.title = next.title;
+  if (prev.date !== next.date) fields.date = next.date;
+  if (prev.time !== next.time) fields.time = next.time;
+  if (prev.description !== next.description) fields.description = next.description;
+  if (prev.color !== next.color) fields.color = next.color;
+  if (prev.reminderMinutes !== next.reminderMinutes) fields.reminderMinutes = next.reminderMinutes;
+  if (prev.repeat !== next.repeat) fields.repeat = next.repeat;
+  return fields;
+}
+
+// ── AbsenceDay ───────────────────────────────────────────────────
+
+const ABSENCE_DAY_FIELD_MAP: Record<string, string> = { date: 'date', type: 'type', note: 'note' };
+
+function applyAbsenceDayResponse(get: SyncGet, set: SyncSet, entityId: string, sinceIso: string, response: AbsenceDayApiResponse): void {
+  const current = get().absenceDays.find((a) => a.id === entityId);
+  if (!current) return;
+  const mapped = absenceDayFromApiResponse(response);
+  const merged = { ...current } as unknown as Record<string, unknown>;
+  const mappedRecord = mapped as unknown as Record<string, unknown>;
+  for (const [localKey, serverKey] of Object.entries(ABSENCE_DAY_FIELD_MAP)) {
+    if (!syncQueue.hasNewerQueuedField('absence_day', entityId, serverKey, sinceIso)) {
+      merged[localKey] = mappedRecord[localKey];
+    }
+  }
+  const updated = merged as unknown as AbsenceDay;
+  set((state) => ({ absenceDays: state.absenceDays.map((a) => (a.id === entityId ? updated : a)) }));
+}
+
+async function syncCreateAbsenceDay(get: SyncGet, set: SyncSet, absence: AbsenceDay): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  const payload = absenceDayToCreatePayload(absence);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('absence_day', absence.id, 'create', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await withSyncAuth(get, set, (token) => createAbsenceDayRemote(syncConfig.serverUrl, token, payload));
+    applyAbsenceDayResponse(get, set, absence.id, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('absence_day', absence.id, 'create', payload as unknown as Record<string, unknown>);
+  }
+}
+
+async function syncPatchAbsenceDay(get: SyncGet, set: SyncSet, absenceId: string, fields: Partial<AbsenceDay>): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled || Object.keys(fields).length === 0) return;
+  const payload = absenceDayFieldsToPatchPayload(fields);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('absence_day', absenceId, 'patch', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await withSyncAuth(get, set, (token) => patchAbsenceDayRemote(syncConfig.serverUrl, token, absenceId, payload));
+    applyAbsenceDayResponse(get, set, absenceId, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('absence_day', absenceId, 'patch', payload as unknown as Record<string, unknown>);
+  }
+}
+
+async function syncDeleteAbsenceDay(get: SyncGet, set: SyncSet, absenceId: string): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('absence_day', absenceId, 'delete');
+    return;
+  }
+  try {
+    await withSyncAuth(get, set, (token) => deleteAbsenceDayRemote(syncConfig.serverUrl, token, absenceId));
+  } catch {
+    syncQueue.enqueue('absence_day', absenceId, 'delete');
+  }
+}
+
+function diffAbsenceDayFields(prev: AbsenceDay | undefined, next: AbsenceDay): Partial<AbsenceDay> {
+  if (!prev) return { ...next };
+  const fields: Partial<AbsenceDay> = {};
+  if (prev.date !== next.date) fields.date = next.date;
+  if (prev.type !== next.type) fields.type = next.type;
+  if (prev.note !== next.note) fields.note = next.note;
+  return fields;
+}
+
+// ── OvertimeEntry ────────────────────────────────────────────────
+// Sin filePath propio — vive bundleada en el archivo del mes de
+// entry.fecha (ver saveOvertimeEntry). applyOvertimeEntryResponse
+// solo toca el estado en memoria; el archivo ya lo escribió quien
+// llamó (saveOvertimeEntry) antes de disparar el sync.
+
+const OVERTIME_ENTRY_FIELD_MAP: Record<string, string> = {
+  fecha: 'fecha', solicitadaPor: 'solicitada_por', actividad: 'actividad', observaciones: 'observaciones',
+  horaInicio: 'hora_inicio', horaFinal: 'hora_final', totalHoras: 'total_horas',
+  extrasDiurnas: 'extras_diurnas', extrasNocturnas: 'extras_nocturnas',
+  extrasDiurnasFestivas: 'extras_diurnas_festivas', extrasNocturnasFestivas: 'extras_nocturnas_festivas',
+};
+
+function applyOvertimeEntryResponse(get: SyncGet, set: SyncSet, entityId: string, sinceIso: string, response: OvertimeEntryApiResponse): void {
+  const current = get().overtimeEntries.find((e) => e.id === entityId);
+  if (!current) return; // no es del mes actualmente cargado en memoria — el archivo ya quedó bien igual
+  const mapped = overtimeEntryFromApiResponse(response);
+  const merged = { ...current } as unknown as Record<string, unknown>;
+  const mappedRecord = mapped as unknown as Record<string, unknown>;
+  for (const [localKey, serverKey] of Object.entries(OVERTIME_ENTRY_FIELD_MAP)) {
+    if (!syncQueue.hasNewerQueuedField('overtime_entry', entityId, serverKey, sinceIso)) {
+      merged[localKey] = mappedRecord[localKey];
+    }
+  }
+  const updated = merged as unknown as OvertimeEntry;
+  set((state) => ({ overtimeEntries: state.overtimeEntries.map((e) => (e.id === entityId ? updated : e)) }));
+}
+
+async function syncCreateOvertimeEntry(get: SyncGet, set: SyncSet, entry: OvertimeEntry): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  const payload = overtimeEntryToCreatePayload(entry);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('overtime_entry', entry.id, 'create', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await withSyncAuth(get, set, (token) => createOvertimeEntryRemote(syncConfig.serverUrl, token, payload));
+    applyOvertimeEntryResponse(get, set, entry.id, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('overtime_entry', entry.id, 'create', payload as unknown as Record<string, unknown>);
+  }
+}
+
+async function syncPatchOvertimeEntry(get: SyncGet, set: SyncSet, entryId: string, fields: Partial<OvertimeEntry>): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled || Object.keys(fields).length === 0) return;
+  const payload = overtimeEntryFieldsToPatchPayload(fields);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('overtime_entry', entryId, 'patch', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await withSyncAuth(get, set, (token) => patchOvertimeEntryRemote(syncConfig.serverUrl, token, entryId, payload));
+    applyOvertimeEntryResponse(get, set, entryId, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('overtime_entry', entryId, 'patch', payload as unknown as Record<string, unknown>);
+  }
+}
+
+async function syncDeleteOvertimeEntry(get: SyncGet, set: SyncSet, entryId: string): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled) return;
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('overtime_entry', entryId, 'delete');
+    return;
+  }
+  try {
+    await withSyncAuth(get, set, (token) => deleteOvertimeEntryRemote(syncConfig.serverUrl, token, entryId));
+  } catch {
+    syncQueue.enqueue('overtime_entry', entryId, 'delete');
+  }
+}
+
+// ── OvertimeMonthMeta ─────────────────────────────────────────────
+// Mismatch de modelo: local es UN SOLO valor global (`overtimeMeta`,
+// localStorage), el server lo trata por year_month. Se sincroniza el
+// valor global como "la meta del mes que se está viendo ahora" — un
+// cambio remoto de un mes que NO es el visible se ignora a propósito
+// (no tiene sentido pisar lo que ves con la meta de un mes distinto).
+
+const OVERTIME_MONTH_META_FIELD_MAP: Record<string, string> = { colaborador: 'colaborador', cedula: 'cedula' };
+
+function applyOvertimeMonthMetaResponse(get: SyncGet, set: SyncSet, yearMonth: string, sinceIso: string, response: OvertimeMonthMetaApiResponse): void {
+  if (get().overtimeMonth !== yearMonth) return;
+  const mapped = overtimeMonthMetaFromApiResponse(response);
+  const merged = { ...get().overtimeMeta } as unknown as Record<string, unknown>;
+  const mappedRecord = mapped as unknown as Record<string, unknown>;
+  for (const [localKey, serverKey] of Object.entries(OVERTIME_MONTH_META_FIELD_MAP)) {
+    if (!syncQueue.hasNewerQueuedField('overtime_month_meta', yearMonth, serverKey, sinceIso)) {
+      merged[localKey] = mappedRecord[localKey];
+    }
+  }
+  const updated = merged as unknown as OvertimeMonthMeta;
+  set({ overtimeMeta: updated });
+  localStorage.setItem('overtimeMeta', JSON.stringify(updated));
+}
+
+async function syncPatchOvertimeMonthMeta(get: SyncGet, set: SyncSet, yearMonth: string, fields: Partial<OvertimeMonthMeta>): Promise<void> {
+  const { syncConfig, syncConnectionStatus } = get();
+  if (!syncConfig.enabled || Object.keys(fields).length === 0) return;
+  const payload = overtimeMonthMetaFieldsToPatchPayload(fields);
+  const queuedAt = new Date().toISOString();
+  if (syncConnectionStatus !== 'connected') {
+    syncQueue.enqueue('overtime_month_meta', yearMonth, 'patch', payload as unknown as Record<string, unknown>);
+    return;
+  }
+  try {
+    const response = await withSyncAuth(get, set, (token) => patchOvertimeMonthMetaRemote(syncConfig.serverUrl, token, yearMonth, payload));
+    applyOvertimeMonthMetaResponse(get, set, yearMonth, queuedAt, response);
+  } catch {
+    syncQueue.enqueue('overtime_month_meta', yearMonth, 'patch', payload as unknown as Record<string, unknown>);
+  }
+}
+
+// Debounce del push — setOvertimeMeta se llama directo por cada tecla
+// desde OvertimeList.tsx (sin debounce de componente, a diferencia de
+// Note/Daily), así que este sí necesita el suyo acá.
+let overtimeMetaPushTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleOvertimeMetaPush(get: SyncGet, set: SyncSet, fields: Partial<OvertimeMonthMeta>): void {
+  if (overtimeMetaPushTimeout) clearTimeout(overtimeMetaPushTimeout);
+  overtimeMetaPushTimeout = setTimeout(() => {
+    void syncPatchOvertimeMonthMeta(get, set, get().overtimeMonth, fields);
+  }, 400);
+}
+
+function diffOvertimeEntryFields(prev: OvertimeEntry | undefined, next: OvertimeEntry): Partial<OvertimeEntry> {
+  if (!prev) return { ...next };
+  const fields: Partial<OvertimeEntry> = {};
+  if (prev.fecha !== next.fecha) fields.fecha = next.fecha;
+  if (prev.solicitadaPor !== next.solicitadaPor) fields.solicitadaPor = next.solicitadaPor;
+  if (prev.actividad !== next.actividad) fields.actividad = next.actividad;
+  if (prev.observaciones !== next.observaciones) fields.observaciones = next.observaciones;
+  if (prev.horaInicio !== next.horaInicio) fields.horaInicio = next.horaInicio;
+  if (prev.horaFinal !== next.horaFinal) fields.horaFinal = next.horaFinal;
+  if (prev.totalHoras !== next.totalHoras) fields.totalHoras = next.totalHoras;
+  if (prev.extrasDiurnas !== next.extrasDiurnas) fields.extrasDiurnas = next.extrasDiurnas;
+  if (prev.extrasNocturnas !== next.extrasNocturnas) fields.extrasNocturnas = next.extrasNocturnas;
+  if (prev.extrasDiurnasFestivas !== next.extrasDiurnasFestivas) fields.extrasDiurnasFestivas = next.extrasDiurnasFestivas;
+  if (prev.extrasNocturnasFestivas !== next.extrasNocturnasFestivas) fields.extrasNocturnasFestivas = next.extrasNocturnasFestivas;
+  return fields;
+}
+
+// Envuelve TODO el drenado en withSyncAuth (no solo tomar el
+// accessToken una vez, como antes) — bug real encontrado: el access
+// token dura ~15 min (ver comentario de refreshSyncTokenOnce arriba),
+// así que reconectar después de estar offline más que eso mandaba
+// estas llamadas con un token ya vencido. El servidor respondía 401
+// (un 4xx), sendQueuedWrite lo clasificaba como "permanent-failure" (el
+// mismo trato que un payload inválido) y la entrada se sacaba de la
+// cola SIN haber llegado a pegarle al servidor — el delete/create/patch
+// encolado se perdía en silencio. Para un delete de nota, el
+// reconcileSync que corre justo después (ver drainSyncQueue) la
+// encontraba todavía viva en el servidor y la recreaba localmente: "la
+// borro, se reconecta, y vuelve a aparecer" — no es el bug ya conocido
+// de resurrección de tombstones (esa es una carrera con el timing del
+// pull), este pasaba siempre que el token estuviera vencido al
+// reconectar.
+async function dispatchQueuedWrite(get: SyncGet, set: SyncSet, write: syncQueue.QueuedWrite): Promise<void> {
+  await withSyncAuth(get, set, async (accessToken) => {
+    const { serverUrl } = get().syncConfig;
+
+    if (write.entity === 'note') {
+      if (write.op === 'create') {
+        applyNoteResponse(get, set, write.entityId, write.queuedAt, await createNoteRemote(serverUrl, accessToken, write.fields as unknown as NoteCreatePayload));
+      } else if (write.op === 'patch') {
+        applyNoteResponse(get, set, write.entityId, write.queuedAt, await patchNoteRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as NotePatchPayload));
+      } else {
+        await deleteNoteRemote(serverUrl, accessToken, write.entityId);
+      }
+      return;
+    }
+    if (write.entity === 'calendar_event') {
+      if (write.op === 'create') {
+        applyCalendarEventResponse(get, set, write.entityId, write.queuedAt, await createCalendarEventRemote(serverUrl, accessToken, write.fields as unknown as CalendarEventCreatePayload));
+      } else if (write.op === 'patch') {
+        applyCalendarEventResponse(get, set, write.entityId, write.queuedAt, await patchCalendarEventRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as CalendarEventPatchPayload));
+      } else {
+        await deleteCalendarEventRemote(serverUrl, accessToken, write.entityId);
+      }
+      return;
+    }
+    if (write.entity === 'absence_day') {
+      if (write.op === 'create') {
+        applyAbsenceDayResponse(get, set, write.entityId, write.queuedAt, await createAbsenceDayRemote(serverUrl, accessToken, write.fields as unknown as AbsenceDayCreatePayload));
+      } else if (write.op === 'patch') {
+        applyAbsenceDayResponse(get, set, write.entityId, write.queuedAt, await patchAbsenceDayRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as AbsenceDayPatchPayload));
+      } else {
+        await deleteAbsenceDayRemote(serverUrl, accessToken, write.entityId);
+      }
+      return;
+    }
+    if (write.entity === 'overtime_entry') {
+      if (write.op === 'create') {
+        applyOvertimeEntryResponse(get, set, write.entityId, write.queuedAt, await createOvertimeEntryRemote(serverUrl, accessToken, write.fields as unknown as OvertimeEntryCreatePayload));
+      } else if (write.op === 'patch') {
+        applyOvertimeEntryResponse(get, set, write.entityId, write.queuedAt, await patchOvertimeEntryRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as OvertimeEntryPatchPayload));
+      } else {
+        await deleteOvertimeEntryRemote(serverUrl, accessToken, write.entityId);
+      }
+      return;
+    }
+    if (write.entity === 'overtime_month_meta') {
+      // Sin create — PATCH crea-si-no-existe (ver syncMapping.ts), y sin
+      // delete tampoco: no hay acción local que borre la meta de un mes.
+      if (write.op === 'patch') {
+        applyOvertimeMonthMetaResponse(get, set, write.entityId, write.queuedAt, await patchOvertimeMonthMetaRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as OvertimeMonthMetaPatchPayload));
+      }
+      return;
+    }
+    if (write.entity === 'daily_entry') {
+      // Solo delete acá — el contenido va por contentSyncQueue (CRDT), no
+      // por esta cola de create/patch/delete.
+      if (write.op === 'delete') {
+        await deleteDailyEntryRemote(serverUrl, accessToken, write.entityId);
+      }
+      return;
+    }
+    if (write.entity !== 'task') return;
+    if (write.op === 'create') {
+      const response = await createTaskRemote(serverUrl, accessToken, write.fields as unknown as TaskCreatePayload);
+      applyTaskResponse(get, set, write.entityId, write.queuedAt, response);
+    } else if (write.op === 'patch') {
+      const response = await patchTaskRemote(serverUrl, accessToken, write.entityId, write.fields as unknown as TaskPatchPayload);
+      applyTaskResponse(get, set, write.entityId, write.queuedAt, response);
+    } else {
+      await deleteTaskRemote(serverUrl, accessToken, write.entityId);
+    }
+  });
+}
+
+/** Un 4xx del servidor (ej. un create con un campo requerido vacío)
+ *  nunca se va a arreglar solo reintentando el mismo payload — a
+ *  diferencia de una caída de red o un 5xx, donde sí tiene sentido
+ *  parar el drenado y probar de nuevo más tarde. Sin esto, una sola
+ *  entrada mal formada (por un bug ya corregido en el código, pero
+ *  que ya quedó encolada con el payload viejo) bloquearía el resto de
+ *  la cola para siempre, ver syncQueue.ts drainQueue. */
+async function sendQueuedWrite(get: SyncGet, set: SyncSet, write: syncQueue.QueuedWrite): Promise<'ok' | 'permanent-failure'> {
+  try {
+    await dispatchQueuedWrite(get, set, write);
+    return 'ok';
+  } catch (e) {
+    if (e instanceof SyncApiError && e.status >= 400 && e.status < 500) {
+      // Se descarta igual (ver arriba), pero no en silencio: sin este log,
+      // un cambio perdido por un payload que el servidor rechaza (p. ej. el
+      // `title: ""` de una nota, ya corregido en syncMapping.ts) no dejaba
+      // ningún rastro para diagnosticarlo.
+      // Sin `write.fields`: pueden llevar títulos o tags del usuario.
+      console.warn(`[sync] escritura descartada por el servidor (${e.status}): ${write.entity} ${write.op} ${write.entityId} — ${e.message}`);
+      return 'permanent-failure';
+    }
+    throw e;
+  }
+}
+
+/** Drena la cola en orden — se llama al reconectar (ver
+ *  syncConnect). Sin timers ni reintento automático todavía: eso es
+ *  parte de la fase "Tiempo real" (reconexión WS con backoff). */
+async function drainSyncQueue(get: SyncGet, set: SyncSet): Promise<void> {
+  await syncQueue.drainQueue((write) => sendQueuedWrite(get, set, write));
+}
+
+// ── Cursor y reconciliación ─────────────────────────────────────
+// Trae /sync/changes desde el cursor guardado y aplica cada cambio al
+// estado local — así una edición hecha en otro cliente (logday-web,
+// otra instalación de Desktop) llega acá, no solo al revés. Por ahora
+// solo 'task' tiene el otro lado (escribir el archivo local) resuelto;
+// el resto de los tipos que puedan venir en el feed se ignoran hasta
+// que "Escritura y cola offline" se replique a esas entidades (ver
+// specs/sync-servidor/tasks.md).
+
+const SYNC_CURSOR_KEY = 'syncCursor';
+// Cualquier entrada en cola en este momento es, por definición, una
+// edición local todavía sin confirmar — no importa cuándo se encoló,
+// tiene prioridad sobre cualquier cambio remoto que estemos
+// reconciliando ahora. Pasar una fecha época como "sinceIso" hace que
+// hasNewerQueuedField matchee cualquier entrada existente.
+const EPOCH = '0000-01-01T00:00:00.000Z';
+
+function getSyncCursor(): number {
+  return Number(localStorage.getItem(SYNC_CURSOR_KEY) || '0');
+}
+
+function setSyncCursor(seq: number): void {
+  localStorage.setItem(SYNC_CURSOR_KEY, String(seq));
+}
+
+async function applyRemoteTaskChange(get: SyncGet, set: SyncSet, change: SyncChange): Promise<void> {
+  const { basePath } = get();
+  if (!basePath) return;
+  const projectHint = change.deleted ? undefined : (change.data as TaskApiResponse | null)?.project;
+  const existing = get().tasks.find((t) => t.id === change.id)
+    ?? (await findLocalTask(basePath, get().projects, change.id, projectHint)) ?? undefined;
+
+  if (change.deleted) {
+    if (!existing) return; // nunca existió acá, nada que borrar
+    // Delete que llegó de OTRA instalación desktop — se captura acá
+    // también (no solo en deleteTask) para que la papelera quede
+    // compartida entre instalaciones del mismo usuario, ver plan.
+    await trash.writeTrashRecord(basePath, 'task', existing.id, existing.title, existing);
+    await fs.deleteFile(existing.filePath).catch(() => {});
+    set((state) => ({
+      tasks: state.tasks.filter((t) => t.id !== change.id),
+      activeTask: state.activeTask?.id === change.id ? null : state.activeTask,
+    }));
+    return;
+  }
+
+  const mapped = taskFromApiResponse(change.data as TaskApiResponse);
+  const filePath = existing?.filePath ?? taskFilePath(basePath, mapped.project, change.id);
+  const merged = { ...existing, ...mapped, filePath, linked_paths: existing?.linked_paths ?? [] } as unknown as Record<string, unknown>;
+
+  // Regla de prioridad: un campo con una edición local todavía sin
+  // mandar (en cola) no se pisa con el valor remoto — esa cola,
+  // cuando drene, va a traer el valor final real (ver
+  // applyTaskResponse, misma regla).
+  if (existing) {
+    for (const [localKey, serverKey] of Object.entries(TASK_FIELD_MAP)) {
+      if (syncQueue.hasNewerQueuedField('task', change.id, serverKey, EPOCH)) {
+        merged[localKey] = (existing as unknown as Record<string, unknown>)[localKey];
+      }
+    }
+  }
+
+  const finalTask = merged as unknown as Task;
+  await fs.writeFile(filePath, serializeTask(finalTask));
+  const visible = taskInView(finalTask.project, get().activeProject);
+  set((state) => {
+    // Se decide con el estado de este momento, no con el de antes de
+    // los await: otro cambio del mismo id pudo haberla agregado ya.
+    const listed = state.tasks.some((t) => t.id === change.id);
+    let tasks = state.tasks;
+    if (listed && visible) tasks = tasks.map((t) => (t.id === change.id ? finalTask : t));
+    else if (listed) tasks = tasks.filter((t) => t.id !== change.id);
+    else if (visible) tasks = [finalTask, ...tasks];
+    return { tasks, activeTask: state.activeTask?.id === change.id ? finalTask : state.activeTask };
+  });
+}
+
+async function applyRemoteNoteChange(get: SyncGet, set: SyncSet, change: SyncChange): Promise<void> {
+  const { basePath } = get();
+  if (!basePath) return;
+  const folderHint = change.deleted ? undefined : (change.data as NoteApiResponse | null)?.folder;
+  const existing = get().notes.find((n) => n.id === change.id)
+    ?? (await findLocalNote(basePath, change.id, folderHint)) ?? undefined;
+
+  if (change.deleted) {
+    if (!existing) return;
+    // Delete que llegó de OTRA instalación desktop — mismo motivo que en
+    // applyRemoteTaskChange (papelera compartida entre instalaciones).
+    // Igual que deleteNote, no vale la pena trashear una nota vacía.
+    if (existing.title.trim() || existing.content.trim()) {
+      await trash.writeTrashRecord(basePath, 'note', existing.id, existing.title || existing.id, existing);
+    }
+    await fs.deleteFile(existing.filePath).catch(() => {});
+    await fs.deleteFile(noteContentStatePath(existing.filePath)).catch(() => {});
+    set((state) => ({
+      notes: state.notes.filter((n) => n.id !== change.id),
+      activeNote: state.activeNote?.id === change.id ? null : state.activeNote,
+    }));
+    return;
+  }
+
+  const mapped = noteFromApiResponse(change.data as NoteApiResponse);
+  const filePath = existing?.filePath ?? noteFilePath(basePath, mapped.folder, change.id);
+  // content nunca viene de acá por el campo `content` de la metadata
+  // (ver comentario arriba del archivo) — se preserva el contenido
+  // local tal cual, tanto para una nota existente como para una nueva
+  // (que arranca sin contenido hasta que llegue su content_state, ver
+  // abajo). `content_state` (CRDT) sí puede venir en este mismo
+  // payload — se aplica aparte, después del set() de esta función.
+  const merged = {
+    ...existing, ...mapped, filePath,
+    content: existing?.content ?? '',
+  } as unknown as Record<string, unknown>;
+
+  if (existing) {
+    for (const [localKey, serverKey] of Object.entries(NOTE_FIELD_MAP)) {
+      if (syncQueue.hasNewerQueuedField('note', change.id, serverKey, EPOCH)) {
+        merged[localKey] = (existing as unknown as Record<string, unknown>)[localKey];
+      }
+    }
+  }
+
+  const finalNote = merged as unknown as Note;
+  if (!existing && finalNote.folder) await fs.createDir(noteFolderDir(basePath, finalNote.folder)).catch(() => {});
+  await fs.writeFile(filePath, serializeNote(finalNote));
+  const visible = noteInView(finalNote.folder, get().activeNoteFolder);
+  set((state) => {
+    // Igual que en applyRemoteTaskChange: decidir con el estado actual,
+    // no con el de antes de los await.
+    const listed = state.notes.some((n) => n.id === change.id);
+    let notes = state.notes;
+    if (listed && visible) notes = notes.map((n) => (n.id === change.id ? finalNote : n));
+    else if (listed) notes = notes.filter((n) => n.id !== change.id);
+    else if (visible) notes = [finalNote, ...notes];
+    return { notes, activeNote: state.activeNote?.id === change.id ? finalNote : state.activeNote };
+  });
+  const contentState = (change.data as NoteApiResponse).content_state;
+  if (contentState) void applyNoteContentUpdate(get, set, change.id, contentState);
+}
+
+async function applyRemoteCalendarEventChange(get: SyncGet, set: SyncSet, change: SyncChange): Promise<void> {
+  const { basePath } = get();
+  if (!basePath) return;
+  const path = `${basePath}/calendar/events.json`;
+  const current = get().calendarEvents;
+  const existing = current.find((e) => e.id === change.id);
+
+  if (change.deleted) {
+    if (!existing) return;
+    const next = current.filter((e) => e.id !== change.id);
+    await fs.writeFile(path, JSON.stringify(next, null, 2));
+    set({ calendarEvents: next });
+    return;
+  }
+
+  const mapped = calendarEventFromApiResponse(change.data as CalendarEventApiResponse);
+  const merged = { ...existing, ...mapped } as unknown as Record<string, unknown>;
+  if (existing) {
+    for (const [localKey, serverKey] of Object.entries(CALENDAR_EVENT_FIELD_MAP)) {
+      if (syncQueue.hasNewerQueuedField('calendar_event', change.id, serverKey, EPOCH)) {
+        merged[localKey] = (existing as unknown as Record<string, unknown>)[localKey];
+      }
+    }
+  }
+  const finalEvent = merged as unknown as CalendarEvent;
+  const next = existing ? current.map((e) => (e.id === change.id ? finalEvent : e)) : [...current, finalEvent];
+  if (!(await fs.exists(`${basePath}/calendar`))) await fs.createDir(`${basePath}/calendar`);
+  await fs.writeFile(path, JSON.stringify(next, null, 2));
+  set({ calendarEvents: next });
+}
+
+async function applyRemoteAbsenceDayChange(get: SyncGet, set: SyncSet, change: SyncChange): Promise<void> {
+  const { basePath } = get();
+  if (!basePath) return;
+  const path = `${basePath}/absences.json`;
+  const current = get().absenceDays;
+  const existing = current.find((a) => a.id === change.id);
+
+  if (change.deleted) {
+    if (!existing) return;
+    const next = current.filter((a) => a.id !== change.id);
+    await fs.writeFile(path, JSON.stringify(next, null, 2));
+    set({ absenceDays: next });
+    return;
+  }
+
+  const mapped = absenceDayFromApiResponse(change.data as AbsenceDayApiResponse);
+  const merged = { ...existing, ...mapped } as unknown as Record<string, unknown>;
+  if (existing) {
+    for (const [localKey, serverKey] of Object.entries(ABSENCE_DAY_FIELD_MAP)) {
+      if (syncQueue.hasNewerQueuedField('absence_day', change.id, serverKey, EPOCH)) {
+        merged[localKey] = (existing as unknown as Record<string, unknown>)[localKey];
+      }
+    }
+  }
+  const finalAbsence = merged as unknown as AbsenceDay;
+  const next = existing ? current.map((a) => (a.id === change.id ? finalAbsence : a)) : [...current, finalAbsence];
+  await fs.writeFile(path, JSON.stringify(next, null, 2));
+  set({ absenceDays: next });
+}
+
+/** A diferencia de las otras entidades, no toca el estado en memoria
+ *  salvo que el mes de la entrada coincida con el mes actualmente
+ *  visible (get().overtimeMonth) — aplicar una reconciliación en
+ *  background no debería saltar la vista del usuario a un mes
+ *  distinto, a diferencia de saveOvertimeEntry (que sí navega, porque
+ *  ahí es una acción explícita del usuario). El archivo del mes que
+ *  corresponda igual se escribe siempre. */
+async function applyRemoteOvertimeEntryChange(get: SyncGet, set: SyncSet, change: SyncChange): Promise<void> {
+  const { basePath } = get();
+  if (!basePath) return;
+
+  if (change.deleted) {
+    // No sabemos a qué mes pertenecía sin la data — si está en el mes
+    // visible, ya sabemos su fecha por el estado en memoria.
+    const existing = get().overtimeEntries.find((e) => e.id === change.id);
+    if (!existing) return; // no es del mes visible, no hay archivo que tocar sin arriesgar adivinar
+    // Delete que llegó de OTRA instalación desktop — mismo motivo que en
+    // applyRemoteTaskChange/applyRemoteNoteChange.
+    await trash.writeTrashRecord(basePath, 'overtime_entry', existing.id, `${existing.fecha} — ${existing.actividad}`, existing);
+    const ym = existing.fecha.slice(0, 7);
+    const [year, month] = ym.split('-');
+    const path = overtimeMonthFilePath(basePath, year, month);
+    const entries = get().overtimeEntries.filter((e) => e.id !== change.id);
+    await fs.writeFile(path, `---\n${JSON.stringify({ entries }, null, 2)}\n---\n`);
+    set({ overtimeEntries: entries });
+    return;
+  }
+
+  const mapped = overtimeEntryFromApiResponse(change.data as OvertimeEntryApiResponse);
+  const ym = mapped.fecha.slice(0, 7);
+  const [year, month] = ym.split('-');
+  await fs.createDir(overtimeMonthDir(basePath, year, month)).catch(() => {});
+  const path = overtimeMonthFilePath(basePath, year, month);
+
+  let entries: OvertimeEntry[] = [];
+  if (await fs.exists(path)) {
+    try {
+      const raw = await fs.readFile(path);
+      const match = raw.match(/^---\n([\s\S]*?)\n---/);
+      entries = match ? (JSON.parse(match[1]).entries ?? []) : [];
+    } catch { /* archivo vacío o corrupto */ }
+  }
+  const existing = entries.find((e) => e.id === change.id);
+  const merged = { ...existing, ...mapped } as unknown as Record<string, unknown>;
+  if (existing) {
+    for (const [localKey, serverKey] of Object.entries(OVERTIME_ENTRY_FIELD_MAP)) {
+      if (syncQueue.hasNewerQueuedField('overtime_entry', change.id, serverKey, EPOCH)) {
+        merged[localKey] = (existing as unknown as Record<string, unknown>)[localKey];
+      }
+    }
+  }
+  const finalEntry = merged as unknown as OvertimeEntry;
+  const nextEntries = [...entries.filter((e) => e.id !== change.id), finalEntry]
+    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+  await fs.writeFile(path, `---\n${JSON.stringify({ entries: nextEntries }, null, 2)}\n---\n`);
+
+  const { overtimeMonths } = get();
+  if (!overtimeMonths.includes(ym)) set({ overtimeMonths: [ym, ...overtimeMonths].sort().reverse() });
+  if (get().overtimeMonth === ym) set({ overtimeEntries: nextEntries });
+}
+
+// change.id es el year_month (natural key, sin id generado — ver
+// syncQueue.ts). Igual que el push, un cambio remoto de un mes que no
+// es el visible se ignora a propósito (mismatch de modelo, ver arriba).
+async function applyRemoteOvertimeMonthMetaChange(get: SyncGet, set: SyncSet, change: SyncChange): Promise<void> {
+  const yearMonth = change.id;
+  if (get().overtimeMonth !== yearMonth) return;
+  if (change.deleted) {
+    const empty = { colaborador: '', cedula: '' };
+    set({ overtimeMeta: empty });
+    localStorage.setItem('overtimeMeta', JSON.stringify(empty));
+    return;
+  }
+  applyOvertimeMonthMetaResponse(get, set, yearMonth, EPOCH, change.data as OvertimeMonthMetaApiResponse);
+}
+
+/** Aplica un content_state de daily entry (echo del propio push o
+ *  /sync/changes) — reescribe la sección del día en el archivo de su mes.
+ *  Misma operación sin importar el origen, igual que applyNoteContentUpdate. */
+async function applyDailyEntryContentUpdate(get: SyncGet, set: SyncSet, date: string, contentStateB64: string): Promise<void> {
+  const { basePath } = get();
+  if (!basePath) return;
+  const { content } = await applyIncomingDailyContentState(basePath, date, contentStateB64);
+  if (get().dailyEntries[date] === content) return;
+  const year = date.slice(0, 4);
+  const month = date.slice(5, 7);
+  const yearMonth = `${year}-${month}`;
+  const fp = dailyMonthFilePath(basePath, year, month);
+  let entries: Record<string, string> = {};
+  try { entries = parseDailyFile(await fs.readFile(fp)); } catch { /* archivo nuevo */ }
+  entries[date] = content;
+  await fs.createDir(dailyMonthDir(basePath, year, month));
+  await fs.writeFile(fp, serializeDailyFile(entries, yearMonth));
+  set((s) => ({
+    dailyEntries: { ...s.dailyEntries, [date]: content },
+    dailyMonths: s.dailyMonths.includes(yearMonth) ? s.dailyMonths : [yearMonth, ...s.dailyMonths].sort().reverse(),
+  }));
+}
+
+async function applyRemoteDailyEntryChange(get: SyncGet, set: SyncSet, change: SyncChange): Promise<void> {
+  const { basePath } = get();
+  if (!basePath) return;
+  const date = change.id;
+
+  if (change.deleted) {
+    const existingContent = get().dailyEntries[date];
+    if (existingContent !== undefined) {
+      // Delete que llegó de OTRA instalación desktop — mismo motivo que
+      // Task/Note/OvertimeEntry (papelera compartida, ver
+      // specs/papelera-reciclaje). Antes de esto, dailys no tenían sync
+      // en absoluto, así que este es su primer hook de papelera remota.
+      await trash.writeTrashRecord(basePath, 'daily_entry', date, date, { date, content: existingContent });
+    }
+    const year = date.slice(0, 4);
+    const month = date.slice(5, 7);
+    const yearMonth = `${year}-${month}`;
+    const fp = dailyMonthFilePath(basePath, year, month);
+    let entries: Record<string, string> = {};
+    try { entries = parseDailyFile(await fs.readFile(fp)); } catch { /* no file */ }
+    delete entries[date];
+    await fs.createDir(dailyMonthDir(basePath, year, month));
+    await fs.writeFile(fp, serializeDailyFile(entries, yearMonth));
+    await deleteDailyContentState(basePath, date);
+    set((s) => {
+      const rest = { ...s.dailyEntries };
+      delete rest[date];
+      return { dailyEntries: rest };
+    });
+    return;
+  }
+
+  const contentState = (change.data as DailyEntryApiResponse).content_state;
+  if (contentState) await applyDailyEntryContentUpdate(get, set, date, contentState);
+}
+
+async function applyRemoteChanges(get: SyncGet, set: SyncSet, changes: SyncChange[]): Promise<void> {
+  for (const change of changes) {
+    if (change.type === 'task') {
+      await applyRemoteTaskChange(get, set, change);
+    } else if (change.type === 'note') {
+      await applyRemoteNoteChange(get, set, change);
+    } else if (change.type === 'calendar_event') {
+      await applyRemoteCalendarEventChange(get, set, change);
+    } else if (change.type === 'absence_day') {
+      await applyRemoteAbsenceDayChange(get, set, change);
+    } else if (change.type === 'overtime_entry') {
+      await applyRemoteOvertimeEntryChange(get, set, change);
+    } else if (change.type === 'overtime_month_meta') {
+      await applyRemoteOvertimeMonthMetaChange(get, set, change);
+    } else if (change.type === 'daily_entry') {
+      await applyRemoteDailyEntryChange(get, set, change);
+    }
+  }
+}
+
+/** GET /sync/changes desde el cursor guardado; si el servidor dice
+ *  que el cursor ya no es válido (410 — se purgaron tombstones más
+ *  viejos de lo que este cliente conoce), descarta el cursor y hace
+ *  un resync completo desde cero. Los cambios en cola siguen
+ *  protegidos igual (ver EPOCH arriba) — un full resync no pisa
+ *  ediciones locales todavía sin confirmar. */
+// Ver specs/sync-incremental/design.md "Paginación" — un full resync
+// (since=0, o el fallback 410 de abajo) puede incluir cientos de
+// notas largas, cada una con su content_state (snapshot Yjs completo
+// en base64). SYNC_PAGE_LIMIT solo acota el tamaño de cada respuesta;
+// sigue habiendo una llamada por página hasta que llega una más corta
+// que el límite (o vacía).
+const SYNC_PAGE_LIMIT = 500;
+
+// Trae TODO el delta desde sinceStart, paginando en loop — usado tanto
+// por el camino normal (desde el cursor guardado) como por el
+// fallback de cursor inválido (since=0) de reconcileSync. Acumula
+// todas las páginas y las aplica de una sola vez al final (mismo
+// criterio que ya tenía este archivo antes de paginar, no una
+// aplicación incremental página por página como logday-web) — Desktop
+// tiene memoria de sobra para sostener unas pocas páginas en un array
+// mientras dura el pull.
+async function fetchAllChanges(
+  get: SyncGet, set: SyncSet, baseUrl: string, sinceStart: number,
+): Promise<{ changes: SyncChange[]; maxSeq: number }> {
+  const all: SyncChange[] = [];
+  let since = sinceStart;
+  let pageLen = SYNC_PAGE_LIMIT;
+  while (pageLen === SYNC_PAGE_LIMIT) {
+    const page = await withSyncAuth(get, set, (token) => syncChangesRemote(baseUrl, token, since, SYNC_PAGE_LIMIT));
+    pageLen = page.length;
+    if (page.length === 0) break;
+    all.push(...page);
+    since = page.reduce((m, c) => Math.max(m, c.seq), since);
+  }
+  return { changes: all, maxSeq: since };
+}
+
+async function reconcileSync(get: SyncGet, set: SyncSet): Promise<void> {
+  const { syncConfig } = get();
+  if (!syncConfig.enabled) return;
+  const cursor = getSyncCursor();
+  try {
+    const { changes, maxSeq } = await fetchAllChanges(get, set, syncConfig.serverUrl, cursor);
+    await applyRemoteChanges(get, set, changes);
+    if (changes.length > 0) {
+      setSyncCursor(maxSeq);
+    }
+    // Se marca "sincronizado" acá, no solo cuando hay cambios reales
+    // — un chequeo exitoso sin novedades sigue siendo una
+    // sincronización válida para el indicador de "última vez".
+    set({ lastSyncedAt: new Date().toISOString() });
+  } catch (e) {
+    if (e instanceof SyncApiError && e.status === 410) {
+      const { changes, maxSeq } = await fetchAllChanges(get, set, syncConfig.serverUrl, 0);
+      await applyRemoteChanges(get, set, changes);
+      setSyncCursor(maxSeq);
+      set({ lastSyncedAt: new Date().toISOString() });
+    }
+    // Otros errores (red caída, etc.): se reintenta solo en el
+    // próximo intervalo periódico o la próxima reconexión — no hay
+    // nada más que hacer acá sin bloquear la UI.
+  }
+}
+
+// Sin WebSocket todavía (fase "Tiempo real" pendiente) — este
+// intervalo es el stand-in hasta entonces. Se arranca/para junto con
+// syncConnect/syncDisconnect.
+//
+// Cada tick también drena la cola local antes de reconciliar — no
+// solo al conectar. syncCreateX/syncPatchX/syncDeleteX mandan directo
+// cuando hay conexión y encolan solo si esa llamada falla (network
+// blip, timeout, etc.); sin este drenado periódico esa entrada se
+// queda en la cola para siempre aunque la app siga "Conectado", ya
+// que nada más la reintenta hasta el próximo syncConnect (reconectar
+// a mano o reiniciar la app). Bug real encontrado probando el delete
+// de CalendarEvent: quedó en la cola sin drenar con la app conectada
+// todo el tiempo.
+const RECONCILE_INTERVAL_MS = 30_000;
+let reconcileIntervalId: ReturnType<typeof setInterval> | null = null;
+
+function startReconcileInterval(get: SyncGet, set: SyncSet): void {
+  if (reconcileIntervalId) return;
+  reconcileIntervalId = setInterval(() => {
+    void Promise.all([drainSyncQueue(get, set), drainContentSyncQueue(get, set)])
+      .then(() => reconcileSync(get, set));
+  }, RECONCILE_INTERVAL_MS);
+}
+
+function stopReconcileInterval(): void {
+  if (reconcileIntervalId) {
+    clearInterval(reconcileIntervalId);
+    reconcileIntervalId = null;
+  }
+}
+
+// No depende de conexión a sync (a diferencia del reconcile de arriba) —
+// es puro filesystem local, así que arranca directo desde init(). La
+// ventana de retención es de 60 días, no hace falta chequear tan seguido
+// como el sync — cada 6 horas alcanza de sobra.
+const TRASH_PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+let trashPurgeIntervalId: ReturnType<typeof setInterval> | null = null;
+
+function startTrashPurgeInterval(get: SyncGet): void {
+  if (trashPurgeIntervalId) return;
+  trashPurgeIntervalId = setInterval(() => {
+    const { basePath } = get();
+    if (basePath) void trash.purgeExpiredTrash(basePath);
+  }, TRASH_PURGE_INTERVAL_MS);
+}
+
+function stopTrashPurgeInterval(): void {
+  if (trashPurgeIntervalId) {
+    clearInterval(trashPurgeIntervalId);
+    trashPurgeIntervalId = null;
+  }
+}
+
+// ── Actualizaciones automáticas ────────────────────────────────────
+// Ver specs/actualizaciones-automaticas/. Reemplaza el chequeo casero
+// anterior (comando Rust `check_update` contra la API de GitHub, sin
+// descarga/instalación) por el plugin oficial de Tauri, que sí puede
+// descargar, verificar firma e instalar sin salir de la app.
+//
+// El objeto `Update` que devuelve `check()` no es serializable (tiene
+// métodos) — se guarda acá, a nivel de módulo, igual que
+// `inFlightSyncRefresh` más arriba; el estado reactivo del store solo
+// refleja los datos planos (versión/notas) que la UI necesita.
+let pendingUpdate: TauriUpdate | null = null;
+const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4h
+const UPDATE_AUTO_RESTART_DELAY_MS = 60_000;
+let updateCheckIntervalId: ReturnType<typeof setInterval> | null = null;
+
+// Tira el error hacia arriba a propósito — la usa el botón manual de
+// Ajustes ("Buscar actualizaciones"), que sí necesita distinguir "ya
+// estás al día" de "falló el chequeo" para avisarle al usuario que
+// pidió el chequeo a propósito. `performUpdateCheck` de abajo es el
+// wrapper que se usa para el chequeo en segundo plano, donde un fallo
+// nunca debe ser visible (requirements.md "Chequeo").
+async function runUpdateCheck(get: SyncGet, set: SyncSet): Promise<boolean> {
+  // No pisar una instalación ya en curso o lista para reiniciar.
+  const status = get().updateStatus;
+  if (status === 'downloading' || status === 'ready') return status === 'ready';
+
+  const update = await checkUpdateRemote();
+  if (!update) {
+    pendingUpdate = null;
+    set({ updateInfo: null, updateStatus: 'idle' });
+    return false;
+  }
+  const yaAvisado = pendingUpdate?.version === update.version;
+  pendingUpdate = update;
+  set({ updateInfo: { version: update.version, body: update.body }, updateStatus: 'available' });
+  if (!yaAvisado) {
+    // Ya se había avisado de esta misma versión en un chequeo
+    // anterior — no repetir el toast/auto-instalación en cada ciclo.
+    if (get().autoUpdateEnabled) {
+      void get().installUpdate();
+    } else {
+      get().showToast({
+        kind: 'info',
+        title: t(get().language, 'settings', 'updateAvailable'),
+        description: `v${update.version}`,
+        durationMs: 6000,
+      });
+    }
+  }
+  return true;
+}
+
+async function performUpdateCheck(get: SyncGet, set: SyncSet): Promise<void> {
+  try {
+    await runUpdateCheck(get, set);
+  } catch {
+    // Silencioso a propósito (requirements.md "Chequeo"): sin red o con
+    // GitHub caído, no debe interrumpir el uso normal ni mostrar un
+    // error global — se reintenta en el próximo ciclo.
+  }
+}
+
+function startUpdateCheckInterval(get: SyncGet, set: SyncSet): void {
+  if (updateCheckIntervalId) return;
+  updateCheckIntervalId = setInterval(() => {
+    void performUpdateCheck(get, set);
+  }, UPDATE_CHECK_INTERVAL_MS);
+}
+
+// ── Tiempo real (WebSocket) ──────────────────────────────────────
+// Ver specs/sync-servidor "Tiempo real"/"Reconexión WebSocket" — el
+// diseño (backoff, protocolo) ya estaba escrito ahí, esto lo
+// implementa. Mismo patrón que logday-web (src/store/appStore.ts,
+// connectRealtime/handleNotice/schedulePull) con dos diferencias
+// deliberadas: transporte (@tauri-apps/plugin-websocket en vez de
+// WebSocket nativo del navegador — mismo motivo que REST usa comandos
+// Rust y no fetch, ver arriba "Capa de red") y backoff exponencial
+// (design.md ya lo definía así, no el retry fijo de 3s de web).
+//
+// El aviso {"type","id","seq"} nunca se aplica directo — solo dispara
+// reconcileSync (ya existente, sin cambios) antes de lo que tardaría
+// el poll de 30s, que sigue como red de respaldo tal cual está.
+
+const REALTIME_BACKOFF_MS = [1000, 2000, 4000, 8000, 16000, 30000];
+let realtimeWs: TauriWebSocket | null = null;
+let realtimeReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let realtimeBackoffIdx = 0;
+let realtimePullInFlight = false;
+let realtimePullPending = false;
+let realtimeNoticeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let realtimePendingNoticeSeq = 0;
+
+function wsUrl(serverUrl: string): string {
+  return normalizeServerUrl(serverUrl).replace(/^http/, 'ws') + '/ws';
+}
+
+// Una ráfaga de avisos (varios cambios casi juntos) no debe disparar
+// un pull por cada uno — si ya hay uno en vuelo, el resto solo marca
+// "pendiente" y dispara exactamente un pull más al terminar.
+function scheduleRealtimePull(get: SyncGet, set: SyncSet): void {
+  if (realtimePullInFlight) {
+    realtimePullPending = true;
+    return;
+  }
+  realtimePullInFlight = true;
+  void reconcileSync(get, set).finally(() => {
+    realtimePullInFlight = false;
+    if (realtimePullPending) {
+      realtimePullPending = false;
+      scheduleRealtimePull(get, set);
+    }
+  });
+}
+
+// El servidor manda Notify() antes de resolver la respuesta HTTP del
+// propio write (ver logday-web, mismo comentario) — el eco por WS de
+// una escritura propia puede llegar antes de que esa respuesta
+// termine de avanzar el cursor acá. Esperar un toque antes de decidir
+// le da tiempo a que aterrice, y de paso agrupa ráfagas en una sola
+// decisión.
+const REALTIME_NOTICE_DEBOUNCE_MS = 250;
+
+function handleRealtimeNotice(seq: number | undefined, get: SyncGet, set: SyncSet): void {
+  if (typeof seq === 'number') realtimePendingNoticeSeq = Math.max(realtimePendingNoticeSeq, seq);
+  if (realtimeNoticeDebounceTimer) return;
+  realtimeNoticeDebounceTimer = setTimeout(() => {
+    realtimeNoticeDebounceTimer = null;
+    const seqToCheck = realtimePendingNoticeSeq;
+    realtimePendingNoticeSeq = 0;
+    if (seqToCheck > 0 && seqToCheck <= getSyncCursor()) return; // ya lo tenemos, viene de nuestra propia escritura
+    scheduleRealtimePull(get, set);
+  }, REALTIME_NOTICE_DEBOUNCE_MS);
+}
+
+async function connectRealtime(get: SyncGet, set: SyncSet): Promise<void> {
+  if (realtimeWs) return;
+  const { syncConfig } = get();
+  if (!syncConfig.enabled || !syncConfig.accessToken) return;
+
+  let socket: TauriWebSocket;
+  try {
+    socket = await TauriWebSocket.connect(wsUrl(syncConfig.serverUrl));
+  } catch {
+    scheduleRealtimeReconnect(get, set);
+    return;
+  }
+  realtimeWs = socket;
+
+  socket.addListener((msg) => {
+    if (realtimeWs !== socket) return; // conexión vieja, ya reemplazada
+
+    // El plugin de Rust serializa un cierre "sucio" (p. ej. el server
+    // cierra con conn.CloseNow() justo después de un auth fallido, sin
+    // esperar a que el cliente termine de leer la trama de cierre
+    // prolija) como un string plano en vez de {type, data} — no como
+    // 'Close'. Sin este chequeo, ese mensaje no matchea ninguna rama de
+    // abajo, `realtimeWs` queda apuntando a un socket ya muerto para
+    // siempre, y como connectRealtime empieza con `if (realtimeWs)
+    // return`, ningún reintento futuro (ni el de este backoff ni el que
+    // dispara un login/reconexión manual después) vuelve a conectar
+    // (encontrado probando: cero intentos de /ws en el server tras un
+    // primer cierre a los 3.8s).
+    if (typeof msg !== 'object' || msg === null || typeof (msg as { type?: unknown }).type !== 'string') {
+      if (realtimeWs === socket) {
+        realtimeWs = null;
+        scheduleRealtimeReconnect(get, set);
+      }
+      return;
+    }
+
+    if (msg.type === 'Text') {
+      // Recibir CUALQUIER mensaje que pruebe que el servidor aceptó la
+      // conexión (texto/ping/pong) sí prueba que la autenticación pasó —
+      // reset acá. 'Close' se maneja aparte y NO resetea: si reseteara,
+      // un token inválido volvería a reintentar cada 1s para siempre en
+      // vez de escalar el backoff (el bug original que motivó todo esto).
+      realtimeBackoffIdx = 0;
+      try {
+        const notice = JSON.parse(msg.data) as { seq?: number };
+        handleRealtimeNotice(notice.seq, get, set);
+      } catch { /* mensaje no-JSON, no debería pasar */ }
+    } else if (msg.type === 'Ping') {
+      realtimeBackoffIdx = 0;
+      // El plugin/librería de bajo nivel debería responder el pong de
+      // protocolo solo; este eco es una red de respaldo barata por si
+      // no lo hace (no confirmado en runtime, ver plan).
+      void socket.send({ type: 'Pong', data: msg.data }).catch(() => {});
+    } else if (msg.type === 'Close') {
+      if (realtimeWs === socket) {
+        realtimeWs = null;
+        scheduleRealtimeReconnect(get, set);
+      }
+    }
+  });
+
+  try {
+    await socket.send(JSON.stringify({ type: 'auth', token: syncConfig.accessToken }));
+  } catch {
+    realtimeWs = null;
+    scheduleRealtimeReconnect(get, set);
+  }
+}
+
+function scheduleRealtimeReconnect(get: SyncGet, set: SyncSet): void {
+  if (realtimeReconnectTimer || !get().syncConfig.enabled) return;
+  const delay = REALTIME_BACKOFF_MS[Math.min(realtimeBackoffIdx, REALTIME_BACKOFF_MS.length - 1)];
+  realtimeBackoffIdx = Math.min(realtimeBackoffIdx + 1, REALTIME_BACKOFF_MS.length - 1);
+  realtimeReconnectTimer = setTimeout(() => {
+    realtimeReconnectTimer = null;
+    void connectRealtime(get, set);
+  }, delay);
+}
+
+function disconnectRealtime(): void {
+  if (realtimeReconnectTimer) {
+    clearTimeout(realtimeReconnectTimer);
+    realtimeReconnectTimer = null;
+  }
+  realtimeBackoffIdx = 0;
+  if (realtimeWs) {
+    const socket = realtimeWs;
+    realtimeWs = null;
+    void socket.disconnect().catch(() => {});
+  }
+}
+
+// Mejor esfuerzo: al recargar/cerrar el webview, el socket real del lado
+// Rust queda vivo para siempre si no se le avisa (el estado de JS se
+// resetea solo, pero eso no cierra el socket viejo) — visto en pruebas
+// como conexiones TCP "zombie" acumulándose en el servidor tras varios
+// reloads. No hay garantía de que el IPC async alcance a completarse
+// antes de que el proceso muera, pero reduce el leak en el caso común.
+window.addEventListener('beforeunload', () => {
+  disconnectRealtime();
+});
 
 // ── Store ──────────────────────────────────────────────────────
 
@@ -349,7 +2138,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   workWeekDays: 5 as (5 | 6),
   holidaysAsNonWork: true,
   animationsEnabled: true,
+  trashAutoPurgeEnabled: true,
+  sidebarLabelsVisible: true,
   theme: (localStorage.getItem('theme') as Theme) || 'system',
+  customThemes: (() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('customThemes') || '[]') as CustomTheme[];
+      // Normaliza temas creados antes de añadir bgTint/textTint/intensity.
+      return parsed.map((ct) => ({
+        ...ct,
+        bgTint: ct.bgTint ?? (ct.base === 'light' ? '#f4f4f5' : '#1c1c1c'),
+        textTint: ct.textTint ?? '#888888',
+        intensity: ct.intensity ?? 50,
+      }));
+    } catch { return []; }
+  })(),
   startupScreen: 'dashboard',
   language: (localStorage.getItem('language') as Language) || 'es',
   fontSize: Number(localStorage.getItem('fontSize')) || 17,
@@ -374,6 +2177,43 @@ export const useAppStore = create<AppState>((set, get) => ({
   gitRemoteStatus: 'unknown' as GitRemoteStatus,
   lastCommitTime: null,
   isGitOpen: false,
+  syncConfig: (() => {
+    try {
+      return {
+        enabled: false, serverUrl: '', email: '', accessToken: '', refreshToken: '', deviceId: '',
+        ...JSON.parse(localStorage.getItem('syncConfig') || '{}'),
+      };
+    } catch {
+      return { enabled: false, serverUrl: '', email: '', accessToken: '', refreshToken: '', deviceId: '' };
+    }
+  })(),
+  syncConnectionStatus: 'disconnected' as SyncConnectionStatus,
+  syncErrorMsg: '',
+  isSyncOpen: false,
+  devices: [],
+  devicesError: null,
+  lastSyncedAt: null,
+  syncNowInProgress: false,
+  syncMigrationStatus: 'idle',
+  // Objeto literal, no emptyMigrationProgress() de syncMigration.ts a
+  // propósito — ese módulo importa de este archivo (projectDir,
+  // readTaskFromPath, etc.) para leer disco sin pasar por las
+  // acciones que sí tocan el estado visible; importarlo acá de vuelta
+  // en el estado inicial (no dinámico, a diferencia de la acción de
+  // abajo) crearía un ciclo real en tiempo de carga del módulo.
+  syncMigrationProgress: { done: 0, total: 0, migrated: 0, skipped: 0, failed: 0 },
+
+  policyGate: null,
+  sensitiveDataAccepted: true,
+
+  updateInfo: null,
+  updateStatus: 'idle',
+  autoUpdateEnabled: (() => {
+    try { return JSON.parse(localStorage.getItem('autoUpdateEnabled') || 'false'); }
+    catch { return false; }
+  })(),
+  updateRestartAt: null,
+
   overtimeEntries: [],
   overtimeMonth: new Date().toISOString().slice(0, 7),
   overtimeMonths: [],
@@ -383,6 +2223,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   })(),
   calendarEvents: [],
   activeCalendarEvent: null,
+  absenceDays: [],
 
   showToast: ({ kind, title, description, durationMs = 3200 }) => {
     const id = uuidv4();
@@ -407,7 +2248,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   init: async () => {
     set({ isLoading: true });
-    applyThemeToDOM(get().theme);
+    applyThemeToDOM(get().theme, false, get().customThemes);
     applyFontSizeToDOM(get().fontSize);
     applyAnimationsToDOM(get().animationsEnabled);
     try {
@@ -432,6 +2273,8 @@ export const useAppStore = create<AppState>((set, get) => ({
             workWeekDays: (cfg.workWeekDays as (5 | 6)) ?? 5,
             holidaysAsNonWork: cfg.holidaysAsNonWork ?? true,
             animationsEnabled: cfg.animationsEnabled ?? true,
+            trashAutoPurgeEnabled: cfg.trashAutoPurgeEnabled ?? true,
+            sidebarLabelsVisible: cfg.sidebarLabelsVisible ?? true,
           });
 
           const lastProject = cfg.lastOpenedProject || null;
@@ -447,6 +2290,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             get().loadDailyMonths(),
             get().loadOvertimeMonths(),
             get().loadCalendarEvents(),
+            get().loadAbsenceDays(),
           ]);
 
           if (lastProject) set({ activeProject: lastProject });
@@ -457,8 +2301,39 @@ export const useAppStore = create<AppState>((set, get) => ({
           if (gitConfig.enabled && gitConfig.remote.trim()) {
             get().gitFetch().catch(() => {});
           }
+
+          // Papelera: una pasada de purga ya al abrir (no espera al
+          // primer tick del intervalo) + arranca el job periódico si
+          // está habilitado. No depende de sync — es puro filesystem.
+          if (get().trashAutoPurgeEnabled) {
+            trash.purgeExpiredTrash(cfg.basePath).catch(() => {});
+            startTrashPurgeInterval(get);
+          }
+
+          // Auto-reconexión de sync si ya estaba habilitado de una
+          // sesión anterior — sin esto, hay que volver a entrar a
+          // Ajustes después de cada reinicio de la app. Mismo patrón
+          // optimista que syncConnect (arranca el poll/WS ya, drena y
+          // reconcilia en background) — si el token guardado expiró,
+          // no hay refresh automático todavía (ver plan), las
+          // llamadas individuales fallan/encolan como en cualquier
+          // corte de red, comportamiento aceptado explícitamente.
+          const { syncConfig } = get();
+          if (syncConfig.enabled && syncConfig.accessToken) {
+            set({ syncConnectionStatus: 'connected' });
+            void Promise.all([drainSyncQueue(get, set), drainContentSyncQueue(get, set)])
+              .then(() => reconcileSync(get, set));
+            startReconcileInterval(get, set);
+            void connectRealtime(get, set);
+          }
         }
       }
+
+      // Independiente de basePath/sync — chequeo de actualizaciones,
+      // ver specs/actualizaciones-automaticas/. No bloquea isLoading
+      // (fire-and-forget) ni interrumpe el arranque si falla.
+      void performUpdateCheck(get, set);
+      startUpdateCheckInterval(get, set);
     } catch (e) {
       console.error('Init error:', e);
     } finally {
@@ -470,18 +2345,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     const picked = await pickFolder();
     if (!picked) return;
 
-    const { configDir, startupScreen, confirmDestructiveActions } = get();
     const basePath = picked;
 
     await fs.createDir(`${basePath}/projects/inbox`);
     await fs.createDir(`${basePath}/notes`);
     await fs.createDir(`${basePath}/dailys`);
 
-    if (configDir) {
-      await saveConfig(configDir, { basePath, startupScreen, language: get().language, confirmDestructiveActions, notificationsEnabled: get().notificationsEnabled, defaultReminderMinutes: get().defaultReminderMinutes });
-    }
-
     set({ basePath, isConfigured: true });
+    await persistConfig(get);
     await get().loadProjects();
     await get().loadNoteFolders();
     await get().loadTasks(null);
@@ -492,22 +2363,57 @@ export const useAppStore = create<AppState>((set, get) => ({
     const picked = await pickFolder();
     if (!picked) return;
 
-    const { configDir, startupScreen, confirmDestructiveActions } = get();
     const basePath = picked;
 
     await fs.createDir(`${basePath}/projects/inbox`);
     await fs.createDir(`${basePath}/notes`);
     await fs.createDir(`${basePath}/dailys`);
 
-    if (configDir) {
-      await saveConfig(configDir, { basePath, startupScreen, language: get().language, confirmDestructiveActions, notificationsEnabled: get().notificationsEnabled, defaultReminderMinutes: get().defaultReminderMinutes });
-    }
-
     set({ basePath, activeProject: null, activeNote: null, activeNoteFolder: null, tasks: [], notes: [] });
+    await persistConfig(get);
     await get().loadProjects();
     await get().loadNoteFolders();
     await get().loadTasks(null);
     await get().loadNotes(null);
+  },
+
+  checkForUpdates: () => runUpdateCheck(get, set),
+
+  installUpdate: async () => {
+    if (!pendingUpdate) return;
+    set({ updateStatus: 'downloading' });
+    try {
+      await pendingUpdate.downloadAndInstall();
+    } catch {
+      // Vuelve a 'available' (no un estado 'error' aparte) para que el
+      // botón "Actualizar ahora" quede disponible de nuevo — el toast
+      // ya avisa del fallo puntual.
+      set({ updateStatus: 'available' });
+      get().showToast({
+        kind: 'error',
+        title: t(get().language, 'settings', 'updateErrorTitle'),
+      });
+      return;
+    }
+    if (get().autoUpdateEnabled) {
+      // Nunca reiniciar sin avisar (requirements.md "Actualización
+      // automática") — UpdateRestartBanner.tsx muestra la cuenta
+      // regresiva y la opción de posponer.
+      set({ updateStatus: 'ready', updateRestartAt: Date.now() + UPDATE_AUTO_RESTART_DELAY_MS });
+    } else {
+      // Instalación manual: el usuario ya pidió "Actualizar ahora" a
+      // propósito, reinicia directo sin cuenta regresiva.
+      await relaunch();
+    }
+  },
+
+  setAutoUpdateEnabled: (enabled) => {
+    localStorage.setItem('autoUpdateEnabled', JSON.stringify(enabled));
+    set({ autoUpdateEnabled: enabled });
+  },
+
+  postponeUpdateRestart: () => {
+    set({ updateRestartAt: Date.now() + UPDATE_AUTO_RESTART_DELAY_MS });
   },
 
   // ── Tasks ──────────────────────────────────────────────────
@@ -573,17 +2479,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectProject: (project) => {
     set({ activeProject: project });
     get().loadTasks(project);
-    const { configDir, basePath, activeNoteFolder, startupScreen } = get();
-    if (configDir && basePath) {
-      saveConfig(configDir, {
-        basePath,
-        startupScreen,
-        language: get().language,
-        confirmDestructiveActions: get().confirmDestructiveActions,
-        lastOpenedProject: project ?? undefined,
-        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
-      }).catch(() => {});
-    }
+    persistConfig(get).catch(() => {});
   },
 
   createProject: async (name, parent = '') => {
@@ -719,6 +2615,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await fs.writeFile(task.filePath, serializeTask(task));
     set((state) => ({ tasks: [task, ...state.tasks], activeTask: task }));
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    void syncCreateTask(get, set, task);
     return task;
   },
 
@@ -759,9 +2656,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeTask: state.activeTask?.id === normalizedTask.id ? normalizedTask : state.activeTask,
     }));
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    const changedFields = diffTaskFields(prev, normalizedTask);
+    if (Object.keys(changedFields).length > 0) void syncPatchTask(get, set, normalizedTask.id, changedFields);
   },
 
   deleteTask: async (task) => {
+    const { basePath } = get();
+    if (basePath) await trash.writeTrashRecord(basePath, 'task', task.id, task.title, task);
     await fs.deleteFile(task.filePath);
     const language = get().language;
     set((state) => ({
@@ -774,6 +2675,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       description: task.title,
     });
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    void syncDeleteTask(get, set, task.id);
   },
 
   setActiveTask: (task) => set({ activeTask: task, activeCalendarEvent: null }),
@@ -801,20 +2703,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const nDir = notesDir(basePath);
       await fs.createDir(nDir).catch(() => {});
-
-      async function scanFolders(dirPath: string, prefix: string): Promise<string[]> {
-        const entries = await fs.listDir(dirPath).catch(() => []);
-        const result: string[] = [];
-        for (const e of (entries as { name: string; path: string; is_dir: boolean }[]).filter(e => e.is_dir)) {
-          const fullPath = prefix ? `${prefix}/${e.name}` : e.name;
-          result.push(fullPath);
-          const children = await scanFolders(`${dirPath}/${e.name}`, fullPath);
-          result.push(...children);
-        }
-        return result;
-      }
-
-      const folders = await scanFolders(nDir, '');
+      const folders = await scanNoteFolders(nDir, '');
       set({ noteFolders: folders });
     } catch (e) {
       console.error('loadNoteFolders error:', e);
@@ -886,19 +2775,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set({ activeNoteFolder: folder, activeNote: null });
     get().loadNotes(folder);
-    const { configDir, basePath, activeProject, startupScreen } = get();
-    if (configDir && basePath) {
-      saveConfig(configDir, {
-        basePath,
-        startupScreen,
-        language: get().language,
-        confirmDestructiveActions: get().confirmDestructiveActions,
-        notificationsEnabled: get().notificationsEnabled,
-        defaultReminderMinutes: get().defaultReminderMinutes,
-        lastOpenedProject: activeProject ?? undefined,
-        lastOpenedNoteFolder: folder ?? undefined,
-      }).catch(() => {});
-    }
+    persistConfig(get).catch(() => {});
   },
 
   createNoteFolder: async (name, parent?) => {
@@ -992,10 +2869,114 @@ export const useAppStore = create<AppState>((set, get) => ({
     await fs.writeFile(note.filePath, serializeNote(note));
     set((state) => ({ notes: [note, ...state.notes], activeNote: note }));
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    void syncCreateNote(get, set, note);
     return note;
   },
 
+  importNotesFromPaths: async (paths) => {
+    const { basePath, activeNoteFolder, language } = get();
+    if (!basePath) return;
+    const folder = activeNoteFolder ?? '';
+    const imported: Note[] = [];
+    for (const filePath of paths) {
+      try {
+        const raw = await fs.readFile(filePath);
+        const id = uuidv4();
+        const today = formatDate(new Date());
+        const parsed = parseNote(raw, filePath);
+        let title: string;
+        let content: string;
+        let tags: string[] = [];
+        if (parsed) {
+          title = parsed.title;
+          content = parsed.content;
+          tags = parsed.tags;
+        } else {
+          const headingMatch = raw.match(/^#\s+(.+)$/m);
+          const filename = filePath.split('/').pop()?.split('\\').pop()?.replace(/\.(md|txt)$/i, '') ?? 'Imported';
+          title = headingMatch ? headingMatch[1].trim() : filename;
+          content = raw.trim();
+        }
+        const note: Note = {
+          id,
+          title,
+          folder,
+          tags,
+          created: today,
+          updated: today,
+          pinned: false,
+          content,
+          filePath: noteFilePath(basePath, folder, id),
+        };
+        if (folder) await fs.createDir(noteFolderDir(basePath, folder)).catch(() => {});
+        await fs.writeFile(note.filePath, serializeNote(note));
+        imported.push(note);
+      } catch { /* skip unreadable files */ }
+    }
+    if (imported.length > 0) {
+      set((state) => ({ notes: [...imported, ...state.notes], activeNote: imported[0] }));
+      if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+      imported.forEach((note) => void syncCreateNote(get, set, note));
+      get().showToast({
+        kind: 'success',
+        title: t(language, 'toast', 'noteImported'),
+        description: imported.length === 1 ? imported[0].title || t(language, 'notes', 'untitled') : `${imported.length} ${t(language, 'notes', 'title').toLowerCase()}`,
+      });
+    }
+  },
+
+  importNotesFromContent: async (files) => {
+    const { basePath, activeNoteFolder, language } = get();
+    if (!basePath) return;
+    const folder = activeNoteFolder ?? '';
+    const imported: Note[] = [];
+    for (const { name, content: rawContent } of files) {
+      try {
+        const id = uuidv4();
+        const today = formatDate(new Date());
+        const parsed = parseNote(rawContent, '');
+        let title: string;
+        let content: string;
+        let tags: string[] = [];
+        if (parsed) {
+          title = parsed.title;
+          content = parsed.content;
+          tags = parsed.tags;
+        } else {
+          const headingMatch = rawContent.match(/^#\s+(.+)$/m);
+          title = headingMatch ? headingMatch[1].trim() : name.replace(/\.(md|txt)$/i, '');
+          content = rawContent.trim();
+        }
+        const note: Note = {
+          id,
+          title,
+          folder,
+          tags,
+          created: today,
+          updated: today,
+          pinned: false,
+          content,
+          filePath: noteFilePath(basePath, folder, id),
+        };
+        if (folder) await fs.createDir(noteFolderDir(basePath, folder)).catch(() => {});
+        await fs.writeFile(note.filePath, serializeNote(note));
+        imported.push(note);
+      } catch { /* skip unreadable entries */ }
+    }
+    if (imported.length > 0) {
+      set((state) => ({ notes: [...imported, ...state.notes], activeNote: imported[0] }));
+      if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+      imported.forEach((note) => void syncCreateNote(get, set, note));
+      get().showToast({
+        kind: 'success',
+        title: t(language, 'toast', 'noteImported'),
+        description: imported.length === 1 ? imported[0].title || t(language, 'notes', 'untitled') : `${imported.length} ${t(language, 'notes', 'title').toLowerCase()}`,
+      });
+    }
+  },
+
   updateNote: async (note) => {
+    const prev = get().notes.find((n) => n.id === note.id);
     const updated = { ...note, updated: formatDate(new Date()) };
     await fs.writeFile(updated.filePath, serializeNote(updated));
     set((state) => ({
@@ -1003,16 +2984,29 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeNote: state.activeNote?.id === updated.id ? updated : state.activeNote,
     }));
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    const changedFields = diffNoteFields(prev, updated);
+    if (Object.keys(changedFields).length > 0) void syncPatchNote(get, set, updated.id, changedFields);
   },
 
   deleteNote: async (note, options) => {
     const showToast = options?.showToast ?? true;
+    const { basePath } = get();
+    // Una nota vacía (sin título ni contenido) es un descarte automático
+    // (ver selectNoteFolder/setSection/NoteList "descartar nota vacía"),
+    // no un borrado real del usuario — no vale la pena ensuciar la
+    // papelera con esas.
+    const isEmpty = !note.title.trim() && !note.content.trim();
+    if (basePath && !isEmpty) {
+      await trash.writeTrashRecord(basePath, 'note', note.id, note.title || note.id, note);
+    }
     await fs.deleteFile(note.filePath);
+    await fs.deleteFile(noteContentStatePath(note.filePath)).catch(() => {});
     const language = get().language;
     set((state) => ({
       notes: state.notes.filter((n) => n.id !== note.id),
       activeNote: state.activeNote?.id === note.id ? null : state.activeNote,
     }));
+    void syncDeleteNote(get, set, note.id);
     if (showToast) {
       get().showToast({
         kind: 'success',
@@ -1199,9 +3193,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     finally { loadingDailyMonths.delete(yearMonth); }
   },
 
-  saveDailyEntry: async (date, activities) => {
+  saveDailyEntry: async (date, activities, baseText) => {
     const { basePath } = get();
-    if (!basePath) return;
+    if (!basePath) return activities;
     const year = date.slice(0, 4);
     const month = date.slice(5, 7);
     const yearMonth = `${year}-${month}`;
@@ -1214,17 +3208,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       existing = parseDailyFile(raw);
     } catch { /* archivo nuevo */ }
 
-    const updated = { ...existing, [date]: activities };
+    // Solo el delta del usuario va al CRDT; lo que se guarda en disco y
+    // en el store es el resultado ya mezclado con lo remoto que el
+    // editor todavía no tenía (ver applyDailyEditorEdit).
+    const base = baseText ?? existing[date] ?? '';
+    const { merged, updateB64 } = await applyDailyEditorEdit(basePath, date, base, activities);
+
+    const updated = { ...existing, [date]: merged };
     await fs.createDir(dailyMonthDir(basePath, year, month));
     await fs.writeFile(fp, serializeDailyFile(updated, yearMonth));
 
     set((s) => ({
-      dailyEntries: { ...s.dailyEntries, [date]: activities },
+      dailyEntries: { ...s.dailyEntries, [date]: merged },
       dailyMonths: s.dailyMonths.includes(yearMonth)
         ? s.dailyMonths
         : [yearMonth, ...s.dailyMonths].sort().reverse(),
     }));
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    if (updateB64) void pushDailyContentUpdate(get, set, date, updateB64);
+    return merged;
   },
 
   setActiveDailyDate: (date) => set({ activeDailyDate: date }),
@@ -1262,9 +3264,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   copyDailyFormat: async (date) => {
-    const { basePath } = get();
+    const { basePath, absenceDays } = get();
     const todayDate = dateFromISO(date);
-    const prevDate = getPreviousWorkingDay(todayDate);
+    const absenceDates = new Set(absenceDays.map((a) => a.date));
+    const prevDate = getPreviousWorkingDay(todayDate, absenceDates);
     const prevISO = toISO(prevDate);
 
     // Asegurarse de tener cargado el mes del día anterior (puede ser distinto)
@@ -1300,16 +3303,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       const raw = await fs.readFile(fp);
       existing = parseDailyFile(raw);
     } catch { /* no file */ }
+    const dayContent = existing[date];
+    if (dayContent !== undefined) {
+      await trash.writeTrashRecord(basePath, 'daily_entry', date, date, { date, content: dayContent });
+    }
     delete existing[date];
     await fs.createDir(dailyMonthDir(basePath, year, month));
     await fs.writeFile(fp, serializeDailyFile(existing, yearMonth));
+    await deleteDailyContentState(basePath, date);
     set((s) => {
-      const { [date]: _removed, ...rest } = s.dailyEntries;
+      const rest = { ...s.dailyEntries };
+      delete rest[date];
       return {
         dailyEntries: rest,
         activeDailyDate: s.activeDailyDate === date ? null : s.activeDailyDate,
       };
     });
+    void syncDeleteDailyEntry(get, set, date);
     get().showToast({
       kind: 'success',
       title: t(language, 'toast', 'dailyDeleted'),
@@ -1438,7 +3448,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const calc = calcOvertimeBreakdown(input.fecha, input.horaInicio, input.horaFinal);
     const id = input.id ?? uuidv4();
     const entry: OvertimeEntry = { ...input, id, ...calc };
-    const ym = get().overtimeMonth;
+    // Usar el mes de la fecha de la entrada, no el mes visible en la lista
+    const ym = input.fecha.slice(0, 7);
     const [year, month] = ym.split('-');
     await fs.createDir(overtimeMonthDir(base, year, month));
     const path = overtimeMonthFilePath(base, year, month);
@@ -1451,16 +3462,24 @@ export const useAppStore = create<AppState>((set, get) => ({
         existing = match ? (JSON.parse(match[1]).entries ?? []) : [];
       } catch { /* archivo vacío o corrupto */ }
     }
+    const prevEntry = existing.find((e) => e.id === entry.id);
     const entries = [...existing.filter(e => e.id !== entry.id), entry]
       .sort((a, b) => a.fecha.localeCompare(b.fecha));
-    set({ overtimeEntries: entries });
-    await fs.writeFile(path, `---\n${JSON.stringify({ entries }, null, 2)}\n---\n`);
     // Actualizar lista de meses si es nuevo
     const { overtimeMonths } = get();
     if (!overtimeMonths.includes(ym)) {
       set({ overtimeMonths: [ym, ...overtimeMonths].sort().reverse() });
     }
+    await fs.writeFile(path, `---\n${JSON.stringify({ entries }, null, 2)}\n---\n`);
+    // Navegar al mes de la entrada para que aparezca en la lista
+    await get().loadOvertimeMonth(ym);
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    if (prevEntry) {
+      const changedFields = diffOvertimeEntryFields(prevEntry, entry);
+      if (Object.keys(changedFields).length > 0) void syncPatchOvertimeEntry(get, set, entry.id, changedFields);
+    } else {
+      void syncCreateOvertimeEntry(get, set, entry);
+    }
   },
 
   deleteOvertimeEntry: async (id) => {
@@ -1468,12 +3487,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!base) return;
     const language = get().language;
     const deletedEntry = get().overtimeEntries.find((entry) => entry.id === id);
+    if (deletedEntry) {
+      await trash.writeTrashRecord(base, 'overtime_entry', id, `${deletedEntry.fecha} — ${deletedEntry.actividad}`, deletedEntry);
+    }
     const entries = get().overtimeEntries.filter(e => e.id !== id);
     set({ overtimeEntries: entries });
     const ym = get().overtimeMonth;
     const [year, month] = ym.split('-');
     const path = overtimeMonthFilePath(base, year, month);
     await fs.writeFile(path, `---\n${JSON.stringify({ entries }, null, 2)}\n---\n`);
+    void syncDeleteOvertimeEntry(get, set, id);
     get().showToast({
       kind: 'success',
       title: t(language, 'toast', 'overtimeDeleted'),
@@ -1508,6 +3531,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const updated = { ...get().overtimeMeta, ...meta };
     localStorage.setItem('overtimeMeta', JSON.stringify(updated));
     set({ overtimeMeta: updated });
+    scheduleOvertimeMetaPush(get, set, meta);
   },
 
   replaceOvertimeMetaSnapshot: (meta) => {
@@ -1547,158 +3571,126 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  setTheme: (theme: Theme) => {
+  setTheme: (theme) => {
     localStorage.setItem('theme', theme);
-    applyThemeToDOM(theme, true);
+    applyThemeToDOM(theme, true, get().customThemes);
     set({ theme });
+  },
+
+  createCustomTheme: ({ name, base, accent, bgTint, textTint, intensity }) => {
+    const newTheme: CustomTheme = {
+      id: uuidv4(),
+      name: name.trim() || t(get().language, 'settings', 'customThemeDefaultName'),
+      base,
+      accent,
+      bgTint,
+      textTint,
+      intensity,
+      createdAt: new Date().toISOString(),
+    };
+    const customThemes = [...get().customThemes, newTheme];
+    localStorage.setItem('customThemes', JSON.stringify(customThemes));
+    set({ customThemes });
+    get().setTheme(`custom:${newTheme.id}`);
+    return newTheme;
+  },
+
+  renameCustomTheme: (id, name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const customThemes = get().customThemes.map((th) => th.id === id ? { ...th, name: trimmed } : th);
+    localStorage.setItem('customThemes', JSON.stringify(customThemes));
+    set({ customThemes });
+  },
+
+  duplicateCustomTheme: (id) => {
+    const source = get().customThemes.find((th) => th.id === id);
+    if (!source) return;
+    const newTheme: CustomTheme = {
+      ...source,
+      id: uuidv4(),
+      name: `${source.name} ${t(get().language, 'settings', 'customThemeCopySuffix')}`,
+      createdAt: new Date().toISOString(),
+    };
+    const customThemes = [...get().customThemes, newTheme];
+    localStorage.setItem('customThemes', JSON.stringify(customThemes));
+    set({ customThemes });
+  },
+
+  deleteCustomTheme: (id) => {
+    const wasActive = get().theme === `custom:${id}`;
+    const customThemes = get().customThemes.filter((th) => th.id !== id);
+    localStorage.setItem('customThemes', JSON.stringify(customThemes));
+    set({ customThemes });
+    if (wasActive) get().setTheme('dark');
+  },
+
+  updateCustomTheme: (id, patch) => {
+    const customThemes = get().customThemes.map((th) => th.id === id ? { ...th, ...patch } : th);
+    localStorage.setItem('customThemes', JSON.stringify(customThemes));
+    set({ customThemes });
+    if (get().theme === `custom:${id}`) {
+      applyThemeToDOM(get().theme, false, customThemes);
+    }
+  },
+
+  replaceCustomThemes: (customThemes) => {
+    localStorage.setItem('customThemes', JSON.stringify(customThemes));
+    set({ customThemes });
   },
 
   setConfirmDestructiveActions: async (enabled) => {
     set({ confirmDestructiveActions: enabled });
-    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
-    if (configDir && basePath) {
-      await saveConfig(configDir, {
-        basePath,
-        startupScreen,
-        language,
-        confirmDestructiveActions: enabled,
-        notificationsEnabled: get().notificationsEnabled,
-        defaultReminderMinutes: get().defaultReminderMinutes,
-        lastOpenedProject: activeProject ?? undefined,
-        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
-      });
-    }
+    await persistConfig(get);
   },
 
   setNotificationsEnabled: async (enabled) => {
     set({ notificationsEnabled: enabled });
-    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
-    if (configDir && basePath) {
-      await saveConfig(configDir, {
-        basePath,
-        startupScreen,
-        language,
-        confirmDestructiveActions: get().confirmDestructiveActions,
-        notificationsEnabled: enabled,
-        defaultReminderMinutes: get().defaultReminderMinutes,
-        lastOpenedProject: activeProject ?? undefined,
-        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
-      });
-    }
+    await persistConfig(get);
   },
 
   setDefaultReminderMinutes: async (mins) => {
     set({ defaultReminderMinutes: mins });
-    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
-    if (configDir && basePath) {
-      await saveConfig(configDir, {
-        basePath,
-        startupScreen,
-        language,
-        confirmDestructiveActions: get().confirmDestructiveActions,
-        notificationsEnabled: get().notificationsEnabled,
-        defaultReminderMinutes: mins,
-        workWeekDays: get().workWeekDays,
-        holidaysAsNonWork: get().holidaysAsNonWork,
-        lastOpenedProject: activeProject ?? undefined,
-        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
-      });
-    }
+    await persistConfig(get);
   },
 
   setWorkWeekDays: async (days) => {
     set({ workWeekDays: days });
-    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
-    if (configDir && basePath) {
-      await saveConfig(configDir, {
-        basePath,
-        startupScreen,
-        language,
-        confirmDestructiveActions: get().confirmDestructiveActions,
-        notificationsEnabled: get().notificationsEnabled,
-        defaultReminderMinutes: get().defaultReminderMinutes,
-        workWeekDays: days,
-        holidaysAsNonWork: get().holidaysAsNonWork,
-        lastOpenedProject: activeProject ?? undefined,
-        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
-      });
-    }
+    await persistConfig(get);
   },
 
   setHolidaysAsNonWork: async (enabled) => {
     set({ holidaysAsNonWork: enabled });
-    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
-    if (configDir && basePath) {
-      await saveConfig(configDir, {
-        basePath,
-        startupScreen,
-        language,
-        confirmDestructiveActions: get().confirmDestructiveActions,
-        notificationsEnabled: get().notificationsEnabled,
-        defaultReminderMinutes: get().defaultReminderMinutes,
-        workWeekDays: get().workWeekDays,
-        holidaysAsNonWork: enabled,
-        animationsEnabled: get().animationsEnabled,
-        lastOpenedProject: activeProject ?? undefined,
-        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
-      });
-    }
+    await persistConfig(get);
   },
 
   setAnimationsEnabled: async (enabled) => {
     set({ animationsEnabled: enabled });
     applyAnimationsToDOM(enabled);
-    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder, language } = get();
-    if (configDir && basePath) {
-      await saveConfig(configDir, {
-        basePath,
-        startupScreen,
-        language,
-        confirmDestructiveActions: get().confirmDestructiveActions,
-        notificationsEnabled: get().notificationsEnabled,
-        defaultReminderMinutes: get().defaultReminderMinutes,
-        workWeekDays: get().workWeekDays,
-        holidaysAsNonWork: get().holidaysAsNonWork,
-        animationsEnabled: enabled,
-        lastOpenedProject: activeProject ?? undefined,
-        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
-      });
-    }
+    await persistConfig(get);
+  },
+
+  setSidebarLabelsVisible: async (visible) => {
+    set({ sidebarLabelsVisible: visible });
+    await persistConfig(get);
+  },
+
+  setTrashAutoPurgeEnabled: async (enabled) => {
+    set({ trashAutoPurgeEnabled: enabled });
+    await persistConfig(get);
+    if (enabled) startTrashPurgeInterval(get);
+    else stopTrashPurgeInterval();
   },
 
   setStartupScreen: async (screen) => {
     set({ startupScreen: screen, activeSection: screen });
-    const { configDir, basePath, activeProject, activeNoteFolder } = get();
-    if (configDir && basePath) {
-      await saveConfig(configDir, {
-        basePath,
-        startupScreen: screen,
-        language: get().language,
-        confirmDestructiveActions: get().confirmDestructiveActions,
-        notificationsEnabled: get().notificationsEnabled,
-        defaultReminderMinutes: get().defaultReminderMinutes,
-        lastOpenedProject: activeProject ?? undefined,
-        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
-      });
-    }
+    await persistConfig(get);
   },
 
   setLanguage: async (lang) => {
     localStorage.setItem('language', lang);
     set({ language: lang });
-    const { configDir, basePath, startupScreen, activeProject, activeNoteFolder } = get();
-    if (configDir && basePath) {
-      await saveConfig(configDir, {
-        basePath,
-        startupScreen,
-        language: lang,
-        confirmDestructiveActions: get().confirmDestructiveActions,
-        notificationsEnabled: get().notificationsEnabled,
-        defaultReminderMinutes: get().defaultReminderMinutes,
-        lastOpenedProject: activeProject ?? undefined,
-        lastOpenedNoteFolder: activeNoteFolder ?? undefined,
-      });
-    }
+    await persistConfig(get);
   },
 
   setFontSize: (size: number) => {
@@ -1839,6 +3831,201 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleGit: () => set((s) => ({ isGitOpen: !s.isGitOpen })),
   openSettingsGitTab: () => set({ isGitOpen: true, isSettingsOpen: true }),
 
+  // ── Sync (logday-server) ──────────────────────────────────────
+
+  syncConnect: async (serverUrl: string, email: string, password: string) => {
+    set({ syncConnectionStatus: 'connecting', syncErrorMsg: '' });
+    const normalizedUrl = normalizeServerUrl(serverUrl);
+    try {
+      const tokens = await syncLogin(normalizedUrl, email, password, 'Logday Desktop');
+      const cfg: SyncConfig = {
+        enabled: true,
+        serverUrl: normalizedUrl,
+        email,
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        deviceId: tokens.device_id,
+      };
+      localStorage.setItem('syncConfig', JSON.stringify(cfg));
+      set({ syncConfig: cfg, syncConnectionStatus: 'connected' });
+      void evaluatePolicyGate(set, normalizedUrl, tokens);
+      // Primero manda lo local pendiente, después trae lo remoto —
+      // así una edición local recién hecha no se pisa a sí misma con
+      // el eco de su propia respuesta llegando por /sync/changes
+      // (aplicarla de nuevo es inofensivo, pero drenar primero evita
+      // el orden raro de verla "revertirse" un instante).
+      void Promise.all([drainSyncQueue(get, set), drainContentSyncQueue(get, set)])
+        .then(() => reconcileSync(get, set));
+      startReconcileInterval(get, set);
+      void connectRealtime(get, set);
+    } catch (e) {
+      const msg = e instanceof SyncApiError ? e.message : String(e);
+      set({ syncConnectionStatus: 'error', syncErrorMsg: msg });
+      throw e;
+    }
+  },
+
+  // Solo limpia lo sensible/de la sesión (tokens, deviceId) — server
+  // URL y email quedan, para no obligar a retipearlos en el próximo
+  // "Conectar" (bug real: se perdían con cada desconexión, incluida
+  // la automática por refresh token vencido, así que el usuario los
+  // reescribía cada vez que la sesión se caía).
+  syncDisconnect: () => {
+    stopReconcileInterval();
+    disconnectRealtime();
+    const { serverUrl, email, refreshToken: currentRefreshToken } = get().syncConfig;
+    // Revocar el device en el servidor, no solo olvidar los tokens: si
+    // no, el refresh token (30 días) seguiría vivo en el servidor. Sin
+    // esperar la respuesta: desconectar tiene que funcionar offline o
+    // con el servidor caído (en ese caso el device queda listado y se
+    // puede revocar desde Opciones de otro cliente o el panel). Cuando
+    // la sesión ya murió (refresh 401, cuenta borrada, device revocado)
+    // el servidor responde sin efecto.
+    if (serverUrl && currentRefreshToken) {
+      logoutRemote(serverUrl, currentRefreshToken).catch(() => {});
+    }
+    const cfg: SyncConfig = { enabled: false, serverUrl, email, accessToken: '', refreshToken: '', deviceId: '' };
+    localStorage.setItem('syncConfig', JSON.stringify(cfg));
+    set({
+      syncConfig: cfg, syncConnectionStatus: 'disconnected', syncErrorMsg: '', lastSyncedAt: null,
+      devices: [], devicesError: null, policyGate: null, sensitiveDataAccepted: true,
+    });
+  },
+
+  // "Rechazar" en el gate de consentimiento — sin aceptar la política
+  // no hay forma de seguir usando el sync (requirements.md), así que
+  // esto es un logout, no solo cerrar el diálogo.
+  rejectPolicyGate: () => {
+    get().syncDisconnect();
+  },
+
+  acceptPolicyGate: async () => {
+    const gate = get().policyGate;
+    if (!gate) return;
+    const { serverUrl } = get().syncConfig;
+    await withSyncAuth(get, set, (token) => acceptPolicyRemote(serverUrl, token, gate.version));
+    set({ policyGate: null });
+  },
+
+  acceptSensitiveDataConsent: async () => {
+    const { serverUrl } = get().syncConfig;
+    await withSyncAuth(get, set, (token) => acceptSensitiveDataRemote(serverUrl, token));
+    set({ sensitiveDataAccepted: true });
+  },
+
+  // "Exportar mis datos" — derecho de acceso/portabilidad
+  // (specs/cumplimiento-datos-personales/). Mismo patrón que el
+  // backup local de DataSettingsTab.tsx: pedir dónde guardar y volcar
+  // el JSON tal cual llega del servidor, sin reprocesarlo.
+  exportMyData: async () => {
+    const { serverUrl } = get().syncConfig;
+    const data = await withSyncAuth(get, set, (token) => exportAccountRemote(serverUrl, token));
+    const dest = await saveDialog({
+      defaultPath: `logday-datos-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (!dest) return;
+    await fs.writeFile(dest, JSON.stringify(data, null, 2));
+    get().showToast({ kind: 'success', title: t(get().language, 'settings', 'exportDataDoneTitle') });
+  },
+
+  // "Eliminar mi cuenta" — derecho de supresión. Borra la cuenta del
+  // lado del servidor y desconecta localmente; los archivos locales
+  // (fuente de verdad local-first) no se tocan, esto solo borra el
+  // lado servidor.
+  deleteMyAccount: async (password: string) => {
+    const { serverUrl } = get().syncConfig;
+    await withSyncAuth(get, set, (token) => deleteAccountRemote(serverUrl, token, password));
+    get().syncDisconnect();
+  },
+
+  toggleSync: () => set((s) => ({ isSyncOpen: !s.isSyncOpen })),
+  openSettingsSyncTab: () => set({ isSyncOpen: true, isSettingsOpen: true }),
+
+  // Antes, cualquier falla acá (typicamente un 401 por access token
+  // vencido — esta app todavía no lo renueva solo, ver syncNow) se
+  // tragaba en silencio: devices se quedaba vacío para siempre y
+  // DevicesPanel muestra "Cargando sesiones…" mientras esté vacío, sin
+  // distinguir "todavía cargando" de "falló y se rindió" — quedaba
+  // pegado en "cargando" para siempre. Ahora el fallo deja un mensaje
+  // legible en devicesError, que la UI usa para mostrar un botón de
+  // reintentar en vez de un loader eterno.
+  loadDevices: async () => {
+    const { syncConfig, language } = get();
+    if (!syncConfig.enabled || !syncConfig.accessToken) return;
+    set({ devicesError: null });
+    try {
+      const devices = await withSyncAuth(get, set, (token) => listDevicesRemote(syncConfig.serverUrl, token));
+      set({ devices, devicesError: null });
+    } catch (e) {
+      const expired = e instanceof SyncApiError && e.status === 401;
+      // "expired" no es reintentable — el access token está muerto de
+      // verdad, reintentar con el mismo token solo repite el mismo 401
+      // para siempre (bug real, encontrado probando: el botón
+      // "Reintentar" no hacía nada visible). La UI le ofrece
+      // Desconectar en vez de Reintentar para este caso específico.
+      console.error('[loadDevices] falló GET /devices:', e);
+      set({
+        devicesError: {
+          kind: expired ? 'expired' : 'generic',
+          message: t(language, 'extras', expired ? 'devicesErrorExpired' : 'devicesErrorGeneric'),
+        },
+      });
+    }
+  },
+
+  // Revocar el propio dispositivo invalida ya mismo el access/refresh
+  // token que se usaron para pedirlo — desconectar el sync local de
+  // inmediato en vez de esperar a que el próximo write falle solo,
+  // mismo criterio que logday-web (ver su revokeDeviceAction).
+  revokeDeviceAction: async (id: string) => {
+    const { syncConfig } = get();
+    if (!syncConfig.enabled || !syncConfig.accessToken) return;
+    const isSelf = id === syncConfig.deviceId;
+    try {
+      await withSyncAuth(get, set, (token) => revokeDeviceRemote(syncConfig.serverUrl, token, id));
+      if (isSelf) { get().syncDisconnect(); return; }
+      set({ devices: get().devices.filter((d) => d.id !== id) });
+    } catch { /* deja la lista como estaba, el usuario puede reintentar */ }
+  },
+
+  // Botón manual (estilo "sync now" de Bitwarden) — el WS+poll de
+  // fondo ya mantienen todo al día solos, esto es una vía de escape
+  // visible para cuando el usuario quiere confirmar/forzar ahora mismo
+  // (después de reconectar wifi, dormir la laptop, etc.), no el
+  // mecanismo principal. También drena la cola local, igual que hace
+  // el intervalo periódico — no solo reconcilia.
+  syncNow: async () => {
+    if (!get().syncConfig.enabled) return;
+    set({ syncNowInProgress: true });
+    try {
+      await Promise.all([drainSyncQueue(get, set), drainContentSyncQueue(get, set)]);
+      await reconcileSync(get, set);
+    } finally {
+      set({ syncNowInProgress: false });
+    }
+  },
+
+  // Sube lo que ya existía en disco antes de conectar sync — ver
+  // specs/sync-primer-sincronizacion. Import dinámico a propósito:
+  // syncMigration.ts importa de este archivo (projectDir,
+  // readTaskFromPath, etc., para leer disco sin pasar por acciones
+  // que sí tocan el estado visible) — un import estático acá crearía
+  // un ciclo real; uno dinámico se resuelve recién cuando la acción
+  // corre, con ambos módulos ya inicializados.
+  syncMigrateExisting: async () => {
+    if (!get().syncConfig.enabled || get().syncMigrationStatus === 'running') return;
+    const { migrateExistingData } = await import('../lib/syncMigration');
+    const result = await migrateExistingData(get, set);
+    const status = get().syncMigrationStatus;
+    get().showToast({
+      kind: status === 'error' ? 'error' : 'success',
+      title: t(get().language, 'extras', status === 'error' ? 'migrationErrorTitle' : 'migrationDoneTitle'),
+      description: `${result.migrated} ${t(get().language, 'extras', 'migrationMigratedSuffix')} · ${result.skipped} ${t(get().language, 'extras', 'migrationSkippedSuffix')}${result.failed ? ` · ${result.failed} ${t(get().language, 'extras', 'migrationFailedSuffix')}` : ''}`,
+      durationMs: 5000,
+    });
+  },
+
   // ── Calendar Events ────────────────────────────────────────────
 
   loadCalendarEvents: async () => {
@@ -1864,11 +4051,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     const path = `${dir}/events.json`;
     const current = get().calendarEvents;
     const idx = current.findIndex((e) => e.id === event.id);
+    const prev = idx >= 0 ? current[idx] : undefined;
     const next = idx >= 0
       ? current.map((e) => (e.id === event.id ? event : e))
       : [...current, event];
     await fs.writeFile(path, JSON.stringify(next, null, 2));
     set({ calendarEvents: next });
+    if (prev) {
+      const changedFields = diffCalendarEventFields(prev, event);
+      if (Object.keys(changedFields).length > 0) void syncPatchCalendarEvent(get, set, event.id, changedFields);
+    } else {
+      void syncCreateCalendarEvent(get, set, event);
+    }
   },
 
   deleteCalendarEvent: async (id) => {
@@ -1878,5 +4072,199 @@ export const useAppStore = create<AppState>((set, get) => ({
     const next = get().calendarEvents.filter((e) => e.id !== id);
     await fs.writeFile(path, JSON.stringify(next, null, 2));
     set({ calendarEvents: next });
+    void syncDeleteCalendarEvent(get, set, id);
+  },
+
+  // ── Absences ───────────────────────────────────────────────────
+
+  loadAbsenceDays: async () => {
+    const base = get().basePath;
+    if (!base) return;
+    const path = `${base}/absences.json`;
+    try {
+      if (await fs.exists(path)) {
+        const raw = await fs.readFile(path);
+        const absences: AbsenceDay[] = JSON.parse(raw);
+        set({ absenceDays: absences });
+      }
+    } catch {
+      set({ absenceDays: [] });
+    }
+  },
+
+  saveAbsenceDay: async (absence) => {
+    const base = get().basePath;
+    if (!base) return;
+    const path = `${base}/absences.json`;
+    const current = get().absenceDays;
+    const idx = current.findIndex((a) => a.id === absence.id);
+    const prev = idx >= 0 ? current[idx] : undefined;
+    const next = idx >= 0
+      ? current.map((a) => (a.id === absence.id ? absence : a))
+      : [...current, absence];
+    await fs.writeFile(path, JSON.stringify(next, null, 2));
+    set({ absenceDays: next });
+    if (prev) {
+      const changedFields = diffAbsenceDayFields(prev, absence);
+      if (Object.keys(changedFields).length > 0) void syncPatchAbsenceDay(get, set, absence.id, changedFields);
+    } else {
+      void syncCreateAbsenceDay(get, set, absence);
+    }
+  },
+
+  // Un rango se modela como N filas independientes (una AbsenceDay por
+  // día, cada una con su propio id) en vez de una sola fila con
+  // start/end — logday-server no tiene ningún concepto de rango
+  // (confirmado leyendo internal/absence antes de construir esto) y
+  // así el caso real "volví un día en medio de las vacaciones" se
+  // resuelve borrando/editando esa fila puntual con el flujo de un
+  // solo día que ya existe, sin partir un rango en dos.
+  saveAbsenceDayRange: async (startDate, endDate, type, note) => {
+    const base = get().basePath;
+    if (!base) return;
+    const path = `${base}/absences.json`;
+
+    const dates: string[] = [];
+    const end = dateFromISO(endDate);
+    for (let cursor = dateFromISO(startDate); cursor.getTime() <= end.getTime();
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1, 12, 0, 0)) {
+      dates.push(toISO(cursor));
+    }
+
+    // Mismo criterio "buscar por fecha, editar en el lugar si existe"
+    // que ya usa AbsenceModal para un solo día — acá se repite por
+    // cada fecha del rango, sobreescribiendo el día que ya tuviera
+    // una ausencia cargada en vez de duplicarlo.
+    let current = get().absenceDays;
+    const toSync: { absence: AbsenceDay; prev?: AbsenceDay }[] = [];
+    for (const date of dates) {
+      const idx = current.findIndex((a) => a.date === date);
+      const prev = idx >= 0 ? current[idx] : undefined;
+      const absence: AbsenceDay = { id: prev?.id ?? uuidv4(), date, type, note };
+      current = idx >= 0 ? current.map((a) => (a.date === date ? absence : a)) : [...current, absence];
+      toSync.push({ absence, prev });
+    }
+
+    // Un solo write + un solo set() para todo el rango, no uno por
+    // día — mismo criterio que saveAbsenceDay/deleteAbsenceDay.
+    await fs.writeFile(path, JSON.stringify(current, null, 2));
+    set({ absenceDays: current });
+
+    for (const { absence, prev } of toSync) {
+      if (prev) {
+        const changedFields = diffAbsenceDayFields(prev, absence);
+        if (Object.keys(changedFields).length > 0) void syncPatchAbsenceDay(get, set, absence.id, changedFields);
+      } else {
+        void syncCreateAbsenceDay(get, set, absence);
+      }
+    }
+  },
+
+  deleteAbsenceDay: async (id) => {
+    const base = get().basePath;
+    if (!base) return;
+    const path = `${base}/absences.json`;
+    const next = get().absenceDays.filter((a) => a.id !== id);
+    await fs.writeFile(path, JSON.stringify(next, null, 2));
+    set({ absenceDays: next });
+    void syncDeleteAbsenceDay(get, set, id);
+  },
+
+  // ── Papelera de reciclaje ────────────────────────────────────
+  // Local por instalación (ver src/lib/trash.ts) — restaurar Task/Note/
+  // OvertimeEntry vuelve a mandar un CREATE al servidor con el mismo id;
+  // logday-server hace upsert-revive (ON CONFLICT... deleted_at = NULL,
+  // confirmado leyendo internal/note|task|overtime/store.go), así que
+  // esto revive el tombstone en vez de chocar con él. Daily entry no
+  // tiene sync hoy, no dispara nada de red.
+
+  listTrash: async () => {
+    const { basePath } = get();
+    if (!basePath) return [];
+    return trash.listTrashRecords(basePath);
+  },
+
+  restoreFromTrash: async (entity, key) => {
+    const { basePath, language } = get();
+    if (!basePath) return;
+    const record = await trash.readTrashRecord(basePath, entity, key);
+    if (!record) return;
+
+    if (entity === 'task') {
+      const task = record.data as Task;
+      await fs.createDir(projectDir(basePath, task.project)).catch(() => {});
+      await fs.writeFile(task.filePath, serializeTask(task));
+      set((state) => ({ tasks: [task, ...state.tasks.filter((t) => t.id !== task.id)] }));
+      void syncCreateTask(get, set, task);
+    } else if (entity === 'note') {
+      const note = record.data as Note;
+      if (note.folder) await fs.createDir(noteFolderDir(basePath, note.folder)).catch(() => {});
+      await fs.writeFile(note.filePath, serializeNote(note));
+      set((state) => ({ notes: [note, ...state.notes.filter((n) => n.id !== note.id)] }));
+      void syncCreateNote(get, set, note);
+    } else if (entity === 'overtime_entry') {
+      const entry = record.data as OvertimeEntry;
+      const ym = entry.fecha.slice(0, 7);
+      const [year, month] = ym.split('-');
+      await fs.createDir(overtimeMonthDir(basePath, year, month)).catch(() => {});
+      const path = overtimeMonthFilePath(basePath, year, month);
+      let entries: OvertimeEntry[] = [];
+      if (await fs.exists(path)) {
+        try {
+          const raw = await fs.readFile(path);
+          const match = raw.match(/^---\n([\s\S]*?)\n---/);
+          entries = match ? (JSON.parse(match[1]).entries ?? []) : [];
+        } catch { /* archivo vacío o corrupto */ }
+      }
+      const nextEntries = [...entries.filter((e) => e.id !== entry.id), entry]
+        .sort((a, b) => a.fecha.localeCompare(b.fecha));
+      await fs.writeFile(path, `---\n${JSON.stringify({ entries: nextEntries }, null, 2)}\n---\n`);
+      const { overtimeMonths } = get();
+      if (!overtimeMonths.includes(ym)) set({ overtimeMonths: [ym, ...overtimeMonths].sort().reverse() });
+      if (get().overtimeMonth === ym) set({ overtimeEntries: nextEntries });
+      void syncCreateOvertimeEntry(get, set, entry);
+    } else {
+      const { date, content } = record.data as { date: string; content: string };
+      const year = date.slice(0, 4);
+      const month = date.slice(5, 7);
+      const yearMonth = `${year}-${month}`;
+      const fp = dailyMonthFilePath(basePath, year, month);
+      let dayEntries: Record<string, string> = {};
+      try {
+        const raw = await fs.readFile(fp);
+        dayEntries = parseDailyFile(raw);
+      } catch { /* no file */ }
+      dayEntries[date] = content;
+      await fs.createDir(dailyMonthDir(basePath, year, month));
+      await fs.writeFile(fp, serializeDailyFile(dayEntries, yearMonth));
+      set((state) => ({ dailyEntries: { ...state.dailyEntries, [date]: content } }));
+      const { dailyMonths } = get();
+      if (!dailyMonths.includes(yearMonth)) set({ dailyMonths: [yearMonth, ...dailyMonths].sort().reverse() });
+    }
+
+    await trash.deleteTrashRecord(basePath, entity, key);
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    get().showToast({
+      kind: 'success',
+      title: t(language, 'toast', 'trashRestored'),
+      description: record.label,
+    });
+  },
+
+  deleteTrashItemForever: async (entity, key) => {
+    const { basePath, language } = get();
+    if (!basePath) return;
+    await trash.deleteTrashRecord(basePath, entity, key);
+    get().showToast({ kind: 'success', title: t(language, 'toast', 'trashItemDeleted') });
+  },
+
+  emptyTrash: async () => {
+    const { basePath, language } = get();
+    if (!basePath) return;
+    const items = await trash.listTrashRecords(basePath);
+    for (const item of items) {
+      await trash.deleteTrashRecord(basePath, item.entity, item.key);
+    }
+    get().showToast({ kind: 'success', title: t(language, 'toast', 'trashEmptied') });
   },
 }));

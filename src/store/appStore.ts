@@ -15,7 +15,7 @@ import { AbsenceDay, AbsenceType } from '../types/absence';
 import { Theme, BuiltInTheme, CustomTheme } from '../types/theme';
 import { GitConfig, GitStatus, GitRemoteStatus } from '../types/git';
 import { SyncConfig, SyncConnectionStatus } from '../types/sync';
-import { AppConfig, ViewMode, ActiveSection, StartupScreen, Shortcuts, DEFAULT_SHORTCUTS } from '../types/config';
+import { AppConfig, ViewMode, ActiveSection, StartupScreen, Shortcuts, DEFAULT_SHORTCUTS, NotesView, NoteSortBy, NoteSortDir } from '../types/config';
 import { Language, AppToast, ToastKind } from '../types/common';
 import { deriveCustomThemeVars } from '../lib/themeColor';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
@@ -130,6 +130,10 @@ export interface AppState {
   theme: Theme;
   customThemes: CustomTheme[];
   startupScreen: StartupScreen;
+  notesView: NotesView;
+  notesViewDefault: NotesView;
+  noteSortBy: NoteSortBy;
+  noteSortDir: NoteSortDir;
   language: Language;
   fontSize: number;
   isSettingsOpen: boolean;
@@ -206,6 +210,12 @@ export interface AppState {
   loadNoteFolders: () => Promise<void>;
   loadNotes: (folder?: string | null) => Promise<void>;
   selectNoteFolder: (folder: string | null) => Promise<void>;
+  setNotesView: (view: NotesView) => void;
+  setNotesViewDefault: (view: NotesView) => void;
+  setNoteSort: (by: NoteSortBy, dir: NoteSortDir) => void;
+  /** En la vista de árbol: la carpeta donde se crean las notas nuevas.
+   *  No recarga ni cierra la nota abierta. */
+  setTreeNoteFolder: (folder: string | null) => void;
   createNoteFolder: (name: string, parent?: string) => Promise<void>;
   renameNoteFolder: (folder: string, newName: string) => Promise<void>;
   deleteNoteFolder: (folder: string) => Promise<void>;
@@ -383,6 +393,7 @@ async function persistConfig(get: SyncGet): Promise<void> {
     configDir, basePath, startupScreen, language, confirmDestructiveActions,
     notificationsEnabled, defaultReminderMinutes, workWeekDays, holidaysAsNonWork,
     animationsEnabled, trashAutoPurgeEnabled, sidebarLabelsVisible, activeProject, activeNoteFolder,
+    notesView, notesViewDefault, noteSortBy, noteSortDir,
   } = get();
   if (!configDir || !basePath) return;
   await saveConfig(configDir, {
@@ -399,6 +410,10 @@ async function persistConfig(get: SyncGet): Promise<void> {
     sidebarLabelsVisible,
     lastOpenedProject: activeProject ?? undefined,
     lastOpenedNoteFolder: activeNoteFolder ?? undefined,
+    notesView,
+    notesViewDefault,
+    noteSortBy,
+    noteSortDir,
   });
 }
 
@@ -2226,6 +2241,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch { return []; }
   })(),
   startupScreen: 'dashboard',
+  notesView: 'list',
+  notesViewDefault: 'list',
+  noteSortBy: 'updated',
+  noteSortDir: 'desc',
   language: (localStorage.getItem('language') as Language) || 'es',
   fontSize: Number(localStorage.getItem('fontSize')) || 17,
   isSettingsOpen: false,
@@ -2349,6 +2368,11 @@ export const useAppStore = create<AppState>((set, get) => ({
             animationsEnabled: cfg.animationsEnabled ?? true,
             trashAutoPurgeEnabled: cfg.trashAutoPurgeEnabled ?? true,
             sidebarLabelsVisible: cfg.sidebarLabelsVisible ?? true,
+            // La vista de Opciones se usa la primera vez; después, la última usada.
+            notesViewDefault: cfg.notesViewDefault ?? 'list',
+            notesView: cfg.notesView ?? cfg.notesViewDefault ?? 'list',
+            noteSortBy: cfg.noteSortBy ?? 'updated',
+            noteSortDir: cfg.noteSortDir ?? 'desc',
           });
 
           const lastProject = cfg.lastOpenedProject || null;
@@ -2802,9 +2826,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  loadNotes: async (folder = null) => {
+  loadNotes: async (requestedFolder = null) => {
     const { basePath } = get();
     if (!basePath) return;
+    // La vista de árbol muestra todas las carpetas a la vez: siempre se
+    // cargan todas las notas, sin importar la carpeta seleccionada.
+    const folder = get().notesView === 'tree' ? null : requestedFolder;
     try {
       const allNotes: Note[] = [];
       const nDir = notesDir(basePath);
@@ -2867,6 +2894,29 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set({ activeNoteFolder: folder, activeNote: null });
     get().loadNotes(folder);
+    persistConfig(get).catch(() => {});
+  },
+
+  setNotesView: (view) => {
+    if (get().notesView === view) return;
+    set({ notesView: view });
+    void get().loadNotes(get().activeNoteFolder);
+    persistConfig(get).catch(() => {});
+  },
+
+  setNotesViewDefault: (view) => {
+    set({ notesViewDefault: view });
+    get().setNotesView(view);
+    persistConfig(get).catch(() => {});
+  },
+
+  setNoteSort: (by, dir) => {
+    set({ noteSortBy: by, noteSortDir: dir });
+    persistConfig(get).catch(() => {});
+  },
+
+  setTreeNoteFolder: (folder) => {
+    set({ activeNoteFolder: folder });
     persistConfig(get).catch(() => {});
   },
 

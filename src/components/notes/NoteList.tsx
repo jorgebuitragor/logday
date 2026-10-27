@@ -6,6 +6,7 @@ import { Note } from '../../types/note';
 import { ExportModal } from './ExportModal';
 import InlineRenameInput from '../shared/InlineRenameInput';
 import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
+import { sortNotes } from '../../lib/noteSort';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
 import { usePositionedMenu } from '../../hooks/usePositionedMenu';
 import { ModalOverlay } from '../shared/ModalOverlay';
@@ -60,8 +61,12 @@ export function NoteList() {
   );
 
   const [search, setSearch] = useState('');
-  const [sortBy, setSortBy] = useState<'updated' | 'created' | 'title'>('updated');
-  const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
+  // El orden vive en el store: lo comparte la vista de árbol y se recuerda.
+  const sortBy = useAppStore((s) => s.noteSortBy);
+  const sortDir = useAppStore((s) => s.noteSortDir);
+  const setNoteSort = useAppStore((s) => s.setNoteSort);
+  const setSortBy = (by: typeof sortBy) => setNoteSort(by, sortDir);
+  const setSortDir = (dir: typeof sortDir) => setNoteSort(sortBy, dir);
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const sortMenuRef = useRef<HTMLDivElement>(null);
@@ -324,17 +329,7 @@ export function NoteList() {
     [notes, search, filterTag]
   );
 
-  const sorted = useMemo(
-    () => [...filtered].sort((a, b) => {
-      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-      let cmp: number;
-      if (sortBy === 'title') cmp = a.title.localeCompare(b.title, 'es', { sensitivity: 'base' });
-      else if (sortBy === 'created') cmp = a.created.localeCompare(b.created);
-      else cmp = a.updated.localeCompare(b.updated);
-      return sortDir === 'desc' ? -cmp : cmp;
-    }),
-    [filtered, sortBy, sortDir]
-  );
+  const sorted = useMemo(() => sortNotes(filtered, sortBy, sortDir), [filtered, sortBy, sortDir]);
 
   if (activeSection !== 'notes') return null;
 

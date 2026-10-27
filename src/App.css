@@ -962,9 +962,10 @@ html.theme-animating body * {
 .note-drop-line::before { left: -5px; }
 .note-drop-line::after { right: -5px; }
 
-.note-drag-source {
-  opacity: 0.35;
-  transition: opacity 120ms ease;
+.note-drag-source-mask {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-base) 65%, transparent);
+  outline: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .note-drag-ghost {
@@ -982,8 +983,12 @@ html.theme-animating body * {
   opacity: 0.92;
   pointer-events: none;
   list-style: none;
+  min-height: 0;
+  max-height: 120px;
 }
 .note-drag-ghost > li { list-style: none; }
+.note-drag-ghost > li[data-type='taskItem'] { display: flex; align-items: center; gap: 0.5rem; }
+.note-drag-ghost > li[data-type='taskItem'] p { margin: 0; }
 
 .drag-drop-indicator::before,
 .tiptap-drag-drop-indicator::before {

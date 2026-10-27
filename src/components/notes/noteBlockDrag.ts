@@ -33,9 +33,20 @@ function topLevelElement(root: HTMLElement, el: Element | null): HTMLElement | n
   return node && node.parentElement === root ? node : null;
 }
 
-function listItemElement(root: HTMLElement, el: Element | null): HTMLElement | null {
+function listItemElement(root: HTMLElement, el: Element | null, clientY?: number): HTMLElement | null {
   const li = el?.closest('li');
-  return li && root.contains(li) ? (li as HTMLElement) : null;
+  if (li && root.contains(li)) return li as HTMLElement;
+  // Sobre el contenedor de la lista pero fuera de un <li> (la zona de la
+  // viñeta o el número): el ítem que está a esa altura. Sin esto, al ir
+  // hacia el handle de un ítem el handle saltaba al de la lista entera.
+  const list = el?.closest('ul, ol');
+  if (clientY === undefined || !list || !root.contains(list)) return null;
+  for (const child of Array.from(list.children)) {
+    if (child.tagName !== 'LI') continue;
+    const rect = child.getBoundingClientRect();
+    if (clientY >= rect.top && clientY <= rect.bottom) return child as HTMLElement;
+  }
+  return null;
 }
 
 /** Posición (justo antes) del nodo de ítem de lista que dibuja `li`. */
@@ -69,7 +80,7 @@ function topLevelIndexOf(view: EditorView, el: HTMLElement): number {
 export function dragUnitAtCoords(view: EditorView, clientX: number, clientY: number, probeOffsetX = 0): DragUnit | null {
   const root = view.dom as HTMLElement;
   for (const el of document.elementsFromPoint(clientX + probeOffsetX, clientY)) {
-    const li = listItemElement(root, el);
+    const li = listItemElement(root, el, clientY);
     if (li) {
       const pos = itemPosFromElement(view, li);
       if (pos !== null) return { kind: 'item', pos, el: li };
@@ -97,7 +108,7 @@ export function dropTargetAtCoords(view: EditorView, unit: DragUnit, clientX: nu
   const root = view.dom as HTMLElement;
   for (const el of document.elementsFromPoint(clientX + 40, clientY)) {
     if (unit.kind === 'item') {
-      const li = listItemElement(root, el);
+      const li = listItemElement(root, el, clientY);
       if (li && !unit.el.contains(li)) {
         const pos = itemPosFromElement(view, li);
         if (pos === null) continue;

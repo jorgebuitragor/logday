@@ -203,6 +203,9 @@ export function NoteEditor() {
   const [codeBlockAnchors, setCodeBlockAnchors] = useState<Array<{ top: number; left: number; height: number }>>([]);
   const [blockDropLine, setBlockDropLine] = useState<{ top: number; left: number; width: number } | null>(null);
   const [blockDropFlash, setBlockDropFlash] = useState<{ top: number; left: number; width: number } | null>(null);
+  // Capa que atenúa lo que se está arrastrando. No es una clase en el
+  // propio elemento porque ProseMirror vigila el DOM y la quita.
+  const [dragSourceBox, setDragSourceBox] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const [dragHandlePos, setDragHandlePos] = useState<{ top: number; left: number; visible: boolean }>({
     top: 0,
     left: 0,
@@ -747,21 +750,28 @@ export function NoteEditor() {
     setDragHandlePos((prev) => ({ ...prev, visible: false }));
     document.body.style.cursor = 'grabbing';
 
-    // Fantasma: una copia de lo que se arrastra sigue al cursor, y el
-    // original queda atenuado, para que se vea qué se está moviendo.
+    // Fantasma: una copia de lo que se arrastra sigue al cursor (abajo a
+    // la derecha, para no tapar la línea de destino), y el original queda
+    // atenuado, para que se vea qué se está moviendo.
     const sourceRect = unit.el.getBoundingClientRect();
-    const offsetX = Math.min(Math.max(event.clientX - sourceRect.left, 0), 32);
-    const offsetY = Math.min(Math.max(event.clientY - sourceRect.top, 0), 16);
     const ghost = document.createElement('div');
     ghost.className = 'prose-editor note-drag-ghost';
-    ghost.style.width = `${Math.min(sourceRect.width, 560)}px`;
+    ghost.style.width = `${Math.min(sourceRect.width, 420)}px`;
     ghost.appendChild(unit.el.cloneNode(true));
     document.body.appendChild(ghost);
     const placeGhost = (x: number, y: number) => {
-      ghost.style.transform = `translate(${x - offsetX}px, ${y - offsetY}px)`;
+      ghost.style.transform = `translate(${x + 16}px, ${y + 12}px)`;
     };
     placeGhost(event.clientX, event.clientY);
-    unit.el.classList.add('note-drag-source');
+    {
+      const paneRect = pane.getBoundingClientRect();
+      setDragSourceBox({
+        top: sourceRect.top - paneRect.top + pane.scrollTop,
+        left: sourceRect.left - paneRect.left,
+        width: sourceRect.width,
+        height: sourceRect.height,
+      });
+    }
 
     const toPaneLine = (line: DropLine) => {
       const paneRect = pane.getBoundingClientRect();
@@ -775,7 +785,7 @@ export function NoteEditor() {
       isBlockDraggingRef.current = false;
       document.body.style.cursor = '';
       ghost.remove();
-      unit.el.classList.remove('note-drag-source');
+      setDragSourceBox(null);
       setBlockDropLine(null);
     };
 
@@ -838,9 +848,11 @@ export function NoteEditor() {
     const rect = unit.el.getBoundingClientRect();
     const paneRect = pane.getBoundingClientRect();
     if (unit.kind === 'item') {
-      // Junto a la primera línea del ítem, a la izquierda de su viñeta.
+      // Junto a la primera línea del ítem: a la izquierda de su viñeta o
+      // número (que quedan fuera del <li>) o de su casilla (que va dentro).
+      const isTask = unit.el.getAttribute('data-type') === 'taskItem';
       const top = rect.top - paneRect.top + pane.scrollTop + 2;
-      const left = Math.max(2, rect.left - paneRect.left - 40);
+      const left = Math.max(2, rect.left - paneRect.left - (isTask ? 22 : 40));
       setDragHandlePos({ top, left, visible: true });
       return;
     }
@@ -1288,6 +1300,37 @@ export function NoteEditor() {
     schedulesSave({ content: mdContent });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mdContent]);
+
+  // El selector de lenguaje de los bloques de código es una capa con
+  // posición absoluta: hay que reubicarlo cuando cambia el documento sin
+  // una transacción (un diagrama Mermaid que termina de dibujarse, una
+  // imagen que carga) o cuando la transacción se dibuja después.
+  useEffect(() => {
+    if (!editor || viewMode === 'source') return;
+    let root: HTMLElement;
+    try {
+      root = editor.view.dom as HTMLElement;
+    } catch {
+      return;
+    }
+    // Un frame después: los NodeView de React (Mermaid) se dibujan después
+    // de la transacción, y un cambio que no altera el alto total (mover un
+    // diagrama) no dispara el ResizeObserver.
+    let raf = 0;
+    const schedule = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => recalcCodeBlockAnchors());
+    };
+    const resizeObserver = new ResizeObserver(schedule);
+    resizeObserver.observe(root);
+    const mutationObserver = new MutationObserver(schedule);
+    mutationObserver.observe(root, { childList: true, subtree: true });
+    return () => {
+      cancelAnimationFrame(raf);
+      resizeObserver.disconnect();
+      mutationObserver.disconnect();
+    };
+  }, [editor, viewMode, recalcCodeBlockAnchors]);
 
   // Suscripción directa al evento transaction del editor para refrescar el toolbar
   // de forma fiable (evita closures estales de useEditor config en TipTap 3)
@@ -2249,6 +2292,12 @@ export function NoteEditor() {
                 <p className="text-sm font-semibold text-indigo-300">{tFn(language, 'notes', 'dropImageTitle')}</p>
                   <p className="text-xs text-indigo-400/70">{tFn(language, 'notes', 'dropImageHint')}</p>
                 </div>
+              )}
+              {dragSourceBox && (
+                <div
+                  className="note-drag-source-mask pointer-events-none absolute z-20"
+                  style={dragSourceBox}
+                />
               )}
               {blockDropLine && (
                 <div

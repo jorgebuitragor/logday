@@ -7,7 +7,7 @@ import ToggleSwitch from '../shared/ToggleSwitch';
 
 export function AboutSettingsTab() {
   const {
-    language, updateInfo, updateStatus, autoUpdateEnabled,
+    language, updateInfo, updateStatus, autoUpdateEnabled, openReleaseNotes,
     checkForUpdates, installUpdate, setAutoUpdateEnabled,
   } = useAppStore();
   const [appVersion, setAppVersion] = useState<string>('1.0.0');
@@ -52,9 +52,12 @@ export function AboutSettingsTab() {
           <p className="text-center text-[10px] text-indigo-400 font-semibold">
             {t(language, 'settings', 'updateAvailable')}: v{updateInfo.version}
           </p>
-          {updateInfo.body && (
-            <p className="text-[10px] text-[var(--text-hint)] line-clamp-3">{updateInfo.body}</p>
-          )}
+          <button
+            onClick={openReleaseNotes}
+            className="w-full text-center text-[10px] text-indigo-400 underline-offset-2 hover:underline"
+          >
+            {t(language, 'settings', 'viewReleaseNotes')}
+          </button>
           <button
             onClick={() => void installUpdate()}
             disabled={updateStatus === 'downloading'}

@@ -14,6 +14,8 @@ import { SearchModal } from './components/SearchModal';
 import { SettingsModal } from './components/settings/SettingsModal';
 import { ToastViewport } from './components/ToastViewport';
 import { UpdateRestartBanner } from './components/UpdateRestartBanner';
+import { UpdateAvailableBanner } from './components/UpdateAvailableBanner';
+import { ReleaseNotesModal } from './components/ReleaseNotesModal';
 import { PolicyGateModal } from './components/PolicyGateModal';
 import { OvertimeEntry } from './types/overtime';
 import { useEventNotifier } from './lib/eventNotifier';
@@ -243,6 +245,8 @@ export default function App() {
       <SettingsModal />
       <ToastViewport />
       <UpdateRestartBanner />
+      <UpdateAvailableBanner />
+      <ReleaseNotesModal />
       <PolicyGateModal />
     </div>
   );

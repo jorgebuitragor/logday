@@ -11,7 +11,7 @@ import { t } from '../lib/i18n';
 // automática". La instalación manual ("Actualizar ahora" en Ajustes)
 // no pasa por acá — reinicia directo, el usuario ya lo pidió.
 export function UpdateRestartBanner() {
-  const { language, updateStatus, updateRestartAt, postponeUpdateRestart } = useAppStore();
+  const { language, updateStatus, updateRestartAt, postponeUpdateRestart, openReleaseNotes } = useAppStore();
   const [secondsLeft, setSecondsLeft] = useState(0);
 
   useEffect(() => {
@@ -40,6 +40,12 @@ export function UpdateRestartBanner() {
             {t(language, 'settings', 'restartInPrefix')} {secondsLeft}s
           </p>
         </div>
+        <button
+          onClick={openReleaseNotes}
+          className="shrink-0 rounded-lg px-3 py-1.5 text-xs text-indigo-400 transition hover:bg-indigo-500/10"
+        >
+          {t(language, 'settings', 'viewReleaseNotes')}
+        </button>
         <button
           onClick={postponeUpdateRestart}
           className="shrink-0 rounded-lg px-3 py-1.5 text-xs text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"

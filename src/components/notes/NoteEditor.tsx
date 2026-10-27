@@ -46,7 +46,6 @@ import { TextSelection } from '@tiptap/pm/state';
 import type { Mark } from '@tiptap/pm/model';
 import { Extension, createDocument } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
-import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import UnderlineExt from '@tiptap/extension-underline';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
@@ -85,7 +84,8 @@ import { MarkdownPreview } from './MarkdownPreview';
 import { MermaidEditorModal } from './MermaidEditorModal';
 import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
-import { MermaidBlock } from './MermaidBlock';
+import { MermaidAwareCodeBlock, type MermaidActions } from './mermaidCodeBlock';
+import { dragUnitAtCoords, dropTargetAtCoords, moveListItem, moveTopLevelBlock, type DragUnit, type DropLine } from './noteBlockDrag';
 import { formatMermaidFence, parseMermaidBlocks } from '../../lib/mermaid';
 import { ImageLinkModal } from '../shared/ImageLinkModal';
 import { CODE_LANGUAGE_OPTIONS, normalizeCodeLanguage } from '../../lib/codeHighlight';
@@ -200,11 +200,9 @@ export function NoteEditor() {
       .filter((t) => t.taskCode!.toLowerCase().includes(q))
       .slice(0, 6);
   }, [taskRefQuery, tasksWithCode]);
-  const [mermaidPreviewAnchors, setMermaidPreviewAnchors] = useState<Array<{ top: number; left: number; width: number; height: number }>>([]);
-  const [mermaidRenderedHeights, setMermaidRenderedHeights] = useState<number[]>([]);
   const [codeBlockAnchors, setCodeBlockAnchors] = useState<Array<{ top: number; left: number; height: number }>>([]);
-  const [blockDropLineY, setBlockDropLineY] = useState<number | null>(null);
-  const [blockDropFlashY, setBlockDropFlashY] = useState<number | null>(null);
+  const [blockDropLine, setBlockDropLine] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [blockDropFlash, setBlockDropFlash] = useState<{ top: number; left: number; width: number } | null>(null);
   const [dragHandlePos, setDragHandlePos] = useState<{ top: number; left: number; visible: boolean }>({
     top: 0,
     left: 0,
@@ -367,6 +365,10 @@ export function NoteEditor() {
   const mdContentRef = useRef(mdContent);
   mdContentRef.current = mdContent;
 
+  // Acciones de los diagramas Mermaid para su NodeView (mermaidCodeBlock.tsx).
+  // Se asigna en cada render, más abajo, para que use los handlers actuales.
+  const mermaidActionsRef = useRef<MermaidActions | null>(null);
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -376,8 +378,9 @@ export function NoteEditor() {
         bulletList: { keepMarks: true },
         orderedList: { keepMarks: true },
       }),
-      CodeBlockLowlight.configure({
+      MermaidAwareCodeBlock.configure({
         lowlight,
+        mermaidActions: mermaidActionsRef,
       }),
       CompactParagraph,
       UnderlineExt,
@@ -392,9 +395,11 @@ export function NoteEditor() {
       TableRow,
       TableHeader,
       TableCell,
+      // Destino al arrastrar texto seleccionado: más grueso y opaco que
+      // antes (2 px al 55 %), que casi no se veía.
       Dropcursor.configure({
-        color: 'color-mix(in srgb, var(--accent) 55%, transparent)',
-        width: 2,
+        color: 'var(--accent)',
+        width: 3,
         class: 'tiptap-drag-drop-indicator',
       }),
       Markdown.configure({
@@ -480,89 +485,6 @@ export function NoteEditor() {
     },
   });
 
-  const recalcMermaidPreviewAnchors = useCallback(() => {
-    if (viewMode === 'source') {
-      setMermaidPreviewAnchors([]);
-      return;
-    }
-
-    const pane = editorPaneRef.current;
-    let root: HTMLElement | null;
-    try {
-      root = editor ? (editor.view.dom as HTMLElement) : null;
-    } catch {
-      // TipTap puede no tener la view montada aun al entrar a la pestaña.
-      root = null;
-    }
-    if (!pane || !root) {
-      setMermaidPreviewAnchors([]);
-      return;
-    }
-
-    const paneRect = pane.getBoundingClientRect();
-    const anchors = Array.from(root.querySelectorAll('pre'))
-      .filter((pre) => pre.querySelector('code.language-mermaid'))
-      .map((pre, index) => {
-        const renderedCard = pane.querySelector<HTMLElement>(`[data-mermaid-card][data-mermaid-index="${index}"]`);
-        const measuredCardHeight = renderedCard ? Math.ceil(renderedCard.getBoundingClientRect().height) : 0;
-        const renderedHeight = Math.max((mermaidRenderedHeights[index] ?? 320) + 64, measuredCardHeight + 48);
-        const placeholderHeight = Math.max(380, renderedHeight);
-        const currentHeight = parseFloat(pre.style.height || '0');
-        if (Math.abs(currentHeight - placeholderHeight) > 0.5) {
-          pre.style.height = `${placeholderHeight}px`;
-          pre.style.minHeight = `${placeholderHeight}px`;
-        }
-        const rect = pre.getBoundingClientRect();
-        return {
-          top: rect.top - paneRect.top + pane.scrollTop,
-          left: rect.left - paneRect.left,
-          width: rect.width,
-          height: Math.max(rect.height, placeholderHeight),
-        };
-      });
-
-    setMermaidPreviewAnchors((prev) => {
-      if (
-        prev.length === anchors.length &&
-        prev.every(
-          (a, i) =>
-            Math.abs(a.top - anchors[i].top) < 0.5 &&
-            Math.abs(a.left - anchors[i].left) < 0.5 &&
-            Math.abs(a.width - anchors[i].width) < 0.5 &&
-            Math.abs(a.height - anchors[i].height) < 0.5,
-        )
-      ) {
-        return prev;
-      }
-      return anchors;
-    });
-  }, [editor, mermaidRenderedHeights, viewMode]);
-
-  const applyMermaidPlaceholderHeight = useCallback((index: number, height: number) => {
-    let root: HTMLElement | null;
-    try {
-      root = editor ? (editor.view.dom as HTMLElement) : null;
-    } catch {
-      root = null;
-    }
-    if (!root) return;
-
-    const mermaidPres = Array.from(root.querySelectorAll('pre')).filter((pre) => pre.querySelector('code.language-mermaid'));
-    const target = mermaidPres[index] as HTMLElement | undefined;
-    if (!target) return;
-
-    const placeholderHeight = Math.max(380, Math.ceil(height) + 48);
-    target.style.height = `${placeholderHeight}px`;
-    target.style.minHeight = `${placeholderHeight}px`;
-  }, [editor]);
-
-  useEffect(() => {
-    setMermaidRenderedHeights((prev) => {
-      if (prev.length <= mermaidBlocks.length) return prev;
-      return prev.slice(0, mermaidBlocks.length);
-    });
-  }, [mermaidBlocks.length]);
-
   const recalcCodeBlockAnchors = useCallback(() => {
     if (viewMode === 'source') {
       setCodeBlockAnchors([]);
@@ -611,12 +533,9 @@ export function NoteEditor() {
 
   useEffect(() => {
     if (viewMode === 'source') return;
-    const raf = requestAnimationFrame(() => {
-      recalcMermaidPreviewAnchors();
-      recalcCodeBlockAnchors();
-    });
+    const raf = requestAnimationFrame(() => recalcCodeBlockAnchors());
     return () => cancelAnimationFrame(raf);
-  }, [mermaidRenderedHeights, mermaidBlocks.length, recalcMermaidPreviewAnchors, recalcCodeBlockAnchors, viewMode]);
+  }, [mermaidBlocks.length, recalcCodeBlockAnchors, viewMode]);
 
   const topLevelPosAtIndex = useCallback((doc: { child: (i: number) => { nodeSize: number } }, index: number) => {
     let pos = 0;
@@ -810,37 +729,16 @@ export function NoteEditor() {
     });
   }, [dragHandleBlockIndex, getBlockContextMeta]);
 
-  const getBlockAtCoords = useCallback((clientX: number, clientY: number, probeOffsetX = 0) => {
-    if (!editor) return null;
-    const root = editor.view.dom as HTMLElement;
-    let blockEl: HTMLElement | null = null;
-    const els = document.elementsFromPoint(clientX + probeOffsetX, clientY);
-    for (const el of els) {
-      let node = el as HTMLElement | null;
-      while (node) {
-        if (node.parentElement === root) {
-          blockEl = node;
-          break;
-        }
-        node = node.parentElement;
-      }
-      if (blockEl) break;
-    }
-    if (!blockEl) return null;
-
-    const rawPos = editor.view.posAtDOM(blockEl, 0);
-    const resolved = editor.state.doc.resolve(Math.max(0, Math.min(rawPos, editor.state.doc.content.size)));
-    const blockIndex = resolved.index(0);
-    return { blockEl, blockIndex };
-  }, [editor]);
+  // Lo que arrastraría el handle ahora mismo: un bloque de primer nivel o
+  // un ítem de lista (ver noteBlockDrag.ts).
+  const dragUnitRef = useRef<DragUnit | null>(null);
 
   const startBlockPointerDrag = useCallback((event: React.PointerEvent) => {
-    if (event.button !== 0) return;
-    if (!editor) return;
-    const sourceIndexValue = dragHandleBlockIndex ?? hoverBlockIndexRef.current;
-    if (sourceIndexValue == null) return;
-    const sourceIndex = sourceIndexValue;
-    if (sourceIndex < 0 || sourceIndex >= editor.state.doc.childCount) return;
+    if (event.button !== 0 || !editor) return;
+    const unit = dragUnitRef.current;
+    const pane = editorPaneRef.current;
+    if (!unit || !pane) return;
+    if (unit.kind === 'block' && (unit.index < 0 || unit.index >= editor.state.doc.childCount)) return;
 
     event.preventDefault();
     event.stopPropagation();
@@ -849,101 +747,106 @@ export function NoteEditor() {
     setDragHandlePos((prev) => ({ ...prev, visible: false }));
     document.body.style.cursor = 'grabbing';
 
-    const computeTarget = (clientX: number, clientY: number) => {
-      const pane = editorPaneRef.current;
-      if (!pane) return null;
-      const target = getBlockAtCoords(clientX, clientY, 40);
-      if (!target) return null;
+    // Fantasma: una copia de lo que se arrastra sigue al cursor, y el
+    // original queda atenuado, para que se vea qué se está moviendo.
+    const sourceRect = unit.el.getBoundingClientRect();
+    const offsetX = Math.min(Math.max(event.clientX - sourceRect.left, 0), 32);
+    const offsetY = Math.min(Math.max(event.clientY - sourceRect.top, 0), 16);
+    const ghost = document.createElement('div');
+    ghost.className = 'prose-editor note-drag-ghost';
+    ghost.style.width = `${Math.min(sourceRect.width, 560)}px`;
+    ghost.appendChild(unit.el.cloneNode(true));
+    document.body.appendChild(ghost);
+    const placeGhost = (x: number, y: number) => {
+      ghost.style.transform = `translate(${x - offsetX}px, ${y - offsetY}px)`;
+    };
+    placeGhost(event.clientX, event.clientY);
+    unit.el.classList.add('note-drag-source');
 
-      const { blockEl, blockIndex } = target;
-      const rect = blockEl.getBoundingClientRect();
-      const before = clientY < rect.top + rect.height / 2;
-      const targetIndex = before ? blockIndex : blockIndex + 1;
-
+    const toPaneLine = (line: DropLine) => {
       const paneRect = pane.getBoundingClientRect();
-      const lineY = (before ? rect.top : rect.bottom) - paneRect.top + pane.scrollTop;
+      return { top: line.y - paneRect.top + pane.scrollTop, left: line.left - paneRect.left, width: line.right - line.left };
+    };
 
-      return { targetIndex, lineY };
+    const finish = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('keydown', onKeyDown, true);
+      isBlockDraggingRef.current = false;
+      document.body.style.cursor = '';
+      ghost.remove();
+      unit.el.classList.remove('note-drag-source');
+      setBlockDropLine(null);
     };
 
     const onMove = (e: PointerEvent) => {
-      const target = computeTarget(e.clientX, e.clientY);
-      if (!target) {
-        setBlockDropLineY(null);
-        return;
-      }
-      setBlockDropLineY(target.lineY);
+      placeGhost(e.clientX, e.clientY);
+      const target = dropTargetAtCoords(editor.view, unit, e.clientX, e.clientY);
+      setBlockDropLine(target ? toPaneLine(target.line) : null);
     };
 
     const onUp = (e: PointerEvent) => {
-      document.removeEventListener('pointermove', onMove);
-      document.removeEventListener('pointerup', onUp);
-      isBlockDraggingRef.current = false;
-      document.body.style.cursor = '';
+      const target = dropTargetAtCoords(editor.view, unit, e.clientX, e.clientY);
+      const line = target ? toPaneLine(target.line) : null;
+      finish();
+      if (!target || !line) return;
+      const moved = unit.kind === 'block'
+        ? target.kind === 'block' && moveTopLevelBlock(editor.view, unit.index, target.index)
+        : moveListItem(editor.view, unit.pos, target);
+      if (!moved) return;
+      setBlockDropFlash(line);
+      window.setTimeout(() => setBlockDropFlash(null), 260);
+    };
 
-      const target = computeTarget(e.clientX, e.clientY);
-      if (!target) {
-        setBlockDropLineY(null);
-        return;
-      }
-
-      setBlockDropLineY(null);
-      setBlockDropFlashY(target.lineY);
-      window.setTimeout(() => setBlockDropFlashY(null), 220);
-
-      let insertionIndex = target.targetIndex;
-      if (insertionIndex > sourceIndex) insertionIndex -= 1;
-      if (insertionIndex === sourceIndex) return;
-
-      const doc = editor.state.doc;
-      const sourceNode = doc.child(sourceIndex);
-      const from = topLevelPosAtIndex(doc, sourceIndex);
-      const to = from + sourceNode.nodeSize;
-
-      let tr = editor.state.tr.delete(from, to);
-      const clampedInsertionIndex = Math.max(0, Math.min(insertionIndex, tr.doc.childCount));
-      const insertPos = topLevelPosAtIndex(tr.doc, clampedInsertionIndex);
-      tr = tr.insert(insertPos, sourceNode);
-      editor.view.dispatch(tr.scrollIntoView());
-
-      requestAnimationFrame(() => {
-        const pane = editorPaneRef.current;
-        if (!pane) return;
-        setDragHandlePos((prev) => ({ ...prev, visible: false }));
-      });
+    // Esc cancela el arrastre sin mover nada.
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      finish();
     };
 
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onUp);
-  }, [dragHandleBlockIndex, editor, getBlockAtCoords, topLevelPosAtIndex]);
+    document.addEventListener('keydown', onKeyDown, true);
+  }, [editor]);
 
   const handleEditorPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!editor || isBlockDraggingRef.current) return;
+    // Sobre el propio handle no se recalcula: si no, al ir hacia el handle
+    // de un ítem se podría saltar al de la lista entera.
+    if ((event.target as Element | null)?.closest?.('.drag-handle')) return;
     const pane = editorPaneRef.current;
     if (!pane) return;
 
-    const target = getBlockAtCoords(event.clientX, event.clientY, 40);
-    if (!target) {
+    const unit = dragUnitAtCoords(editor.view, event.clientX, event.clientY, 40);
+    if (!unit) {
       // Mantener el handle visible en el gutter para permitir click/drag sin parpadeo.
       return;
     }
-
-    const { blockEl, blockIndex } = target;
+    const blockIndex = unit.kind === 'block' ? unit.index : editor.state.doc.resolve(unit.pos).index(0);
 
     // Mientras el menu contextual de bloque este abierto, bloqueamos el drawer al bloque origen.
     if (blockContextMenu && blockIndex !== blockContextMenu.blockIndex) {
       return;
     }
 
+    dragUnitRef.current = unit;
     hoverBlockIndexRef.current = blockIndex;
     setDragHandleBlockIndex(blockIndex);
 
-    const rect = blockEl.getBoundingClientRect();
+    const rect = unit.el.getBoundingClientRect();
     const paneRect = pane.getBoundingClientRect();
+    if (unit.kind === 'item') {
+      // Junto a la primera línea del ítem, a la izquierda de su viñeta.
+      const top = rect.top - paneRect.top + pane.scrollTop + 2;
+      const left = Math.max(2, rect.left - paneRect.left - 40);
+      setDragHandlePos({ top, left, visible: true });
+      return;
+    }
     const top = rect.top - paneRect.top + pane.scrollTop + Math.max(0, (rect.height - 18) / 2);
-    const left = 6;
-    setDragHandlePos({ top, left, visible: true });
-  }, [blockContextMenu, editor, getBlockAtCoords]);
+    setDragHandlePos({ top, left: 6, visible: true });
+  }, [blockContextMenu, editor]);
 
   const handleEditorPointerLeave = useCallback(() => {
     if (isBlockDraggingRef.current) return;
@@ -1392,12 +1295,11 @@ export function NoteEditor() {
     if (!editor) return;
     const handler = () => {
       forceUpdate();
-      recalcMermaidPreviewAnchors();
       recalcCodeBlockAnchors();
     };
     editor.on('transaction', handler);
     return () => { editor.off('transaction', handler); };
-  }, [editor, recalcMermaidPreviewAnchors, recalcCodeBlockAnchors]);
+  }, [editor, recalcCodeBlockAnchors]);
 
   // Adjuntar listener de teclado para promover primera línea a título.
   // Se escucha en el pane contenedor (no en editor.view.dom) para evitar
@@ -1414,10 +1316,6 @@ export function NoteEditor() {
   }, [activeNote?.id]);
 
   useEffect(() => {
-    recalcMermaidPreviewAnchors();
-  }, [mermaidBlocks, recalcMermaidPreviewAnchors]);
-
-  useEffect(() => {
     recalcCodeBlockAnchors();
   }, [mdContent, recalcCodeBlockAnchors]);
 
@@ -1426,10 +1324,7 @@ export function NoteEditor() {
     const pane = editorPaneRef.current;
     if (!pane) return;
 
-    const onRelayout = () => {
-      recalcMermaidPreviewAnchors();
-      recalcCodeBlockAnchors();
-    };
+    const onRelayout = () => recalcCodeBlockAnchors();
     pane.addEventListener('scroll', onRelayout);
     window.addEventListener('resize', onRelayout);
     requestAnimationFrame(onRelayout);
@@ -1438,7 +1333,7 @@ export function NoteEditor() {
       pane.removeEventListener('scroll', onRelayout);
       window.removeEventListener('resize', onRelayout);
     };
-  }, [viewMode, recalcMermaidPreviewAnchors, recalcCodeBlockAnchors]);
+  }, [viewMode, recalcCodeBlockAnchors]);
 
   // Cierra dropdowns al hacer click fuera de ellos
   useEffect(() => {
@@ -1625,6 +1520,17 @@ export function NoteEditor() {
 
     syncMarkdownToEditor(nextMarkdown);
   }, [mdContent, syncMarkdownToEditor]);
+
+  mermaidActionsRef.current = {
+    edit: (index) => {
+      const block = mermaidBlocks[index];
+      if (block) openDiagramEditor('edit', block.code, index);
+    },
+    moveUp: (index) => handleMoveDiagram(index, 'up'),
+    moveDown: (index) => handleMoveDiagram(index, 'down'),
+    duplicate: handleDuplicateDiagram,
+    remove: handleDeleteDiagram,
+  };
 
   const handleChangeCodeLanguage = useCallback((index: number, language: string) => {
     if (index < 0) return;
@@ -2344,16 +2250,16 @@ export function NoteEditor() {
                   <p className="text-xs text-indigo-400/70">{tFn(language, 'notes', 'dropImageHint')}</p>
                 </div>
               )}
-              {blockDropLineY !== null && (
+              {blockDropLine && (
                 <div
-                  className="pointer-events-none absolute left-6 right-6 z-20 h-px bg-indigo-400/60"
-                  style={{ top: blockDropLineY }}
+                  className="note-drop-line pointer-events-none absolute z-20"
+                  style={{ top: blockDropLine.top, left: blockDropLine.left, width: blockDropLine.width }}
                 />
               )}
-              {blockDropFlashY !== null && (
+              {blockDropFlash && (
                 <div
-                  className="pointer-events-none absolute left-6 right-6 z-20 h-px block-drop-flash"
-                  style={{ top: blockDropFlashY }}
+                  className="note-drop-line block-drop-flash pointer-events-none absolute z-20"
+                  style={{ top: blockDropFlash.top, left: blockDropFlash.left, width: blockDropFlash.width }}
                 />
               )}
               <button
@@ -2598,41 +2504,6 @@ export function NoteEditor() {
                     })()}
                   </div>
                 ))}
-                {mermaidBlocks.map((block, index) => {
-                  const anchor = mermaidPreviewAnchors[index];
-                  if (!anchor) return null;
-                  return (
-                    <div
-                      key={`${block.start}-${index}`}
-                      className="pointer-events-auto absolute z-[25]"
-                      style={{ top: anchor.top, left: anchor.left, width: anchor.width }}
-                    >
-                      <MermaidBlock
-                        diagramIndex={index}
-                        code={block.code}
-                        compact
-                        onHeightChange={(height) => {
-                          applyMermaidPlaceholderHeight(index, height);
-                          setMermaidRenderedHeights((prev) => {
-                            if (prev[index] && Math.abs(prev[index] - height) < 1) return prev;
-                            const next = [...prev];
-                            next[index] = height;
-                            return next;
-                          });
-                          requestAnimationFrame(() => {
-                            recalcMermaidPreviewAnchors();
-                            recalcCodeBlockAnchors();
-                          });
-                        }}
-                        onEdit={() => openDiagramEditor('edit', block.code, index)}
-                        onMoveUp={index > 0 ? () => handleMoveDiagram(index, 'up') : undefined}
-                        onMoveDown={index < mermaidBlocks.length - 1 ? () => handleMoveDiagram(index, 'down') : undefined}
-                        onDuplicate={() => handleDuplicateDiagram(index)}
-                        onDelete={() => handleDeleteDiagram(index)}
-                      />
-                    </div>
-                  );
-                })}
               </div>
 
               {/* ── Link preview card ── */}

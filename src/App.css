@@ -672,16 +672,10 @@ html.theme-animating body * {
   overflow-x: auto;
   margin: 0.5rem 0;
 }
-/* Mantiene el bloque Mermaid en flujo para anclar la vista previa en su posicion real */
-.prose-editor pre:has(> code.language-mermaid) {
-  position: relative;
-  min-height: 320px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  overflow: visible;
-}
-.prose-editor pre:has(> code.language-mermaid) > code { display: none; }
+/* Diagrama Mermaid como NodeView (mermaidCodeBlock.tsx): ocupa su lugar en
+   el flujo del documento; el código queda oculto, en el documento. */
+.prose-editor .mermaid-node-view { margin: 0.5rem 0; }
+.prose-editor .mermaid-node-source { display: none; }
 
 .code-block-lang-select-wrap {
   z-index: 15;
@@ -936,16 +930,60 @@ html.theme-animating body * {
   border-radius: 4px;
 }
 
-/* Drop indicator line — clase usada por la extensión */
+/* Destino al arrastrar texto (Dropcursor): el grosor y el color los pone
+   la extensión en línea (3 px, --accent); acá solo forma y sombra. */
 .drag-drop-indicator,
 .tiptap-drag-drop-indicator {
-  height: 1.5px;
-  background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--accent) 70%, transparent) 8%, color-mix(in srgb, var(--accent) 70%, transparent) 92%, transparent 100%);
-  border-radius: 1px;
-  margin: 1px 0;
+  border-radius: 2px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
   pointer-events: none;
-  position: relative;
 }
+
+/* Arrastre de bloques e ítems (noteBlockDrag.ts) */
+.note-drop-line {
+  height: 3px;
+  margin-top: -1.5px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.note-drop-line::before,
+.note-drop-line::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: var(--bg-panel);
+  transform: translateY(-50%);
+}
+.note-drop-line::before { left: -5px; }
+.note-drop-line::after { right: -5px; }
+
+.note-drag-source {
+  opacity: 0.35;
+  transition: opacity 120ms ease;
+}
+
+.note-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 12000;
+  max-height: 180px;
+  overflow: hidden;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--bg-elevated);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  opacity: 0.92;
+  pointer-events: none;
+  list-style: none;
+}
+.note-drag-ghost > li { list-style: none; }
 
 .drag-drop-indicator::before,
 .tiptap-drag-drop-indicator::before {

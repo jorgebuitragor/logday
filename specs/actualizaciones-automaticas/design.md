@@ -121,6 +121,35 @@ sí aumenta la superficie del problema (una dependencia más resolviendo
 versiones por su cuenta) — vale la pena fijar versiones exactas al
 tocar estos archivos para esta feature, ver `tasks.md`.
 
+## Aviso y novedades (27 oct 2026)
+
+Con la 1.0.3 se vio que la versión nueva pasaba desapercibida y que sus
+notas no llegaban a la app:
+
+- **Notas.** La app muestra el `notes` de `latest.json`, que tauri-action
+  arma con `releaseBody`. Era un texto fijo en `release.yml`, así que
+  editar después el Release en GitHub no cambiaba lo que veía la app.
+  Ahora el workflow toma las notas del mensaje del tag anotado (`git
+  tag -a vX.Y.Z`: primera línea de título y el resto, en markdown, como
+  notas).
+- **Aviso.** Era un toast de 6 s y un punto en el ícono de Opciones.
+  Ahora es `UpdateAvailableBanner`, persistente, con "Ver novedades",
+  "Actualizar ahora" y "Más tarde", que lo esconde para esa versión
+  hasta el próximo arranque. Con la actualización automática el aviso
+  sigue siendo `UpdateRestartBanner`, que también tiene "Ver novedades".
+- **Novedades.** `ReleaseNotesModal` muestra el markdown de las notas, sin
+  HTML crudo. Se abre desde el banner, desde Acerca de, o solo al abrir
+  por primera vez la versión recién instalada. Para eso, `installUpdate`
+  guarda las notas antes de instalar (`pendingReleaseNotes`). Si no hay,
+  porque se actualizó desde una versión anterior a esto o con el
+  instalador, se piden a `api.github.com/repos/…/releases/tags/vX`. La
+  versión se marca como vista (`lastSeenAppVersion`) solo cuando ya se
+  mostraron las notas o se sabe que no hay; si la consulta falla, se
+  reintenta en el próximo arranque. En una instalación nueva, sin
+  carpeta de datos, no se muestra nada.
+- **Chequeo.** Además del intervalo de 4 h, se busca al volver a la app
+  si pasaron 30 min desde el último chequeo.
+
 ## Fuera de este diseño
 
 - Servidor de updates propio — GitHub Releases alcanza, no se

@@ -1963,14 +1963,17 @@ const LAST_SEEN_VERSION_KEY = 'lastSeenAppVersion';
 const PENDING_RELEASE_NOTES_KEY = 'pendingReleaseNotes';
 const RELEASES_API = 'https://api.github.com/repos/jorgebuitragor/logday/releases/tags';
 
-async function fetchReleaseNotes(version: string): Promise<string | null> {
+// `null`: GitHub respondió que no hay notas (o no hay release con ese
+// tag). `undefined`: no se pudo consultar (sin red, límite de la API).
+async function fetchReleaseNotes(version: string): Promise<string | null | undefined> {
   try {
     const res = await fetch(`${RELEASES_API}/v${version}`, { headers: { Accept: 'application/vnd.github+json' } });
-    if (!res.ok) return null;
+    if (res.status === 404) return null;
+    if (!res.ok) return undefined;
     const json = (await res.json()) as { body?: unknown };
     return typeof json.body === 'string' && json.body.trim() ? json.body : null;
   } catch {
-    return null;
+    return undefined;
   }
 }
 
@@ -1982,21 +1985,30 @@ async function showReleaseNotesAfterUpdate(get: SyncGet, set: SyncSet): Promise<
     return;
   }
   const lastSeen = localStorage.getItem(LAST_SEEN_VERSION_KEY);
-  localStorage.setItem(LAST_SEEN_VERSION_KEY, current);
+  if (lastSeen === current) return;
+  // La versión se marca como vista solo cuando ya se mostraron sus notas
+  // o cuando se sabe que no hay: si la consulta a GitHub falla, se
+  // reintenta en el próximo arranque en vez de perder las novedades.
+  const markSeen = () => {
+    localStorage.setItem(LAST_SEEN_VERSION_KEY, current);
+    localStorage.removeItem(PENDING_RELEASE_NOTES_KEY);
+  };
+  // Sin versión vista: o es una instalación nueva (sin carpeta de datos
+  // todavía) o viene de una versión anterior a esta función.
+  if (!lastSeen && !get().basePath) {
+    markSeen();
+    return;
+  }
   let pending: { version?: string; body?: string } | null;
   try {
     pending = JSON.parse(localStorage.getItem(PENDING_RELEASE_NOTES_KEY) || 'null');
   } catch {
     pending = null;
   }
-  localStorage.removeItem(PENDING_RELEASE_NOTES_KEY);
-  if (lastSeen === current) return;
-  // Sin versión vista: o es una instalación nueva (sin carpeta de datos
-  // todavía) o viene de una versión anterior a esta función.
-  if (!lastSeen && !get().basePath) return;
   const body = pending?.version === current && pending.body ? pending.body : await fetchReleaseNotes(current);
-  if (!body) return;
-  set({ releaseNotes: { version: current, body, mode: 'installed' } });
+  if (body === undefined) return;
+  markSeen();
+  if (body) set({ releaseNotes: { version: current, body, mode: 'installed' } });
 }
 
 // ── Tiempo real (WebSocket) ──────────────────────────────────────

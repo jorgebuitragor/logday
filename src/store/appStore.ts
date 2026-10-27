@@ -5,6 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import TauriWebSocket from '@tauri-apps/plugin-websocket';
 import { check as checkUpdateRemote, Update as TauriUpdate } from '@tauri-apps/plugin-updater';
+import { getVersion } from '@tauri-apps/api/app';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { Task } from '../types/task';
 import { Note } from '../types/note';
@@ -160,6 +161,12 @@ export interface AppState {
   updateStatus: 'idle' | 'available' | 'downloading' | 'ready';
   autoUpdateEnabled: boolean;
   updateRestartAt: number | null;
+  /** Versión cuyo banner "nueva versión" se cerró con "Más tarde". Solo
+   *  en memoria: el banner vuelve en el próximo arranque. */
+  updateBannerDismissedFor: string | null;
+  /** Modal de novedades: de la versión disponible ('available') o de la
+   *  recién instalada, al abrirla por primera vez ('installed'). */
+  releaseNotes: { version: string; body: string | null; mode: 'available' | 'installed' } | null;
 
   // ── Actions ──────────────────────────────────────────────────
 
@@ -170,6 +177,9 @@ export interface AppState {
   installUpdate: () => Promise<void>;
   setAutoUpdateEnabled: (enabled: boolean) => void;
   postponeUpdateRestart: () => void;
+  dismissUpdateBanner: () => void;
+  openReleaseNotes: () => void;
+  closeReleaseNotes: () => void;
   acceptPolicyGate: () => Promise<void>;
   rejectPolicyGate: () => void;
   acceptSensitiveDataConsent: () => Promise<void>;
@@ -1883,7 +1893,9 @@ function stopTrashPurgeInterval(): void {
 let pendingUpdate: TauriUpdate | null = null;
 const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4h
 const UPDATE_AUTO_RESTART_DELAY_MS = 60_000;
+const UPDATE_CHECK_ON_FOCUS_MIN_MS = 30 * 60 * 1000; // 30 min
 let updateCheckIntervalId: ReturnType<typeof setInterval> | null = null;
+let lastUpdateCheckAt = 0;
 
 // Tira el error hacia arriba a propósito — la usa el botón manual de
 // Ajustes ("Buscar actualizaciones"), que sí necesita distinguir "ya
@@ -1905,24 +1917,19 @@ async function runUpdateCheck(get: SyncGet, set: SyncSet): Promise<boolean> {
   const yaAvisado = pendingUpdate?.version === update.version;
   pendingUpdate = update;
   set({ updateInfo: { version: update.version, body: update.body }, updateStatus: 'available' });
-  if (!yaAvisado) {
+  // Sin actualización automática, el aviso es UpdateAvailableBanner
+  // (persistente, con "Ver novedades"); antes era un toast de 6 s que se
+  // perdía si el usuario no estaba mirando.
+  if (!yaAvisado && get().autoUpdateEnabled) {
     // Ya se había avisado de esta misma versión en un chequeo
-    // anterior — no repetir el toast/auto-instalación en cada ciclo.
-    if (get().autoUpdateEnabled) {
-      void get().installUpdate();
-    } else {
-      get().showToast({
-        kind: 'info',
-        title: t(get().language, 'settings', 'updateAvailable'),
-        description: `v${update.version}`,
-        durationMs: 6000,
-      });
-    }
+    // anterior — no repetir la auto-instalación en cada ciclo.
+    void get().installUpdate();
   }
   return true;
 }
 
 async function performUpdateCheck(get: SyncGet, set: SyncSet): Promise<void> {
+  lastUpdateCheckAt = Date.now();
   try {
     await runUpdateCheck(get, set);
   } catch {
@@ -1937,6 +1944,71 @@ function startUpdateCheckInterval(get: SyncGet, set: SyncSet): void {
   updateCheckIntervalId = setInterval(() => {
     void performUpdateCheck(get, set);
   }, UPDATE_CHECK_INTERVAL_MS);
+  // La app suele quedar abierta días: además del intervalo, revisar al
+  // volver a ella si pasó un rato desde el último chequeo.
+  window.addEventListener('focus', () => {
+    if (Date.now() - lastUpdateCheckAt >= UPDATE_CHECK_ON_FOCUS_MIN_MS) {
+      void performUpdateCheck(get, set);
+    }
+  });
+}
+
+// ── Novedades de la versión instalada ──
+// installUpdate guarda las notas antes de instalar; al abrir la versión
+// nueva por primera vez se muestran. Si no hay notas guardadas (se
+// actualizó desde una versión que no las guardaba, o con el instalador
+// a mano), se piden a la API de GitHub. En una instalación nueva, sin
+// datos todavía, no se muestra nada.
+const LAST_SEEN_VERSION_KEY = 'lastSeenAppVersion';
+const PENDING_RELEASE_NOTES_KEY = 'pendingReleaseNotes';
+const RELEASES_API = 'https://api.github.com/repos/jorgebuitragor/logday/releases/tags';
+
+// `null`: GitHub respondió que no hay notas (o no hay release con ese
+// tag). `undefined`: no se pudo consultar (sin red, límite de la API).
+async function fetchReleaseNotes(version: string): Promise<string | null | undefined> {
+  try {
+    const res = await fetch(`${RELEASES_API}/v${version}`, { headers: { Accept: 'application/vnd.github+json' } });
+    if (res.status === 404) return null;
+    if (!res.ok) return undefined;
+    const json = (await res.json()) as { body?: unknown };
+    return typeof json.body === 'string' && json.body.trim() ? json.body : null;
+  } catch {
+    return undefined;
+  }
+}
+
+async function showReleaseNotesAfterUpdate(get: SyncGet, set: SyncSet): Promise<void> {
+  let current: string;
+  try {
+    current = await getVersion();
+  } catch {
+    return;
+  }
+  const lastSeen = localStorage.getItem(LAST_SEEN_VERSION_KEY);
+  if (lastSeen === current) return;
+  // La versión se marca como vista solo cuando ya se mostraron sus notas
+  // o cuando se sabe que no hay: si la consulta a GitHub falla, se
+  // reintenta en el próximo arranque en vez de perder las novedades.
+  const markSeen = () => {
+    localStorage.setItem(LAST_SEEN_VERSION_KEY, current);
+    localStorage.removeItem(PENDING_RELEASE_NOTES_KEY);
+  };
+  // Sin versión vista: o es una instalación nueva (sin carpeta de datos
+  // todavía) o viene de una versión anterior a esta función.
+  if (!lastSeen && !get().basePath) {
+    markSeen();
+    return;
+  }
+  let pending: { version?: string; body?: string } | null;
+  try {
+    pending = JSON.parse(localStorage.getItem(PENDING_RELEASE_NOTES_KEY) || 'null');
+  } catch {
+    pending = null;
+  }
+  const body = pending?.version === current && pending.body ? pending.body : await fetchReleaseNotes(current);
+  if (body === undefined) return;
+  markSeen();
+  if (body) set({ releaseNotes: { version: current, body, mode: 'installed' } });
 }
 
 // ── Tiempo real (WebSocket) ──────────────────────────────────────
@@ -2213,6 +2285,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     catch { return false; }
   })(),
   updateRestartAt: null,
+  updateBannerDismissedFor: null,
+  releaseNotes: null,
 
   overtimeEntries: [],
   overtimeMonth: new Date().toISOString().slice(0, 7),
@@ -2334,6 +2408,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // (fire-and-forget) ni interrumpe el arranque si falla.
       void performUpdateCheck(get, set);
       startUpdateCheckInterval(get, set);
+      void showReleaseNotesAfterUpdate(get, set);
     } catch (e) {
       console.error('Init error:', e);
     } finally {
@@ -2381,7 +2456,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   installUpdate: async () => {
     if (!pendingUpdate) return;
-    set({ updateStatus: 'downloading' });
+    // Para mostrar las novedades al abrir la versión nueva.
+    try {
+      localStorage.setItem(PENDING_RELEASE_NOTES_KEY, JSON.stringify({ version: pendingUpdate.version, body: pendingUpdate.body ?? '' }));
+    } catch {
+      // Sin notas guardadas se piden a GitHub al abrir la versión nueva.
+    }
+    set({ updateStatus: 'downloading', releaseNotes: null });
     try {
       await pendingUpdate.downloadAndInstall();
     } catch {
@@ -2415,6 +2496,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   postponeUpdateRestart: () => {
     set({ updateRestartAt: Date.now() + UPDATE_AUTO_RESTART_DELAY_MS });
   },
+
+  dismissUpdateBanner: () => {
+    set({ updateBannerDismissedFor: get().updateInfo?.version ?? null });
+  },
+
+  openReleaseNotes: () => {
+    const info = get().updateInfo;
+    if (info) set({ releaseNotes: { version: info.version, body: info.body ?? null, mode: 'available' } });
+  },
+
+  closeReleaseNotes: () => set({ releaseNotes: null }),
 
   // ── Tasks ──────────────────────────────────────────────────
 

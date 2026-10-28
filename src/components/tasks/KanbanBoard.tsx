@@ -6,7 +6,7 @@ import { TaskContextMenu, NewTaskContextMenu } from './TaskContextMenu';
 import { t } from '../../lib/i18n';
 import { QuickAddInput } from './QuickAddInput';
 import { localISODate } from '../../lib/localDate';
-import { filterTasks, sortColumn } from '../../lib/taskListing';
+import { completedLocalDate, filterTasks, sortColumn } from '../../lib/taskListing';
 import { addDaysISO } from '../../lib/localDate';
 import { TaskMeta } from './TaskMeta';
 import { TaskFilterBar } from './TaskFilterBar';
@@ -210,9 +210,11 @@ export function KanbanBoard() {
         {COLUMNS.map((col, colIndex) => {
           const { Icon } = col;
           const allColTasks = sortColumn(filteredTasks.filter((t) => t.status === col.status), taskSortBy);
-          const olderDone = col.status === 'done' ? allColTasks.filter((t) => (t.completedAt ?? '') < recentDoneFrom).length : 0;
+          // Día local de completado: `completedAt` puede ser un instante o un
+          // `YYYY-MM-DD` legado, y solo cuenta si la tarea está hecha.
+          const olderDone = col.status === 'done' ? allColTasks.filter((t) => completedLocalDate(t) < recentDoneFrom).length : 0;
           const colTasks = col.status === 'done' && !showAllDone
-            ? allColTasks.filter((t) => (t.completedAt ?? '') >= recentDoneFrom)
+            ? allColTasks.filter((t) => completedLocalDate(t) >= recentDoneFrom)
             : allColTasks;
           const isTarget = targetStatus === col.status;
 

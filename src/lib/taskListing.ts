@@ -1,7 +1,7 @@
 import type { Task, TaskStatus } from '../types/task';
 import type { TaskSortBy } from '../types/config';
 import type { Language } from './i18n';
-import { daysBetweenISO } from './localDate';
+import { addDaysISO, daysBetweenISO, localISODate, stampSortKey, stampToLocalDate } from './localDate';
 
 // Cómo se ordena y agrupa la lista de tareas.
 //
@@ -35,7 +35,10 @@ export function dueBucket(due: string | undefined, today: string): DueBucket {
 // A igual fecha, lo que está en curso va antes que lo que falta empezar.
 const inProgressFirst = (a: Task, b: Task) =>
   (a.status === 'in-progress' ? 0 : 1) - (b.status === 'in-progress' ? 0 : 1);
-const newestFirst = (a: Task, b: Task) => b.created.localeCompare(a.created);
+// `created` puede ser un instante o un `YYYY-MM-DD` legado: se ordena por
+// el momento que representa, nunca como string (ver localDate.ts).
+const newestFirst = (a: Task, b: Task) => stampSortKey(b.created) - stampSortKey(a.created);
+const completedKey = (t: Task) => stampSortKey(t.completedAt || t.created);
 const byTitle = (a: Task, b: Task) => a.title.localeCompare(b.title, 'es', { sensitivity: 'base' });
 
 /** Tareas pendientes (no hechas), agrupadas y ordenadas según `sortBy`.
@@ -77,7 +80,33 @@ export function sortColumn(tasks: Task[], sortBy: TaskSortBy): Task[] {
 export function doneTasks(tasks: Task[]): Task[] {
   return tasks
     .filter((t) => t.status === 'done')
-    .sort((a, b) => (b.completedAt ?? b.created).localeCompare(a.completedAt ?? a.created) || newestFirst(a, b));
+    .sort((a, b) => completedKey(b) - completedKey(a) || newestFirst(a, b));
+}
+
+/** Día local (`YYYY-MM-DD`) en que se completó la tarea, o `''` si no está
+ *  hecha o no tiene fecha. `completedAt` solo cuenta con `status === 'done'`:
+ *  un valor que quedó de antes (p. ej. desde otro cliente) no se toma en
+ *  cuenta. Acepta un instante o un `YYYY-MM-DD` legado. */
+export function completedLocalDate(task: Task): string {
+  return task.status === 'done' ? stampToLocalDate(task.completedAt) : '';
+}
+
+/** Lunes y domingo (`YYYY-MM-DD` local) de la semana de `now`. */
+export function localWeekRange(now: Date = new Date()): { start: string; end: string } {
+  const diffToMonday = (now.getDay() + 6) % 7;
+  const start = addDaysISO(localISODate(now), -diffToMonday);
+  return { start, end: addDaysISO(start, 6) };
+}
+
+/** Tareas completadas en la semana (lunes a domingo, hora local) de `now`.
+ *  Se compara el día local de la marca, no el string crudo: un instante del
+ *  domingo a las 10 p. m. en Colombia es "lunes" en UTC y antes se perdía. */
+export function countDoneThisWeek(tasks: Task[], now: Date = new Date()): number {
+  const { start, end } = localWeekRange(now);
+  return tasks.filter((t) => {
+    const day = completedLocalDate(t);
+    return !!day && day >= start && day <= end;
+  }).length;
 }
 
 export type DueTone = 'overdue' | 'today' | 'soon' | 'normal';
@@ -142,8 +171,11 @@ export function allTaskTags(tasks: Task[]): string[] {
 }
 
 /** "27 de octubre de 2026" / "October 27, 2026", para fechas que se leen
- *  completas (la creación en el panel de una tarea). */
-export function formatLongDate(iso: string, language: Language): string {
+ *  completas (la creación en el panel de una tarea). Acepta un `YYYY-MM-DD`
+ *  o un instante, que se muestra como su día local. */
+export function formatLongDate(stamp: string, language: Language): string {
+  const iso = stampToLocalDate(stamp);
+  if (!iso) return stamp;
   const [y, m, d] = iso.split('-').map(Number);
   if (!y || !m || !d) return iso;
   return new Intl.DateTimeFormat(language === 'es' ? 'es-CO' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' })

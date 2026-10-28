@@ -198,6 +198,10 @@ const dict = {
       tabGit: 'Git',
       tabSync: 'Sync',
       tabAbout: 'Acerca de',
+      // Grupos de la barra lateral de Opciones
+      navLabel: 'Secciones de opciones',
+      groupApp: 'App',
+      groupDataConnection: 'Datos y conexión',
     },
     toast: {
       dismiss: 'Cerrar notificación',
@@ -1212,6 +1216,10 @@ const dict = {
       tabGit: 'Git',
       tabSync: 'Sync',
       tabAbout: 'About',
+      // Settings sidebar groups
+      navLabel: 'Settings sections',
+      groupApp: 'App',
+      groupDataConnection: 'Data & connection',
     },
     toast: {
       dismiss: 'Dismiss notification',

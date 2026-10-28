@@ -68,19 +68,47 @@ export function SettingsModal() {
 
   if (!isSettingsOpen) return null;
 
-  const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
-    { id: 'general', label: t(language, 'settings', 'tabGeneral') },
-    { id: 'work',    label: t(language, 'settings', 'tabWork') },
-    { id: 'shortcuts', label: t(language, 'settings', 'tabShortcuts') },
-    { id: 'data',    label: t(language, 'settings', 'tabData') },
-    { id: 'git',     label: t(language, 'settings', 'tabGit') },
-    { id: 'sync',    label: t(language, 'settings', 'tabSync') },
-    { id: 'about',   label: t(language, 'settings', 'tabAbout') },
+  // Barra lateral agrupada en vez de pestañas arriba: con más secciones
+  // (Extensiones y, debajo, una entrada por extensión activa) la fila de
+  // pestañas ya no cabía en español. Un grupo sin `label` va sin encabezado.
+  const NAV_GROUPS: { label?: string; items: { id: SettingsTab; label: string }[] }[] = [
+    {
+      label: t(language, 'settings', 'groupApp'),
+      items: [
+        { id: 'general',   label: t(language, 'settings', 'tabGeneral') },
+        { id: 'work',      label: t(language, 'settings', 'tabWork') },
+        { id: 'shortcuts', label: t(language, 'settings', 'tabShortcuts') },
+      ],
+    },
+    {
+      label: t(language, 'settings', 'groupDataConnection'),
+      items: [
+        { id: 'data', label: t(language, 'settings', 'tabData') },
+        { id: 'sync', label: t(language, 'settings', 'tabSync') },
+        { id: 'git',  label: t(language, 'settings', 'tabGit') },
+      ],
+    },
   ];
+
+  const navItem = (id: SettingsTab, label: string) => (
+    <button
+      key={id}
+      type="button"
+      onClick={() => setSettingsTab(id)}
+      aria-current={settingsTab === id ? 'page' : undefined}
+      className={`w-full truncate rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition ${
+        settingsTab === id
+          ? 'bg-indigo-500/15 text-indigo-400'
+          : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]'
+      }`}
+    >
+      {label}
+    </button>
+  );
 
   return (
     <ModalOverlay onClose={toggleSettings} className="px-4">
-      <ModalPanel className="w-full max-w-xl rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-2xl overflow-hidden h-[90vh] max-h-[720px] flex flex-col">
+      <ModalPanel className="w-full max-w-3xl rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-2xl overflow-hidden h-[90vh] max-h-[720px] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4 shrink-0">
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'settings', 'title')}</h2>
@@ -92,53 +120,57 @@ export function SettingsModal() {
           </button>
         </div>
 
-        {/* Tab navigation */}
-        <div className="flex shrink-0 border-b border-[var(--border)] px-4">
-          {SETTINGS_TABS.map(({ id, label }) => (
-            <button
-              key={id}
-              onClick={() => setSettingsTab(id)}
-              className={`-mb-px border-b-2 px-3 py-2.5 text-xs font-medium transition ${
-                settingsTab === id
-                  ? 'border-indigo-500 text-indigo-400'
-                  : 'border-transparent text-[var(--text-hint)] hover:text-[var(--text-secondary)]'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <div className="flex flex-1 min-h-0">
+          {/* Navegación lateral */}
+          <nav
+            aria-label={t(language, 'settings', 'navLabel')}
+            className="flex w-[180px] shrink-0 flex-col gap-4 overflow-y-auto border-r border-[var(--border)] bg-[var(--bg-surface)] px-2 py-4"
+          >
+            {NAV_GROUPS.map(({ label, items }, i) => (
+              <div key={label ?? i} className="space-y-0.5">
+                {label && (
+                  <p className="px-2.5 pb-1 text-[10px] font-medium uppercase tracking-widest text-[var(--text-hint)]">{label}</p>
+                )}
+                {items.map(({ id, label: itemLabel }) => navItem(id, itemLabel))}
+              </div>
+            ))}
+            {/* Acerca de va siempre al final de la barra */}
+            <div className="mt-auto">
+              {navItem('about', t(language, 'settings', 'tabAbout'))}
+            </div>
+          </nav>
 
-        {/* Content */}
-        <div className="flex-1 min-h-0 overflow-y-auto px-5 py-5 space-y-6">
+          {/* Content */}
+          <div className="flex-1 min-w-0 min-h-0 overflow-y-auto px-5 py-5 space-y-6">
 
-          {/* ── GENERAL: Idioma · Tema · Fuente · Pantalla de inicio ── */}
-          {settingsTab === 'general' && (
-            <GeneralSettingsTab
-              isStartupSelectorOpen={isStartupSelectorOpen}
-              setIsStartupSelectorOpen={setIsStartupSelectorOpen}
-              startupSelectorRef={startupSelectorRef}
-            />
-          )}
+            {/* ── GENERAL: Idioma · Tema · Fuente · Pantalla de inicio ── */}
+            {settingsTab === 'general' && (
+              <GeneralSettingsTab
+                isStartupSelectorOpen={isStartupSelectorOpen}
+                setIsStartupSelectorOpen={setIsStartupSelectorOpen}
+                startupSelectorRef={startupSelectorRef}
+              />
+            )}
 
-          {/* ── WORK: Comportamiento · Notificaciones · Semana laboral · Accesibilidad ── */}
-          {settingsTab === 'work' && <WorkSettingsTab />}
+            {/* ── WORK: Comportamiento · Notificaciones · Semana laboral · Accesibilidad ── */}
+            {settingsTab === 'work' && <WorkSettingsTab />}
 
-          {/* ── SHORTCUTS: Atajos de teclado ── */}
-          {settingsTab === 'shortcuts' && <ShortcutsSettingsTab />}
+            {/* ── SHORTCUTS: Atajos de teclado ── */}
+            {settingsTab === 'shortcuts' && <ShortcutsSettingsTab />}
 
-          {/* ── DATA: Almacenamiento · Backup ── */}
-          {settingsTab === 'data' && <DataSettingsTab />}
+            {/* ── DATA: Almacenamiento · Backup ── */}
+            {settingsTab === 'data' && <DataSettingsTab />}
 
-          {/* ── GIT: Control de versiones ── */}
-          <GitSettingsTab active={settingsTab === 'git'} />
+            {/* ── GIT: Control de versiones ── */}
+            <GitSettingsTab active={settingsTab === 'git'} />
 
-          {/* ── SYNC: conexión con servidor propio ── */}
-          {settingsTab === 'sync' && <SyncSettingsTab />}
+            {/* ── SYNC: conexión con servidor propio ── */}
+            {settingsTab === 'sync' && <SyncSettingsTab />}
 
-          {/* ── ABOUT: Versión · Actualizaciones ── */}
-          {settingsTab === 'about' && <AboutSettingsTab />}
+            {/* ── ABOUT: Versión · Actualizaciones ── */}
+            {settingsTab === 'about' && <AboutSettingsTab />}
 
+          </div>
         </div>
       </ModalPanel>
     </ModalOverlay>

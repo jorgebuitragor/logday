@@ -56,6 +56,8 @@ Estado: en progreso.
 
 ## Después
 
-- Notas: listar, buscar y leer; luego crear.
-- Horas extra y calendario, en solo lectura.
+- [x] Segunda parte (28 oct 2026): notas (listar, buscar, leer y crear)
+  y horas extra en solo lectura, con pruebas.
+- Editar notas existentes y el calendario (los eventos de Logday y los
+  de Google).
 - Modo cuenta en `logday-server`.

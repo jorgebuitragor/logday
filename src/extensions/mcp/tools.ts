@@ -3,6 +3,8 @@
 // fakes en las pruebas). Las descripciones van en inglés porque son
 // protocolo para el agente, no texto de interfaz.
 import type { Task, TaskStatus } from '../../types/task';
+import type { Note } from '../../types/note';
+import type { OvertimeEntry } from '../../types/overtime';
 import { stampSortKey } from '../../lib/localDate';
 
 export interface NewTaskInput {
@@ -28,6 +30,13 @@ export interface LogdayToolDeps {
   saveDaily: (date: string, text: string, base: string) => Promise<string>;
   /** Hoy, `YYYY-MM-DD` en hora local. */
   today: () => string;
+  /** Carpetas de notas ('' = sin carpeta no se lista). */
+  listNoteFolders: () => Promise<string[]>;
+  /** Todas las notas, leídas de disco. */
+  readAllNotes: () => Promise<Note[]>;
+  createNote: (input: { title: string; content: string; folder: string; tags: string[] }) => Promise<Note>;
+  /** Horas extra de un mes (`YYYY-MM`), de su archivo. */
+  readOvertime: (month: string) => Promise<OvertimeEntry[]>;
 }
 
 /** Error de la herramienta (R15): se devuelve con `isError: true`. */
@@ -129,6 +138,33 @@ function taskSummary(t: Task) {
 
 const taskDetail = (t: Task) => ({ ...taskSummary(t), content: t.content });
 
+function noteSummary(n: Note) {
+  return {
+    id: n.id,
+    title: n.title || '(untitled)',
+    folder: n.folder,
+    tags: n.tags,
+    ...(n.pinned ? { pinned: true } : {}),
+    ...(n.updated ? { updated: n.updated } : {}),
+  };
+}
+
+/** Un trozo del contenido alrededor de la coincidencia, para que el agente
+ *  sepa por qué salió la nota sin pedirla entera. */
+function snippet(content: string, query: string): string | undefined {
+  const i = content.toLowerCase().indexOf(query);
+  if (i < 0) return undefined;
+  const start = Math.max(0, i - 60);
+  const end = Math.min(content.length, i + query.length + 60);
+  return `${start > 0 ? '…' : ''}${content.slice(start, end).replace(/\s+/g, ' ').trim()}${end < content.length ? '…' : ''}`;
+}
+
+function isMonth(s: string): boolean {
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(s);
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 const STRING = { type: 'string' } as const;
 const DATE = { type: 'string', description: 'Calendar date YYYY-MM-DD (local time)' } as const;
 const STATUS = { type: 'string', enum: STATUSES } as const;
@@ -189,6 +225,115 @@ export const LOGDAY_TOOLS: readonly ToolDef[] = [
     run: async (args, deps) => {
       const date = optDate(args, 'date') ?? deps.today();
       return { date, text: await deps.readDaily(date) };
+    },
+  },
+  {
+    name: 'list_note_folders',
+    description: 'List the note folders in Logday. Subfolders use "/". Notes without a folder have folder "".',
+    inputSchema: { type: 'object', properties: {} },
+    write: false,
+    run: async (_args, deps) => ({ folders: await deps.listNoteFolders() }),
+  },
+  {
+    name: 'list_notes',
+    description:
+      'List Logday notes (without their content), pinned first and then most recently updated. Filter by folder ' +
+      '(includes subfolders; "" = notes without a folder) or by a text that matches the title, tags or content; ' +
+      'content matches include a short snippet.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        folder: STRING,
+        query: STRING,
+        limit: { type: 'integer', minimum: 1, maximum: MAX_LIMIT, description: `Default ${DEFAULT_LIMIT}` },
+      },
+    },
+    write: false,
+    run: async (args, deps) => {
+      const folder = optString(args, 'folder');
+      const query = optString(args, 'query')?.trim().toLowerCase();
+      const limit = optLimit(args);
+      if (folder) {
+        const folders = await deps.listNoteFolders();
+        if (!folders.includes(folder)) throw new ToolError(`Folder "${folder}" does not exist. Folders: ${folders.join(', ') || '(none)'}`);
+      }
+      const matches = (await deps.readAllNotes())
+        .filter((n) => folder === undefined || (folder === '' ? n.folder === '' : n.folder === folder || n.folder.startsWith(folder + '/')))
+        .map((n) => {
+          if (!query) return { note: n, snip: undefined as string | undefined };
+          const inMeta = [n.title, ...n.tags].some((s) => s.toLowerCase().includes(query));
+          const snip = snippet(n.content, query);
+          return inMeta || snip ? { note: n, snip } : null;
+        })
+        .filter((x): x is { note: Note; snip: string | undefined } => x !== null)
+        .sort((a, b) =>
+          a.note.pinned !== b.note.pinned
+            ? (a.note.pinned ? -1 : 1)
+            : stampSortKey(b.note.updated || b.note.created) - stampSortKey(a.note.updated || a.note.created));
+      return {
+        total: matches.length,
+        notes: matches.slice(0, limit).map(({ note, snip }) => ({ ...noteSummary(note), ...(snip ? { snippet: snip } : {}) })),
+      };
+    },
+  },
+  {
+    name: 'get_note',
+    description: 'Get one Logday note by id, including its Markdown content.',
+    inputSchema: { type: 'object', properties: { id: STRING }, required: ['id'] },
+    write: false,
+    run: async (args, deps) => {
+      const id = reqString(args, 'id');
+      const note = (await deps.readAllNotes()).find((n) => n.id === id);
+      if (!note) throw new ToolError(`Note "${id}" does not exist`);
+      return { ...noteSummary(note), created: note.created, content: note.content };
+    },
+  },
+  {
+    name: 'get_overtime',
+    description:
+      'Get the overtime entries of a month (YYYY-MM, this month by default) with the hours of each one ' +
+      '(day, night, holiday day, holiday night) and the totals. Read-only.',
+    inputSchema: { type: 'object', properties: { month: { type: 'string', description: 'YYYY-MM' } } },
+    write: false,
+    run: async (args, deps) => {
+      const month = optString(args, 'month') ?? deps.today().slice(0, 7);
+      if (!isMonth(month)) throw new ToolError('"month" must be YYYY-MM');
+      const entries = (await deps.readOvertime(month)).slice().sort((a, b) => (a.fecha + a.horaInicio).localeCompare(b.fecha + b.horaInicio));
+      const sum = (k: 'totalHoras' | 'extrasDiurnas' | 'extrasNocturnas' | 'extrasDiurnasFestivas' | 'extrasNocturnasFestivas') =>
+        round2(entries.reduce((acc, e) => acc + (Number(e[k]) || 0), 0));
+      return {
+        month,
+        entries: entries.map((e) => ({
+          date: e.fecha, start: e.horaInicio, end: e.horaFinal, activity: e.actividad, requestedBy: e.solicitadaPor,
+          ...(e.observaciones ? { notes: e.observaciones } : {}),
+          hours: e.totalHoras, day: e.extrasDiurnas, night: e.extrasNocturnas,
+          holidayDay: e.extrasDiurnasFestivas, holidayNight: e.extrasNocturnasFestivas,
+        })),
+        totals: {
+          hours: sum('totalHoras'), day: sum('extrasDiurnas'), night: sum('extrasNocturnas'),
+          holidayDay: sum('extrasDiurnasFestivas'), holidayNight: sum('extrasNocturnasFestivas'),
+        },
+      };
+    },
+  },
+  {
+    name: 'create_note',
+    description: 'Create a note in Logday with a title and Markdown content. It does not open it for the user.',
+    inputSchema: {
+      type: 'object',
+      properties: { title: STRING, content: { type: 'string', description: 'Markdown' }, folder: STRING, tags: TAGS },
+      required: ['title'],
+    },
+    write: true,
+    run: async (args, deps) => {
+      const title = reqString(args, 'title').trim();
+      const folder = optString(args, 'folder')?.trim() ?? '';
+      if (folder) {
+        const folders = await deps.listNoteFolders();
+        if (!folders.includes(folder)) throw new ToolError(`Folder "${folder}" does not exist. Folders: ${folders.join(', ') || '(none)'}`);
+      }
+      const note = await deps.createNote({ title, content: optString(args, 'content') ?? '', folder, tags: optTags(args, 'tags') ?? [] });
+      return { ...noteSummary(note), content: note.content };
     },
   },
   {

@@ -15,11 +15,9 @@ use std::time::{Duration, Instant};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use reqwest::Url;
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 use tauri::AppHandle;
-use tauri_plugin_opener::OpenerExt;
-use tiny_http::{Header, Response, Server};
 
+use super::oauth_loopback::LoopbackLogin;
 use super::{delete_secret, keychain_service, read_secret, write_secret, SECRET_NOT_FOUND};
 
 pub const CLIENT_SECRET_KEY: &str = "google_client_secret";
@@ -28,21 +26,9 @@ pub const REFRESH_KEY: &str = "google_refresh";
 const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const REVOKE_URL: &str = "https://oauth2.googleapis.com/revoke";
-const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
 // ── Piezas puras (con pruebas) ────────────────────────────────────────
-
-fn random_urlsafe(bytes: usize) -> Result<String, &'static str> {
-    let mut buf = vec![0u8; bytes];
-    getrandom::getrandom(&mut buf).map_err(|_| "token_error")?;
-    Ok(URL_SAFE_NO_PAD.encode(buf))
-}
-
-/// PKCE S256: base64url(sha256(verifier)).
-pub fn pkce_challenge(verifier: &str) -> String {
-    URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
-}
 
 /// `scopes`: los permisos propios de la extensión; siempre se suman
 /// `openid email`, solo para mostrar la cuenta.
@@ -66,21 +52,6 @@ pub fn auth_url(client_id: &str, redirect_uri: &str, challenge: &str, state: &st
     )
     .expect("URL de autorización válida")
     .to_string()
-}
-
-/// La respuesta de Google en la redirección: el código, o por qué no hay.
-pub fn parse_callback(path_and_query: &str, expected_state: &str) -> Result<String, &'static str> {
-    let url = Url::parse(&format!("http://127.0.0.1{path_and_query}")).map_err(|_| "token_error")?;
-    let get = |k: &str| url.query_pairs().find(|(key, _)| key == k).map(|(_, v)| v.into_owned());
-    // Se mira el `state` antes que nada: una respuesta que no es la nuestra
-    // no dice nada, ni siquiera que se canceló.
-    if get("state").as_deref() != Some(expected_state) {
-        return Err("state_mismatch");
-    }
-    if let Some(err) = get("error") {
-        return Err(if err == "access_denied" { "cancelled" } else { "token_error" });
-    }
-    get("code").filter(|c| !c.is_empty()).ok_or("token_error")
 }
 
 /// La cuenta del `id_token`. No se verifica la firma: llega directo de
@@ -194,10 +165,6 @@ pub async fn access_token(app: &AppHandle, ext: &'static str, client_id: &str, f
     Ok(tokens.access_token)
 }
 
-const DONE_PAGE: &str = "<!doctype html><meta charset=utf-8><title>Logday</title>\
-<body style=\"font-family:system-ui;text-align:center;padding:3em\">\
-<h2>Listo / Done</h2><p>Ya puedes volver a Logday. / You can go back to Logday.</p></body>";
-
 /// Abre el navegador, espera la redirección y guarda el token de
 /// renovación de `ext`. Devuelve la cuenta conectada (su correo).
 pub async fn connect(app: &AppHandle, ext: &'static str, client_id: &str, scopes: &str) -> Result<String, &'static str> {
@@ -206,43 +173,11 @@ pub async fn connect(app: &AppHandle, ext: &'static str, client_id: &str, scopes
         return Err("needs_client");
     }
     let secret = client_secret(app, ext).await?;
-    let verifier = random_urlsafe(48)?;
-    let state = random_urlsafe(24)?;
-
-    // Un puerto libre, solo mientras dura el inicio de sesión.
-    let server = Server::http("127.0.0.1:0").map_err(|_| "server_error")?;
-    let port = server.server_addr().to_ip().map(|a| a.port()).ok_or("server_error")?;
-    let redirect_uri = format!("http://127.0.0.1:{port}");
-    let url = auth_url(&client_id, &redirect_uri, &pkce_challenge(&verifier), &state, scopes);
-    // El opener del plugin, no `open_url`: en Windows, `cmd /c start`
-    // partiría la URL en cada `&`.
-    app.opener().open_url(url, None::<&str>).map_err(|_| "browser_error")?;
-
-    let expected = state.clone();
-    let code = tauri::async_runtime::spawn_blocking(move || -> Result<String, &'static str> {
-        let deadline = Instant::now() + LOGIN_TIMEOUT;
-        loop {
-            let left = deadline.saturating_duration_since(Instant::now());
-            let req = match server.recv_timeout(left) {
-                Ok(Some(r)) => r,
-                Ok(None) => return Err("timeout"),
-                Err(_) => return Err("server_error"),
-            };
-            let path = req.url().to_string();
-            // El navegador puede pedir otras cosas (favicon): solo cuenta la
-            // redirección con `state`.
-            if !path.contains("state=") {
-                let _ = req.respond(Response::empty(404));
-                continue;
-            }
-            let result = parse_callback(&path, &expected);
-            let html = Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..]).expect("cabecera");
-            let _ = req.respond(Response::from_string(DONE_PAGE).with_header(html));
-            return result;
-        }
-    })
-    .await
-    .map_err(|_| "server_error")??;
+    let login = LoopbackLogin::start()?;
+    let url = auth_url(&client_id, &login.redirect_uri, &login.challenge, &login.state, scopes);
+    let redirect_uri = login.redirect_uri.clone();
+    let verifier = login.verifier.clone();
+    let code = login.run(app, url).await?;
 
     let tokens = token_request(&[
         ("grant_type", "authorization_code"),
@@ -277,15 +212,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pkce_s256_como_el_rfc() {
-        // RFC 7636, apéndice B.
-        assert_eq!(
-            pkce_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
-            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
-        );
-    }
-
-    #[test]
     fn url_de_autorizacion() {
         let url = Url::parse(&auth_url("cid", "http://127.0.0.1:5555", "ch", "st", "https://example/scope.x")).unwrap();
         assert_eq!(url.host_str(), Some("accounts.google.com"));
@@ -296,16 +222,6 @@ mod tests {
         assert_eq!(q["state"], "st");
         assert_eq!(q["access_type"], "offline");
         assert_eq!(q["scope"], "openid email https://example/scope.x");
-    }
-
-    #[test]
-    fn respuesta_de_la_redireccion() {
-        assert_eq!(parse_callback("/?state=st&code=abc", "st"), Ok("abc".into()));
-        assert_eq!(parse_callback("/?state=otro&code=abc", "st"), Err("state_mismatch"));
-        assert_eq!(parse_callback("/?code=abc", "st"), Err("state_mismatch"));
-        assert_eq!(parse_callback("/?state=st&error=access_denied", "st"), Err("cancelled"));
-        assert_eq!(parse_callback("/?state=st&error=server_error", "st"), Err("token_error"));
-        assert_eq!(parse_callback("/?state=st", "st"), Err("token_error"));
     }
 
     #[test]

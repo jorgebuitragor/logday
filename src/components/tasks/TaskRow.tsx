@@ -31,6 +31,8 @@ export const TaskRow = memo(function TaskRow({
   staggerIndex = 0,
   onBeforeDelete,
   hideDue,
+  isSelected,
+  onMultiSelect,
 }: {
   task: Task;
   today: string;
@@ -44,6 +46,10 @@ export const TaskRow = memo(function TaskRow({
   /** Dentro de los grupos "Hoy" y "Mañana" la fecha ya la dice el
    *  encabezado: repetirla en cada fila era ruido. */
   hideDue?: boolean;
+  /** En la selección múltiple. */
+  isSelected?: boolean;
+  /** ⌘-clic o ⇧-clic: agrega a la selección en vez de abrir la tarea. */
+  onMultiSelect?: (e: React.MouseEvent) => void;
 }) {
   const { setActiveTask, activeTask, updateTaskWithUndo, language } = useAppStore(
     useShallow((s) => ({ setActiveTask: s.setActiveTask, activeTask: s.activeTask, updateTaskWithUndo: s.updateTaskWithUndo, language: s.language }))
@@ -102,12 +108,26 @@ export const TaskRow = memo(function TaskRow({
     >
     <div
       ref={rowRef}
-      onClick={() => { onSelect?.(); setActiveTask(isActive ? null : task); }}
+      data-task-id={task.id}
+      aria-selected={isSelected}
+      // ⇧-clic sin seleccionar el texto de las filas de en medio.
+      onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
+      onClick={(e) => {
+        if ((e.metaKey || e.ctrlKey || e.shiftKey) && onMultiSelect) {
+          e.preventDefault();
+          onMultiSelect(e);
+          return;
+        }
+        onSelect?.();
+        setActiveTask(isActive ? null : task);
+      }}
       // El clic derecho también selecciona: si no, el menú era de una fila
       // y el resaltado quedaba en otra.
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onSelect?.(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
       className={`flex items-start gap-3 rounded-xl px-3 py-2.5 cursor-pointer transition group ${
-        isActive
+        isSelected
+          ? 'bg-indigo-500/15 border border-indigo-500/40'
+          : isActive
           ? 'bg-indigo-500/10 border border-indigo-500/20'
           : isFocused
           ? 'border border-indigo-500/40 bg-[var(--bg-hover)]'

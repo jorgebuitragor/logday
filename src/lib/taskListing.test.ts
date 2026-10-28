@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Task } from '../types/task';
-import { EMPTY_TASK_FILTER, doneTasks, dueBucket, filterTasks, formatDueLabel, groupOpenTasks, sortColumn } from './taskListing';
+import { EMPTY_TASK_FILTER, doneTasks, dueBucket, filterTasks, formatDueLabel, groupOpenTasks, rangeIds, sortColumn } from './taskListing';
 
 const TODAY = '2026-10-27'; // martes
 
@@ -115,5 +115,16 @@ describe('filterTasks', () => {
     const filter = { ...EMPTY_TASK_FILTER, status: 'done' as const, tags: ['sync'] };
     expect(ids(filterTasks(tasks, filter))).toEqual(['c']);
     expect(ids(filterTasks(tasks, filter, { ignoreStatus: true }))).toEqual(['a', 'c']);
+  });
+});
+
+describe('rangeIds', () => {
+  const order = ['a', 'b', 'c', 'd'];
+  it('toma el tramo entre las dos, en cualquier dirección', () => {
+    expect(rangeIds(order, 'b', 'd')).toEqual(['b', 'c', 'd']);
+    expect(rangeIds(order, 'd', 'b')).toEqual(['b', 'c', 'd']);
+  });
+  it('sin ancla visible, solo la elegida', () => {
+    expect(rangeIds(order, 'z', 'c')).toEqual(['c']);
   });
 });

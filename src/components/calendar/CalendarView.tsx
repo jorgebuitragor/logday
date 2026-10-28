@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Clock, CalendarDays, Copy, Bell, Repeat2, X } from 'lucide-react';
 import { Task, TaskStatus } from '../../types/task';
@@ -15,7 +15,7 @@ import { EventEditor } from './EventEditor';
 import { t, MONTHS_TITLE, WEEKDAYS_SHORT } from '../../lib/i18n';
 import { EVENT_COLOR_DOT, EVENT_COLORS, REMINDER_OPTIONS, reminderLabel } from '../../lib/calendarEventPresentation';
 import { localISODate } from '../../lib/localDate';
-import { filterTasks } from '../../lib/taskListing';
+import { filterTasks, formatDueLabel } from '../../lib/taskListing';
 import { TaskFilterBar } from '../tasks/TaskFilterBar';
 
 const ESTIMATED_DAY_CTX_MENU = { width: 190, height: 88 };
@@ -44,7 +44,7 @@ const EVENT_COLOR_BADGE: Record<EventColor, string> = {
 
 
 export function CalendarView() {
-  const { tasks, currentView, setActiveTask, activeTask, language, calendarEvents, saveCalendarEvent, deleteCalendarEvent, showToast, confirmDestructiveActions, activeCalendarEvent, setActiveCalendarEvent, taskFilter } = useAppStore();
+  const { tasks, currentView, setActiveTask, activeTask, language, calendarEvents, saveCalendarEvent, deleteCalendarEvent, showToast, confirmDestructiveActions, activeCalendarEvent, setActiveCalendarEvent, taskFilter, updateTaskWithUndo } = useAppStore();
   // Mismo filtro que la lista y el Kanban (estado, búsqueda y tags).
   const visibleTasks = useMemo(() => filterTasks(tasks, taskFilter), [tasks, taskFilter]);
 
@@ -86,6 +86,47 @@ export function CalendarView() {
   const [evRepeatEnabled, setEvRepeatEnabled] = useState(false);
   const [evRepeat, setEvRepeat] = useState<Exclude<EventRepeat, 'none'>>('weekly');
   const [evDirty, setEvDirty] = useState(false);
+
+  // Arrastrar una tarea a otro día cambia su vencimiento (con deshacer).
+  // Con eventos de puntero, como el Kanban. Hasta moverse 4 px es un clic.
+  const pressRef = useRef<{ task: Task; x: number; y: number } | null>(null);
+  const justDraggedRef = useRef(false);
+  const overRef = useRef<string | null>(null);
+  const [drag, setDrag] = useState<{ task: Task; x: number; y: number; over: string | null } | null>(null);
+  const dragging = !!drag;
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const press = pressRef.current;
+      if (!press) return;
+      if (!dragging && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 4) return;
+      const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-cal-date]')?.getAttribute('data-cal-date') ?? null;
+      overRef.current = over;
+      setDrag({ task: press.task, x: e.clientX, y: e.clientY, over });
+    };
+    const onUp = () => {
+      const press = pressRef.current;
+      pressRef.current = null;
+      if (!dragging || !press) return;
+      const over = overRef.current;
+      overRef.current = null;
+      setDrag(null);
+      if (over && over !== press.task.due) {
+        void updateTaskWithUndo({ ...press.task, due: over }, {
+          title: t(language, 'tasks', 'toastDue'),
+          description: `${press.task.title} · ${formatDueLabel(over, localISODate(), language).label}`,
+        });
+      }
+      // El clic que llega al soltar no debe abrir la tarea ni elegir el día.
+      justDraggedRef.current = true;
+      setTimeout(() => { justDraggedRef.current = false; }, 0);
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    return () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    };
+  }, [dragging, language, updateTaskWithUndo]);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -209,6 +250,7 @@ export function CalendarView() {
   return (
     <div
       className="flex flex-1 flex-col overflow-hidden"
+      style={drag ? { userSelect: 'none', cursor: 'grabbing' } : undefined}
       onContextMenu={(e) => { e.preventDefault(); setEmptyCtxMenu({ x: e.clientX, y: e.clientY }); }}
     >
       {/* Header */}
@@ -278,9 +320,10 @@ export function CalendarView() {
                 <div
                   key={i}
                   role="button"
+                  data-cal-date={dateStr}
                   tabIndex={0}
                   aria-pressed={isSelected}
-                  onClick={() => setSelectedDate(isSelected ? null : dateStr)}
+                  onClick={() => { if (!justDraggedRef.current) setSelectedDate(isSelected ? null : dateStr); }}
                   onKeyDown={(e) => {
                     if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
                     e.preventDefault();
@@ -292,7 +335,9 @@ export function CalendarView() {
                     setDayCtxMenu({ x: e.clientX, y: e.clientY, date: dateStr });
                   }}
                   className={`flex min-h-0 cursor-pointer flex-col gap-0.5 overflow-hidden rounded-xl border p-1.5 transition outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${
-                    isSelected
+                    drag?.over === dateStr
+                      ? 'border-indigo-400/70 bg-indigo-500/10'
+                      : isSelected
                       ? 'bg-indigo-500/15 border-indigo-500/40'
                       : 'border-[var(--border)] hover:bg-[var(--bg-hover)]'
                   }`}
@@ -329,7 +374,11 @@ export function CalendarView() {
                       <button
                         key={item.task.id}
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); setActiveTask(item.task); }}
+                        onPointerDown={(e) => {
+                          if (e.button !== 0) return;
+                          pressRef.current = { task: item.task, x: e.clientX, y: e.clientY };
+                        }}
+                        onClick={(e) => { e.stopPropagation(); if (!justDraggedRef.current) setActiveTask(item.task); }}
                         onContextMenu={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -673,6 +722,15 @@ export function CalendarView() {
           </div>
         )}
       </div>
+      {drag && (
+        <div
+          style={{ position: 'fixed', left: drag.x + 12, top: drag.y + 8, zIndex: 9999, pointerEvents: 'none' }}
+          className="max-w-[220px] truncate rounded-lg border border-indigo-400/60 bg-[var(--bg-panel)] px-2.5 py-1.5 text-xs text-[var(--text-body)] shadow-2xl"
+        >
+          {drag.task.title}
+        </div>
+      )}
+
       {/* Event context menu */}
       {evCtxMenu && createPortal(
         <div

@@ -9,6 +9,7 @@ import { useConfirmDelete } from '../../hooks/useConfirmDelete';
 import { usePositionedMenu } from '../../hooks/usePositionedMenu';
 import { addDaysISO, localISODate } from '../../lib/localDate';
 import { formatDueLabel } from '../../lib/taskListing';
+import { AppCalendarGrid } from '../shared/AppDatePicker';
 
 const ESTIMATED_TASK_MENU = { width: 230, height: 440 };
 const ESTIMATED_NEW_TASK_MENU = { width: 190, height: 56 };
@@ -25,6 +26,7 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
   const { updateTaskWithUndo, createTask, deleteTask, setActiveTask, language, confirmDestructiveActions, projects } = useAppStore();
   const [copied, setCopied] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
   const confirmDeleteDialog = useConfirmDelete<true>(confirmDestructiveActions);
   const anchor = useMemo(() => ({ x, y }), [x, y]);
   const { ref, style } = usePositionedMenu(anchor, { estimatedSize: ESTIMATED_TASK_MENU, onClose });
@@ -116,7 +118,7 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
     <div
       ref={ref}
       style={{ ...style, zIndex: 9999 }}
-      className="min-w-[200px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-2xl"
+      className={`${showCalendar ? 'w-64' : 'min-w-[200px]'} rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-2xl`}
     >
       {/* Preview del título */}
       <div className="border-b border-[var(--border)] px-3 py-2">
@@ -171,6 +173,17 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
             {label}
           </button>
         ))}
+        <button
+          onClick={() => setShowCalendar((v) => !v)}
+          aria-expanded={showCalendar}
+          title={t(language, 'tasks', 'chooseDate')}
+          aria-label={t(language, 'tasks', 'chooseDate')}
+          className={`rounded-md px-1.5 py-1 transition hover:bg-[var(--bg-hover)] ${
+            showCalendar ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]' : 'text-[var(--text-hint)]'
+          }`}
+        >
+          <CalendarDays size={12} />
+        </button>
         {task.due && (
           <button
             onClick={() => void handleDue(undefined)}
@@ -182,6 +195,13 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
           </button>
         )}
       </div>
+
+      {/* Cualquier otra fecha, sin abrir el panel */}
+      {showCalendar && (
+        <div className="px-3 pb-2 pt-1">
+          <AppCalendarGrid value={task.due ?? ''} onChange={(iso) => void handleDue(iso)} />
+        </div>
+      )}
 
       {/* Proyecto y duplicar */}
       <div className="mx-2 my-1 border-t border-[var(--border)]" />

@@ -149,3 +149,13 @@ export function formatLongDate(iso: string, language: Language): string {
   return new Intl.DateTimeFormat(language === 'es' ? 'es-CO' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' })
     .format(new Date(y, m - 1, d, 12));
 }
+
+/** Ids entre `anchor` y `target` (ambos incluidos) en el orden de `order`:
+ *  la selección con ⇧-clic. Si `anchor` no está, solo `target`. */
+export function rangeIds(order: string[], anchor: string, target: string): string[] {
+  const a = order.indexOf(anchor);
+  const b = order.indexOf(target);
+  if (b < 0) return [];
+  if (a < 0) return [target];
+  return order.slice(Math.min(a, b), Math.max(a, b) + 1);
+}

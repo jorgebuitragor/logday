@@ -59,6 +59,7 @@ import { bytesToBase64, persistYDoc, applyIncomingContentState, deliverToOpenNot
 import { applyIncomingDailyContentState, applyDailyEditorEdit, deleteDailyContentState } from '../lib/dailyContentSync';
 import { parseFrontmatter, serializeTask, parseNote, serializeNote } from '../lib/markdown';
 import { t } from '../lib/i18n';
+import { emitAppEvent } from '../lib/appEvents';
 import { appUpdatedAt, fetchRelease, recordAppUpdatedAt } from '../lib/releases';
 import { localISODate, localISOMonth, nowInstant, stampSortKey } from '../lib/localDate';
 import {
@@ -2844,6 +2845,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       filePath: taskFilePath(basePath, targetProject, id),
     };
     await fs.writeFile(task.filePath, serializeTask(task));
+    emitAppEvent({ type: 'task.created', task });
     // La captura rápida no abre el panel (`open: false`), y una tarea de
     // otro proyecto no se agrega a la lista filtrada que se está viendo.
     const open = extra.open ?? true;
@@ -2891,6 +2893,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     await fs.writeFile(normalizedTask.filePath, serializeTask(normalizedTask));
     if (oldFilePath !== normalizedTask.filePath) await fs.deleteFile(oldFilePath).catch(() => {});
+    emitAppEvent({ type: 'task.updated', prev, next: normalizedTask });
     const visible = taskInView(normalizedTask.project, get().activeProject);
     set((state) => ({
       // Si vuelve a la vista (deshacer un cambio de proyecto), se agrega.
@@ -3848,6 +3851,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ overtimeMonths: [ym, ...overtimeMonths].sort().reverse() });
     }
     await fs.writeFile(path, `---\n${JSON.stringify({ entries }, null, 2)}\n---\n`);
+    emitAppEvent({ type: 'overtime.saved', entry });
     // Navegar al mes de la entrada para que aparezca en la lista
     await get().loadOvertimeMonth(ym);
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });

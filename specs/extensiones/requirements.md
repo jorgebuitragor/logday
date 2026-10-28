@@ -91,6 +91,10 @@ tengan su primera extensión.
   distintos de los eventos propios. Esos eventos NO DEBERÁN guardarse en
   disco ni sincronizarse, y DEBERÁN desaparecer al desactivar la
   extensión.
+- R23. Las extensiones DEBERÁN poder enterarse de lo que pasa en la app
+  (se creó o actualizó una tarea, se guardó una hora extra) con eventos
+  que emiten las acciones del store, también cuando el cambio lo hace el
+  agente por MCP. Un oyente que falla NO DEBERÁ afectar a la acción.
 
 ### Robustez
 

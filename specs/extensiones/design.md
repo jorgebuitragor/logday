@@ -194,6 +194,13 @@ extensions?: Partial<Record<ExtensionId, {
   de la extensión.
 - La primera fuente es Google Calendar (`specs/google-calendar/`).
 
+## Eventos de la app (R23)
+
+`src/lib/appEvents.ts`: `onAppEvent(fn)` y `emitAppEvent(event)`. Los
+emiten `createTask`, `updateTask` y `saveOvertimeEntry` después de
+escribir en disco. El primer oyente es el webhook saliente
+(`specs/webhook-saliente/`).
+
 ## Red (R17)
 
 - Cada extensión que habla con un servicio tiene sus comandos en

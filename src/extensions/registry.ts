@@ -1,4 +1,4 @@
-import { Bot, CalendarDays, MessagesSquare } from 'lucide-react';
+import { Bot, CalendarDays, MessagesSquare, Webhook } from 'lucide-react';
 import type { ExtensionDefinition, ExtensionId } from './types';
 
 /** Extensiones que implementa Desktop (R4). Solo metadatos: el código de
@@ -37,6 +37,17 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     secretKeys: ['google_client_secret', 'google_refresh'],
     settings: true,
     load: () => import('./google-calendar').then((m) => m.default),
+  },
+  {
+    id: 'outgoing-webhook',
+    category: 'integration',
+    icon: Webhook,
+    apps: ['desktop'],
+    // W11: manda datos de Logday a un servicio que elige el usuario.
+    sendsDataExternally: { to: 'n8n / webhook' },
+    secretKeys: ['url', 'secret'],
+    settings: true,
+    load: () => import('./outgoing-webhook').then((m) => m.default),
   },
 ];
 

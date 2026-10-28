@@ -622,6 +622,8 @@ pub fn run() {
             extensions::google_calendar::google_calendar_disconnect,
             extensions::google_calendar::google_calendar_copy_client,
             extensions::google_calendar::google_calendar_events,
+            extensions::outgoing_webhook::outgoing_webhook_validate_url,
+            extensions::outgoing_webhook::outgoing_webhook_send,
             extensions::mcp::mcp_server_start,
             extensions::mcp::mcp_server_stop,
             extensions::mcp::mcp_reply,

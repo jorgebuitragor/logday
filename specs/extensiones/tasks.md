@@ -1,6 +1,6 @@
 # Extensiones — Tareas
 
-Estado: en diseño.
+Estado: en progreso.
 
 ## Decisiones
 
@@ -17,35 +17,39 @@ Estado: en diseño.
 
 ## Base
 
-- [ ] `src/extensions/types.ts` y `registry.ts`, con la primera
+- [x] `src/extensions/types.ts` y `registry.ts`, con la primera
   extensión registrada (`team-chat`).
-- [ ] `AppConfig.extensions` y su lugar en `BackupSettings` (R9).
-- [ ] `useExtensions`: activas, activar con aviso (R6), desactivar con
+- [x] `AppConfig.extensions` y su lugar en `BackupSettings` (R9).
+- [x] `useExtensions`: activas, activar con aviso (R6), desactivar con
   `stop` (R7) y carga con `import()` (R16).
-- [ ] `ExtensionBoundary` (R15), con una prueba: un componente que lanza
+- [x] `ExtensionBoundary` (R15), con una prueba: un componente que lanza
   un error no tumba el árbol y muestra "Desactivar".
-- [ ] Rust: crate `keyring` y los comandos `ext_secret_set`,
-  `ext_secret_clear` y `ext_secret_hint` (R10). Probar en macOS y
-  Windows.
-- [ ] `ActiveSection` y `StartupScreen` con `ext:<id>`, más R13 y R14.
-- [ ] `Sidebar.tsx`: secciones de extensiones activas con vista (R11).
-- [ ] `ExtensionsSettingsTab.tsx`: grupos, tarjetas, interruptor, aviso
+- [x] Rust: crate `keyring` y los comandos `ext_secret_set`,
+  `ext_secret_clear` y `ext_secret_hint` (R10).
+- [ ] Probar el llavero en macOS y Windows (y que compile en Linux, en
+  el workflow de release).
+- [x] `ActiveSection` y `StartupScreen` con `ext:<id>`, más R13 y R14.
+- [x] `Sidebar.tsx`: secciones de extensiones activas con vista (R11).
+- [x] `ExtensionsSettingsTab.tsx`: grupos, tarjetas, interruptor, aviso
   y "Quitar configuración" (R1–R8).
-- [ ] Textos en `i18n.ts`, en es y en (R20).
-- [ ] Pruebas de `useExtensions` y de la resolución de la pantalla de
+- [x] Textos en `i18n.ts`, en es y en (R20).
+- [x] Pruebas de `useExtensions` y de la resolución de la pantalla de
   inicio.
 - [ ] Probar en la app de QA:
   - activar y desactivar;
   - aviso aceptado y cancelado;
   - "Quitar configuración";
-  - pantalla de inicio en una extensión desactivada.
+  - pantalla de inicio en una extensión desactivada;
+  - que las 8 pestañas de Opciones quepan en es y en.
 
 ## Primera extensión
 
-- [ ] `team-chat`, en modo local. Ver
+- [x] `team-chat`, en modo local. Ver
   `logday-server/specs/daily-al-chat/` (fase 1). Va en el mismo PR que
-  la base o en el siguiente, para que la base no llegue sin ninguna
-  extensión.
+  la base.
+- [ ] Probar `team-chat` en la app de QA con webhooks reales de Google
+  Chat, Slack y Teams: guardar, enviar prueba, "Enviar al chat", URL de
+  otro proveedor rechazada y el aviso de "ya se envió hoy".
 
 ## Candidatas (sin spec todavía)
 

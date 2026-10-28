@@ -17,6 +17,13 @@ import { GitConfig, GitStatus, GitRemoteStatus } from '../types/git';
 import { SyncConfig, SyncConnectionStatus } from '../types/sync';
 import { AppConfig, ViewMode, ActiveSection, StartupScreen, Shortcuts, DEFAULT_SHORTCUTS, NotesView, NoteSortBy, NoteSortDir, TaskSortBy } from '../types/config';
 import { Language, AppToast, ToastKind } from '../types/common';
+import type { ExtensionId, ExtensionsConfig } from '../extensions/types';
+import { EXTENSIONS, getExtension } from '../extensions/registry';
+import {
+  parseExtensionsConfig, resolveSection, withExtensionEnabled, withExtensionSettings, withoutExtension,
+  extensionSection,
+} from '../extensions/state';
+import { clearExtensionSecret } from '../extensions/secrets';
 import { deriveCustomThemeVars } from '../lib/themeColor';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
 import { parseDailyFile, serializeDailyFile } from '../lib/dailyFileFormat';
@@ -145,6 +152,8 @@ export interface AppState {
   theme: Theme;
   customThemes: CustomTheme[];
   startupScreen: StartupScreen;
+  /** Preferencias de extensiones (specs/extensiones). */
+  extensions: ExtensionsConfig;
   notesView: NotesView;
   notesViewDefault: NotesView;
   noteSortBy: NoteSortBy;
@@ -342,6 +351,16 @@ export interface AppState {
   updateCustomTheme: (id: string, patch: Partial<Omit<CustomTheme, 'id' | 'createdAt'>>) => void;
   replaceCustomThemes: (customThemes: CustomTheme[]) => void;
   setStartupScreen: (screen: StartupScreen) => Promise<void>;
+  /** Activa o desactiva una extensión. El aviso de R6 lo pide la UI antes
+   *  y pasa aquí `consentAt`. Al desactivarla con su vista abierta, vuelve
+   *  a Inicio (R14). */
+  setExtensionEnabled: (id: ExtensionId, enabled: boolean, consentAt?: string) => Promise<void>;
+  /** Mezcla configuración no secreta de una extensión. */
+  updateExtensionSettings: (id: ExtensionId, patch: Record<string, unknown>) => Promise<void>;
+  /** "Quitar configuración" (R8): borra la configuración y los secretos. */
+  removeExtensionConfig: (id: ExtensionId) => Promise<void>;
+  /** Reemplaza todas las preferencias de extensiones (restaurar un backup). */
+  replaceExtensionsConfig: (config: ExtensionsConfig) => Promise<void>;
   setLanguage: (lang: Language) => Promise<void>;
   setFontSize: (size: number) => void;
   setShortcut: (action: keyof Shortcuts, key: string) => void;
@@ -433,7 +452,7 @@ async function persistConfig(get: SyncGet): Promise<void> {
     configDir, basePath, startupScreen, language, confirmDestructiveActions,
     notificationsEnabled, defaultReminderMinutes, workWeekDays, holidaysAsNonWork,
     animationsEnabled, trashAutoPurgeEnabled, sidebarLabelsVisible, activeProject, activeNoteFolder,
-    notesView, notesViewDefault, noteSortBy, noteSortDir, taskSortBy,
+    notesView, notesViewDefault, noteSortBy, noteSortDir, taskSortBy, extensions,
   } = get();
   if (!configDir || !basePath) return;
   await saveConfig(configDir, {
@@ -455,7 +474,14 @@ async function persistConfig(get: SyncGet): Promise<void> {
     noteSortBy,
     noteSortDir,
     taskSortBy,
+    extensions,
   });
+}
+
+/** R14: si la vista de la extensión está abierta, vuelve a Inicio. Una
+ *  pantalla de inicio en esa vista se resuelve al abrir la app (R13). */
+function leaveExtensionSection(get: SyncGet, set: (partial: Partial<AppState>) => void, id: ExtensionId) {
+  if (get().activeSection === extensionSection(id)) set({ activeSection: 'dashboard' });
 }
 
 export async function readTaskFromPath(filePath: string): Promise<Task | null> {
@@ -2308,6 +2334,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch { return []; }
   })(),
   startupScreen: 'dashboard',
+  extensions: {},
   notesView: 'list',
   notesViewDefault: 'list',
   noteSortBy: 'updated',
@@ -2423,13 +2450,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (cfg?.basePath) {
         const exists = await fs.exists(cfg.basePath);
         if (exists) {
-          const startupScreen: StartupScreen = cfg.startupScreen ?? 'dashboard';
+          const extensions = parseExtensionsConfig(cfg.extensions);
+          // R13: si la pantalla de inicio es la vista de una extensión
+          // desactivada (o que ya no existe), se abre en Inicio.
+          const startupScreen: StartupScreen = resolveSection(cfg.startupScreen ?? 'dashboard', extensions, EXTENSIONS);
           const language: Language = (cfg.language as Language) ?? 'es';
           set({
             basePath: cfg.basePath,
             isConfigured: true,
             startupScreen,
             activeSection: startupScreen,
+            extensions,
             language,
             confirmDestructiveActions: cfg.confirmDestructiveActions ?? true,
             notificationsEnabled: cfg.notificationsEnabled ?? true,
@@ -3991,7 +4022,40 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setStartupScreen: async (screen) => {
-    set({ startupScreen: screen, activeSection: screen });
+    const resolved = resolveSection(screen, get().extensions, EXTENSIONS);
+    set({ startupScreen: resolved, activeSection: resolved });
+    await persistConfig(get);
+  },
+
+  setExtensionEnabled: async (id, enabled, consentAt) => {
+    set((s) => ({ extensions: withExtensionEnabled(s.extensions, id, enabled, consentAt) }));
+    if (!enabled) leaveExtensionSection(get, set, id);
+    await persistConfig(get);
+  },
+
+  updateExtensionSettings: async (id, patch) => {
+    set((s) => ({ extensions: withExtensionSettings(s.extensions, id, patch) }));
+    await persistConfig(get);
+  },
+
+  removeExtensionConfig: async (id) => {
+    const keys = getExtension(id)?.secretKeys ?? [];
+    // Primero los secretos: si el llavero falla, la configuración queda y
+    // el usuario puede reintentar.
+    await Promise.all(keys.map((key) => clearExtensionSecret(id, key)));
+    set((s) => ({ extensions: withoutExtension(s.extensions, id) }));
+    leaveExtensionSection(get, set, id);
+    await persistConfig(get);
+  },
+
+  replaceExtensionsConfig: async (config) => {
+    const extensions = parseExtensionsConfig(config);
+    set({ extensions });
+    const { activeSection, startupScreen } = get();
+    set({
+      activeSection: resolveSection(activeSection, extensions, EXTENSIONS),
+      startupScreen: resolveSection(startupScreen, extensions, EXTENSIONS),
+    });
     await persistConfig(get);
   },
 

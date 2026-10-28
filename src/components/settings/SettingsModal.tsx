@@ -9,10 +9,11 @@ import { WorkSettingsTab } from './WorkSettingsTab';
 import { ShortcutsSettingsTab } from './ShortcutsSettingsTab';
 import { DataSettingsTab } from './DataSettingsTab';
 import { AboutSettingsTab } from './AboutSettingsTab';
+import { ExtensionsSettingsTab } from './ExtensionsSettingsTab';
 import { ModalOverlay } from '../shared/ModalOverlay';
 import { ModalPanel } from '../shared/ModalPanel';
 
-type SettingsTab = 'general' | 'work' | 'shortcuts' | 'data' | 'git' | 'sync' | 'about';
+type SettingsTab = 'general' | 'work' | 'shortcuts' | 'data' | 'git' | 'sync' | 'extensions' | 'about';
 
 export function SettingsModal() {
   const {
@@ -75,6 +76,7 @@ export function SettingsModal() {
     { id: 'data',    label: t(language, 'settings', 'tabData') },
     { id: 'git',     label: t(language, 'settings', 'tabGit') },
     { id: 'sync',    label: t(language, 'settings', 'tabSync') },
+    { id: 'extensions', label: t(language, 'settings', 'tabExtensions') },
     { id: 'about',   label: t(language, 'settings', 'tabAbout') },
   ];
 
@@ -135,6 +137,9 @@ export function SettingsModal() {
 
           {/* ── SYNC: conexión con servidor propio ── */}
           {settingsTab === 'sync' && <SyncSettingsTab />}
+
+          {/* ── EXTENSIONS: catálogo de extensiones (specs/extensiones) ── */}
+          {settingsTab === 'extensions' && <ExtensionsSettingsTab />}
 
           {/* ── ABOUT: Versión · Actualizaciones ── */}
           {settingsTab === 'about' && <AboutSettingsTab />}

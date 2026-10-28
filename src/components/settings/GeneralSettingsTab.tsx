@@ -2,6 +2,9 @@ import { Monitor, Sun, Moon, Minus, Plus, Type, ChevronDown, AlertTriangle, Eye,
 import { useState } from 'react';
 import { Theme, CustomTheme } from '../../types/theme';
 import { StartupScreen } from '../../types/config';
+import { useExtensions } from '../../extensions/useExtensions';
+import { extensionSection } from '../../extensions/state';
+import { extensionText } from '../../extensions/text';
 import { Language } from '../../types/common';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
@@ -51,6 +54,7 @@ export function GeneralSettingsTab({ isStartupSelectorOpen, setIsStartupSelector
     sidebarLabelsVisible, setSidebarLabelsVisible,
   } = useAppStore();
 
+  const enabledExtensions = useExtensions().enabled;
   const [editingCustomTheme, setEditingCustomTheme] = useState<CustomTheme | 'new' | null>(null);
   const [showAllCustomThemes, setShowAllCustomThemes] = useState(false);
   const [visibleCustomCount, setVisibleCustomCount] = useState(6);
@@ -58,13 +62,22 @@ export function GeneralSettingsTab({ isStartupSelectorOpen, setIsStartupSelector
   const [renamingThemeId, setRenamingThemeId] = useState<string | null>(null);
   const confirmDeleteThemeDialog = useConfirmDelete<CustomTheme>(confirmDestructiveActions);
 
-  const startupScreenOptions = STARTUP_SCREEN_VALUES.map((value) => ({
-    value,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    label: t(language, 'settings', `startup${value.charAt(0).toUpperCase() + value.slice(1)}` as any),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    desc: t(language, 'settings', `startupDesc${value.charAt(0).toUpperCase() + value.slice(1)}` as any),
-  }));
+  const startupScreenOptions: { value: StartupScreen; label: string; desc: string }[] = [
+    ...STARTUP_SCREEN_VALUES.map((value) => ({
+      value,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      label: t(language, 'settings', `startup${value.charAt(0).toUpperCase() + value.slice(1)}` as any),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      desc: t(language, 'settings', `startupDesc${value.charAt(0).toUpperCase() + value.slice(1)}` as any),
+    })),
+    // Las vistas de las extensiones activas también pueden ser la pantalla
+    // de inicio (specs/extensiones R13).
+    ...enabledExtensions.filter((def) => def.view).map((def) => ({
+      value: extensionSection(def.id) as StartupScreen,
+      label: extensionText(language, def.id, 'name'),
+      desc: extensionText(language, def.id, 'description'),
+    })),
+  ];
   const themeOptions = THEME_VALUES.map(({ value, Icon }) => {
     const keySuffix = value
       .split('-')

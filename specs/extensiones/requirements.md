@@ -1,6 +1,6 @@
 # Extensiones — Requirements
 
-Estado: en diseño.
+Estado: en progreso.
 
 ## Contexto
 

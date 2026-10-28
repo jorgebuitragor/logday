@@ -22,6 +22,8 @@ export const DEFAULT_SHORTCUTS: Shortcuts = { newNote: 'n', newTask: 't', search
 export type NotesView = 'list' | 'tree';
 export type NoteSortBy = 'updated' | 'created' | 'title';
 export type NoteSortDir = 'desc' | 'asc';
+/** Orden de la lista de tareas: 'due' agrupa por vencimiento. */
+export type TaskSortBy = 'due' | 'created' | 'title';
 
 export interface AppConfig {
   basePath: string;
@@ -43,6 +45,7 @@ export interface AppConfig {
   notesView?: NotesView;
   noteSortBy?: NoteSortBy;
   noteSortDir?: NoteSortDir;
+  taskSortBy?: TaskSortBy;
 }
 
 export interface BackupSettings {

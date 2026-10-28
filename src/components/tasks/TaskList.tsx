@@ -1,17 +1,17 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Plus, AlertTriangle, CheckSquare, ChevronRight, ArrowUpDown } from 'lucide-react';
+import { Plus, CheckSquare, ChevronRight, ArrowUpDown } from 'lucide-react';
 import { Task, TaskStatus } from '../../types/task';
 import type { TaskSortBy } from '../../types/config';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../store/appStore';
 import { NewTaskContextMenu } from './TaskContextMenu';
 import { TaskRow } from './TaskRow';
-import { RichTextEditor } from './RichTextEditor';
+import { NewTaskModal } from './NewTaskModal';
+import { QuickAddInput } from './QuickAddInput';
+import type { QuickCaptureResult } from '../../lib/quickCapture';
 import { t } from '../../lib/i18n';
 import { localISODate } from '../../lib/localDate';
 import { doneTasks, groupOpenTasks, type TaskGroupKey } from '../../lib/taskListing';
-import { ModalOverlay } from '../shared/ModalOverlay';
-import { ModalPanel } from '../shared/ModalPanel';
 
 const DONE_COLLAPSED_KEY = 'logday_tasks_done_collapsed';
 
@@ -32,29 +32,25 @@ const SORT_LABEL_KEY: Record<TaskSortBy, 'sortDue' | 'sortCreated' | 'sortTitle'
 };
 
 export function TaskList() {
-  const { tasks, activeProject, currentView, createTask, deleteTask, isLoading, language, setActiveTask, taskSortBy, setTaskSort } = useAppStore(
+  const { tasks, activeProject, currentView, deleteTask, updateTask, isLoading, language, setActiveTask, taskSortBy, setTaskSort } = useAppStore(
     useShallow((s) => ({
       tasks: s.tasks,
       taskSortBy: s.taskSortBy,
       setTaskSort: s.setTaskSort,
       activeProject: s.activeProject,
       currentView: s.currentView,
-      createTask: s.createTask,
       deleteTask: s.deleteTask,
+      updateTask: s.updateTask,
       isLoading: s.isLoading,
       language: s.language,
       setActiveTask: s.setActiveTask,
     }))
   );
-  const [showNewTaskModal, setShowNewTaskModal] = useState(false);
-  const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [newTaskContent, setNewTaskContent] = useState('');
-  const [newTaskCode, setNewTaskCode] = useState('');
-
-  const isDuplicateNewCode = useMemo(
-    () => newTaskCode.length > 0 && tasks.some((t) => t.taskCode === newTaskCode),
-    [newTaskCode, tasks]
-  );
+  // Borrador de la ventana "Nueva tarea" (null = cerrada). La captura
+  // rápida le pasa lo que ya se escribió.
+  const [newTaskDraft, setNewTaskDraft] = useState<Partial<QuickCaptureResult> | null>(null);
+  const quickAddRef = useRef<HTMLInputElement>(null);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<TaskStatus | 'all'>('all');
   const [emptyCtxMenu, setEmptyCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [newTaskIds, setNewTaskIds] = useState<Set<string>>(new Set());
@@ -99,7 +95,7 @@ export function TaskList() {
   }, [activeProject, currentView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const handler = () => setShowNewTaskModal(true);
+    const handler = () => setNewTaskDraft({});
     window.addEventListener('logday:new-task', handler);
     return () => window.removeEventListener('logday:new-task', handler);
   }, []);
@@ -143,83 +139,49 @@ export function TaskList() {
   const done = useMemo(() => (filter === 'all' || filter === 'done' ? doneTasks(tasks) : []), [tasks, filter]);
   const visibleCount = openGroups.reduce((n, g) => n + g.tasks.length, 0) + done.length;
 
-  const handleCreateTask = async () => {
-    if (newTaskTitle.trim()) {
-      await createTask(newTaskTitle.trim(), undefined, newTaskContent, newTaskCode.trim() || undefined);
-    }
-    setNewTaskTitle('');
-    setNewTaskContent('');
-    setNewTaskCode('');
-    setShowNewTaskModal(false);
-  };
-
-  const closeNewTaskModal = () => { setNewTaskTitle(''); setNewTaskContent(''); setNewTaskCode(''); setShowNewTaskModal(false); };
-
-  const handleCreateTaskKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') handleCreateTask();
-    if (e.key === 'Escape') closeNewTaskModal();
-  };
-
-  const newTaskModal = showNewTaskModal ? (
-    <ModalOverlay onClose={closeNewTaskModal} className="animate-fade-in">
-      <ModalPanel className="modal-spring-in w-[680px] max-w-[92vw] rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
-        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-          <Plus size={15} className="text-indigo-400" />
-          {t(language, 'tasks', 'modalTitle')}
-        </div>
-        <input
-          autoFocus
-          value={newTaskTitle}
-          onChange={(e) => setNewTaskTitle(e.target.value)}
-          onKeyDown={handleCreateTaskKey}
-          placeholder={t(language, 'tasks', 'taskNamePlaceholder')}
-          className="mb-3 w-full rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-2.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500/60 placeholder-[var(--text-hint)]"
-        />
-        <div className="mb-4 flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-2.5">
-          <span className="shrink-0 text-xs text-[var(--text-hint)]"># {t(language, 'tasks', 'taskCodeLabel')}</span>
-          <input
-            value={newTaskCode}
-            onChange={(e) => setNewTaskCode(e.target.value.replace(/[^a-zA-Z0-9\-_]/g, '').toUpperCase())}
-            onKeyDown={handleCreateTaskKey}
-            maxLength={32}
-            spellCheck={false}
-            className={`flex-1 bg-transparent font-mono text-xs outline-none transition-colors ${
-              isDuplicateNewCode ? 'text-red-400' : 'text-[var(--text-secondary)]'
-            }`}
-          />
-          {isDuplicateNewCode ? (
-            <AlertTriangle size={12} className="shrink-0 text-red-400" aria-label={t(language, 'tasks', 'taskCodeDuplicate')} />
-          ) : (
-            <span className="shrink-0 text-[10px] text-[var(--text-faint)]">{t(language, 'tasks', 'taskCodeHint')}</span>
-          )}
-        </div>
-        <div className="mb-4">
-          <div className="mb-2 text-[10px] uppercase tracking-wider text-[var(--text-hint)]">{t(language, 'tasks', 'descriptionLabel')}</div>
-          <RichTextEditor
-            value={newTaskContent}
-            onChange={setNewTaskContent}
-            placeholder={t(language, 'tasks', 'descriptionPlaceholder')}
-            minHeight="220px"
-          />
-        </div>
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={closeNewTaskModal}
-            className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
-          >
-            {t(language, 'tasks', 'cancel')}
-          </button>
-          <button
-            onClick={handleCreateTask}
-            disabled={!newTaskTitle.trim()}
-            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {t(language, 'tasks', 'createTask')}
-          </button>
-        </div>
-      </ModalPanel>
-    </ModalOverlay>
+  const newTaskModal = newTaskDraft ? (
+    <NewTaskModal initial={newTaskDraft} onClose={() => setNewTaskDraft(null)} />
   ) : null;
+
+  // Orden en pantalla, para moverse con el teclado.
+  const visibleTasks = useMemo(
+    () => [...openGroups.flatMap((g) => g.tasks), ...(filter === 'done' || !doneCollapsed ? done : [])],
+    [openGroups, done, filter, doneCollapsed],
+  );
+
+  // Atajos de la lista (fuera de campos de texto y sin ventanas abiertas):
+  // ↑/↓ o j/k para moverse, Enter para abrir, Espacio o x para completar o
+  // reabrir, n para la captura rápida y Esc para soltar la selección.
+  useEffect(() => {
+    if (currentView !== 'list' || newTaskDraft) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+      const target = e.target as HTMLElement;
+      if (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName)) return;
+      if (document.querySelector('[role="dialog"], [aria-modal="true"]')) return;
+      const index = visibleTasks.findIndex((t) => t.id === focusedId);
+      const focused = index >= 0 ? visibleTasks[index] : null;
+      const move = (delta: number) => {
+        if (!visibleTasks.length) return;
+        const next = index < 0 ? (delta > 0 ? 0 : visibleTasks.length - 1) : Math.min(Math.max(index + delta, 0), visibleTasks.length - 1);
+        setFocusedId(visibleTasks[next].id);
+      };
+      if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); move(1); }
+      else if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); move(-1); }
+      else if (e.key === 'Enter' && focused) { e.preventDefault(); setActiveTask(focused); }
+      else if ((e.key === ' ' || e.key === 'x') && focused) {
+        e.preventDefault();
+        // La tarea cambia de grupo: la selección pasa a la siguiente.
+        const neighbor = visibleTasks[index + 1] ?? visibleTasks[index - 1];
+        setFocusedId(neighbor?.id ?? null);
+        void updateTask({ ...focused, status: focused.status === 'done' ? 'todo' : 'done' });
+      }
+      else if (e.key === 'n') { e.preventDefault(); quickAddRef.current?.focus(); }
+      else if (e.key === 'Escape' && focusedId) setFocusedId(null);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [currentView, newTaskDraft, visibleTasks, focusedId, setActiveTask, updateTask]);
 
   if (currentView !== 'list') return newTaskModal;
 
@@ -242,7 +204,7 @@ export function TaskList() {
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-lg font-semibold text-[var(--text-primary)] capitalize">{title}</h1>
           <button
-            onClick={() => setShowNewTaskModal(true)}
+            onClick={() => setNewTaskDraft({})}
             className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white transition hover:bg-indigo-500"
           >
             <Plus size={14} />
@@ -300,6 +262,10 @@ export function TaskList() {
             )}
           </div>
         </div>
+        {/* Captura rápida */}
+        <div className="mt-3">
+          <QuickAddInput ref={quickAddRef} onMoreOptions={(draft) => setNewTaskDraft(draft)} />
+        </div>
         </div>
       </div>
 
@@ -320,7 +286,7 @@ export function TaskList() {
             </p>
             {filter === 'all' && (
               <button
-                onClick={() => setShowNewTaskModal(true)}
+                onClick={() => setNewTaskDraft({})}
                 className="mt-1 flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white transition hover:bg-indigo-500"
               >
                 <Plus size={14} />
@@ -353,6 +319,8 @@ export function TaskList() {
                         key={task.id}
                         task={task}
                         today={today}
+                        isFocused={focusedId === task.id}
+                        onSelect={() => setFocusedId(task.id)}
                         isNew={newTaskIds.has(task.id)}
                         isRemoving={removingIds.has(task.id)}
                         staggerIndex={offset + idx}
@@ -383,6 +351,8 @@ export function TaskList() {
                         key={task.id}
                         task={task}
                         today={today}
+                        isFocused={focusedId === task.id}
+                        onSelect={() => setFocusedId(task.id)}
                         isNew={newTaskIds.has(task.id)}
                         isRemoving={removingIds.has(task.id)}
                         onBeforeDelete={() => handleBeforeDelete(task)}
@@ -392,6 +362,7 @@ export function TaskList() {
                 )}
               </section>
             )}
+            <p className="pt-2 text-center text-[10px] text-[var(--text-faint)]">{t(language, 'tasks', 'shortcutsHint')}</p>
           </div>
         )}
       </div>

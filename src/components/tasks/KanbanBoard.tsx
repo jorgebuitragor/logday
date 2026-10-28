@@ -4,8 +4,7 @@ import { Task, TaskStatus } from '../../types/task';
 import { useAppStore } from '../../store/appStore';
 import { TaskContextMenu, NewTaskContextMenu } from './TaskContextMenu';
 import { t } from '../../lib/i18n';
-import { ModalOverlay } from '../shared/ModalOverlay';
-import { ModalPanel } from '../shared/ModalPanel';
+import { QuickAddInput } from './QuickAddInput';
 import { localISODate } from '../../lib/localDate';
 import { formatDueLabel } from '../../lib/taskListing';
 
@@ -182,6 +181,7 @@ function ProjectSelect({ value, options, onChange, placeholder }: {
 
 export function KanbanBoard() {
   const { tasks, currentView, projects, language } = useAppStore();
+  const [addingStatus, setAddingStatus] = useState<TaskStatus | null>(null);
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
 
@@ -345,11 +345,22 @@ export function KanbanBoard() {
                   <span className={`text-sm font-medium ${col.color}`}>{col.label}</span>
                   <span className="text-xs text-[var(--text-hint)]">{colTasks.length}</span>
                 </div>
-                <KanbanAddButton status={col.status} />
+                <button
+                  onClick={() => setAddingStatus(col.status)}
+                  aria-label={t(language, 'tasks', 'newTask')}
+                  title={t(language, 'tasks', 'newTask')}
+                  className="rounded-lg p-1 text-[var(--text-hint)] transition hover:text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)]"
+                >
+                  <Plus size={14} />
+                </button>
               </div>
 
               {/* Tarjetas */}
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {/* Captura rápida, la misma de la lista, con el estado de la columna. */}
+                {addingStatus === col.status && (
+                  <QuickAddInput compact autoFocus status={col.status} onDismiss={() => setAddingStatus(null)} />
+                )}
                 {colTasks.map((task, cardIndex) => (
                   <KanbanCard
                     key={task.id}
@@ -382,48 +393,5 @@ export function KanbanBoard() {
         />
       )}
     </div>
-  );
-}
-
-function KanbanAddButton({ status }: { status: TaskStatus }) {
-  const { updateTask, createTask, activeProject, language } = useAppStore();
-  const [newTitle, setNewTitle] = useState('');
-  const [isAdding, setIsAdding] = useState(false);
-
-  const handleCreate = async (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && newTitle.trim()) {
-      const task = await createTask(newTitle.trim(), activeProject || 'inbox');
-      await updateTask({ ...task, status });
-      setNewTitle('');
-      setIsAdding(false);
-    }
-    if (e.key === 'Escape') { setNewTitle(''); setIsAdding(false); }
-  };
-
-  return (
-    <>
-      <button
-        onClick={() => setIsAdding(true)}
-        className="rounded-lg p-1 text-[var(--text-hint)] transition hover:text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)]"
-      >
-        <Plus size={14} />
-      </button>
-      {isAdding && (
-        <ModalOverlay onClose={() => { setIsAdding(false); setNewTitle(''); }}>
-          <ModalPanel className="modal-spring-in w-72 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-4 shadow-2xl">
-            <p className="mb-2 text-xs font-medium text-[var(--text-secondary)]">{t(language, 'tasks', 'newTask')}</p>
-            <input
-              autoFocus
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              onKeyDown={handleCreate}
-              placeholder={t(language, 'tasks', 'taskNamePlaceholder')}
-              className="w-full rounded-xl border border-indigo-500/40 bg-[var(--bg-surface)] px-3 py-2.5 text-sm text-[var(--text-primary)] outline-none placeholder-[var(--text-hint)]"
-            />
-            <p className="mt-1.5 text-[10px] text-[var(--text-faint)]">{t(language, 'tasks', 'enterToCreate')}</p>
-          </ModalPanel>
-        </ModalOverlay>
-      )}
-    </>
   );
 }

@@ -121,7 +121,11 @@ export function TaskEditor() {
       // updateTask() resucita el archivo (fs.writeFile incondicional).
       // Mismo bug que NoteEditor.tsx, mismo fix: chequear el store en
       // vivo antes de escribir.
-      const live = useAppStore.getState().tasks.find((t) => t.id === taskId);
+      // Una task movida a otro proyecto sale de la lista filtrada pero
+      // sigue abierta en el panel: también cuenta como viva.
+      const state = useAppStore.getState();
+      const live = state.tasks.find((t) => t.id === taskId)
+        ?? (state.activeTask?.id === taskId ? state.activeTask : undefined);
       if (live) await updateTask({ ...live, ...patch });
       setIsDirty(false);
     },

@@ -7,7 +7,7 @@ import TauriWebSocket from '@tauri-apps/plugin-websocket';
 import { check as checkUpdateRemote, Update as TauriUpdate } from '@tauri-apps/plugin-updater';
 import { getVersion } from '@tauri-apps/api/app';
 import { relaunch } from '@tauri-apps/plugin-process';
-import { Task } from '../types/task';
+import { Task, TaskStatus } from '../types/task';
 import { Note } from '../types/note';
 import { OvertimeEntry, OvertimeMonthMeta } from '../types/overtime';
 import { CalendarEvent } from '../types/calendar';
@@ -59,6 +59,16 @@ import {
   buildDailyCopyText,
   dateFromISO,
 } from '../lib/colombianHolidays';
+
+/** Campos opcionales al crear una tarea (captura rápida, modal completo). */
+export interface NewTaskExtra {
+  due?: string;
+  tags?: string[];
+  status?: TaskStatus;
+  linkedPaths?: string[];
+  /** Abrir la tarea en el panel lateral al crearla (por defecto, sí). */
+  open?: boolean;
+}
 
 export interface AppState {
   // Config
@@ -200,7 +210,7 @@ export interface AppState {
   renameProject: (project: string, newName: string) => Promise<void>;
   deleteProject: (project: string) => Promise<void>;
   moveProject: (project: string, targetParent: string) => Promise<void>;
-  createTask: (title: string, project?: string, content?: string, taskCode?: string) => Promise<Task>;
+  createTask: (title: string, project?: string, content?: string, taskCode?: string, extra?: NewTaskExtra) => Promise<Task>;
   updateTask: (task: Task) => Promise<void>;
   deleteTask: (task: Task) => Promise<void>;
   setActiveTask: (task: Task | null) => void;
@@ -1488,7 +1498,12 @@ async function applyRemoteTaskChange(get: SyncGet, set: SyncSet, change: SyncCha
   }
 
   const finalTask = merged as unknown as Task;
-  await fs.writeFile(filePath, serializeTask(finalTask));
+  // Un cambio de proyecto remoto también mueve el archivo de carpeta.
+  if (existing && existing.project !== finalTask.project) {
+    finalTask.filePath = taskFilePath(basePath, finalTask.project, change.id);
+  }
+  await fs.writeFile(finalTask.filePath, serializeTask(finalTask));
+  if (existing && existing.filePath !== finalTask.filePath) await fs.deleteFile(existing.filePath).catch(() => {});
   const visible = taskInView(finalTask.project, get().activeProject);
   set((state) => {
     // Se decide con el estado de este momento, no con el de antes de
@@ -2703,7 +2718,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadProjects();
   },
 
-  createTask: async (title, project, content = '', taskCode?: string) => {
+  createTask: async (title, project, content = '', taskCode?: string, extra: NewTaskExtra = {}) => {
     const { basePath, activeProject } = get();
     if (!basePath) throw new Error('No base path');
     const targetProject = project || activeProject || 'inbox';
@@ -2725,17 +2740,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     const task: Task = {
       id,
       title: title.trim() || 'Nueva tarea',
-      status: 'todo',
-      tags: [],
+      status: extra.status ?? 'todo',
+      tags: extra.tags ?? [],
       project: targetProject,
       created: today,
-      linked_paths: [],
+      ...(extra.due ? { due: extra.due } : {}),
+      ...(extra.status === 'done' ? { completedAt: today } : {}),
+      linked_paths: extra.linkedPaths ?? [],
       content,
       taskCode: taskCode || undefined,
       filePath: taskFilePath(basePath, targetProject, id),
     };
     await fs.writeFile(task.filePath, serializeTask(task));
-    set((state) => ({ tasks: [task, ...state.tasks], activeTask: task }));
+    // La captura rápida no abre el panel (`open: false`), y una tarea de
+    // otro proyecto no se agrega a la lista filtrada que se está viendo.
+    const open = extra.open ?? true;
+    const visible = taskInView(task.project, get().activeProject);
+    set((state) => ({
+      tasks: visible ? [task, ...state.tasks] : state.tasks,
+      activeTask: open ? task : state.activeTask,
+    }));
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
     void syncCreateTask(get, set, task);
     return task;
@@ -2772,9 +2796,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       delete normalizedTask.completedAt;
     }
 
+    // Cambiar de proyecto mueve el archivo a la carpeta del proyecto nuevo.
+    // Antes solo cambiaba el frontmatter: el archivo quedaba en la carpeta
+    // vieja y la tarea seguía apareciendo al filtrar por ese proyecto.
+    const { basePath } = get();
+    const oldFilePath = normalizedTask.filePath;
+    if (basePath && prev && prev.project !== normalizedTask.project) {
+      normalizedTask.filePath = taskFilePath(basePath, normalizedTask.project, normalizedTask.id);
+    }
     await fs.writeFile(normalizedTask.filePath, serializeTask(normalizedTask));
+    if (oldFilePath !== normalizedTask.filePath) await fs.deleteFile(oldFilePath).catch(() => {});
+    const visible = taskInView(normalizedTask.project, get().activeProject);
     set((state) => ({
-      tasks: state.tasks.map((t) => (t.id === normalizedTask.id ? normalizedTask : t)),
+      tasks: visible
+        ? state.tasks.map((t) => (t.id === normalizedTask.id ? normalizedTask : t))
+        : state.tasks.filter((t) => t.id !== normalizedTask.id),
       activeTask: state.activeTask?.id === normalizedTask.id ? normalizedTask : state.activeTask,
     }));
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
@@ -2804,17 +2840,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   setActiveCalendarEvent: (event) => set({ activeCalendarEvent: event, activeTask: null }),
 
   moveTask: async (task, toProject) => {
-    const { basePath } = get();
-    if (!basePath || task.project === toProject) return;
-    const newFilePath = taskFilePath(basePath, toProject, task.id);
-    const updatedTask: Task = { ...task, project: toProject, filePath: newFilePath };
-    await fs.writeFile(newFilePath, serializeTask(updatedTask));
-    await fs.deleteFile(task.filePath);
-    set((state) => ({
-      tasks: state.tasks.map((t) => (t.id === task.id ? updatedTask : t)),
-      activeTask: state.activeTask?.id === task.id ? updatedTask : state.activeTask,
-    }));
-    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    if (task.project === toProject) return;
+    // updateTask mueve el archivo y sincroniza el cambio de proyecto.
+    await get().updateTask({ ...task, project: toProject });
   },
 
   // ── Notes ──────────────────────────────────────────────────

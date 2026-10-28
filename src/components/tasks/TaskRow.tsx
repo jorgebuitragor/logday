@@ -1,4 +1,4 @@
-import { useState, useEffect, memo } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 import { Check, Calendar, AlertTriangle, Folder } from 'lucide-react';
 import { Task } from '../../types/task';
 import { useShallow } from 'zustand/react/shallow';
@@ -24,6 +24,8 @@ const DUE_TONE_CLASS: Record<DueTone, string> = {
 export const TaskRow = memo(function TaskRow({
   task,
   today,
+  isFocused,
+  onSelect,
   isNew,
   isRemoving,
   staggerIndex = 0,
@@ -31,6 +33,9 @@ export const TaskRow = memo(function TaskRow({
 }: {
   task: Task;
   today: string;
+  /** Seleccionada con el teclado (↑/↓). */
+  isFocused?: boolean;
+  onSelect?: () => void;
   isNew?: boolean;
   isRemoving?: boolean;
   staggerIndex?: number;
@@ -40,6 +45,10 @@ export const TaskRow = memo(function TaskRow({
     useShallow((s) => ({ setActiveTask: s.setActiveTask, activeTask: s.activeTask, updateTask: s.updateTask, language: s.language }))
   );
   const isActive = activeTask?.id === task.id;
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isFocused) rowRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [isFocused]);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [statusPopped, setStatusPopped] = useState(false);
   const [completing, setCompleting] = useState(false);
@@ -58,8 +67,11 @@ export const TaskRow = memo(function TaskRow({
   // La casilla solo completa o reabre. "En progreso" se elige en el menú
   // contextual o en el panel: antes el ícono rotaba entre los tres estados
   // y para deshacer un "hecho" había que dar la vuelta completa.
-  const toggleDone = (e: React.MouseEvent) => {
+  const toggleDone = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
+    // Sin foco en la casilla, para que los atajos de la lista sigan andando.
+    e.currentTarget.blur();
+    onSelect?.();
     setStatusPopped(true);
     if (task.status === 'done') {
       void updateTask({ ...task, status: 'todo' });
@@ -83,11 +95,14 @@ export const TaskRow = memo(function TaskRow({
       }`}
     >
     <div
-      onClick={() => setActiveTask(isActive ? null : task)}
+      ref={rowRef}
+      onClick={() => { onSelect?.(); setActiveTask(isActive ? null : task); }}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
       className={`flex items-start gap-3 rounded-xl px-3 py-2.5 cursor-pointer transition group ${
         isActive
           ? 'bg-indigo-500/10 border border-indigo-500/20'
+          : isFocused
+          ? 'border border-indigo-500/40 bg-[var(--bg-hover)]'
           : 'border border-transparent hover:bg-[var(--bg-hover)]'
       }`}
     >

@@ -433,6 +433,20 @@ const dict = {
       emptyDone: 'Aún no hay tareas hechas.',
       emptyAllDone: 'Todo al día. No hay tareas pendientes.',
       moreTags: 'Más tags',
+      // Captura rápida y acciones rápidas
+      quickAddPlaceholder: 'Agregar tarea…',
+      quickAddHint: '#proyecto · @tag · hoy, mañana, viernes o 15/11 al final · ⌘↵ más opciones',
+      quickAddMore: 'Más opciones (⌘↵)',
+      createdIn: 'Tarea creada en',
+      movedTo: 'Tarea movida a',
+      dueNextWeek: '+1 semana',
+      dueClear: 'Quitar fecha',
+      moveToProject: 'Mover a proyecto',
+      duplicate: 'Duplicar',
+      copySuffix: '(copia)',
+      noDue: 'Sin fecha',
+      tagsInputPlaceholder: 'Agregar tag y Enter',
+      shortcutsHint: '↑↓ moverse · Enter abrir · Espacio completar',
     },
     notes: {
       // NoteList — lista y menú contextual
@@ -1399,6 +1413,20 @@ const dict = {
       emptyDone: 'No completed tasks yet.',
       emptyAllDone: 'All caught up. No pending tasks.',
       moreTags: 'More tags',
+      // Quick add and quick actions
+      quickAddPlaceholder: 'Add task…',
+      quickAddHint: '#project · @tag · today, tomorrow, friday or 15/11 at the end · ⌘↵ more options',
+      quickAddMore: 'More options (⌘↵)',
+      createdIn: 'Task created in',
+      movedTo: 'Task moved to',
+      dueNextWeek: '+1 week',
+      dueClear: 'Remove date',
+      moveToProject: 'Move to project',
+      duplicate: 'Duplicate',
+      copySuffix: '(copy)',
+      noDue: 'No date',
+      tagsInputPlaceholder: 'Add tag and Enter',
+      shortcutsHint: '↑↓ move · Enter open · Space complete',
     },
     notes: {
       // NoteList — list and context menu

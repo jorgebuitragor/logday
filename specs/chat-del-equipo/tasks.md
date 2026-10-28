@@ -12,6 +12,10 @@ Estado: en progreso.
   `DailyEditor`.
 - [x] Pruebas en vitest de la configuración, los errores y "ya se envió
   hoy".
+- [x] Guía paso a paso para conseguir la URL (D4), con prueba de que
+  cada texto existe en es y en, sin voseo.
+- [x] Jorge siguió la guía en la app de QA y confirmó que funciona
+  (28 oct 2026).
 - [ ] Verificar con una URL real los hosts de Teams Workflows
   (`*.logic.azure.com`, `*.environment.api.powerplatform.com`) y el
   formato del cuerpo.

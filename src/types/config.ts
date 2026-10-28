@@ -1,10 +1,16 @@
 import { Language } from './common';
 import { Theme, CustomTheme } from './theme';
 import { OvertimeMonthMeta } from './overtime';
+import type { ExtensionSection, ExtensionsConfig } from '../extensions/types';
 
 export type ViewMode = 'list' | 'kanban' | 'calendar';
-export type ActiveSection = 'dashboard' | 'tasks' | 'notes' | 'dailys' | 'overtime';
-export type StartupScreen = 'dashboard' | 'dailys' | 'tasks' | 'notes' | 'overtime';
+/** Secciones fijas del menú lateral. */
+export type CoreSection = 'dashboard' | 'tasks' | 'notes' | 'dailys' | 'overtime';
+/** Una sección fija o la vista de una extensión activa (`ext:<id>`). */
+export type ActiveSection = CoreSection | ExtensionSection;
+/** Igual que `ActiveSection`; una extensión desactivada se resuelve a
+ *  Inicio al cargar la config (specs/extensiones R13). */
+export type StartupScreen = ActiveSection;
 
 export interface Shortcuts {
   newNote: string;
@@ -46,6 +52,10 @@ export interface AppConfig {
   noteSortBy?: NoteSortBy;
   noteSortDir?: NoteSortDir;
   taskSortBy?: TaskSortBy;
+  /** Extensiones: activación, aviso aceptado y configuración no secreta.
+   *  Local, no se sincroniza; los secretos van en el llavero
+   *  (specs/extensiones R9, R10). */
+  extensions?: ExtensionsConfig;
 }
 
 export interface BackupSettings {
@@ -58,4 +68,6 @@ export interface BackupSettings {
   folderTags?: Record<string, string[]>;
   overtimeMeta?: OvertimeMonthMeta;
   customThemes?: CustomTheme[];
+  /** Sin secretos: la URL de un webhook no viaja en el backup (R10). */
+  extensions?: ExtensionsConfig;
 }

@@ -18,6 +18,8 @@ import { useConfirmDelete } from '../../hooks/useConfirmDelete';
 import { ModalOverlay } from '../shared/ModalOverlay';
 import { ModalPanel } from '../shared/ModalPanel';
 import { absenceTypeLabel } from '../../lib/absenceLabel';
+import { useExtensions } from '../../extensions/useExtensions';
+import { ExtensionSlot } from '../../extensions/ExtensionSlot';
 
 const ESTIMATED_ACTIVITY_CTX_MENU = { width: 172, height: 84 };
 
@@ -673,6 +675,9 @@ export function DailyEditor() {
     absenceDays,
   } = useAppStore();
 
+  // Extensiones activas: cada una puede poner botones junto a Copiar
+  // (specs/extensiones R12); si no aporta ninguno, no dibuja nada.
+  const dailyActionExtensions = useExtensions().enabled;
   const [todayActs, setTodayActs] = useState('');
   const [prevActs, setPrevActs] = useState('');
   const [copied, setCopied] = useState(false);
@@ -795,13 +800,20 @@ export function DailyEditor() {
     [todayActs, prevActs, handleTodayChange, handlePrevChange]
   );
 
-  const handleCopy = async () => {
-    if (!activeDailyDate) return;
+  // Guarda lo pendiente y arma el texto de Copiar. Lo usan Copiar y las
+  // extensiones con botones junto a él ("Enviar al chat"), para que
+  // envíen exactamente lo mismo.
+  const buildCopyText = async (date: string): Promise<string> => {
     if (todaySave.current) { clearTimeout(todaySave.current); todaySave.current = null; }
     if (prevSave.current) { clearTimeout(prevSave.current); prevSave.current = null; }
     await flushPanel(today.current);
     await flushPanel(prev.current);
-    const text = await copyDailyFormat(activeDailyDate);
+    return copyDailyFormat(date);
+  };
+
+  const handleCopy = async () => {
+    if (!activeDailyDate) return;
+    const text = await buildCopyText(activeDailyDate);
     await writeToClipboard(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
@@ -866,6 +878,15 @@ export function DailyEditor() {
           >
             {copied ? <Check size={14} /> : <Copy size={14} />}
           </button>
+          {dailyActionExtensions.map((def) => (
+            <ExtensionSlot
+              key={def.id}
+              id={def.id}
+              point="dailyActions"
+              variant="inline"
+              props={{ date: activeDailyDate, getText: () => buildCopyText(activeDailyDate) }}
+            />
+          ))}
           <button
             onClick={() => confirmDeleteDialog.request(true, () => void handleDelete())}
             className="rounded-lg p-1.5 text-[var(--text-hint)] transition hover:bg-red-500/10 hover:text-red-400"

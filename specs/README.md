@@ -42,3 +42,5 @@ tres archivos:
 | Actualizaciones automáticas | implementado, sin validar con release real | [`actualizaciones-automaticas/`](./actualizaciones-automaticas/requirements.md) |
 | Cumplimiento de datos personales | en diseño | [`cumplimiento-datos-personales/`](./cumplimiento-datos-personales/requirements.md) |
 | Fechas de creación, edición y completado | en progreso (etapa 1: leer ambos formatos) | [`fechas-creacion-edicion/`](./fechas-creacion-edicion/requirements.md) |
+| Extensiones (integraciones y herramientas) | en progreso | [`extensiones/`](./extensiones/requirements.md) |
+| Chat del equipo (extensión `team-chat`), modo local | en progreso | [`chat-del-equipo/`](./chat-del-equipo/requirements.md) |

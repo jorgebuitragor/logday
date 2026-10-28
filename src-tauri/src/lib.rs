@@ -1,3 +1,5 @@
+mod extensions;
+
 use std::fs;
 use std::path::Path;
 use serde::{Deserialize, Serialize};
@@ -606,6 +608,11 @@ pub fn run() {
             git_run,
             sync_request,
             fetch_url_metadata,
+            extensions::ext_secret_set,
+            extensions::ext_secret_clear,
+            extensions::ext_secret_hint,
+            extensions::team_chat::team_chat_validate_url,
+            extensions::team_chat::team_chat_send,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

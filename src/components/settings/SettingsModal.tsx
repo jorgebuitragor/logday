@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, Settings2, SlidersHorizontal, Keyboard, FolderOpen, RefreshCw, GitBranch, Info } from 'lucide-react';
+import { X, Settings2, SlidersHorizontal, Keyboard, FolderOpen, RefreshCw, GitBranch, Puzzle, Info } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
@@ -10,10 +10,11 @@ import { WorkSettingsTab } from './WorkSettingsTab';
 import { ShortcutsSettingsTab } from './ShortcutsSettingsTab';
 import { DataSettingsTab } from './DataSettingsTab';
 import { AboutSettingsTab } from './AboutSettingsTab';
+import { ExtensionsSettingsTab } from './ExtensionsSettingsTab';
 import { ModalOverlay } from '../shared/ModalOverlay';
 import { ModalPanel } from '../shared/ModalPanel';
 
-type SettingsTab = 'general' | 'work' | 'shortcuts' | 'data' | 'git' | 'sync' | 'about';
+type SettingsTab = 'general' | 'work' | 'shortcuts' | 'data' | 'git' | 'sync' | 'extensions' | 'about';
 
 export function SettingsModal() {
   const {
@@ -91,6 +92,9 @@ export function SettingsModal() {
         { id: 'git',  label: t(language, 'settings', 'tabGit'),  icon: GitBranch },
       ],
     },
+    // Extensiones va sola, sin encabezado; debajo irán las entradas de cada
+    // extensión activa con Settings (specs/extensiones).
+    { items: [{ id: 'extensions', label: t(language, 'settings', 'tabExtensions'), icon: Puzzle }] },
     // Acerca de cierra la lista, pegado al último grupo: fijo al pie de la
     // barra quedaba suelto, con un hueco grande encima.
     { items: [{ id: 'about', label: t(language, 'settings', 'tabAbout'), icon: Info }] },
@@ -169,6 +173,9 @@ export function SettingsModal() {
 
             {/* ── SYNC: conexión con servidor propio ── */}
             {settingsTab === 'sync' && <SyncSettingsTab />}
+
+            {/* ── EXTENSIONS: catálogo de extensiones (specs/extensiones) ── */}
+            {settingsTab === 'extensions' && <ExtensionsSettingsTab />}
 
             {/* ── ABOUT: Versión · Actualizaciones ── */}
             {settingsTab === 'about' && <AboutSettingsTab />}

@@ -152,7 +152,7 @@ export function SettingsModal() {
               />
             )}
 
-            {/* ── WORK: Comportamiento · Notificaciones · Semana laboral · Accesibilidad ── */}
+            {/* ── WORK: Comportamiento · Vista de notas · Notificaciones · Semana laboral · Accesibilidad ── */}
             {settingsTab === 'work' && <WorkSettingsTab />}
 
             {/* ── SHORTCUTS: Atajos de teclado ── */}

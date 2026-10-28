@@ -81,6 +81,11 @@ tengan su primera extensión.
   extensión está desactivada, la app DEBERÁ abrir en Inicio.
 - R14. Al desactivar una extensión cuya vista está abierta, la app
   DEBERÁ volver a Inicio.
+- R21. Una extensión activa con panel de configuración DEBERÁ tener su
+  propia entrada en la barra lateral de Opciones, debajo de
+  "Extensiones", con su icono y su nombre. Al desactivarla, la entrada
+  DEBERÁ desaparecer y, si estaba abierta, Opciones DEBERÁ volver al
+  catálogo.
 
 ### Robustez
 

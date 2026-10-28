@@ -46,8 +46,13 @@ Estado: en progreso.
   Mientras no se respondía, el servidor quedaba cerrado y el panel seguía
   diciendo "Escuchando". Corregido: el token se guarda en memoria y el
   panel dice "Abriendo el servidor".
-- [ ] Con la corrección: volver a 47321 sin que salga el aviso del
-  llavero, y regenerar el token (el viejo deja de valer).
+- [x] Con la corrección (28 oct 2026): 47322 → 47321 reabre en menos
+  de un segundo, sin aviso del llavero. Regenerar el token lo guarda
+  (pista nueva), reabre el servidor con él, el comando copiado funciona
+  con `tools/list`, y un token cualquiera da 401. En macOS, guardar y
+  leer el token puede pedir permiso una vez en cada build nuevo de la
+  app de QA (la firma cambia); con la app firmada de release no debería
+  pasar.
 
 ## Después
 

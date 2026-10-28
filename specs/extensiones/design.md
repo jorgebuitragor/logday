@@ -155,7 +155,11 @@ extensions?: Partial<Record<ExtensionId, {
 
 ## Opciones → Extensiones
 
-- **Pestaña nueva** `extensions` en `SettingsModal`, después de `sync`.
+- **Sección nueva** `extensions` en la barra lateral de `SettingsModal`:
+  un grupo sin encabezado entre "Datos y conexión" y Acerca de, con el
+  icono `Puzzle`. Queda para después una entrada por cada extensión
+  activa con `Settings`, debajo de Extensiones, al estilo de los
+  complementos de Obsidian.
 - **Dos grupos,** con un encabezado cada uno, y tarjetas en orden
   alfabético. Si un grupo no tiene extensiones en Desktop, no se
   muestra.

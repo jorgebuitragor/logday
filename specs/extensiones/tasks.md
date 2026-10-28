@@ -38,8 +38,10 @@ Estado: en progreso.
 - [x] Probar en la app de QA (28 oct 2026): activar y desactivar, aviso
   aceptado y cancelado, reactivar sin volver a pedir el aviso, y "Quitar
   configuración" (borra la entrada del llavero). Las 8 pestañas no
-  cabían en español: se ensanchó el modal a `max-w-2xl` y la barra
-  ahora se desplaza en vez de partir el texto.
+  cabían en español. Se resolvió con la barra lateral agrupada de
+  Opciones (logday#21), donde Extensiones es una sección más.
+- [ ] Debajo de Extensiones, una entrada en la barra lateral por cada
+  extensión activa con `Settings`.
 - [ ] Pantalla de inicio en una extensión desactivada, y las secciones
   del menú lateral: sin probar en la app, porque todavía ninguna
   extensión tiene vista. Están cubiertas por pruebas unitarias.

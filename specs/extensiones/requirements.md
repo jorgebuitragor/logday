@@ -32,8 +32,8 @@ tengan su primera extensión.
 
 ### Catálogo
 
-- R1. Opciones DEBERÁ tener una pestaña "Extensiones" ("Extensions" en
-  inglés), con las extensiones disponibles en Desktop en dos grupos:
+- R1. Opciones DEBERÁ tener una sección "Extensiones" ("Extensions" en
+  inglés) en su barra lateral, con las extensiones disponibles en Desktop en dos grupos:
   "Integraciones" y "Herramientas".
 - R2. Cada extensión DEBERÁ mostrar un icono, un nombre, una
   descripción de una línea, en qué apps de Logday existe y un

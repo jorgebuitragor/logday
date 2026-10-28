@@ -16,6 +16,13 @@ export interface Shortcuts {
 
 export const DEFAULT_SHORTCUTS: Shortcuts = { newNote: 'n', newTask: 't', search: 'f', newDaily: 'd', markAbsence: 'a' };
 
+/** Cómo se muestran las notas: 'list' (barra de carpetas + lista de
+ *  notas, estilo Notas de Apple) o 'tree' (carpetas y notas en un árbol
+ *  en la barra lateral, estilo Obsidian). */
+export type NotesView = 'list' | 'tree';
+export type NoteSortBy = 'updated' | 'created' | 'title';
+export type NoteSortDir = 'desc' | 'asc';
+
 export interface AppConfig {
   basePath: string;
   lastOpenedProject?: string;
@@ -30,6 +37,12 @@ export interface AppConfig {
   animationsEnabled?: boolean;
   trashAutoPurgeEnabled?: boolean;
   sidebarLabelsVisible?: boolean;
+  /** Vista de notas elegida en Opciones; se usa la primera vez. */
+  notesViewDefault?: NotesView;
+  /** Última vista usada (el botón de la barra lateral); se recuerda. */
+  notesView?: NotesView;
+  noteSortBy?: NoteSortBy;
+  noteSortDir?: NoteSortDir;
 }
 
 export interface BackupSettings {

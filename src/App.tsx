@@ -31,7 +31,7 @@ const OvertimeList  = lazy(() => import('./components/overtime/OvertimeList').th
 const OvertimeEditor = lazy(() => import('./components/overtime/OvertimeEditor').then(m => ({ default: m.OvertimeEditor })));
 
 export default function App() {
-  const { init, isLoading, isConfigured, activeTask, activeNoteId, activeSection, createNote, createTodayDaily, setSection, shortcuts, overtimeMonth, language, isSidebarCollapsed } = useAppStore(
+  const { init, isLoading, isConfigured, activeTask, activeNoteId, activeSection, createNote, createTodayDaily, setSection, shortcuts, overtimeMonth, language, isSidebarCollapsed, notesView } = useAppStore(
     useShallow((s) => ({
       init: s.init,
       isLoading: s.isLoading,
@@ -46,6 +46,7 @@ export default function App() {
       overtimeMonth: s.overtimeMonth,
       language: s.language,
       isSidebarCollapsed: s.isSidebarCollapsed,
+      notesView: s.notesView,
     }))
   );
   const [editingEntry, setEditingEntry] = useState<OvertimeEntry | null | undefined>(undefined);
@@ -198,8 +199,13 @@ export default function App() {
           </>
         ) : activeSection === 'notes' ? (
           <>
-            <NoteList />
-            <ResizeHandle onResize={handleListResize} onReset={resetListWidth} />
+            {/* En la vista de árbol las notas están en la barra lateral: sin la columna de la lista. */}
+            {notesView === 'list' && (
+              <>
+                <NoteList />
+                <ResizeHandle onResize={handleListResize} onReset={resetListWidth} />
+              </>
+            )}
             <NoteEditor key={activeNoteId ?? 'none'} />
           </>
         ) : activeSection === 'overtime' ? (

@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   CheckSquare,
+  FilePlus,
+  ListTree,
+  Rows3,
   List,
   Layout,
   Calendar,
@@ -39,6 +42,7 @@ import { t, MONTHS_TITLE } from '../../lib/i18n';
 import { buildFolderTree } from '../../lib/folderTree';
 import { exportDailyMonthEntries } from '../../lib/dailyMonthExport';
 import { FolderTreeItem } from './FolderTreeItem';
+import { NoteTree } from './NoteTree';
 import { ProjectTreeItem } from './ProjectTreeItem';
 import { RootDropLine } from './RootDropLine';
 import { ModalOverlay } from '../shared/ModalOverlay';
@@ -110,6 +114,9 @@ export function Sidebar() {
     language,
     confirmDestructiveActions,
     sidebarLabelsVisible,
+    notesView,
+    setNotesView,
+    createNote,
   } = useAppStore();
 
   const [isProjectsOpen, setIsProjectsOpen] = useState(true);
@@ -918,16 +925,53 @@ export function Sidebar() {
               {isFoldersOpen ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
               {t(language, 'sidebar', 'folders')}
             </button>
-            <button
-              onClick={() => setShowCreateFolderModal(true)}
-              className="rounded p-0.5 text-[var(--text-hint)] transition hover:text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)]"
-              title={t(language, 'sidebar', 'newFolder')}
-            >
-              <Plus size={12} />
-            </button>
+            <div className="flex items-center gap-0.5">
+              {notesView === 'tree' && (
+                <button
+                  onClick={() => void createNote()}
+                  className="rounded p-0.5 text-[var(--text-hint)] transition hover:text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)]"
+                  title={t(language, 'notes', 'newNote')}
+                >
+                  <FilePlus size={12} />
+                </button>
+              )}
+              <button
+                onClick={() => setShowCreateFolderModal(true)}
+                className="rounded p-0.5 text-[var(--text-hint)] transition hover:text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)]"
+                title={t(language, 'sidebar', 'newFolder')}
+              >
+                <Plus size={12} />
+              </button>
+              {/* Cambia entre la vista de lista (estilo Notas) y la de árbol
+                  (estilo Obsidian); se recuerda la última usada. */}
+              <button
+                onClick={() => setNotesView(notesView === 'tree' ? 'list' : 'tree')}
+                className="rounded p-0.5 text-[var(--text-hint)] transition hover:text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)]"
+                title={t(language, 'sidebar', notesView === 'tree' ? 'notesViewList' : 'notesViewTree')}
+                aria-label={t(language, 'sidebar', notesView === 'tree' ? 'notesViewList' : 'notesViewTree')}
+              >
+                {notesView === 'tree' ? <Rows3 size={12} /> : <ListTree size={12} />}
+              </button>
+            </div>
           </div>
 
-          {isFoldersOpen && (
+          {isFoldersOpen && notesView === 'tree' && (
+            <div className="mt-1">
+              <NoteTree
+                renamingFolder={renamingFolder}
+                setRenamingFolder={setRenamingFolder}
+                handleRenameConfirm={handleRenameConfirm}
+                handleFolderContextMenu={handleFolderContextMenu}
+                folderTags={folderTags}
+                expandedFolders={expandedFolders}
+                setExpandedFolders={setExpandedFolders}
+                moveNoteFolder={moveNoteFolder}
+              />
+              <RootDropLine />
+            </div>
+          )}
+
+          {isFoldersOpen && notesView === 'list' && (
             <div className="mt-1 space-y-0.5">
               <button
                 onClick={() => selectNoteFolder(null)}

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import type { Note } from '../../types/note';
 import { ChevronDown, ChevronRight, FolderOpen, GripVertical } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
@@ -19,14 +20,22 @@ interface FolderTreeItemProps {
   expandedFolders: Set<string>;
   setExpandedFolders: React.Dispatch<React.SetStateAction<Set<string>>>;
   moveNoteFolder: (folder: string, targetParent: string) => Promise<void>;
+  /** Vista de árbol: las notas de cada carpeta, ya ordenadas. Si viene,
+   *  la carpeta muestra sus notas debajo de sus subcarpetas. */
+  notesByFolder?: Map<string, Note[]>;
+  renderNote?: (note: Note, depth: number) => ReactNode;
+  /** Vista de árbol: clic en la carpeta (en vez de selectNoteFolder). */
+  onTreeFolderClick?: (path: string) => void;
 }
 
 export function FolderTreeItem({
   node, depth, activeNoteFolder, renamingFolder,
   setRenamingFolder, handleRenameConfirm, handleFolderContextMenu,
   selectNoteFolder, folderTags, expandedFolders, setExpandedFolders, moveNoteFolder,
+  notesByFolder, renderNote, onTreeFolderClick,
 }: FolderTreeItemProps) {
-  const hasChildren = node.children.length > 0;
+  const notesHere = notesByFolder?.get(node.path) ?? [];
+  const hasChildren = node.children.length > 0 || notesHere.length > 0;
   const isExpanded = expandedFolders.has(node.path);
   const isActive = activeNoteFolder === node.path;
   const tags = folderTags[node.path] ?? [];
@@ -102,7 +111,19 @@ export function FolderTreeItem({
           />
         ) : (
           <button
-            onClick={() => selectNoteFolder(node.path)}
+            onClick={() => {
+              if (!onTreeFolderClick) {
+                selectNoteFolder(node.path);
+                return;
+              }
+              onTreeFolderClick(node.path);
+              setExpandedFolders((prev) => {
+                const next = new Set(prev);
+                if (next.has(node.path)) next.delete(node.path);
+                else next.add(node.path);
+                return next;
+              });
+            }}
             onContextMenu={(e) => handleFolderContextMenu(e, node.path)}
             className="flex flex-1 min-w-0 flex-col py-2 text-left"
           >
@@ -141,8 +162,12 @@ export function FolderTreeItem({
               expandedFolders={expandedFolders}
               setExpandedFolders={setExpandedFolders}
               moveNoteFolder={moveNoteFolder}
+              notesByFolder={notesByFolder}
+              renderNote={renderNote}
+              onTreeFolderClick={onTreeFolderClick}
             />
           ))}
+          {renderNote && notesHere.map((note) => renderNote(note, depth + 1))}
         </div>
       )}
     </div>

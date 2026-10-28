@@ -66,7 +66,7 @@ tengan su primera extensión.
   cuenta del chat) la define en su propio spec.
 - R10. Los secretos de una extensión (tokens, URLs de webhook) DEBERÁN
   guardarse solo en el llavero del sistema operativo. NUNCA DEBERÁN ir
-  en `config.json`, en los archivos de datos, en los backups de
+  en `config.json`, en `localStorage`, en los archivos de datos, en los backups de
   configuración ni en el sync.
 
 ### Dónde aparece cada extensión

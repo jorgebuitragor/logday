@@ -159,6 +159,12 @@ Siguen el mismo modelo cuando tengan su primera extensión:
   Mobile), y es natural activar algo en un solo equipo. Además, se
   mantiene que nada dependa del sync. Se puede revisar si resulta
   molesto activar lo mismo en varios equipos.
+- **Guardar los secretos en `localStorage`,** como el token de sync
+  (decisión "localStorage como mecanismo único de persistencia"): un
+  webhook o un token de Jira dan acceso a servicios de terceros y no
+  caducan como el token de sesión. Si quedan en el llavero, el webview
+  nunca los ve. Es una excepción deliberada a esa decisión, solo para
+  secretos de extensiones.
 - **Cargar todas las extensiones al inicio:** agregaría peso y riesgo a
   quien no usa ninguna.
 - **Un ErrorBoundary global:** ya existe y cierra la app entera. Fue la

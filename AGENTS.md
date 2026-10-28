@@ -12,7 +12,7 @@ App de escritorio de Logday: Tauri 2 + React + TypeScript, con el estado en Zust
 
 ## Trampas conocidas
 
-- Fechas (`src/lib/localDate.ts`): las de calendario ("hoy", vencimientos, `fecha`, `date`) son `YYYY-MM-DD` en hora local; `created`, `completed_at`/`completedAt` y `updated` son instantes de `toISOString()`, pero los `YYYY-MM-DD` legados siguen siendo válidos: se leen con `parseStamp`, `stampToLocalDate` y `stampSortKey`, nunca con `new Date('YYYY-MM-DD')` ni comparando strings. Contrato en `../logday-server/specs/esquema-datos/requirements.md`.
+- Fechas (`src/lib/localDate.ts`): las de calendario ("hoy", vencimientos, `fecha`, `date`) son `YYYY-MM-DD` en hora local; `created`, `completed_at`/`completedAt` y `updated` son instantes de `toISOString()`, pero los `YYYY-MM-DD` legados siguen siendo válidos: se leen con `parseStamp`, `stampToLocalDate` y `stampSortKey`, nunca con `new Date('YYYY-MM-DD')` ni comparando strings. Se escriben con `nowInstant()` y las reglas de `src/lib/entityStamps.ts` (D2 para `completedAt`; D1 limita el sello de `updated` de las notas a uno cada 60 s mientras se edita): no escribir una marca a mano en el store. Contrato en `../logday-server/specs/esquema-datos/requirements.md`.
 - Tareas: cada una es `projects/<proyecto>/<id>.md`; `updateTask` mueve el archivo si cambia el proyecto. `tasks` en el store tiene solo las del proyecto activo.
 - Las preferencias de UI son locales y no se sincronizan.
 

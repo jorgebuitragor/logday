@@ -50,9 +50,12 @@ import * as contentSyncQueue from '../lib/contentSyncQueue';
 import * as trash from '../lib/trash';
 import { bytesToBase64, persistYDoc, applyIncomingContentState, deliverToOpenNote, noteContentStatePath } from '../lib/noteContentSync';
 import { applyIncomingDailyContentState, applyDailyEditorEdit, deleteDailyContentState } from '../lib/dailyContentSync';
-import { parseFrontmatter, serializeTask, parseNote, serializeNote, formatDate } from '../lib/markdown';
+import { parseFrontmatter, serializeTask, parseNote, serializeNote } from '../lib/markdown';
 import { t } from '../lib/i18n';
-import { localISODate, localISOMonth, stampSortKey } from '../lib/localDate';
+import { localISODate, localISOMonth, nowInstant, stampSortKey } from '../lib/localDate';
+import {
+  NoteUpdatedThrottle, applyUndoRestore, newNoteStamps, newTaskStamps, stampNoteSave, undoRestore, withCompletedAt,
+} from '../lib/entityStamps';
 import { EMPTY_TASK_FILTER, type TaskFilter } from '../lib/taskListing';
 import {
   toISO,
@@ -216,8 +219,11 @@ export interface AppState {
   moveProject: (project: string, targetParent: string) => Promise<void>;
   createTask: (title: string, project?: string, content?: string, taskCode?: string, extra?: NewTaskExtra) => Promise<Task>;
   /** `opts.prev`: la tarea tal como está, cuando no está en la lista
-   *  visible (p. ej. al deshacer un cambio de proyecto que la sacó de ahí). */
-  updateTask: (task: Task, opts?: { prev?: Task }) => Promise<void>;
+   *  visible (p. ej. al deshacer un cambio de proyecto que la sacó de ahí).
+   *  `opts.restore`: es un deshacer; `completedAt` se guarda tal cual viene
+   *  en vez de pasar por D2 (`nextCompletedAt`). Devuelve la tarea guardada,
+   *  o nada si no se guardó (código repetido). */
+  updateTask: (task: Task, opts?: { prev?: Task; restore?: boolean }) => Promise<Task | undefined>;
   deleteTask: (task: Task) => Promise<void>;
   setActiveTask: (task: Task | null) => void;
   setActiveCalendarEvent: (event: CalendarEvent | null) => void;
@@ -248,7 +254,12 @@ export interface AppState {
   renameNoteFolder: (folder: string, newName: string) => Promise<void>;
   deleteNoteFolder: (folder: string) => Promise<void>;
   createNote: () => Promise<Note>;
-  updateNote: (note: Note) => Promise<void>;
+  /** Guarda la nota. `updated` se sella según D1 (ver `NoteUpdatedThrottle`);
+   *  `leaving: true` es el guardado al salir de la nota, que sella lo pendiente. */
+  updateNote: (note: Note, opts?: { leaving?: boolean }) => Promise<void>;
+  /** Sello final de `updated` al salir de una nota, si quedó contenido
+   *  guardado sin sellar (D1). */
+  flushNoteUpdated: (noteId: string) => Promise<void>;
   renameNote: (note: Note, newTitle: string) => Promise<void>;
   duplicateNote: (note: Note) => Promise<void>;
   deleteNote: (note: Note, options?: { showToast?: boolean }) => Promise<void>;
@@ -2242,6 +2253,13 @@ window.addEventListener('beforeunload', () => {
   disconnectRealtime();
 });
 
+// Límite del sello de `updated` de las notas mientras se edita (D1 en
+// specs/fechas-creacion-edicion). Vive fuera del estado de Zustand porque es
+// contabilidad interna de la sesión y no debe disparar renders.
+const noteUpdatedThrottle = new NoteUpdatedThrottle();
+// Último guardado de cada nota (ver flushNoteUpdated).
+const noteSavesInFlight = new Map<string, Promise<void>>();
+
 // ── Store ──────────────────────────────────────────────────────
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -2757,7 +2775,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!basePath) throw new Error('No base path');
     const targetProject = project || activeProject || 'inbox';
     const id = uuidv4();
-    const today = formatDate(new Date());
     // Validate taskCode uniqueness
     if (taskCode) {
       const duplicate = get().tasks.find((t) => t.taskCode && t.taskCode === taskCode);
@@ -2777,9 +2794,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       status: extra.status ?? 'todo',
       tags: extra.tags ?? [],
       project: targetProject,
-      created: today,
+      // Instantes (D2): si nace hecha, `completedAt` es el mismo instante.
+      ...newTaskStamps(extra.status ?? 'todo'),
       ...(extra.due ? { due: extra.due } : {}),
-      ...(extra.status === 'done' ? { completedAt: today } : {}),
       linked_paths: extra.linkedPaths ?? [],
       content,
       taskCode: taskCode || undefined,
@@ -2812,23 +2829,16 @@ export const useAppStore = create<AppState>((set, get) => ({
           title: t(language, 'tasks', 'taskCodeDuplicate'),
           description: `"${task.taskCode}"`,
         });
-        return;
+        return undefined;
       }
     }
 
     const prev = get().tasks.find((t) => t.id === task.id) ?? opts?.prev;
-    const today = formatDate(new Date());
-    const normalizedTask: Task = { ...task };
-
-    if (normalizedTask.status === 'done') {
-      // Sella fecha de completado al primer cambio a done.
-      if (!normalizedTask.completedAt) {
-        normalizedTask.completedAt = prev?.completedAt ?? today;
-      }
-    } else if (normalizedTask.completedAt) {
-      // Si vuelve a no-done, elimina la marca de completado.
-      delete normalizedTask.completedAt;
-    }
+    // D2: al pasar a done se sella con el instante actual (aunque la tarea
+    // traiga un valor viejo de otro cliente), si sigue en done se conserva tal
+    // cual y al salir de done se limpia. Un deshacer (`restore`) trae el valor
+    // exacto de antes de la acción y no se toca. Ver withCompletedAt.
+    const normalizedTask: Task = withCompletedAt(prev, task, { restore: opts?.restore });
 
     // Cambiar de proyecto mueve el archivo a la carpeta del proyecto nuevo.
     // Antes solo cambiaba el frontmatter: el archivo quedaba en la carpeta
@@ -2853,6 +2863,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
     const changedFields = diffTaskFields(prev, normalizedTask);
     if (Object.keys(changedFields).length > 0) void syncPatchTask(get, set, normalizedTask.id, changedFields);
+    return normalizedTask;
   },
 
   deleteTask: async (task) => {
@@ -2909,21 +2920,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
     // Deshacer devuelve solo los campos que cambió esta acción, sobre la
     // tarea como esté en ese momento: si entre medio se editó otra cosa (o
-    // llegó un cambio por sync), eso se conserva.
-    const fields = ['status', 'due', 'project', 'completedAt'] as const;
+    // llegó un cambio por sync), eso se conserva. Se compara con la tarea
+    // que guardó updateTask, que es quien decide `completedAt` (D2): así el
+    // deshacer devuelve su valor exacto (ver undoRestore).
     const undo: { after: Task; restore: Partial<Task> }[] = [];
     for (const next of nexts) {
       const prev = live(next.id) ?? next;
-      await get().updateTask(next);
+      const saved = await get().updateTask(next);
+      if (!saved) continue;
       // Si el cambio la sacó de la lista visible (otro proyecto), el
       // deshacer parte de cómo quedó: con el archivo ya en la carpeta nueva.
-      const { basePath } = get();
-      const after: Task = live(next.id) ?? {
-        ...next,
-        filePath: basePath && prev.project !== next.project ? taskFilePath(basePath, next.project, next.id) : next.filePath,
-      };
-      const changed = fields.filter((f) => prev[f] !== next[f]);
-      if (changed.length) undo.push({ after, restore: Object.fromEntries(changed.map((f) => [f, prev[f]])) as Partial<Task> });
+      const after: Task = live(next.id) ?? saved;
+      const restore = undoRestore(prev, saved);
+      if (Object.keys(restore).length) undo.push({ after, restore });
     }
     if (!undo.length) return;
     get().showToast({
@@ -2935,7 +2944,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           void (async () => {
             for (const { after, restore } of undo) {
               const current = live(after.id) ?? after;
-              await get().updateTask({ ...current, ...restore }, { prev: current });
+              await get().updateTask(applyUndoRestore(current, restore), { prev: current, restore: true });
             }
           })();
         },
@@ -3134,20 +3143,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!basePath) throw new Error('No base path');
     const folder = activeNoteFolder ?? '';
     const id = uuidv4();
-    const today = formatDate(new Date());
     const note: Note = {
       id,
       title: '',
       folder,
       tags: [],
-      created: today,
-      updated: today,
+      ...newNoteStamps(),
       pinned: false,
       content: '',
       filePath: noteFilePath(basePath, folder, id),
     };
     if (folder) await fs.createDir(noteFolderDir(basePath, folder)).catch(() => {});
     await fs.writeFile(note.filePath, serializeNote(note));
+    noteUpdatedThrottle.markStamped(note.id);
     set((state) => ({ notes: [note, ...state.notes], activeNote: note }));
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
     void syncCreateNote(get, set, note);
@@ -3163,7 +3171,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       try {
         const raw = await fs.readFile(filePath);
         const id = uuidv4();
-        const today = formatDate(new Date());
         const parsed = parseNote(raw, filePath);
         let title: string;
         let content: string;
@@ -3183,8 +3190,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           title,
           folder,
           tags,
-          created: today,
-          updated: today,
+          ...newNoteStamps(),
           pinned: false,
           content,
           filePath: noteFilePath(basePath, folder, id),
@@ -3214,7 +3220,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     for (const { name, content: rawContent } of files) {
       try {
         const id = uuidv4();
-        const today = formatDate(new Date());
         const parsed = parseNote(rawContent, '');
         let title: string;
         let content: string;
@@ -3233,8 +3238,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           title,
           folder,
           tags,
-          created: today,
-          updated: today,
+          ...newNoteStamps(),
           pinned: false,
           content,
           filePath: noteFilePath(basePath, folder, id),
@@ -3256,21 +3260,44 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  updateNote: async (note) => {
-    const prev = get().notes.find((n) => n.id === note.id);
-    const updated = { ...note, updated: formatDate(new Date()) };
-    await fs.writeFile(updated.filePath, serializeNote(updated));
-    set((state) => ({
-      notes: state.notes.map((n) => (n.id === updated.id ? updated : n)),
-      activeNote: state.activeNote?.id === updated.id ? updated : state.activeNote,
-    }));
-    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
-    const changedFields = diffNoteFields(prev, updated);
-    if (Object.keys(changedFields).length > 0) void syncPatchNote(get, set, updated.id, changedFields);
+  updateNote: (note, opts) => {
+    const save = (async () => {
+      const prev = get().notes.find((n) => n.id === note.id);
+      // El contenido se guarda en el `.md` siempre; `updated` se sella según
+      // D1 (al momento si cambian los metadatos, como mucho cada 60 s si solo
+      // cambia el contenido). Ver NoteUpdatedThrottle.
+      const updated = stampNoteSave(prev, note, noteUpdatedThrottle, { leaving: opts?.leaving });
+      await fs.writeFile(updated.filePath, serializeNote(updated));
+      set((state) => ({
+        notes: state.notes.map((n) => (n.id === updated.id ? updated : n)),
+        activeNote: state.activeNote?.id === updated.id ? updated : state.activeNote,
+      }));
+      if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+      const changedFields = diffNoteFields(prev, updated);
+      if (Object.keys(changedFields).length > 0) void syncPatchNote(get, set, updated.id, changedFields);
+    })();
+    noteSavesInFlight.set(note.id, save.catch(() => {}));
+    return save;
+  },
+
+  flushNoteUpdated: async (noteId) => {
+    // Espera el guardado en curso de la nota: el store se actualiza después
+    // de escribir el `.md`, y releerla antes reescribiría el archivo con el
+    // contenido de antes de ese guardado.
+    await noteSavesInFlight.get(noteId);
+    if (!noteUpdatedThrottle.hasPending(noteId)) return;
+    const latest = get().notes.find((n) => n.id === noteId);
+    if (!latest) {
+      noteUpdatedThrottle.forget(noteId);
+      return;
+    }
+    await get().updateNote(latest, { leaving: true });
   },
 
   deleteNote: async (note, options) => {
     const showToast = options?.showToast ?? true;
+    noteUpdatedThrottle.forget(note.id);
+    noteSavesInFlight.delete(note.id);
     const { basePath } = get();
     // Una nota vacía (sin título ni contenido) es un descarte automático
     // (ver selectNoteFolder/setSection/NoteList "descartar nota vacía"),
@@ -3302,17 +3329,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { basePath } = get();
     if (!basePath) return;
     const id = uuidv4();
-    const today = formatDate(new Date());
     const copy: Note = {
       ...note,
       id,
       title: note.title ? `${note.title} (copia)` : '(copia)',
-      created: today,
-      updated: today,
+      ...newNoteStamps(),
       pinned: false,
       filePath: noteFilePath(basePath, note.folder, id),
     };
     await fs.writeFile(copy.filePath, serializeNote(copy));
+    noteUpdatedThrottle.markStamped(copy.id);
     set((state) => ({ notes: [copy, ...state.notes], activeNote: copy }));
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
   },
@@ -3396,8 +3422,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const newId = uuidv4();
       const newFilePath = noteFilePath(basePath, newFolder, newId);
       await fs.createDir(noteFolderDir(basePath, newFolder)).catch(() => {});
-      const newNote: Note = { ...note, id: newId, folder: newFolder, filePath: newFilePath,
-        created: formatDate(new Date()), updated: formatDate(new Date()) };
+      const newNote: Note = { ...note, id: newId, folder: newFolder, filePath: newFilePath, ...newNoteStamps() };
       await fs.writeFile(newFilePath, serializeNote(newNote));
       newNotes.push(newNote);
     }
@@ -3423,7 +3448,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!basePath || note.folder === toFolder) return;
     const newFilePath = noteFilePath(basePath, toFolder, note.id);
     if (toFolder) await fs.createDir(noteFolderDir(basePath, toFolder)).catch(() => {});
-    const updatedNote: Note = { ...note, folder: toFolder, filePath: newFilePath, updated: formatDate(new Date()) };
+    // Cambiar de carpeta sella al momento (D1) y cubre lo pendiente.
+    const updatedNote: Note = { ...note, folder: toFolder, filePath: newFilePath, updated: nowInstant() };
+    noteUpdatedThrottle.markStamped(note.id);
     await fs.writeFile(newFilePath, serializeNote(updatedNote));
     await fs.deleteFile(note.filePath);
     set((state) => ({

@@ -5,6 +5,7 @@
 //! nunca lee un secreto: lo escribe una vez con `ext_secret_set`, y lo usa
 //! el comando Rust de la extensión (R10, R17).
 
+pub mod mcp;
 pub mod team_chat;
 
 use tauri::AppHandle;
@@ -18,7 +19,7 @@ pub const SECRET_KEYCHAIN_ERROR: &str = "keychain_error";
 /// Servicio del llavero: el identificador de la app. En producción es
 /// `com.jorgebuitrago.logday`; un build de QA con otro identificador usa
 /// otras entradas y no toca las del usuario.
-fn keychain_service(app: &AppHandle) -> String {
+pub(crate) fn keychain_service(app: &AppHandle) -> String {
     app.config().identifier.clone()
 }
 

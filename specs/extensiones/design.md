@@ -201,6 +201,13 @@ emiten `createTask`, `updateTask` y `saveOvertimeEntry` después de
 escribir en disco. El primer oyente es el webhook saliente
 (`specs/webhook-saliente/`).
 
+## Bloques propios en las notas (R24)
+
+`noteBlock: { language }` en el registro, y `NoteBlock` y
+`NoteBlockEditor` en el módulo. `NoteEditor` y `mermaidCodeBlock.tsx`
+los dibujan y los editan como a Mermaid. La primera es Excalidraw
+(`specs/excalidraw/`).
+
 ## Red (R17)
 
 - Cada extensión que habla con un servicio tiene sus comandos en

@@ -2,6 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { visualizer } from "rollup-plugin-visualizer";
+// Fuentes de Excalidraw servidas desde la app (ver el plugin).
+import { excalidrawFonts } from "./vite-plugins/excalidraw-fonts.js";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
@@ -11,6 +13,7 @@ export default defineConfig(async ({ mode }) => ({
   plugins: [
     react(),
     tailwindcss(),
+    excalidrawFonts(),
     // `pnpm run build:analyze` — treemap del bundle de producción, no se
     // activa en el build normal para no añadir overhead ni abrir el
     // reporte sin pedirlo.

@@ -3,12 +3,14 @@ import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
 import { ExtensionBoundary } from './ExtensionBoundary';
 import { extensionRuntime } from './runtime';
-import type { DailyActionProps, ExtensionId, ExtensionPoint } from './types';
+import type { DailyActionProps, ExtensionId, ExtensionPoint, NoteBlockEditorProps, NoteBlockProps } from './types';
 
 interface PointProps {
   Settings: object;
   View: object;
   dailyActions: DailyActionProps;
+  NoteBlock: NoteBlockProps;
+  NoteBlockEditor: NoteBlockEditorProps;
 }
 
 const Nothing = () => null;

@@ -1,4 +1,4 @@
-import { Bot, CalendarDays, MessagesSquare, NotebookPen, Webhook } from 'lucide-react';
+import { Bot, CalendarDays, MessagesSquare, NotebookPen, PenTool, Webhook } from 'lucide-react';
 import type { ExtensionDefinition, ExtensionId } from './types';
 
 /** Extensiones que implementa Desktop (R4). Solo metadatos: el código de
@@ -59,6 +59,15 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     secretKeys: ['refresh', 'client'],
     settings: true,
     load: () => import('./granola').then((m) => m.default),
+  },
+  {
+    id: 'excalidraw',
+    category: 'tool',
+    icon: PenTool,
+    apps: ['desktop'],
+    // R24: sus dibujos van en bloques ```excalidraw dentro de las notas.
+    noteBlock: { language: 'excalidraw' },
+    load: () => import('./excalidraw').then((m) => m.default),
   },
 ];
 

@@ -621,6 +621,7 @@ const dict = {
       tableLabel: 'Tabla',
       // Menú de diagramas
       diagramNew: 'Nuevo diagrama Mermaid',
+      extensionBlockNew: 'Nuevo bloque:',
       diagramLabel: 'Diagrama',
       // Menú contextual de bloque
       blockActions: 'Acciones de bloque',
@@ -1064,6 +1065,25 @@ const dict = {
       'granola.name': 'Granola',
       'granola.description': 'Trae las reuniones de Granola (resumen, participantes y tus notas) como notas de Logday.',
       'granola.consent': 'Con esta extensión, Logday lee tus reuniones de Granola (título, fecha, participantes, resumen y tus notas privadas) y las guarda como notas de Logday. No envía datos de Logday a Granola.',
+      'excalidraw.name': 'Excalidraw',
+      'excalidraw.description': 'Dibuja bocetos y diagramas a mano dentro de tus notas, con el editor de Excalidraw.',
+      'excalidraw.consent': 'Los dibujos se guardan dentro de la nota, como el resto de su contenido. No se envía nada fuera de Logday.',
+    },
+    // Extensión "Excalidraw" (excalidraw).
+    excalidraw: {
+      editorTitle: 'Dibujo',
+      save: 'Guardar dibujo',
+      cancel: 'Cancelar',
+      discardConfirm: '¿Descartar los cambios?',
+      keepEditing: 'Seguir dibujando',
+      discard: 'Descartar',
+      blockEmpty: 'Dibujo vacío: haz clic para dibujar',
+      blockBroken: 'No se pudo leer este dibujo. Haz clic para empezar uno nuevo.',
+      blockRenderError: 'No se pudo mostrar el dibujo. Haz clic para abrirlo.',
+      blockLoading: 'Cargando dibujo…',
+      blockEdit: 'Editar dibujo',
+      tooBig: 'El dibujo es demasiado grande',
+      tooBigHint: 'Pasa de 1 MB, casi siempre por imágenes pegadas. Quita alguna o usa una más pequeña.',
     },
     // Extensión "Granola" (granola).
     granola: {
@@ -1986,6 +2006,7 @@ const dict = {
       tableLabel: 'Table',
       // Diagram menu
       diagramNew: 'New Mermaid diagram',
+      extensionBlockNew: 'New block:',
       diagramLabel: 'Diagram',
       // Block context menu
       blockActions: 'Block actions',
@@ -2426,6 +2447,25 @@ const dict = {
       'granola.name': 'Granola',
       'granola.description': 'Brings your Granola meetings (summary, participants and your notes) into Logday as notes.',
       'granola.consent': 'With this extension, Logday reads your Granola meetings (title, date, participants, summary and your private notes) and saves them as Logday notes. It does not send Logday data to Granola.',
+      'excalidraw.name': 'Excalidraw',
+      'excalidraw.description': 'Draw sketches and diagrams by hand inside your notes, with the Excalidraw editor.',
+      'excalidraw.consent': 'Drawings are saved inside the note, like the rest of its content. Nothing is sent outside Logday.',
+    },
+    // "Excalidraw" extension (excalidraw).
+    excalidraw: {
+      editorTitle: 'Drawing',
+      save: 'Save drawing',
+      cancel: 'Cancel',
+      discardConfirm: 'Discard your changes?',
+      keepEditing: 'Keep drawing',
+      discard: 'Discard',
+      blockEmpty: 'Empty drawing: click to draw',
+      blockBroken: 'This drawing could not be read. Click to start a new one.',
+      blockRenderError: 'The drawing could not be shown. Click to open it.',
+      blockLoading: 'Loading drawing…',
+      blockEdit: 'Edit drawing',
+      tooBig: 'The drawing is too big',
+      tooBigHint: 'It is over 1 MB, almost always because of pasted images. Remove one or use a smaller one.',
     },
     // "Granola" extension (granola).
     granola: {

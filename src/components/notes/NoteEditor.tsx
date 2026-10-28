@@ -86,7 +86,7 @@ import { MarkdownPreview } from './MarkdownPreview';
 import { MermaidEditorModal } from './MermaidEditorModal';
 import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
-import { MermaidAwareCodeBlock, type MermaidActions } from './mermaidCodeBlock';
+import { MermaidAwareCodeBlock, type ExtensionBlocks, type MermaidActions } from './mermaidCodeBlock';
 import { ToolbarDropdown } from './ToolbarDropdown';
 import { dragUnitAtCoords, dropTargetAtCoords, moveListItem, moveTopLevelBlock, type DragUnit, type DropLine } from './noteBlockDrag';
 import { formatMermaidFence, parseMermaidBlocks } from '../../lib/mermaid';
@@ -100,6 +100,11 @@ import { fs } from '../../lib/invoke';
 import { EMOJI_CATALOG, normalizeEmojiSearchTerm } from '../../lib/emojiCatalog';
 import { createTaskCodePlugin, normalizeEditorMarkdown } from '../../lib/noteEditorMarkdown';
 import { useLinkPreview } from '../../hooks/useLinkPreview';
+import { useExtensions } from '../../extensions/useExtensions';
+import { ExtensionSlot } from '../../extensions/ExtensionSlot';
+import { extensionText } from '../../extensions/text';
+import type { ExtensionId } from '../../extensions/types';
+import { formatFence, parseFencedBlocks } from '../../lib/fencedBlocks';
 
 // Solo los lenguajes que ofrece CODE_LANGUAGE_OPTIONS (lib/codeHighlight.ts) —
 // `common` de lowlight trae 37 lenguajes, la mayoría no seleccionables desde
@@ -178,6 +183,8 @@ export function NoteEditor() {
   const [showTableMenu, setShowTableMenu] = useState(false);
   const [showDiagramMenu, setShowDiagramMenu] = useState(false);
   const [showDiagramEditor, setShowDiagramEditor] = useState(false);
+  // Editor del bloque propio de una extensión (R24 de specs/extensiones).
+  const [extBlockEditor, setExtBlockEditor] = useState<{ id: ExtensionId; language: string; index: number | null; code: string } | null>(null);
   const [diagramEditorMode, setDiagramEditorMode] = useState<'create' | 'edit'>('create');
   const [diagramDraft, setDiagramDraft] = useState('');
   const [editingDiagramIndex, setEditingDiagramIndex] = useState<number | null>(null);
@@ -255,6 +262,23 @@ export function NoteEditor() {
   }, [emojiQuery, filteredEmojis]);
 
   const mermaidBlocks = parseMermaidBlocks(mdContent);
+
+  // R24: las extensiones activas con bloque propio en las notas. Se fija
+  // antes de crear el editor: TipTap arma sus NodeView en el primer render.
+  const { enabled: enabledExtensions } = useExtensions();
+  const blockExtensions = enabledExtensions.filter((def) => def.noteBlock);
+  const blockLanguages: Record<string, ExtensionId> = {};
+  for (const def of blockExtensions) blockLanguages[def.noteBlock!.language] = def.id;
+  // Mermaid y estos bloques no cuentan como bloques de código normales
+  // (los índices de la barra de lenguaje y del menú contextual los saltan).
+  const specialFencesRef = useRef<Set<string>>(new Set(['mermaid']));
+  specialFencesRef.current = new Set(['mermaid', ...Object.keys(blockLanguages)]);
+  const openExtensionBlockRef = useRef<(language: string, index: number | null) => void>(() => {});
+  const extensionBlocksRef = useRef<ExtensionBlocks | null>(null);
+  extensionBlocksRef.current = {
+    byLanguage: blockLanguages,
+    edit: (language, index) => openExtensionBlockRef.current(language, index),
+  };
   const codeBlockLanguages = useMemo(() => {
     const lines = mdContent.split('\n');
     const languages: string[] = [];
@@ -268,7 +292,7 @@ export function NoteEditor() {
       if (!inFence) {
         inFence = true;
         const language = normalizeCodeLanguage((fenceMatch[1] || '').toLowerCase() || 'plaintext');
-        if (language !== 'mermaid') {
+        if (!specialFencesRef.current.has(language)) {
           languages.push(language);
         }
       } else {
@@ -388,6 +412,7 @@ export function NoteEditor() {
       MermaidAwareCodeBlock.configure({
         lowlight,
         mermaidActions: mermaidActionsRef,
+        extensionBlocks: extensionBlocksRef,
       }),
       CompactParagraph,
       UnderlineExt,
@@ -513,7 +538,7 @@ export function NoteEditor() {
 
     const paneRect = pane.getBoundingClientRect();
     const anchors = Array.from(root.querySelectorAll('pre'))
-      .filter((pre) => !pre.querySelector('code.language-mermaid'))
+      .filter((pre) => !pre.querySelector('code.language-mermaid') && !pre.closest('[data-extension-block]'))
       .map((pre) => {
         const rect = pre.getBoundingClientRect();
         return {
@@ -1616,6 +1641,28 @@ export function NoteEditor() {
     syncMarkdownToEditor(nextMarkdown);
   }, [mdContent, syncMarkdownToEditor]);
 
+  // R24: abrir el editor del bloque de una extensión (nuevo si `index` es null).
+  openExtensionBlockRef.current = (language, index) => {
+    const id = blockLanguages[language];
+    if (!id) return;
+    const block = index === null ? undefined : parseFencedBlocks(mdContent, language)[index];
+    setShowDiagramMenu(false);
+    setExtBlockEditor({ id, language, index: block ? index : null, code: block?.code ?? '' });
+  };
+
+  const handleSaveExtensionBlock = (code: string) => {
+    if (!extBlockEditor) return;
+    const fence = formatFence(extBlockEditor.language, code);
+    const current = extBlockEditor.index === null
+      ? undefined
+      : parseFencedBlocks(mdContent, extBlockEditor.language)[extBlockEditor.index];
+    const nextMarkdown = current
+      ? `${mdContent.slice(0, current.start)}${fence}${mdContent.slice(current.end)}`
+      : insertBlockAtSelection(mdContent, fence);
+    syncMarkdownToEditor(nextMarkdown);
+    setExtBlockEditor(null);
+  };
+
   mermaidActionsRef.current = {
     edit: (index) => {
       const block = mermaidBlocks[index];
@@ -1647,7 +1694,7 @@ export function NoteEditor() {
       editor.state.doc.descendants((node, pos) => {
         if (node.type.name !== 'codeBlock') return true;
         const lang = String((node.attrs as { language?: string })?.language || '').toLowerCase();
-        if (lang === 'mermaid') return true;
+        if (specialFencesRef.current.has(lang)) return true;
 
         codeBlockCounter += 1;
         if (codeBlockCounter === index) {
@@ -1702,7 +1749,7 @@ export function NoteEditor() {
       if (!inFence) {
         // Opening fence
         inFence = true;
-        if (fenceLanguage === 'mermaid') continue;
+        if (specialFencesRef.current.has(fenceLanguage)) continue;
 
         codeBlockCounter += 1;
         if (codeBlockCounter !== index) continue;
@@ -2174,6 +2221,18 @@ export function NoteEditor() {
                   >
                     {tFn(language, 'notes', 'diagramNew')}
                   </button>
+                  {blockExtensions.map((def) => (
+                    <button
+                      key={def.id}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        openExtensionBlockRef.current(def.noteBlock!.language, null);
+                      }}
+                      className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                    >
+                      {tFn(language, 'notes', 'extensionBlockNew')} {extensionText(language, def.id, 'name')}
+                    </button>
+                  ))}
                   {mermaidBlocks.length > 0 && <div className="my-1 border-t border-[var(--border)]" />}
                   {mermaidBlocks.map((block, index) => (
                     <button
@@ -2704,6 +2763,14 @@ export function NoteEditor() {
             setEditingDiagramIndex(null);
           }}
           onSave={handleSaveDiagram}
+        />
+      )}
+
+      {extBlockEditor && (
+        <ExtensionSlot
+          id={extBlockEditor.id}
+          point="NoteBlockEditor"
+          props={{ code: extBlockEditor.code, onSave: handleSaveExtensionBlock, onClose: () => setExtBlockEditor(null) }}
         />
       )}
 

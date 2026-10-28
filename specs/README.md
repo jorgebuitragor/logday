@@ -49,3 +49,4 @@ tres archivos:
 | Google Calendar (extensión `google-calendar`) | en progreso | [`google-calendar/`](./google-calendar/requirements.md) |
 | Webhook saliente (extensión `outgoing-webhook`, n8n) | en progreso | [`webhook-saliente/`](./webhook-saliente/requirements.md) |
 | Granola (extensión `granola`, por su MCP) | en progreso | [`granola/`](./granola/requirements.md) |
+| Excalidraw (extensión `excalidraw`, dibujos en las notas) | en progreso | [`excalidraw/`](./excalidraw/requirements.md) |

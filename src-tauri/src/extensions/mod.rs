@@ -8,6 +8,7 @@
 pub mod google_calendar;
 pub mod google_oauth;
 pub mod mcp;
+pub mod outgoing_webhook;
 pub mod team_chat;
 pub mod team_chat_google;
 

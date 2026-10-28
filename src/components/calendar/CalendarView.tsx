@@ -14,6 +14,7 @@ import { AppSelect } from './AppSelect';
 import { EventEditor } from './EventEditor';
 import { t, MONTHS_TITLE, WEEKDAYS_SHORT } from '../../lib/i18n';
 import { EVENT_COLOR_DOT, EVENT_COLORS, REMINDER_OPTIONS, reminderLabel } from '../../lib/calendarEventPresentation';
+import { localISODate } from '../../lib/localDate';
 
 const ESTIMATED_DAY_CTX_MENU = { width: 190, height: 88 };
 const ESTIMATED_EVENT_CTX_MENU = { width: 190, height: 128 };
@@ -198,7 +199,7 @@ export function CalendarView() {
 
   const selectedTasks  = selectedDate ? (tasksByDate[selectedDate]  || []) : [];
   const selectedEvents = selectedDate ? (eventsByDate[selectedDate] || []) : [];
-  const todayStr = today.toISOString().slice(0, 10);
+  const todayStr = localISODate(today);
 
   const handleSaveEvent = async (ev: CalendarEvent) => {
     await saveCalendarEvent(ev);

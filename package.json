@@ -11,7 +11,8 @@
     "build:analyze": "tsc && vite build --mode analyze",
     "preview": "vite preview",
     "tauri": "tauri",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "test": "vitest run"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.2",
@@ -90,6 +91,7 @@
     "rollup-plugin-visualizer": "^7.0.1",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.65.0",
-    "vite": "^6.4.2"
+    "vite": "^6.4.2",
+    "vitest": "3.2.4"
   }
 }

@@ -6,6 +6,8 @@ import { TaskContextMenu, NewTaskContextMenu } from './TaskContextMenu';
 import { t } from '../../lib/i18n';
 import { ModalOverlay } from '../shared/ModalOverlay';
 import { ModalPanel } from '../shared/ModalPanel';
+import { localISODate } from '../../lib/localDate';
+import { formatDueLabel } from '../../lib/taskListing';
 
 const COLUMN_DEFS: { status: TaskStatus; color: string; border: string; Icon: React.ElementType }[] = [
   { status: 'todo',        color: 'text-zinc-400',  border: 'border-zinc-600/30',  Icon: Circle },
@@ -24,10 +26,11 @@ interface KanbanCardProps {
 }
 
 function KanbanCard({ task, isDragging, onPointerDown, staggerIndex = 0 }: KanbanCardProps) {
-  const { setActiveTask, activeTask } = useAppStore();
+  const { setActiveTask, activeTask, language } = useAppStore();
   const isActive = activeTask?.id === task.id;
-  const today = new Date().toISOString().slice(0, 10);
-  const isOverdue = task.due && task.due < today && task.status !== 'done';
+  const due = task.due ? formatDueLabel(task.due, localISODate(), language) : null;
+  const isOverdue = due?.tone === 'overdue' && task.status !== 'done';
+  const isDueToday = due?.tone === 'today' && task.status !== 'done';
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
 
   return (
@@ -62,9 +65,12 @@ function KanbanCard({ task, isDragging, onPointerDown, staggerIndex = 0 }: Kanba
               <span className="text-[9px] text-[var(--text-hint)]">{task.project}</span>
             )}
             {task.due && (
-              <span className={`flex items-center gap-0.5 text-[9px] ${isOverdue ? 'text-red-400' : 'text-[var(--text-hint)]'}`}>
-                <Calendar size={8} />
-                {task.due}
+              <span
+                className={`flex items-center gap-0.5 text-[10px] ${isOverdue ? 'text-red-400' : isDueToday ? 'text-amber-400' : 'text-[var(--text-hint)]'}`}
+                title={task.due}
+              >
+                <Calendar size={9} />
+                {due?.label}
               </span>
             )}
             {task.tags.slice(0, 2).map((tag) => (

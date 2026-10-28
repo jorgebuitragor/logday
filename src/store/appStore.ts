@@ -15,7 +15,7 @@ import { AbsenceDay, AbsenceType } from '../types/absence';
 import { Theme, BuiltInTheme, CustomTheme } from '../types/theme';
 import { GitConfig, GitStatus, GitRemoteStatus } from '../types/git';
 import { SyncConfig, SyncConnectionStatus } from '../types/sync';
-import { AppConfig, ViewMode, ActiveSection, StartupScreen, Shortcuts, DEFAULT_SHORTCUTS, NotesView, NoteSortBy, NoteSortDir } from '../types/config';
+import { AppConfig, ViewMode, ActiveSection, StartupScreen, Shortcuts, DEFAULT_SHORTCUTS, NotesView, NoteSortBy, NoteSortDir, TaskSortBy } from '../types/config';
 import { Language, AppToast, ToastKind } from '../types/common';
 import { deriveCustomThemeVars } from '../lib/themeColor';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
@@ -52,6 +52,7 @@ import { bytesToBase64, persistYDoc, applyIncomingContentState, deliverToOpenNot
 import { applyIncomingDailyContentState, applyDailyEditorEdit, deleteDailyContentState } from '../lib/dailyContentSync';
 import { parseFrontmatter, serializeTask, parseNote, serializeNote, formatDate } from '../lib/markdown';
 import { t } from '../lib/i18n';
+import { localISODate, localISOMonth } from '../lib/localDate';
 import {
   toISO,
   getPreviousWorkingDay,
@@ -134,6 +135,7 @@ export interface AppState {
   notesViewDefault: NotesView;
   noteSortBy: NoteSortBy;
   noteSortDir: NoteSortDir;
+  taskSortBy: TaskSortBy;
   language: Language;
   fontSize: number;
   isSettingsOpen: boolean;
@@ -213,6 +215,7 @@ export interface AppState {
   setNotesView: (view: NotesView) => void;
   setNotesViewDefault: (view: NotesView) => void;
   setNoteSort: (by: NoteSortBy, dir: NoteSortDir) => void;
+  setTaskSort: (by: TaskSortBy) => void;
   /** En la vista de árbol: la carpeta donde se crean las notas nuevas.
    *  No recarga ni cierra la nota abierta. */
   setTreeNoteFolder: (folder: string | null) => void;
@@ -393,7 +396,7 @@ async function persistConfig(get: SyncGet): Promise<void> {
     configDir, basePath, startupScreen, language, confirmDestructiveActions,
     notificationsEnabled, defaultReminderMinutes, workWeekDays, holidaysAsNonWork,
     animationsEnabled, trashAutoPurgeEnabled, sidebarLabelsVisible, activeProject, activeNoteFolder,
-    notesView, notesViewDefault, noteSortBy, noteSortDir,
+    notesView, notesViewDefault, noteSortBy, noteSortDir, taskSortBy,
   } = get();
   if (!configDir || !basePath) return;
   await saveConfig(configDir, {
@@ -414,6 +417,7 @@ async function persistConfig(get: SyncGet): Promise<void> {
     notesViewDefault,
     noteSortBy,
     noteSortDir,
+    taskSortBy,
   });
 }
 
@@ -2245,6 +2249,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   notesViewDefault: 'list',
   noteSortBy: 'updated',
   noteSortDir: 'desc',
+  taskSortBy: 'due',
   language: (localStorage.getItem('language') as Language) || 'es',
   fontSize: Number(localStorage.getItem('fontSize')) || 17,
   isSettingsOpen: false,
@@ -2308,7 +2313,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   releaseNotes: null,
 
   overtimeEntries: [],
-  overtimeMonth: new Date().toISOString().slice(0, 7),
+  overtimeMonth: localISOMonth(),
   overtimeMonths: [],
   overtimeMeta: (() => {
     try { return { colaborador: '', cedula: '', ...JSON.parse(localStorage.getItem('overtimeMeta') || '{}') }; }
@@ -2373,6 +2378,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             notesView: cfg.notesView ?? cfg.notesViewDefault ?? 'list',
             noteSortBy: cfg.noteSortBy ?? 'updated',
             noteSortDir: cfg.noteSortDir ?? 'desc',
+            taskSortBy: cfg.taskSortBy ?? 'due',
           });
 
           const lastProject = cfg.lastOpenedProject || null;
@@ -2912,6 +2918,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setNoteSort: (by, dir) => {
     set({ noteSortBy: by, noteSortDir: dir });
+    persistConfig(get).catch(() => {});
+  },
+
+  setTaskSort: (by) => {
+    set({ taskSortBy: by });
     persistConfig(get).catch(() => {});
   },
 
@@ -4063,7 +4074,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { serverUrl } = get().syncConfig;
     const data = await withSyncAuth(get, set, (token) => exportAccountRemote(serverUrl, token));
     const dest = await saveDialog({
-      defaultPath: `logday-datos-${new Date().toISOString().slice(0, 10)}.json`,
+      defaultPath: `logday-datos-${localISODate()}.json`,
       filters: [{ name: 'JSON', extensions: ['json'] }],
     });
     if (!dest) return;

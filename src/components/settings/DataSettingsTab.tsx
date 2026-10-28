@@ -9,6 +9,7 @@ import { invoke } from '@tauri-apps/api/core';
 import JSZip from 'jszip';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import { TrashModal } from './TrashModal';
+import { localISODate } from '../../lib/localDate';
 
 const BACKUP_SETTINGS_PATH = '__logday/settings.json';
 
@@ -96,7 +97,7 @@ export function DataSettingsTab() {
       // Convertir a base64 para enviar al comando Rust
       const b64 = btoa(String.fromCharCode(...data));
 
-      const today = new Date().toISOString().slice(0, 10);
+      const today = localISODate();
       const dest = await saveDialog({
         defaultPath: `logday-backup-${today}.zip`,
         filters: [{ name: 'ZIP', extensions: ['zip'] }],

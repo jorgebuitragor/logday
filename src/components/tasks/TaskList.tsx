@@ -1,141 +1,42 @@
-import { useState, useEffect, useRef, useMemo, memo } from 'react';
-import { Plus, Circle, Clock, CheckCircle2, Calendar, AlertTriangle, CheckSquare } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Plus, AlertTriangle, CheckSquare, ChevronRight, ArrowUpDown } from 'lucide-react';
 import { Task, TaskStatus } from '../../types/task';
+import type { TaskSortBy } from '../../types/config';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../store/appStore';
-import { TaskContextMenu, NewTaskContextMenu } from './TaskContextMenu';
+import { NewTaskContextMenu } from './TaskContextMenu';
+import { TaskRow } from './TaskRow';
 import { RichTextEditor } from './RichTextEditor';
 import { t } from '../../lib/i18n';
+import { localISODate } from '../../lib/localDate';
+import { doneTasks, groupOpenTasks, type TaskGroupKey } from '../../lib/taskListing';
 import { ModalOverlay } from '../shared/ModalOverlay';
 import { ModalPanel } from '../shared/ModalPanel';
 
-const STATUS_ICONS: Record<TaskStatus, React.ReactNode> = {
-  todo: <Circle size={14} className="text-zinc-500" />,
-  'in-progress': <Clock size={14} className="text-amber-400" />,
-  done: <CheckCircle2 size={14} className="text-green-400" />,
+const DONE_COLLAPSED_KEY = 'logday_tasks_done_collapsed';
+
+const GROUP_LABEL_KEY: Record<TaskGroupKey, 'groupOverdue' | 'groupToday' | 'groupTomorrow' | 'groupWeek' | 'groupLater' | 'groupNone' | 'groupPending'> = {
+  overdue: 'groupOverdue',
+  today: 'groupToday',
+  tomorrow: 'groupTomorrow',
+  week: 'groupWeek',
+  later: 'groupLater',
+  none: 'groupNone',
+  pending: 'groupPending',
 };
 
-const TaskRow = memo(function TaskRow({
-  task,
-  isNew,
-  isRemoving,
-  staggerIndex = 0,
-  onBeforeDelete,
-}: {
-  task: Task;
-  isNew?: boolean;
-  isRemoving?: boolean;
-  staggerIndex?: number;
-  onBeforeDelete?: () => void;
-}) {
-  const { setActiveTask, activeTask, updateTask } = useAppStore(
-    useShallow((s) => ({ setActiveTask: s.setActiveTask, activeTask: s.activeTask, updateTask: s.updateTask }))
-  );
-  const isActive = activeTask?.id === task.id;
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
-  const [statusPopped, setStatusPopped] = useState(false);
-  // Animación de entrada
-  const [visible, setVisible] = useState(!isNew);
-  useEffect(() => {
-    if (isNew) requestAnimationFrame(() => setVisible(true));
-  }, [isNew]);
-
-  const staggerClass = `task-d${Math.min(staggerIndex, 10)}`;
-
-  const today = new Date().toISOString().slice(0, 10);
-  const isOverdue = task.due && task.due < today && task.status !== 'done';
-
-  const cycleStatus = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setStatusPopped(true);
-    const order: TaskStatus[] = ['todo', 'in-progress', 'done'];
-    const next = order[(order.indexOf(task.status) + 1) % order.length];
-    await updateTask({ ...task, status: next });
-  };
-
-  return (
-    <>
-    <div
-      className={`task-row-enter ${staggerClass} transition-all duration-[220ms] ease-out ${
-        isRemoving
-          ? 'opacity-0 scale-95 pointer-events-none'
-          : isNew && !visible
-          ? 'opacity-0 -translate-y-1'
-          : 'opacity-100 translate-y-0 scale-100'
-      }`}
-    >
-    <div
-      onClick={() => setActiveTask(isActive ? null : task)}
-      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
-      className={`flex items-start gap-3 rounded-xl px-4 py-3 cursor-pointer transition group ${
-        isActive
-          ? 'bg-indigo-500/10 border border-indigo-500/20'
-          : 'border border-transparent hover:bg-[var(--bg-hover)]'
-      }`}
-    >
-      {/* Status icon */}
-      <button
-        onClick={cycleStatus}
-        className={`mt-0.5 shrink-0 transition hover:scale-110 ${statusPopped ? 'status-pop' : ''}`}
-        onAnimationEnd={() => setStatusPopped(false)}
-      >
-        {STATUS_ICONS[task.status]}
-      </button>
-
-      {/* Main content */}
-      <div className="flex-1 min-w-0">
-        <p
-          className={`text-sm leading-snug ${
-            task.status === 'done'
-              ? 'line-through text-[var(--text-hint)]'
-              : isActive
-              ? 'text-[var(--text-primary)]'
-              : 'text-[var(--text-secondary)]'
-          }`}
-        >
-          {task.title}
-        </p>
-        {/* Meta */}
-        <div className="mt-1.5 flex flex-wrap items-center gap-2">
-          {task.project !== 'inbox' && (
-            <span className="text-[10px] text-[var(--text-hint)]">{task.project}</span>
-          )}
-          {task.due && (
-            <span
-              className={`flex items-center gap-0.5 text-[10px] ${
-                isOverdue ? 'text-red-400' : 'text-[var(--text-hint)]'
-              }`}
-            >
-              <Calendar size={9} />
-              {task.due}
-            </span>
-          )}
-          {task.tags.slice(0, 3).map((tag) => (
-            <span key={tag} className="rounded-full bg-indigo-500/10 px-1.5 py-0.5 text-[9px] text-indigo-400">
-              {tag}
-            </span>
-          ))}
-        </div>
-      </div>
-    </div>
-    {ctxMenu && (
-      <TaskContextMenu
-        task={task}
-        x={ctxMenu.x}
-        y={ctxMenu.y}
-        onClose={() => setCtxMenu(null)}
-        onBeforeDelete={onBeforeDelete}
-      />
-    )}
-    </div>
-    </>
-  );
-});
+const SORT_LABEL_KEY: Record<TaskSortBy, 'sortDue' | 'sortCreated' | 'sortTitle'> = {
+  due: 'sortDue',
+  created: 'sortCreated',
+  title: 'sortTitle',
+};
 
 export function TaskList() {
-  const { tasks, activeProject, currentView, createTask, deleteTask, isLoading, language, setActiveTask } = useAppStore(
+  const { tasks, activeProject, currentView, createTask, deleteTask, isLoading, language, setActiveTask, taskSortBy, setTaskSort } = useAppStore(
     useShallow((s) => ({
       tasks: s.tasks,
+      taskSortBy: s.taskSortBy,
+      setTaskSort: s.setTaskSort,
       activeProject: s.activeProject,
       currentView: s.currentView,
       createTask: s.createTask,
@@ -203,10 +104,44 @@ export function TaskList() {
     return () => window.removeEventListener('logday:new-task', handler);
   }, []);
 
-  const filtered = useMemo(
-    () => filter === 'all' ? tasks : tasks.filter((t) => t.status === filter),
-    [tasks, filter]
-  );
+  const [showSortMenu, setShowSortMenu] = useState(false);
+  const sortMenuRef = useRef<HTMLDivElement>(null);
+  const [doneCollapsed, setDoneCollapsed] = useState(() => {
+    try { return localStorage.getItem(DONE_COLLAPSED_KEY) !== '0'; } catch { return true; }
+  });
+  const toggleDoneCollapsed = () => {
+    setDoneCollapsed((v) => {
+      try { localStorage.setItem(DONE_COLLAPSED_KEY, v ? '0' : '1'); } catch { /* sin almacenamiento */ }
+      return !v;
+    });
+  };
+
+  useEffect(() => {
+    if (!showSortMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) setShowSortMenu(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showSortMenu]);
+
+  // "Hoy" en hora local; se recalcula con cada cambio de tareas, y al
+  // volver a la ventana para que la lista no quede en el día anterior.
+  const [today, setToday] = useState(() => localISODate());
+  useEffect(() => {
+    const refresh = () => setToday(localISODate());
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
+  }, []);
+  useEffect(() => { setToday(localISODate()); }, [tasks]);
+
+  const openGroups = useMemo(() => {
+    if (filter === 'done') return [];
+    const source = filter === 'all' ? tasks : tasks.filter((t) => t.status === filter);
+    return groupOpenTasks(source, taskSortBy, today);
+  }, [tasks, filter, taskSortBy, today]);
+  const done = useMemo(() => (filter === 'all' || filter === 'done' ? doneTasks(tasks) : []), [tasks, filter]);
+  const visibleCount = openGroups.reduce((n, g) => n + g.tasks.length, 0) + done.length;
 
   const handleCreateTask = async () => {
     if (newTaskTitle.trim()) {
@@ -303,6 +238,7 @@ export function TaskList() {
     >
       {/* Header */}
       <div className="border-b border-[var(--border)] px-4 py-3">
+        <div className="mx-auto w-full max-w-3xl">
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-lg font-semibold text-[var(--text-primary)] capitalize">{title}</h1>
           <button
@@ -314,8 +250,8 @@ export function TaskList() {
           </button>
         </div>
 
-        {/* Filters */}
-        <div className="flex gap-1">
+        {/* Filtros y orden */}
+        <div className="flex items-center gap-1">
           {(['all', 'todo', 'in-progress', 'done'] as const).map((f) => (
             <button
               key={f}
@@ -330,6 +266,40 @@ export function TaskList() {
               <span className="ml-1.5 text-[10px] text-[var(--text-hint)]">{counts[f]}</span>
             </button>
           ))}
+          <div className="relative ml-auto" ref={sortMenuRef}>
+            <button
+              onClick={() => setShowSortMenu((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={showSortMenu}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs transition ${
+                showSortMenu ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]' : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)]'
+              }`}
+            >
+              <ArrowUpDown size={12} />
+              {t(language, 'tasks', SORT_LABEL_KEY[taskSortBy])}
+            </button>
+            {showSortMenu && (
+              <div role="menu" className="absolute right-0 top-full z-50 mt-1 min-w-[180px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-xl">
+                <p className="px-3 pt-1.5 pb-1 text-[9px] font-bold uppercase tracking-widest text-[var(--text-faint)]">{t(language, 'tasks', 'sortLabel')}</p>
+                {(['due', 'created', 'title'] as const).map((opt) => (
+                  <button
+                    key={opt}
+                    role="menuitemradio"
+                    aria-checked={taskSortBy === opt}
+                    onClick={() => { setTaskSort(opt); setShowSortMenu(false); }}
+                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs transition ${
+                      taskSortBy === opt
+                        ? 'text-indigo-400 bg-indigo-500/10'
+                        : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                    }`}
+                  >
+                    {t(language, 'tasks', SORT_LABEL_KEY[opt])}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
         </div>
       </div>
 
@@ -342,11 +312,11 @@ export function TaskList() {
           <div className="flex h-full items-center justify-center">
             <span className="text-sm text-[var(--text-hint)]">{t(language, 'tasks', 'loading')}</span>
           </div>
-        ) : filtered.length === 0 ? (
+        ) : visibleCount === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
             <CheckSquare size={36} className="text-[var(--text-faint)]" strokeWidth={1.5} />
             <p className="text-sm text-[var(--text-hint)]">
-              {filter === 'all' ? t(language, 'tasks', 'emptyAll') : `${t(language, 'tasks', 'emptyFilter')} "${filter}".`}
+              {t(language, 'tasks', filter === 'all' ? 'emptyAll' : filter === 'todo' ? 'emptyTodo' : filter === 'in-progress' ? 'emptyInProgress' : 'emptyDone')}
             </p>
             {filter === 'all' && (
               <button
@@ -359,17 +329,69 @@ export function TaskList() {
             )}
           </div>
         ) : (
-          <div key={listKey} className="space-y-1">
-            {filtered.map((task, idx) => (
-              <TaskRow
-                key={task.id}
-                task={task}
-                isNew={newTaskIds.has(task.id)}
-                isRemoving={removingIds.has(task.id)}
-                staggerIndex={idx}
-                onBeforeDelete={() => handleBeforeDelete(task)}
-              />
-            ))}
+          <div key={listKey} className="mx-auto w-full max-w-3xl space-y-4">
+            {filter === 'all' && openGroups.length === 0 && (
+              <p className="px-3 py-6 text-center text-sm text-[var(--text-hint)]">{t(language, 'tasks', 'emptyAllDone')}</p>
+            )}
+            {openGroups.map((group, groupIdx) => {
+              const offset = openGroups.slice(0, groupIdx).reduce((n, g) => n + g.tasks.length, 0);
+              return (
+                <section key={group.key}>
+                  {/* Con un solo grupo de pendientes (orden por creación o
+                      título) el encabezado no aporta: se omite. */}
+                  {group.key !== 'pending' && (
+                    <h2 className={`mb-1 flex items-center gap-2 px-3 text-[11px] font-semibold uppercase tracking-wider ${
+                      group.key === 'overdue' ? 'text-red-400' : group.key === 'today' ? 'text-amber-400' : 'text-[var(--text-hint)]'
+                    }`}>
+                      {t(language, 'tasks', GROUP_LABEL_KEY[group.key])}
+                      <span className="font-normal text-[var(--text-faint)]">{group.tasks.length}</span>
+                    </h2>
+                  )}
+                  <div className="space-y-0.5">
+                    {group.tasks.map((task, idx) => (
+                      <TaskRow
+                        key={task.id}
+                        task={task}
+                        today={today}
+                        isNew={newTaskIds.has(task.id)}
+                        isRemoving={removingIds.has(task.id)}
+                        staggerIndex={offset + idx}
+                        onBeforeDelete={() => handleBeforeDelete(task)}
+                      />
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
+            {done.length > 0 && (
+              <section>
+                {filter === 'all' && (
+                  <button
+                    onClick={toggleDoneCollapsed}
+                    aria-expanded={!doneCollapsed}
+                    className="mb-1 flex items-center gap-1.5 rounded-md px-3 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-hint)] transition hover:text-[var(--text-secondary)]"
+                  >
+                    <ChevronRight size={12} className={`transition-transform ${doneCollapsed ? '' : 'rotate-90'}`} />
+                    {t(language, 'tasks', 'groupDone')}
+                    <span className="font-normal text-[var(--text-faint)]">{done.length}</span>
+                  </button>
+                )}
+                {(filter === 'done' || !doneCollapsed) && (
+                  <div className="space-y-0.5">
+                    {done.map((task) => (
+                      <TaskRow
+                        key={task.id}
+                        task={task}
+                        today={today}
+                        isNew={newTaskIds.has(task.id)}
+                        isRemoving={removingIds.has(task.id)}
+                        onBeforeDelete={() => handleBeforeDelete(task)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
           </div>
         )}
       </div>

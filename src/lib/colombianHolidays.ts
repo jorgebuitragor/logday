@@ -3,6 +3,8 @@
  * Fuente legal: Ley 51 de 1983 (Ley Emiliani) y Ley 27 de 1985.
  */
 
+import { localISODate } from './localDate';
+
 // Algoritmo de Butcher para calcular la fecha de Pascua
 function easterDate(year: number): Date {
   const a = year % 19;
@@ -33,10 +35,7 @@ function toNextMonday(date: Date): Date {
 
 /** Convierte una fecha local a string YYYY-MM-DD sin dependencia de UTC */
 export function toISO(d: Date): string {
-  const y = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, '0');
-  const da = String(d.getDate()).padStart(2, '0');
-  return `${y}-${mo}-${da}`;
+  return localISODate(d);
 }
 
 function addDays(d: Date, n: number): Date {

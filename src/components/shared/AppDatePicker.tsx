@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
+import { localISODate } from '../../lib/localDate';
 
 function getLocale(language: 'es' | 'en'): string {
   return language === 'es' ? 'es-CO' : 'en-US';
@@ -17,7 +18,7 @@ function getDayNames(language: 'es' | 'en'): string[] {
 }
 
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return localISODate();
 }
 
 function formatDateDisplay(iso: string, language: 'es' | 'en'): string {

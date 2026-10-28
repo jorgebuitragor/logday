@@ -3,3 +3,6 @@
 export const Z_MODAL = 1000;
 export const Z_MODAL_NESTED = 1010;
 export const Z_MODAL_NESTED_2 = 1020;
+/** Menús desplegables de la barra del editor (ToolbarDropdown): por encima
+ *  del contenido y de las capas del editor, por debajo de los modales. */
+export const Z_TOOLBAR_MENU = 900;

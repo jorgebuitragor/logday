@@ -52,7 +52,7 @@ import { bytesToBase64, persistYDoc, applyIncomingContentState, deliverToOpenNot
 import { applyIncomingDailyContentState, applyDailyEditorEdit, deleteDailyContentState } from '../lib/dailyContentSync';
 import { parseFrontmatter, serializeTask, parseNote, serializeNote, formatDate } from '../lib/markdown';
 import { t } from '../lib/i18n';
-import { localISODate, localISOMonth } from '../lib/localDate';
+import { localISODate, localISOMonth, stampSortKey } from '../lib/localDate';
 import { EMPTY_TASK_FILTER, type TaskFilter } from '../lib/taskListing';
 import {
   toISO,
@@ -2639,7 +2639,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         })
       );
       const allTasks = tasksByProject.flat();
-      allTasks.sort((a, b) => b.created.localeCompare(a.created));
+      // `created` mezcla instantes y `YYYY-MM-DD` legados: ver localDate.ts.
+      allTasks.sort((a, b) => stampSortKey(b.created) - stampSortKey(a.created));
       set({ tasks: allTasks });
     } catch (e) {
       console.error('loadTasks error:', e);
@@ -3009,7 +3010,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Pinned first, then by updated desc
       allNotes.sort((a, b) => {
         if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-        return b.updated.localeCompare(a.updated);
+        return stampSortKey(b.updated) - stampSortKey(a.updated);
       });
       set({ notes: allNotes });
     } catch (e) {

@@ -41,3 +41,4 @@ tres archivos:
 | Papelera de reciclaje | implementado (baseline) | [`papelera-reciclaje/`](./papelera-reciclaje/requirements.md) |
 | Actualizaciones automáticas | implementado, sin validar con release real | [`actualizaciones-automaticas/`](./actualizaciones-automaticas/requirements.md) |
 | Cumplimiento de datos personales | en diseño | [`cumplimiento-datos-personales/`](./cumplimiento-datos-personales/requirements.md) |
+| Fechas de creación, edición y completado | en progreso (etapa 1: leer ambos formatos) | [`fechas-creacion-edicion/`](./fechas-creacion-edicion/requirements.md) |

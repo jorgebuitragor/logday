@@ -7,6 +7,7 @@ import { ExportModal } from './ExportModal';
 import InlineRenameInput from '../shared/InlineRenameInput';
 import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { sortNotes } from '../../lib/noteSort';
+import { stampToLocalDate } from '../../lib/localDate';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
 import { usePositionedMenu } from '../../hooks/usePositionedMenu';
 import { ModalOverlay } from '../shared/ModalOverlay';
@@ -545,7 +546,7 @@ export function NoteList() {
                       )}
                     </div>
                     <div className="mt-0.5 flex items-center gap-2">
-                      <span className="text-[10px] text-[var(--text-hint)]">{note.updated}</span>
+                      <span className="text-[10px] text-[var(--text-hint)]">{stampToLocalDate(note.updated)}</span>
                       {note.folder && (
                         <span className="text-[10px] text-[var(--text-hint)] truncate">{note.folder}</span>
                       )}

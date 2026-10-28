@@ -7,8 +7,10 @@ export interface Task {
   status: TaskStatus;
   tags: string[];
   project: string;
-  created: string;   // YYYY-MM-DD
-  completedAt?: string; // YYYY-MM-DD
+  // Marcas: instante UTC (toISOString) o YYYY-MM-DD legado (fecha local).
+  // Leerlas con los helpers de lib/localDate.ts (stampToLocalDate, stampSortKey).
+  created: string;
+  completedAt?: string; // solo cuenta si status === 'done'
   due?: string;      // YYYY-MM-DD
   linked_paths: string[];
   content: string;   // markdown body

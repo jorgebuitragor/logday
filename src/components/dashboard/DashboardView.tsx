@@ -15,6 +15,8 @@ import { TaskContextMenu } from '../tasks/TaskContextMenu';
 import { AbsenceModal } from '../shared/AbsenceModal';
 import { WeeklyMiniCalendar } from './WeeklyMiniCalendar';
 import { placeMenuAtPointer } from '../../lib/menuPosition';
+import { stampSortKey, stampToLocalDate } from '../../lib/localDate';
+import { countDoneThisWeek } from '../../lib/taskListing';
 
 type RecentItem =
   | { kind: 'task'; id: string; title: string; date: string; task: Task }
@@ -79,13 +81,14 @@ async function buildDashboardData(basePath: string): Promise<DashboardData> {
 
   const inProgressNoDue = tasks
     .filter((t) => t.status === 'in-progress' && !t.due)
-    .sort((a, b) => b.created.localeCompare(a.created));
+    .sort((a, b) => stampSortKey(b.created) - stampSortKey(a.created));
 
   const taskItems: RecentItem[] = tasks.map((t) => ({
     kind: 'task',
     id: t.id,
     title: t.title,
-    date: t.completedAt || t.due || t.created,
+    // completedAt solo cuenta si la tarea está hecha (ver localDate.ts).
+    date: (t.status === 'done' && t.completedAt) || t.due || t.created,
     task: t,
   }));
 
@@ -98,21 +101,12 @@ async function buildDashboardData(basePath: string): Promise<DashboardData> {
   }));
 
   const recentActivity = [...taskItems, ...noteItems]
-    .sort((a, b) => b.date.localeCompare(a.date))
+    // Mezcla instantes, `YYYY-MM-DD` legados y vencimientos: se ordena por
+    // el momento que representan, no como strings.
+    .sort((a, b) => stampSortKey(b.date) - stampSortKey(a.date))
     .slice(0, 5);
 
-  const now = new Date();
-  const day = now.getDay();
-  const diffToMonday = day === 0 ? 6 : day - 1;
-  const weekStart = new Date(now);
-  weekStart.setHours(0, 0, 0, 0);
-  weekStart.setDate(now.getDate() - diffToMonday);
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 6);
-  const weekStartISO = toISO(weekStart);
-  const weekEndISO = toISO(weekEnd);
-
-  const doneThisWeek = tasks.filter((t) => t.status === 'done' && !!t.completedAt && t.completedAt >= weekStartISO && t.completedAt <= weekEndISO).length;
+  const doneThisWeek = countDoneThisWeek(tasks);
 
   return {
     todayDaily: dailysEntriesByDate[today] ? { date: today, content: dailysEntriesByDate[today] } : undefined,
@@ -490,7 +484,7 @@ export function DashboardView() {
                       {item.title || tFn(language, 'dashboard', 'recentTask')}
                     </div>
                     <div className="text-[10px] text-[var(--text-hint)]">
-                      {tFn(language, 'dashboard', item.kind === 'task' ? 'recentTask' : 'recentNote')} · {item.date}
+                      {tFn(language, 'dashboard', item.kind === 'task' ? 'recentTask' : 'recentNote')} · {stampToLocalDate(item.date) || item.date}
                     </div>
                   </div>
                 </button>

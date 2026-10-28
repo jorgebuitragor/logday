@@ -105,6 +105,20 @@ un código.
   si el llavero ya no la tiene, "Enviar prueba" con el texto del spec en
   el idioma de la app, y el último resultado. "Quitar integración" es el
   "Quitar configuración" de la base.
+- **Guía para conseguir la URL (D4):** `SetupGuide.tsx`, debajo del
+  campo de la URL. Cambia con el proveedor elegido, y viene abierta si
+  no hay pista guardada. Los pasos y los enlaces a la ayuda oficial
+  están en `guide.ts`, y sus textos en `i18n.ts` (`teamChat.guide*`).
+  Siguen la ayuda de cada proveedor de octubre de 2026:
+  - Google Chat: solo desde el navegador → Apps e integraciones →
+    Agregar webhooks → Copiar vínculo;
+  - Slack: api.slack.com/apps → From scratch → Incoming Webhooks → Add
+    New Webhook to Workspace;
+  - Teams: ··· del canal → Flujos de trabajo → plantilla "Publicar en un
+    canal cuando se recibe una solicitud de webhook".
+
+  Si un proveedor cambia sus menús, se actualizan `guide.ts` y los
+  textos.
 - **Daily:** un botón con icono de enviar junto a Copiar en la cabecera
   del daily, solo si hay proveedor y URL guardados (R31). Si ese daily
   ya salió bien hoy, pide confirmar. Los fallos y el límite se avisan

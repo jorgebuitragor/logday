@@ -86,6 +86,11 @@ tengan su primera extensión.
   "Extensiones", con su icono y su nombre. Al desactivarla, la entrada
   DEBERÁ desaparecer y, si estaba abierta, Opciones DEBERÁ volver al
   catálogo.
+- R22. Una extensión DEBERÁ poder mostrar eventos de solo lectura en el
+  Calendario de Logday (por ejemplo, las reuniones de Google Calendar),
+  distintos de los eventos propios. Esos eventos NO DEBERÁN guardarse en
+  disco ni sincronizarse, y DEBERÁN desaparecer al desactivar la
+  extensión.
 
 ### Robustez
 

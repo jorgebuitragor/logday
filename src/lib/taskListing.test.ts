@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Task } from '../types/task';
-import { EMPTY_TASK_FILTER, doneTasks, dueBucket, filterTasks, formatDueLabel, groupOpenTasks, rangeIds, sortColumn } from './taskListing';
+import { EMPTY_TASK_FILTER, completedLocalDate, countDoneThisWeek, doneTasks, dueBucket, filterTasks, formatDueLabel, formatLongDate, groupOpenTasks, localWeekRange, rangeIds, sortColumn } from './taskListing';
 
 const TODAY = '2026-10-27'; // martes
 
@@ -126,5 +126,68 @@ describe('rangeIds', () => {
   });
   it('sin ancla visible, solo la elegida', () => {
     expect(rangeIds(order, 'z', 'c')).toEqual(['c']);
+  });
+});
+
+describe('marcas mezcladas (instante y YYYY-MM-DD legado)', () => {
+  it('ordena por creación según el momento, no como string', () => {
+    const tasks = [
+      task('legado-27', { created: '2026-10-27' }),
+      task('noche-27', { created: '2026-10-28T01:00:00.000Z' }), // 27, 8 p. m. aquí
+      task('legado-28', { created: '2026-10-28' }),
+      task('manana-28', { created: '2026-10-28T14:00:00.000Z' }),
+    ];
+    expect(sortColumn(tasks, 'created').map((t) => t.id)).toEqual(['manana-28', 'legado-28', 'noche-27', 'legado-27']);
+    expect(groupOpenTasks(tasks, 'created', TODAY)[0].tasks.map((t) => t.id)).toEqual(['manana-28', 'legado-28', 'noche-27', 'legado-27']);
+  });
+
+  it('ordena las hechas por completado con formatos mezclados', () => {
+    const tasks = [
+      task('legado-26', { status: 'done', completedAt: '2026-10-26' }),
+      task('noche-26', { status: 'done', completedAt: '2026-10-27T02:00:00.000Z' }), // 26, 9 p. m.
+      task('legado-27', { status: 'done', completedAt: '2026-10-27' }),
+      task('sin-fecha', { status: 'done', created: '2026-10-01' }),
+    ];
+    expect(doneTasks(tasks).map((t) => t.id)).toEqual(['legado-27', 'noche-26', 'legado-26', 'sin-fecha']);
+  });
+
+  it('completedAt solo cuenta si la tarea está hecha', () => {
+    expect(completedLocalDate(task('a', { status: 'done', completedAt: '2026-10-28T01:00:00.000Z' }))).toBe('2026-10-27');
+    expect(completedLocalDate(task('b', { status: 'todo', completedAt: '2026-10-27' }))).toBe('');
+    expect(completedLocalDate(task('c', { status: 'done' }))).toBe('');
+  });
+
+  it('formatLongDate muestra un instante como su día local', () => {
+    expect(formatLongDate('2026-10-28T01:00:00.000Z', 'es')).toBe(formatLongDate('2026-10-27', 'es'));
+    expect(formatLongDate('2026-10-27', 'en')).toBe('October 27, 2026');
+  });
+});
+
+describe('countDoneThisWeek', () => {
+  // Semana del lunes 26 oct al domingo 1 nov de 2026.
+  const SUNDAY_NIGHT = new Date(2026, 10, 1, 23, 0); // domingo 1 nov, 11 p. m. local
+  const tasks = [
+    // Domingo 1 nov, 10 p. m. en Bogotá: en UTC ya es el lunes 2.
+    task('domingo-noche', { status: 'done', completedAt: '2026-11-02T03:00:00.000Z' }),
+    task('lunes-0h', { status: 'done', completedAt: '2026-10-26T05:00:00.000Z' }),
+    task('domingo-anterior', { status: 'done', completedAt: '2026-10-26T04:59:59.000Z' }), // 25 oct, 11:59 p. m.
+    task('legado-lunes', { status: 'done', completedAt: '2026-10-26' }),
+    task('legado-domingo', { status: 'done', completedAt: '2026-11-01' }),
+    task('legado-fuera', { status: 'done', completedAt: '2026-10-25' }),
+    task('no-hecha', { status: 'in-progress', completedAt: '2026-10-28' }),
+    task('hecha-sin-fecha', { status: 'done' }),
+  ];
+
+  it('la semana va de lunes a domingo en hora local', () => {
+    expect(localWeekRange(SUNDAY_NIGHT)).toEqual({ start: '2026-10-26', end: '2026-11-01' });
+    expect(localWeekRange(new Date(2026, 9, 26, 0, 5))).toEqual({ start: '2026-10-26', end: '2026-11-01' });
+  });
+
+  it('cuenta lo completado el domingo de noche y deja fuera el domingo anterior', () => {
+    expect(countDoneThisWeek(tasks, SUNDAY_NIGHT)).toBe(4);
+  });
+
+  it('el lunes siguiente ya no cuenta lo de la semana pasada', () => {
+    expect(countDoneThisWeek(tasks, new Date(2026, 10, 2, 1, 0))).toBe(0);
   });
 });

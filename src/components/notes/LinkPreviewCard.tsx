@@ -14,12 +14,13 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ExternalLink, FileText, Edit3, Copy, ArrowRight, Tag, Loader2, Pencil, Check, X } from 'lucide-react';
 import { t as tFn } from '../../lib/i18n';
 import type { Language } from '../../types/common';
+import { formatPreviewDate } from '../../lib/linkPreviewDate';
 // ── Public types ─────────────────────────────────────────────────────────────
 
 export interface InternalNoteMeta {
   id: string;
   title: string;
-  updated: string;  // YYYY-MM-DD
+  updated: string;  // instante UTC o YYYY-MM-DD legado (ver lib/localDate.ts)
   preview: string;  // first ~120 chars of body (already plain text)
   tags: string[];
 }
@@ -168,11 +169,7 @@ export function LinkPreviewCard({
   // ── Derived content ─────────────────────────────────────────────────────
   const t = (key: string) => tFn(language, 'notes', key as never);
 
-  const formattedDate = internalNote?.updated
-    ? new Intl.DateTimeFormat(language === 'es' ? 'es-CO' : 'en-US', {
-        year: 'numeric', month: 'short', day: 'numeric',
-      }).format(new Date(internalNote.updated + 'T00:00:00'))
-    : null;
+  const formattedDate = formatPreviewDate(internalNote?.updated, language);
 
   const displayTitle =
     isInternal

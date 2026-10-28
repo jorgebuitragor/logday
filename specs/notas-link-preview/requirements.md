@@ -52,9 +52,13 @@ retroalimentación visual previa a navegar.
   destino buscando por `id` exacto, o por título (comparación
   case-insensitive, con y sin decodificar URI).
 - SI la nota se encuentra, la tarjeta DEBERÁ mostrar: título, fecha de
-  última edición (formateada según el idioma activo), un preview de hasta
-  120 caracteres de texto plano del cuerpo (sin encabezados ni símbolos
-  Markdown), y hasta 4 tags.
+  última edición (formateada según el idioma activo, como su día local), un
+  preview de hasta 120 caracteres de texto plano del cuerpo (sin
+  encabezados ni símbolos Markdown), y hasta 4 tags.
+- `updated` PUEDE ser un instante ISO o un `YYYY-MM-DD` legado (ver
+  `specs/fechas-creacion-edicion/`). SI el valor está vacío o es inválido,
+  la tarjeta NO DEBERÁ mostrar fecha, y nunca DEBERÁ lanzar un error al
+  formatearla (antes un instante lanzaba `RangeError` y cerraba la app).
 - SI la nota NO se encuentra, la tarjeta DEBERÁ mostrar un mensaje de "nota
   no encontrada" en vez de preview/tags.
 - La tarjeta DEBERÁ ofrecer dos acciones: "Ir a la nota" (acción primaria) y

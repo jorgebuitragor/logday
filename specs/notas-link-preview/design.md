@@ -194,6 +194,8 @@ function pickMarkdownFiles(): Promise<string[] | null>;
 
 // src/components/LinkPreviewCard.tsx
 interface InternalNoteMeta { id: string; title: string; updated: string; preview: string; tags: string[]; }
+// La fecha se formatea con formatPreviewDate (src/lib/linkPreviewDate.ts),
+// que acepta instante o YYYY-MM-DD y devuelve null si no hay fecha válida.
 type ExternalMetaState =
   | { status: 'loading' }
   | { status: 'error' }

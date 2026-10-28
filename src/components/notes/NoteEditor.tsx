@@ -91,6 +91,7 @@ import { formatMermaidFence, parseMermaidBlocks } from '../../lib/mermaid';
 import { ImageLinkModal } from '../shared/ImageLinkModal';
 import { CODE_LANGUAGE_OPTIONS, normalizeCodeLanguage } from '../../lib/codeHighlight';
 import { placeMenuNearAnchor } from '../../lib/menuPosition';
+import { stampToLocalDate } from '../../lib/localDate';
 import { t as tFn } from '../../lib/i18n';
 import { LinkPreviewCard } from './LinkPreviewCard';
 import { fs } from '../../lib/invoke';
@@ -1871,7 +1872,7 @@ export function NoteEditor() {
         </div>
 
         <div className="flex items-center gap-1">
-          <span className="text-[10px] text-[var(--text-hint)] mr-2">{activeNote.updated}</span>
+          <span className="text-[10px] text-[var(--text-hint)] mr-2">{stampToLocalDate(activeNote.updated)}</span>
           <button
             onClick={() => setShowExportModal(true)}
             className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"

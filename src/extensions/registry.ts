@@ -1,4 +1,4 @@
-import { Bot, MessagesSquare } from 'lucide-react';
+import { Bot, CalendarDays, MessagesSquare } from 'lucide-react';
 import type { ExtensionDefinition, ExtensionId } from './types';
 
 /** Extensiones que implementa Desktop (R4). Solo metadatos: el código de
@@ -26,6 +26,17 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     secretKeys: ['token'],
     settings: true,
     load: () => import('./mcp').then((m) => m.default),
+  },
+  {
+    id: 'google-calendar',
+    category: 'integration',
+    icon: CalendarDays,
+    apps: ['desktop'],
+    // Solo lee de Google (specs/google-calendar): no envía datos de Logday,
+    // así que no lleva el aviso de R6; el permiso se da al conectar.
+    secretKeys: ['google_client_secret', 'google_refresh'],
+    settings: true,
+    load: () => import('./google-calendar').then((m) => m.default),
   },
 ];
 

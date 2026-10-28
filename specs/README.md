@@ -46,3 +46,4 @@ tres archivos:
 | Agentes de IA (extensión `mcp`) | en progreso | [`agentes-mcp/`](./agentes-mcp/requirements.md) |
 | Chat del equipo (extensión `team-chat`), modo local | en progreso | [`chat-del-equipo/`](./chat-del-equipo/requirements.md) |
 | Chat del equipo: enviar como yo (Google Chat, OAuth) | en progreso | [`chat-como-usuario/`](./chat-como-usuario/requirements.md) |
+| Google Calendar (extensión `google-calendar`) | en progreso | [`google-calendar/`](./google-calendar/requirements.md) |

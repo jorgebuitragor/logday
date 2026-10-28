@@ -5,6 +5,8 @@
 //! nunca lee un secreto: lo escribe una vez con `ext_secret_set`, y lo usa
 //! el comando Rust de la extensión (R10, R17).
 
+pub mod google_calendar;
+pub mod google_oauth;
 pub mod mcp;
 pub mod team_chat;
 pub mod team_chat_google;

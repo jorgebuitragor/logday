@@ -184,6 +184,16 @@ extensions?: Partial<Record<ExtensionId, {
 - **Estado vacío:** "Todavía no hay extensiones." No debería verse
   nunca, porque la primera llega con este spec.
 
+## Eventos externos en el Calendario (R22)
+
+- `src/extensions/externalEvents.ts`: un store en memoria con el mes
+  visible (`range`, que fija el Calendario) y los eventos de cada fuente
+  (`setSource` y `clearSource`).
+- El Calendario los dibuja con borde punteado y el texto del tema, y al
+  hacer clic abre su `url`. En el panel del día van aparte, con el nombre
+  de la extensión.
+- La primera fuente es Google Calendar (`specs/google-calendar/`).
+
 ## Red (R17)
 
 - Cada extensión que habla con un servicio tiene sus comandos en

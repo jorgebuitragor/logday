@@ -178,6 +178,11 @@ export function CalendarView() {
     else setMonth(m => m + 1);
     setSelectedDate(null);
   };
+  const goToday = () => {
+    setYear(today.getFullYear());
+    setMonth(today.getMonth());
+    setSelectedDate(null);
+  };
 
   const selectedTasks  = selectedDate ? (tasksByDate[selectedDate]  || []) : [];
   const selectedEvents = selectedDate ? (eventsByDate[selectedDate] || []) : [];
@@ -211,6 +216,14 @@ export function CalendarView() {
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-[var(--text-primary)]">{t(language, 'tasks', 'calendarTitle')}</h1>
         <div className="flex items-center gap-3">
+          <button
+            onClick={goToday}
+            disabled={year === today.getFullYear() && month === today.getMonth()}
+            title={t(language, 'calendar', 'goToday')}
+            className="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] disabled:opacity-40 disabled:hover:bg-transparent"
+          >
+            {t(language, 'tasks', 'groupToday')}
+          </button>
           <button onClick={prevMonth} className="rounded-lg p-1.5 text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition">
             <ChevronLeft size={18} />
           </button>
@@ -353,7 +366,7 @@ export function CalendarView() {
             <div className="border-b border-[var(--border)] px-4 py-3">
               <p className="text-sm font-medium text-[var(--text-primary)]">{longDate(selectedDate)}</p>
               <p className="text-xs text-[var(--text-hint)]">
-                {selectedTasks.length} {t(language, 'calendar', 'tasks')} · {selectedEvents.length} {t(language, 'calendar', 'events')}
+                {selectedTasks.length} {t(language, 'calendar', selectedTasks.length === 1 ? 'taskOne' : 'taskMany')} · {selectedEvents.length} {t(language, 'calendar', selectedEvents.length === 1 ? 'eventOne' : 'eventMany')}
               </p>
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-3">
@@ -426,7 +439,7 @@ export function CalendarView() {
                     {t(language, 'calendar', 'tasks')}
                   </span>
                   <button
-                    onClick={() => { window.dispatchEvent(new CustomEvent('logday:new-task')); }}
+                    onClick={() => { window.dispatchEvent(new CustomEvent('logday:new-task', { detail: { due: selectedDate } })); }}
                     className="flex items-center gap-1 text-[10px] text-indigo-400 hover:text-indigo-300 transition"
                   >
                     <Plus size={11} /> {t(language, 'tasks', 'newTask')}
@@ -725,6 +738,7 @@ export function CalendarView() {
         <NewTaskContextMenu
           x={emptyCtxMenu.x}
           y={emptyCtxMenu.y}
+          due={selectedDate ?? undefined}
           onClose={() => setEmptyCtxMenu(null)}
           onNewEvent={() => {
             setEventEditor({ event: { date: selectedDate ?? todayStr } });
@@ -742,7 +756,7 @@ export function CalendarView() {
         >
           <button
             onClick={() => {
-              window.dispatchEvent(new CustomEvent('logday:new-task'));
+              window.dispatchEvent(new CustomEvent('logday:new-task', { detail: { due: dayCtxMenu.date } }));
               setDayCtxMenu(null);
             }}
             className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"

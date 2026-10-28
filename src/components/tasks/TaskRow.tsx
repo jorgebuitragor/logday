@@ -30,6 +30,7 @@ export const TaskRow = memo(function TaskRow({
   isRemoving,
   staggerIndex = 0,
   onBeforeDelete,
+  hideDue,
 }: {
   task: Task;
   today: string;
@@ -40,9 +41,12 @@ export const TaskRow = memo(function TaskRow({
   isRemoving?: boolean;
   staggerIndex?: number;
   onBeforeDelete?: () => void;
+  /** Dentro de los grupos "Hoy" y "Mañana" la fecha ya la dice el
+   *  encabezado: repetirla en cada fila era ruido. */
+  hideDue?: boolean;
 }) {
-  const { setActiveTask, activeTask, updateTask, language } = useAppStore(
-    useShallow((s) => ({ setActiveTask: s.setActiveTask, activeTask: s.activeTask, updateTask: s.updateTask, language: s.language }))
+  const { setActiveTask, activeTask, updateTaskWithUndo, language } = useAppStore(
+    useShallow((s) => ({ setActiveTask: s.setActiveTask, activeTask: s.activeTask, updateTaskWithUndo: s.updateTaskWithUndo, language: s.language }))
   );
   const isActive = activeTask?.id === task.id;
   const rowRef = useRef<HTMLDivElement>(null);
@@ -61,7 +65,7 @@ export const TaskRow = memo(function TaskRow({
   const staggerClass = `task-d${Math.min(staggerIndex, 10)}`;
   const isDone = task.status === 'done' || completing;
   const isInProgress = task.status === 'in-progress' && !completing;
-  const due = task.due && task.status !== 'done' ? formatDueLabel(task.due, today, language) : null;
+  const due = task.due && task.status !== 'done' && !hideDue ? formatDueLabel(task.due, today, language) : null;
   const extraTags = task.tags.slice(MAX_TAGS);
 
   // La casilla solo completa o reabre. "En progreso" se elige en el menú
@@ -74,12 +78,14 @@ export const TaskRow = memo(function TaskRow({
     onSelect?.();
     setStatusPopped(true);
     if (task.status === 'done') {
-      void updateTask({ ...task, status: 'todo' });
+      void updateTaskWithUndo({ ...task, status: 'todo' }, { title: t(language, 'tasks', 'toastReopened'), description: task.title });
       return;
     }
     setCompleting(true);
+    // La tarea se va a "Hechas" (plegada): el aviso permite deshacerlo.
     setTimeout(() => {
-      void updateTask({ ...task, status: 'done' }).finally(() => setCompleting(false));
+      void updateTaskWithUndo({ ...task, status: 'done' }, { title: t(language, 'tasks', 'toastCompleted'), description: task.title })
+        .finally(() => setCompleting(false));
     }, COMPLETE_DELAY_MS);
   };
 
@@ -97,7 +103,9 @@ export const TaskRow = memo(function TaskRow({
     <div
       ref={rowRef}
       onClick={() => { onSelect?.(); setActiveTask(isActive ? null : task); }}
-      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
+      // El clic derecho también selecciona: si no, el menú era de una fila
+      // y el resaltado quedaba en otra.
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onSelect?.(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
       className={`flex items-start gap-3 rounded-xl px-3 py-2.5 cursor-pointer transition group ${
         isActive
           ? 'bg-indigo-500/10 border border-indigo-500/20'

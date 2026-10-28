@@ -154,7 +154,9 @@ export function KanbanBoard() {
       if (status) {
         const task = tasksRef.current.find((t) => t.id === id);
         if (task && task.status !== status) {
-          await useAppStore.getState().updateTask({ ...task, status });
+          const { updateTaskWithUndo, language: lang } = useAppStore.getState();
+          const title = status === 'done' ? 'toastCompleted' : task.status === 'done' ? 'toastReopened' : 'toastStatus';
+          await updateTaskWithUndo({ ...task, status }, { title: t(lang, 'tasks', title), description: task.title });
         }
       }
     };

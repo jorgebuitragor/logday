@@ -26,7 +26,7 @@ const GROUP_LABEL_KEY: Record<TaskGroupKey, 'groupOverdue' | 'groupToday' | 'gro
 };
 
 export function TaskList() {
-  const { tasks, activeProject, currentView, deleteTask, updateTask, isLoading, language, setActiveTask, taskSortBy, taskFilter } = useAppStore(
+  const { tasks, activeProject, currentView, deleteTask, updateTaskWithUndo, isLoading, language, setActiveTask, taskSortBy, taskFilter } = useAppStore(
     useShallow((s) => ({
       tasks: s.tasks,
       taskSortBy: s.taskSortBy,
@@ -34,7 +34,7 @@ export function TaskList() {
       activeProject: s.activeProject,
       currentView: s.currentView,
       deleteTask: s.deleteTask,
-      updateTask: s.updateTask,
+      updateTaskWithUndo: s.updateTaskWithUndo,
       isLoading: s.isLoading,
       language: s.language,
       setActiveTask: s.setActiveTask,
@@ -89,7 +89,11 @@ export function TaskList() {
   }, [activeProject, currentView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const handler = () => setNewTaskDraft({});
+    // Desde el calendario llega la fecha del día elegido.
+    const handler = (e: Event) => {
+      const due = (e as CustomEvent<{ due?: string } | null>).detail?.due;
+      setNewTaskDraft(due ? { due } : {});
+    };
     window.addEventListener('logday:new-task', handler);
     return () => window.removeEventListener('logday:new-task', handler);
   }, []);
@@ -157,14 +161,19 @@ export function TaskList() {
         // La tarea cambia de grupo: la selección pasa a la siguiente.
         const neighbor = visibleTasks[index + 1] ?? visibleTasks[index - 1];
         setFocusedId(neighbor?.id ?? null);
-        void updateTask({ ...focused, status: focused.status === 'done' ? 'todo' : 'done' });
+        const reopening = focused.status === 'done';
+        void updateTaskWithUndo(
+          { ...focused, status: reopening ? 'todo' : 'done' },
+          { title: t(language, 'tasks', reopening ? 'toastReopened' : 'toastCompleted'), description: focused.title },
+        );
       }
       else if (e.key === 'n') { e.preventDefault(); quickAddRef.current?.focus(); }
-      else if (e.key === 'Escape' && focusedId) setFocusedId(null);
+      // Con el panel abierto, Esc lo cierra (TaskEditor) y la selección se queda.
+      else if (e.key === 'Escape' && focusedId && !useAppStore.getState().activeTask) setFocusedId(null);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [currentView, newTaskDraft, visibleTasks, focusedId, setActiveTask, updateTask]);
+  }, [currentView, newTaskDraft, visibleTasks, focusedId, setActiveTask, updateTaskWithUndo, language]);
 
   if (currentView !== 'list') return newTaskModal;
 
@@ -251,6 +260,7 @@ export function TaskList() {
                         onSelect={() => setFocusedId(task.id)}
                         isNew={newTaskIds.has(task.id)}
                         isRemoving={removingIds.has(task.id)}
+                        hideDue={group.key === 'today' || group.key === 'tomorrow'}
                         staggerIndex={offset + idx}
                         onBeforeDelete={() => handleBeforeDelete(task)}
                       />

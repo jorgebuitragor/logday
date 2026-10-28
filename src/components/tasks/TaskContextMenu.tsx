@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Circle, Clock, CheckCircle2, Copy, Check, Trash2, Pencil, Plus, CalendarDays, CalendarX2, CopyPlus, Folder, ChevronRight } from 'lucide-react';
+import { Circle, Clock, CheckCircle2, Copy, Check, Trash2, Pencil, Plus, CalendarDays, X, CopyPlus, Folder, ChevronRight } from 'lucide-react';
 import { Task, TaskStatus } from '../../types/task';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
@@ -8,6 +8,7 @@ import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
 import { usePositionedMenu } from '../../hooks/usePositionedMenu';
 import { addDaysISO, localISODate } from '../../lib/localDate';
+import { formatDueLabel } from '../../lib/taskListing';
 
 const ESTIMATED_TASK_MENU = { width: 230, height: 440 };
 const ESTIMATED_NEW_TASK_MENU = { width: 190, height: 56 };
@@ -21,29 +22,36 @@ interface Props {
 }
 
 export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) {
-  const { updateTask, createTask, deleteTask, setActiveTask, language, confirmDestructiveActions, projects, showToast } = useAppStore();
+  const { updateTaskWithUndo, createTask, deleteTask, setActiveTask, language, confirmDestructiveActions, projects } = useAppStore();
   const [copied, setCopied] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
   const confirmDeleteDialog = useConfirmDelete<true>(confirmDestructiveActions);
   const anchor = useMemo(() => ({ x, y }), [x, y]);
   const { ref, style } = usePositionedMenu(anchor, { estimatedSize: ESTIMATED_TASK_MENU, onClose });
 
+  // Todas con aviso para deshacer: la tarea suele cambiar de grupo o salir
+  // de la vista, y sin el aviso no queda rastro de qué pasó.
   const handleStatusChange = async (status: TaskStatus) => {
-    await updateTask({ ...task, status });
     onClose();
+    if (status === task.status) return;
+    const title = status === 'done' ? 'toastCompleted' : task.status === 'done' ? 'toastReopened' : 'toastStatus';
+    await updateTaskWithUndo({ ...task, status }, { title: t(language, 'tasks', title), description: task.title });
   };
 
   // Acciones rápidas: sin abrir el panel para cambiar la fecha o el proyecto.
   const handleDue = async (due: string | undefined) => {
-    await updateTask({ ...task, due });
     onClose();
+    if (due === task.due) return;
+    await updateTaskWithUndo({ ...task, due }, {
+      title: t(language, 'tasks', due ? 'toastDue' : 'toastDueCleared'),
+      description: due ? `${task.title} · ${formatDueLabel(due, localISODate(), language).label}` : task.title,
+    });
   };
 
   const handleMove = async (project: string) => {
     onClose();
     if (project === task.project) return;
-    await updateTask({ ...task, project });
-    showToast({ kind: 'success', title: t(language, 'tasks', 'movedTo'), description: project });
+    await updateTaskWithUndo({ ...task, project }, { title: t(language, 'tasks', 'movedTo'), description: project });
   };
 
   // La copia va sin código (es único por tarea) y se abre para editarla.
@@ -170,7 +178,7 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
             aria-label={t(language, 'tasks', 'dueClear')}
             className="rounded-md px-1.5 py-1 text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-red-400"
           >
-            <CalendarX2 size={12} />
+            <X size={12} />
           </button>
         )}
       </div>
@@ -234,7 +242,8 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
 }
 
 // ── Menú contextual para espacio vacío (crear nueva tarea) ─────────────────
-export function NewTaskContextMenu({ x, y, onClose, onNewEvent }: { x: number; y: number; onClose: () => void; onNewEvent?: () => void }) {
+/** `due`: fecha con la que nace la tarea (el día elegido en el calendario). */
+export function NewTaskContextMenu({ x, y, onClose, onNewEvent, due }: { x: number; y: number; onClose: () => void; onNewEvent?: () => void; due?: string }) {
   const language = useAppStore((s) => s.language);
   const anchor = useMemo(() => ({ x, y }), [x, y]);
   const { ref, style } = usePositionedMenu(anchor, { estimatedSize: ESTIMATED_NEW_TASK_MENU, onClose });
@@ -247,7 +256,7 @@ export function NewTaskContextMenu({ x, y, onClose, onNewEvent }: { x: number; y
     >
       <button
         onClick={() => {
-          window.dispatchEvent(new CustomEvent('logday:new-task'));
+          window.dispatchEvent(new CustomEvent('logday:new-task', { detail: { due } }));
           onClose();
         }}
         className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"

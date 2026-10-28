@@ -1,4 +1,4 @@
-import { Bot, CalendarDays, MessagesSquare, Webhook } from 'lucide-react';
+import { Bot, CalendarDays, MessagesSquare, NotebookPen, Webhook } from 'lucide-react';
 import type { ExtensionDefinition, ExtensionId } from './types';
 
 /** Extensiones que implementa Desktop (R4). Solo metadatos: el código de
@@ -48,6 +48,17 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     secretKeys: ['url', 'secret'],
     settings: true,
     load: () => import('./outgoing-webhook').then((m) => m.default),
+  },
+  {
+    id: 'granola',
+    category: 'integration',
+    icon: NotebookPen,
+    apps: ['desktop'],
+    // Solo trae de Granola (specs/granola): no envía datos de Logday, así
+    // que no lleva el aviso de R6; el permiso se da al conectar.
+    secretKeys: ['refresh', 'client'],
+    settings: true,
+    load: () => import('./granola').then((m) => m.default),
   },
 ];
 

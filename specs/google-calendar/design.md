@@ -5,8 +5,9 @@
 Lo de "como yo" pasa a un módulo común, que reciben las dos extensiones
 con su id, sus permisos y sus entradas del llavero:
 
-- `connect(app, ext, client_id, scopes)`: loopback en `127.0.0.1:0`,
-  PKCE S256, `state`, el `opener` del navegador y 5 minutos de plazo.
+- `connect(app, ext, client_id, scopes)`: el login por loopback de
+  `oauth_loopback.rs` (común con Granola: `127.0.0.1:0`, PKCE S256,
+  `state`, el `opener` del navegador y 5 minutos de plazo).
   Guarda `ext:<ext>:google_refresh` y devuelve el correo.
 - `access_token(app, ext, client_id, force)`: el de memoria (uno por
   extensión) o uno renovado.

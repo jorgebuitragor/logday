@@ -48,3 +48,4 @@ tres archivos:
 | Chat del equipo: enviar como yo (Google Chat, OAuth) | en progreso | [`chat-como-usuario/`](./chat-como-usuario/requirements.md) |
 | Google Calendar (extensión `google-calendar`) | en progreso | [`google-calendar/`](./google-calendar/requirements.md) |
 | Webhook saliente (extensión `outgoing-webhook`, n8n) | en progreso | [`webhook-saliente/`](./webhook-saliente/requirements.md) |
+| Granola (extensión `granola`, por su MCP) | en progreso | [`granola/`](./granola/requirements.md) |

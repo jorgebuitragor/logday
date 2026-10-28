@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { invoke } from '@tauri-apps/api/core';
-import { AlertCircle, Check, Copy, KeyRound, Radio } from 'lucide-react';
+import { AlertCircle, Check, Copy, KeyRound, Loader2, Radio } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import ToggleSwitch from '../../components/shared/ToggleSwitch';
@@ -28,14 +28,17 @@ function StatusLine({ status }: { status: McpServerStatus }) {
     );
   }
   const text =
-    status.state === 'no_token' ? t(language, 'mcp', 'statusNoToken')
+    status.state === 'starting' ? t(language, 'mcp', 'statusStarting')
+    : status.state === 'no_token' ? t(language, 'mcp', 'statusNoToken')
     : status.state === 'port_in_use' ? `${t(language, 'mcp', 'statusPortInUse')} (${status.port})`
     : status.state === 'error' ? `${t(language, 'mcp', 'statusError')} ${status.message}`
     : t(language, 'mcp', 'statusStopped');
   const warn = status.state === 'port_in_use' || status.state === 'error';
   return (
     <span className={`flex items-center gap-1.5 ${warn ? 'text-amber-400' : 'text-[var(--text-hint)]'}`}>
-      <AlertCircle size={12} className="shrink-0" />
+      {status.state === 'starting'
+        ? <Loader2 size={12} className="shrink-0 animate-spin" />
+        : <AlertCircle size={12} className="shrink-0" />}
       {text}
     </span>
   );
@@ -101,7 +104,7 @@ export default function McpSettings() {
       await update(MCP_ID, { hint });
       setRevealed(token);
       // Con el token nuevo, el anterior deja de valer en el acto.
-      await restartMcpServer();
+      await restartMcpServer({ reloadToken: true });
     } catch {
       setTokenError(true);
     } finally {

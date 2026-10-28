@@ -29,9 +29,14 @@ así se prueba con vitest sin levantar un servidor.
   (puerto, token, `Arc<Server>`) y un mapa `id → Sender` de peticiones
   pendientes.
 - **Comandos:**
-  - `mcp_server_start(port)`: cierra el anterior, lee el token del
-    llavero (`ext:mcp:token`) y abre el servidor. Errores:
-    `secret_not_found`, `port_in_use`, `server_error`.
+  - `mcp_server_start(port, reloadToken?)`: cierra el anterior y abre
+    el servidor. El token se lee del llavero (`ext:mcp:token`) la primera
+    vez y con `reloadToken` (al regenerarlo); si no, usa el que guardó en
+    memoria. Así cambiar el puerto no relee el llavero: en macOS, si la
+    firma de la app cambió (cada build de QA), leerlo abre un aviso que
+    pide la contraseña, y mientras no se responde el servidor queda
+    cerrado. Errores: `secret_not_found`, `port_in_use`,
+    `server_error`.
   - `mcp_server_stop()`: `unblock()` del servidor y suelta las
     peticiones pendientes.
   - `mcp_reply(id, body)`: `body` es la respuesta JSON-RPC, o `null`
@@ -60,8 +65,10 @@ y solo local: no abre conexiones a ningún host.
 - `start()` (R4): escucha `mcp://request`, y si hay token arranca el
   servidor en el puerto de la configuración. Devuelve cómo parar:
   deja de escuchar y llama a `mcp_server_stop`.
-- El estado del servidor (escuchando, puerto ocupado, sin token, error)
-  va a un store pequeño del módulo que lee el panel.
+- El estado del servidor (abriendo, escuchando, puerto ocupado, sin
+  token, error) va a un store pequeño del módulo que lee el panel.
+  "Abriendo" se ve mientras se espera a `mcp_server_start`, que puede
+  quedar esperando el aviso del llavero.
 - `restartMcpServer()`: lo usa el panel al cambiar el puerto o el token.
 
 ### Configuración

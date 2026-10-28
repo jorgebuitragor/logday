@@ -1051,6 +1051,7 @@ const dict = {
     mcp: {
       statusListening: 'Escuchando en',
       statusStopped: 'Detenido',
+      statusStarting: 'Abriendo el servidor… Si macOS pide permiso para usar el llavero, acéptalo.',
       statusNoToken: 'Genera un token para conectar un agente.',
       statusPortInUse: 'Ese puerto está ocupado. Elige otro.',
       statusError: 'No se pudo abrir el servidor:',
@@ -2172,6 +2173,7 @@ const dict = {
     mcp: {
       statusListening: 'Listening on',
       statusStopped: 'Stopped',
+      statusStarting: 'Opening the server… If macOS asks for permission to use the keychain, allow it.',
       statusNoToken: 'Generate a token to connect an agent.',
       statusPortInUse: 'That port is in use. Choose another one.',
       statusError: 'Could not open the server:',

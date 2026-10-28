@@ -85,6 +85,7 @@ import { MermaidEditorModal } from './MermaidEditorModal';
 import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
 import { MermaidAwareCodeBlock, type MermaidActions } from './mermaidCodeBlock';
+import { ToolbarDropdown } from './ToolbarDropdown';
 import { dragUnitAtCoords, dropTargetAtCoords, moveListItem, moveTopLevelBlock, type DragUnit, type DropLine } from './noteBlockDrag';
 import { formatMermaidFence, parseMermaidBlocks } from '../../lib/mermaid';
 import { ImageLinkModal } from '../shared/ImageLinkModal';
@@ -1389,11 +1390,15 @@ export function NoteEditor() {
       && !blockContextMenu) return;
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (showBlockMenu && !blockMenuRef.current?.contains(e.target as Node)) setShowBlockMenu(false);
-      if (showCaseMenu && !caseMenuRef.current?.contains(e.target as Node)) setShowCaseMenu(false);
-      if (showEmojiMenu && !emojiMenuRef.current?.contains(e.target as Node)) setShowEmojiMenu(false);
-      if (showTableMenu && !tableMenuRef.current?.contains(e.target as Node)) setShowTableMenu(false);
-      if (showDiagramMenu && !diagramMenuRef.current?.contains(e.target as Node)) setShowDiagramMenu(false);
+      // Los menús de la barra se dibujan en un portal (ToolbarDropdown):
+      // un clic dentro del menú no está dentro de su botón.
+      const outside = (ref: React.RefObject<HTMLElement | null>, name: string) =>
+        !ref.current?.contains(target) && !target.closest?.(`[data-toolbar-menu="${name}"]`);
+      if (showBlockMenu && outside(blockMenuRef, 'block')) setShowBlockMenu(false);
+      if (showCaseMenu && outside(caseMenuRef, 'case')) setShowCaseMenu(false);
+      if (showEmojiMenu && outside(emojiMenuRef, 'emoji')) setShowEmojiMenu(false);
+      if (showTableMenu && outside(tableMenuRef, 'table')) setShowTableMenu(false);
+      if (showDiagramMenu && outside(diagramMenuRef, 'diagram')) setShowDiagramMenu(false);
       if (openCodeLangMenuIndex !== null && !target.closest('.code-block-lang-select-wrap')) {
         setOpenCodeLangMenuIndex(null);
         setCodeLangSearch('');
@@ -1917,10 +1922,7 @@ export function NoteEditor() {
                     <ChevronDown size={10} />
                   </button>
                   {showBlockMenu && (
-                    <div
-                      className="absolute top-full left-0 mt-1 z-50 min-w-[110px] rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] py-1 shadow-lg"
-                      onMouseDown={(e) => e.preventDefault()}
-                    >
+                    <ToolbarDropdown anchorRef={blockMenuRef} name="block" align="start" className="min-w-[110px] rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] py-1 shadow-lg" onMouseDown={(e) => e.preventDefault()}>
                       {options.map(({ v, label }) => (
                         <button
                           key={v}
@@ -1937,7 +1939,7 @@ export function NoteEditor() {
                           {label}
                         </button>
                       ))}
-                    </div>
+                    </ToolbarDropdown>
                   )}
                 </div>
               );
@@ -1983,10 +1985,7 @@ export function NoteEditor() {
                 title={tFn(language, 'notes', 'tipCase')}
               ><CaseSensitive size={14} /></button>
               {showCaseMenu && (
-                <div
-                  className="absolute top-full right-0 mt-1 z-50 min-w-[160px] rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] py-1 shadow-lg"
-                  onMouseDown={(e) => e.preventDefault()}
-                >
+                <ToolbarDropdown anchorRef={caseMenuRef} name="case" align="end" className="min-w-[160px] rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] py-1 shadow-lg" onMouseDown={(e) => e.preventDefault()}>
                   {([
                     { mode: 'upper', label: tFn(language, 'notes', 'caseUpper') },
                     { mode: 'lower', label: tFn(language, 'notes', 'caseLower') },
@@ -2001,7 +2000,7 @@ export function NoteEditor() {
                       {label}
                     </button>
                   ))}
-                </div>
+                </ToolbarDropdown>
               )}
             </div>
 
@@ -2022,10 +2021,7 @@ export function NoteEditor() {
                 <Smile size={13} />
               </button>
               {showEmojiMenu && (
-                <div
-                  className="absolute top-full right-0 mt-1 z-50 w-[260px] rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] p-2 shadow-lg"
-                  onMouseDown={(e) => e.preventDefault()}
-                >
+                <ToolbarDropdown anchorRef={emojiMenuRef} name="emoji" align="end" className="w-[260px] rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] p-2 shadow-lg" onMouseDown={(e) => e.preventDefault()}>
                   <p className="mb-1.5 px-1 text-[10px] uppercase tracking-wider text-[var(--text-hint)]">{tFn(language, 'notes', 'emojisLabel')}</p>
                   <input
                     type="text"
@@ -2062,7 +2058,7 @@ export function NoteEditor() {
                       {tFn(language, 'notes', 'emojisNarrowSearch')}
                     </p>
                   )}
-                </div>
+                </ToolbarDropdown>
               )}
             </div>
 
@@ -2093,10 +2089,7 @@ export function NoteEditor() {
                 title={tFn(language, 'notes', 'tipTable')}
               ><TableIcon size={13} /></button>
               {showTableMenu && (
-                <div
-                  className="absolute top-full right-0 mt-1 z-50 min-w-[180px] rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] py-1 shadow-lg"
-                  onMouseDown={(e) => e.preventDefault()}
-                >
+                <ToolbarDropdown anchorRef={tableMenuRef} name="table" align="end" className="min-w-[180px] rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] py-1 shadow-lg" onMouseDown={(e) => e.preventDefault()}>
                   <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">{tFn(language, 'notes', 'tableInsert')}</button>
                   <div className="my-1 border-t border-[var(--border)]" />
                   <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().addColumnBefore().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">{tFn(language, 'notes', 'tableAddColBefore')}</button>
@@ -2109,7 +2102,7 @@ export function NoteEditor() {
                   <div className="my-1 border-t border-[var(--border)]" />
                   <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleHeaderRow().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition">{tFn(language, 'notes', 'tableToggleHeader')}</button>
                   <button onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().deleteTable().run(); setShowTableMenu(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-red-400 hover:bg-[var(--bg-hover)] transition">{tFn(language, 'notes', 'tableDelete')}</button>
-                </div>
+                </ToolbarDropdown>
               )}
             </div>
 
@@ -2124,10 +2117,7 @@ export function NoteEditor() {
                 <Share2 size={13} />
               </button>
               {showDiagramMenu && (
-                <div
-                  className="absolute top-full right-0 mt-1 z-50 min-w-[250px] rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] py-1 shadow-lg"
-                  onMouseDown={(e) => e.preventDefault()}
-                >
+                <ToolbarDropdown anchorRef={diagramMenuRef} name="diagram" align="end" className="min-w-[250px] rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] py-1 shadow-lg" onMouseDown={(e) => e.preventDefault()}>
                   <button
                     onMouseDown={(e) => {
                       e.preventDefault();
@@ -2151,7 +2141,7 @@ export function NoteEditor() {
                       {getDiagramLabel(block.code, index)}
                     </button>
                   ))}
-                </div>
+                </ToolbarDropdown>
               )}
             </div>
         </div>

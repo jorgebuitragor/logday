@@ -7,7 +7,7 @@ import TauriWebSocket from '@tauri-apps/plugin-websocket';
 import { check as checkUpdateRemote, Update as TauriUpdate } from '@tauri-apps/plugin-updater';
 import { getVersion } from '@tauri-apps/api/app';
 import { relaunch } from '@tauri-apps/plugin-process';
-import { Task } from '../types/task';
+import { Task, TaskStatus } from '../types/task';
 import { Note } from '../types/note';
 import { OvertimeEntry, OvertimeMonthMeta } from '../types/overtime';
 import { CalendarEvent } from '../types/calendar';
@@ -15,7 +15,7 @@ import { AbsenceDay, AbsenceType } from '../types/absence';
 import { Theme, BuiltInTheme, CustomTheme } from '../types/theme';
 import { GitConfig, GitStatus, GitRemoteStatus } from '../types/git';
 import { SyncConfig, SyncConnectionStatus } from '../types/sync';
-import { AppConfig, ViewMode, ActiveSection, StartupScreen, Shortcuts, DEFAULT_SHORTCUTS, NotesView, NoteSortBy, NoteSortDir } from '../types/config';
+import { AppConfig, ViewMode, ActiveSection, StartupScreen, Shortcuts, DEFAULT_SHORTCUTS, NotesView, NoteSortBy, NoteSortDir, TaskSortBy } from '../types/config';
 import { Language, AppToast, ToastKind } from '../types/common';
 import { deriveCustomThemeVars } from '../lib/themeColor';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
@@ -52,12 +52,24 @@ import { bytesToBase64, persistYDoc, applyIncomingContentState, deliverToOpenNot
 import { applyIncomingDailyContentState, applyDailyEditorEdit, deleteDailyContentState } from '../lib/dailyContentSync';
 import { parseFrontmatter, serializeTask, parseNote, serializeNote, formatDate } from '../lib/markdown';
 import { t } from '../lib/i18n';
+import { localISODate, localISOMonth } from '../lib/localDate';
+import { EMPTY_TASK_FILTER, type TaskFilter } from '../lib/taskListing';
 import {
   toISO,
   getPreviousWorkingDay,
   buildDailyCopyText,
   dateFromISO,
 } from '../lib/colombianHolidays';
+
+/** Campos opcionales al crear una tarea (captura rápida, modal completo). */
+export interface NewTaskExtra {
+  due?: string;
+  tags?: string[];
+  status?: TaskStatus;
+  linkedPaths?: string[];
+  /** Abrir la tarea en el panel lateral al crearla (por defecto, sí). */
+  open?: boolean;
+}
 
 export interface AppState {
   // Config
@@ -134,6 +146,10 @@ export interface AppState {
   notesViewDefault: NotesView;
   noteSortBy: NoteSortBy;
   noteSortDir: NoteSortDir;
+  taskSortBy: TaskSortBy;
+  /** Filtro de tareas común a lista, Kanban y calendario. No se guarda:
+   *  dura lo que la sesión. El proyecto lo da la barra lateral. */
+  taskFilter: TaskFilter;
   language: Language;
   fontSize: number;
   isSettingsOpen: boolean;
@@ -198,12 +214,22 @@ export interface AppState {
   renameProject: (project: string, newName: string) => Promise<void>;
   deleteProject: (project: string) => Promise<void>;
   moveProject: (project: string, targetParent: string) => Promise<void>;
-  createTask: (title: string, project?: string, content?: string, taskCode?: string) => Promise<Task>;
-  updateTask: (task: Task) => Promise<void>;
+  createTask: (title: string, project?: string, content?: string, taskCode?: string, extra?: NewTaskExtra) => Promise<Task>;
+  /** `opts.prev`: la tarea tal como está, cuando no está en la lista
+   *  visible (p. ej. al deshacer un cambio de proyecto que la sacó de ahí). */
+  updateTask: (task: Task, opts?: { prev?: Task }) => Promise<void>;
   deleteTask: (task: Task) => Promise<void>;
   setActiveTask: (task: Task | null) => void;
   setActiveCalendarEvent: (event: CalendarEvent | null) => void;
   moveTask: (task: Task, toProject: string) => Promise<void>;
+  /** updateTask con un aviso que permite deshacer el cambio (completar,
+   *  fecha, estado, mover) desde la lista, el Kanban o el menú. */
+  updateTaskWithUndo: (next: Task, toast: { title: string; description?: string }) => Promise<void>;
+  /** Lo mismo para varias tareas a la vez (selección múltiple, "mover
+   *  vencidas a hoy"): un solo aviso y un solo "Deshacer" para todas. */
+  updateTasksWithUndo: (nexts: Task[], toast: { title: string; description?: string }) => Promise<void>;
+  /** Elimina varias tareas (a la papelera) con un solo aviso para deshacer. */
+  deleteTasks: (tasks: Task[]) => Promise<void>;
 
   // Notes
   folderTags: Record<string, string[]>;
@@ -213,6 +239,8 @@ export interface AppState {
   setNotesView: (view: NotesView) => void;
   setNotesViewDefault: (view: NotesView) => void;
   setNoteSort: (by: NoteSortBy, dir: NoteSortDir) => void;
+  setTaskSort: (by: TaskSortBy) => void;
+  setTaskFilter: (patch: Partial<TaskFilter>) => void;
   /** En la vista de árbol: la carpeta donde se crean las notas nuevas.
    *  No recarga ni cierra la nota abierta. */
   setTreeNoteFolder: (folder: string | null) => void;
@@ -279,7 +307,7 @@ export interface AppState {
   addLinkedPath: () => Promise<void>;
   removeLinkedPath: (task: Task, path: string) => Promise<void>;
   toggleSidebar: () => void;
-  showToast: (toast: { kind: ToastKind; title: string; description?: string; durationMs?: number }) => string;
+  showToast: (toast: { kind: ToastKind; title: string; description?: string; durationMs?: number; action?: AppToast['action'] }) => string;
   preExitToast: (id: string) => void;
   dismissToast: (id: string) => void;
   setConfirmDestructiveActions: (enabled: boolean) => Promise<void>;
@@ -291,7 +319,8 @@ export interface AppState {
   setSidebarLabelsVisible: (visible: boolean) => Promise<void>;
   setTrashAutoPurgeEnabled: (enabled: boolean) => Promise<void>;
   listTrash: () => Promise<trash.TrashListItem[]>;
-  restoreFromTrash: (entity: trash.TrashEntity, key: string) => Promise<void>;
+  /** `silent`: sin aviso (al deshacer un borrado de varias tareas, que avisa una vez). */
+  restoreFromTrash: (entity: trash.TrashEntity, key: string, opts?: { silent?: boolean }) => Promise<void>;
   deleteTrashItemForever: (entity: trash.TrashEntity, key: string) => Promise<void>;
   emptyTrash: () => Promise<void>;
   setTheme: (theme: Theme) => void;
@@ -393,7 +422,7 @@ async function persistConfig(get: SyncGet): Promise<void> {
     configDir, basePath, startupScreen, language, confirmDestructiveActions,
     notificationsEnabled, defaultReminderMinutes, workWeekDays, holidaysAsNonWork,
     animationsEnabled, trashAutoPurgeEnabled, sidebarLabelsVisible, activeProject, activeNoteFolder,
-    notesView, notesViewDefault, noteSortBy, noteSortDir,
+    notesView, notesViewDefault, noteSortBy, noteSortDir, taskSortBy,
   } = get();
   if (!configDir || !basePath) return;
   await saveConfig(configDir, {
@@ -414,6 +443,7 @@ async function persistConfig(get: SyncGet): Promise<void> {
     notesViewDefault,
     noteSortBy,
     noteSortDir,
+    taskSortBy,
   });
 }
 
@@ -1484,7 +1514,12 @@ async function applyRemoteTaskChange(get: SyncGet, set: SyncSet, change: SyncCha
   }
 
   const finalTask = merged as unknown as Task;
-  await fs.writeFile(filePath, serializeTask(finalTask));
+  // Un cambio de proyecto remoto también mueve el archivo de carpeta.
+  if (existing && existing.project !== finalTask.project) {
+    finalTask.filePath = taskFilePath(basePath, finalTask.project, change.id);
+  }
+  await fs.writeFile(finalTask.filePath, serializeTask(finalTask));
+  if (existing && existing.filePath !== finalTask.filePath) await fs.deleteFile(existing.filePath).catch(() => {});
   const visible = taskInView(finalTask.project, get().activeProject);
   set((state) => {
     // Se decide con el estado de este momento, no con el de antes de
@@ -1559,6 +1594,20 @@ async function applyRemoteNoteChange(get: SyncGet, set: SyncSet, change: SyncCha
   });
   const contentState = (change.data as NoteApiResponse).content_state;
   if (contentState) void applyNoteContentUpdate(get, set, change.id, contentState);
+}
+
+/** Manda una tarea a la papelera y la borra del disco y de la lista. Sin
+ *  aviso: lo da quien llama (una tarea o varias). */
+async function trashTask(get: SyncGet, set: SyncSet, task: Task): Promise<void> {
+  const { basePath } = get();
+  if (basePath) await trash.writeTrashRecord(basePath, 'task', task.id, task.title, task);
+  await fs.deleteFile(task.filePath);
+  set((state) => ({
+    tasks: state.tasks.filter((t) => t.id !== task.id),
+    activeTask: state.activeTask?.id === task.id ? null : state.activeTask,
+  }));
+  if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+  void syncDeleteTask(get, set, task.id);
 }
 
 async function applyRemoteCalendarEventChange(get: SyncGet, set: SyncSet, change: SyncChange): Promise<void> {
@@ -2245,6 +2294,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   notesViewDefault: 'list',
   noteSortBy: 'updated',
   noteSortDir: 'desc',
+  taskSortBy: 'due',
+  taskFilter: EMPTY_TASK_FILTER,
   language: (localStorage.getItem('language') as Language) || 'es',
   fontSize: Number(localStorage.getItem('fontSize')) || 17,
   isSettingsOpen: false,
@@ -2308,7 +2359,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   releaseNotes: null,
 
   overtimeEntries: [],
-  overtimeMonth: new Date().toISOString().slice(0, 7),
+  overtimeMonth: localISOMonth(),
   overtimeMonths: [],
   overtimeMeta: (() => {
     try { return { colaborador: '', cedula: '', ...JSON.parse(localStorage.getItem('overtimeMeta') || '{}') }; }
@@ -2318,10 +2369,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeCalendarEvent: null,
   absenceDays: [],
 
-  showToast: ({ kind, title, description, durationMs = 3200 }) => {
+  showToast: ({ kind, title, description, durationMs, action }) => {
     const id = uuidv4();
+    // Con botón, más tiempo: hay que leerlo y llegar a pulsarlo.
+    durationMs ??= action ? 6000 : 3200;
     set((state) => ({
-      toasts: [...state.toasts, { id, kind, title, description }],
+      toasts: [...state.toasts, { id, kind, title, description, action }],
     }));
     if (durationMs > 0) {
       window.setTimeout(() => {
@@ -2373,6 +2426,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             notesView: cfg.notesView ?? cfg.notesViewDefault ?? 'list',
             noteSortBy: cfg.noteSortBy ?? 'updated',
             noteSortDir: cfg.noteSortDir ?? 'desc',
+            taskSortBy: cfg.taskSortBy ?? 'due',
           });
 
           const lastProject = cfg.lastOpenedProject || null;
@@ -2697,7 +2751,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadProjects();
   },
 
-  createTask: async (title, project, content = '', taskCode?: string) => {
+  createTask: async (title, project, content = '', taskCode?: string, extra: NewTaskExtra = {}) => {
     const { basePath, activeProject } = get();
     if (!basePath) throw new Error('No base path');
     const targetProject = project || activeProject || 'inbox';
@@ -2719,23 +2773,32 @@ export const useAppStore = create<AppState>((set, get) => ({
     const task: Task = {
       id,
       title: title.trim() || 'Nueva tarea',
-      status: 'todo',
-      tags: [],
+      status: extra.status ?? 'todo',
+      tags: extra.tags ?? [],
       project: targetProject,
       created: today,
-      linked_paths: [],
+      ...(extra.due ? { due: extra.due } : {}),
+      ...(extra.status === 'done' ? { completedAt: today } : {}),
+      linked_paths: extra.linkedPaths ?? [],
       content,
       taskCode: taskCode || undefined,
       filePath: taskFilePath(basePath, targetProject, id),
     };
     await fs.writeFile(task.filePath, serializeTask(task));
-    set((state) => ({ tasks: [task, ...state.tasks], activeTask: task }));
+    // La captura rápida no abre el panel (`open: false`), y una tarea de
+    // otro proyecto no se agrega a la lista filtrada que se está viendo.
+    const open = extra.open ?? true;
+    const visible = taskInView(task.project, get().activeProject);
+    set((state) => ({
+      tasks: visible ? [task, ...state.tasks] : state.tasks,
+      activeTask: open ? task : state.activeTask,
+    }));
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
     void syncCreateTask(get, set, task);
     return task;
   },
 
-  updateTask: async (task) => {
+  updateTask: async (task, opts) => {
     // Validate taskCode uniqueness (skip own id)
     if (task.taskCode) {
       const duplicate = get().tasks.find(
@@ -2752,7 +2815,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
-    const prev = get().tasks.find((t) => t.id === task.id);
+    const prev = get().tasks.find((t) => t.id === task.id) ?? opts?.prev;
     const today = formatDate(new Date());
     const normalizedTask: Task = { ...task };
 
@@ -2766,9 +2829,24 @@ export const useAppStore = create<AppState>((set, get) => ({
       delete normalizedTask.completedAt;
     }
 
+    // Cambiar de proyecto mueve el archivo a la carpeta del proyecto nuevo.
+    // Antes solo cambiaba el frontmatter: el archivo quedaba en la carpeta
+    // vieja y la tarea seguía apareciendo al filtrar por ese proyecto.
+    const { basePath } = get();
+    const oldFilePath = normalizedTask.filePath;
+    if (basePath && prev && prev.project !== normalizedTask.project) {
+      normalizedTask.filePath = taskFilePath(basePath, normalizedTask.project, normalizedTask.id);
+    }
     await fs.writeFile(normalizedTask.filePath, serializeTask(normalizedTask));
+    if (oldFilePath !== normalizedTask.filePath) await fs.deleteFile(oldFilePath).catch(() => {});
+    const visible = taskInView(normalizedTask.project, get().activeProject);
     set((state) => ({
-      tasks: state.tasks.map((t) => (t.id === normalizedTask.id ? normalizedTask : t)),
+      // Si vuelve a la vista (deshacer un cambio de proyecto), se agrega.
+      tasks: visible
+        ? state.tasks.some((t) => t.id === normalizedTask.id)
+          ? state.tasks.map((t) => (t.id === normalizedTask.id ? normalizedTask : t))
+          : [normalizedTask, ...state.tasks]
+        : state.tasks.filter((t) => t.id !== normalizedTask.id),
       activeTask: state.activeTask?.id === normalizedTask.id ? normalizedTask : state.activeTask,
     }));
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
@@ -2778,37 +2856,90 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   deleteTask: async (task) => {
     const { basePath } = get();
-    if (basePath) await trash.writeTrashRecord(basePath, 'task', task.id, task.title, task);
-    await fs.deleteFile(task.filePath);
+    await trashTask(get, set, task);
     const language = get().language;
-    set((state) => ({
-      tasks: state.tasks.filter((t) => t.id !== task.id),
-      activeTask: state.activeTask?.id === task.id ? null : state.activeTask,
-    }));
+    // Va a la papelera (clave = id), así que se puede deshacer desde el aviso.
     get().showToast({
       kind: 'success',
       title: t(language, 'toast', 'taskDeleted'),
       description: task.title,
+      action: basePath
+        ? { label: t(language, 'toast', 'undo'), onClick: () => void get().restoreFromTrash('task', task.id) }
+        : undefined,
     });
-    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
-    void syncDeleteTask(get, set, task.id);
+  },
+
+  deleteTasks: async (tasks) => {
+    if (tasks.length === 1) return get().deleteTask(tasks[0]);
+    const { basePath, language } = get();
+    for (const task of tasks) await trashTask(get, set, task);
+    get().showToast({
+      kind: 'success',
+      title: t(language, 'tasks', 'toastBulkDeleted'),
+      description: t(language, 'tasks', 'nTasks').replace('{n}', String(tasks.length)),
+      action: basePath
+        ? {
+            label: t(language, 'toast', 'undo'),
+            onClick: () => {
+              void (async () => {
+                for (const task of tasks) await get().restoreFromTrash('task', task.id, { silent: true });
+              })();
+            },
+          }
+        : undefined,
+    });
   },
 
   setActiveTask: (task) => set({ activeTask: task, activeCalendarEvent: null }),
   setActiveCalendarEvent: (event) => set({ activeCalendarEvent: event, activeTask: null }),
 
   moveTask: async (task, toProject) => {
-    const { basePath } = get();
-    if (!basePath || task.project === toProject) return;
-    const newFilePath = taskFilePath(basePath, toProject, task.id);
-    const updatedTask: Task = { ...task, project: toProject, filePath: newFilePath };
-    await fs.writeFile(newFilePath, serializeTask(updatedTask));
-    await fs.deleteFile(task.filePath);
-    set((state) => ({
-      tasks: state.tasks.map((t) => (t.id === task.id ? updatedTask : t)),
-      activeTask: state.activeTask?.id === task.id ? updatedTask : state.activeTask,
-    }));
-    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    if (task.project === toProject) return;
+    // updateTask mueve el archivo y sincroniza el cambio de proyecto.
+    await get().updateTask({ ...task, project: toProject });
+  },
+
+  updateTaskWithUndo: (next, toast) => get().updateTasksWithUndo([next], toast),
+
+  updateTasksWithUndo: async (nexts, toast) => {
+    const live = (id: string) => {
+      const state = get();
+      return state.tasks.find((t) => t.id === id) ?? (state.activeTask?.id === id ? state.activeTask : undefined);
+    };
+    // Deshacer devuelve solo los campos que cambió esta acción, sobre la
+    // tarea como esté en ese momento: si entre medio se editó otra cosa (o
+    // llegó un cambio por sync), eso se conserva.
+    const fields = ['status', 'due', 'project', 'completedAt'] as const;
+    const undo: { after: Task; restore: Partial<Task> }[] = [];
+    for (const next of nexts) {
+      const prev = live(next.id) ?? next;
+      await get().updateTask(next);
+      // Si el cambio la sacó de la lista visible (otro proyecto), el
+      // deshacer parte de cómo quedó: con el archivo ya en la carpeta nueva.
+      const { basePath } = get();
+      const after: Task = live(next.id) ?? {
+        ...next,
+        filePath: basePath && prev.project !== next.project ? taskFilePath(basePath, next.project, next.id) : next.filePath,
+      };
+      const changed = fields.filter((f) => prev[f] !== next[f]);
+      if (changed.length) undo.push({ after, restore: Object.fromEntries(changed.map((f) => [f, prev[f]])) as Partial<Task> });
+    }
+    if (!undo.length) return;
+    get().showToast({
+      kind: 'success',
+      ...toast,
+      action: {
+        label: t(get().language, 'toast', 'undo'),
+        onClick: () => {
+          void (async () => {
+            for (const { after, restore } of undo) {
+              const current = live(after.id) ?? after;
+              await get().updateTask({ ...current, ...restore }, { prev: current });
+            }
+          })();
+        },
+      },
+    });
   },
 
   // ── Notes ──────────────────────────────────────────────────
@@ -2914,6 +3045,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ noteSortBy: by, noteSortDir: dir });
     persistConfig(get).catch(() => {});
   },
+
+  setTaskSort: (by) => {
+    set({ taskSortBy: by });
+    persistConfig(get).catch(() => {});
+  },
+
+  setTaskFilter: (patch) => set((s) => ({ taskFilter: { ...s.taskFilter, ...patch } })),
 
   setTreeNoteFolder: (folder) => {
     set({ activeNoteFolder: folder });
@@ -4063,7 +4201,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { serverUrl } = get().syncConfig;
     const data = await withSyncAuth(get, set, (token) => exportAccountRemote(serverUrl, token));
     const dest = await saveDialog({
-      defaultPath: `logday-datos-${new Date().toISOString().slice(0, 10)}.json`,
+      defaultPath: `logday-datos-${localISODate()}.json`,
       filters: [{ name: 'JSON', extensions: ['json'] }],
     });
     if (!dest) return;
@@ -4326,7 +4464,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     return trash.listTrashRecords(basePath);
   },
 
-  restoreFromTrash: async (entity, key) => {
+  restoreFromTrash: async (entity, key, opts) => {
     const { basePath, language } = get();
     if (!basePath) return;
     const record = await trash.readTrashRecord(basePath, entity, key);
@@ -4386,6 +4524,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     await trash.deleteTrashRecord(basePath, entity, key);
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    if (opts?.silent) return;
     get().showToast({
       kind: 'success',
       title: t(language, 'toast', 'trashRestored'),

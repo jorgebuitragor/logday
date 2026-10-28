@@ -1,17 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Circle, Clock, CheckCircle2, Calendar, GripVertical, X, ChevronDown } from 'lucide-react';
+import { Plus, Circle, Clock, CheckCircle2, GripVertical, Check } from 'lucide-react';
 import { Task, TaskStatus } from '../../types/task';
 import { useAppStore } from '../../store/appStore';
 import { TaskContextMenu, NewTaskContextMenu } from './TaskContextMenu';
 import { t } from '../../lib/i18n';
-import { ModalOverlay } from '../shared/ModalOverlay';
-import { ModalPanel } from '../shared/ModalPanel';
+import { QuickAddInput } from './QuickAddInput';
+import { localISODate } from '../../lib/localDate';
+import { filterTasks, sortColumn } from '../../lib/taskListing';
+import { addDaysISO } from '../../lib/localDate';
+import { TaskMeta } from './TaskMeta';
+import { TaskFilterBar } from './TaskFilterBar';
 
 const COLUMN_DEFS: { status: TaskStatus; color: string; border: string; Icon: React.ElementType }[] = [
   { status: 'todo',        color: 'text-zinc-400',  border: 'border-zinc-600/30',  Icon: Circle },
   { status: 'in-progress', color: 'text-amber-400', border: 'border-amber-500/30', Icon: Clock },
   { status: 'done',        color: 'text-green-400', border: 'border-green-500/30', Icon: CheckCircle2 },
 ];
+
+const DONE_RECENT_DAYS = 14;
 
 // Variable de módulo para el id en drag (evita problemas de closure en async)
 let _draggingId: string | null = null;
@@ -24,17 +30,25 @@ interface KanbanCardProps {
 }
 
 function KanbanCard({ task, isDragging, onPointerDown, staggerIndex = 0 }: KanbanCardProps) {
-  const { setActiveTask, activeTask } = useAppStore();
+  const { setActiveTask, activeTask, language, updateTaskWithUndo } = useAppStore();
   const isActive = activeTask?.id === task.id;
-  const today = new Date().toISOString().slice(0, 10);
-  const isOverdue = task.due && task.due < today && task.status !== 'done';
+  const isDone = task.status === 'done';
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+
+  // Completar o reabrir sin arrastrar a la otra columna, con deshacer.
+  const toggleDone = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    void updateTaskWithUndo({ ...task, status: isDone ? 'todo' : 'done' }, {
+      title: t(language, 'tasks', isDone ? 'toastReopened' : 'toastCompleted'),
+      description: task.title,
+    });
+  };
 
   return (
     <>
     <div
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
-      className={`kanban-card-enter kanban-d${Math.min(staggerIndex, 7)} rounded-xl border p-3.5 transition select-none ${
+      className={`kanban-card-enter kanban-d${Math.min(staggerIndex, 7)} group rounded-xl border p-3 transition select-none ${
         isDragging
           ? 'opacity-40 border-indigo-400/40 bg-indigo-500/5'
           : isActive
@@ -46,33 +60,33 @@ function KanbanCard({ task, isDragging, onPointerDown, staggerIndex = 0 }: Kanba
         setActiveTask(isActive ? null : task);
       }}
     >
-      <div className="flex items-start gap-2">
+      <div className="flex items-start gap-1.5">
         <div
           className="mt-0.5 shrink-0 touch-none text-[var(--text-faint)] hover:text-[var(--text-hint)] cursor-grab"
           onPointerDown={(e) => onPointerDown(e, task.id)}
         >
           <GripVertical size={13} />
         </div>
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={isDone}
+          aria-label={t(language, 'tasks', isDone ? 'markUndone' : 'markDone')}
+          title={t(language, 'tasks', isDone ? 'markUndone' : 'markDone')}
+          onClick={toggleDone}
+          className={`mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-[1.5px] transition ${
+            isDone
+              ? 'border-green-500 bg-green-500 text-white'
+              : 'border-[var(--text-hint)] text-transparent hover:border-green-500 hover:text-green-500'
+          }`}
+        >
+          <Check size={10} strokeWidth={3} />
+        </button>
         <div className="flex-1 min-w-0">
-          <p className={`text-sm font-medium leading-snug ${task.status === 'done' ? 'line-through text-[var(--text-hint)]' : 'text-[var(--text-body)]'}`}>
+          <p className={`text-sm font-medium leading-snug ${isDone ? 'line-through text-[var(--text-hint)]' : 'text-[var(--text-body)]'}`}>
             {task.title}
           </p>
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {task.project !== 'inbox' && (
-              <span className="text-[9px] text-[var(--text-hint)]">{task.project}</span>
-            )}
-            {task.due && (
-              <span className={`flex items-center gap-0.5 text-[9px] ${isOverdue ? 'text-red-400' : 'text-[var(--text-hint)]'}`}>
-                <Calendar size={8} />
-                {task.due}
-              </span>
-            )}
-            {task.tags.slice(0, 2).map((tag) => (
-              <span key={tag} className="rounded-full bg-indigo-500/10 px-1.5 py-0.5 text-[8px] text-indigo-400">
-                {tag}
-              </span>
-            ))}
-          </div>
+          <TaskMeta task={task} language={language} due={{ today: localISODate() }} />
         </div>
       </div>
     </div>
@@ -99,83 +113,13 @@ function DragGhost({ task, x, y }: { task: Task; x: number; y: number }) {
   );
 }
 
-function ProjectSelect({ value, options, onChange, placeholder }: {
-  value: string | null;
-  options: string[];
-  onChange: (v: string | null) => void;
-  placeholder: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener('mousedown', handler);
-    return () => window.removeEventListener('mousedown', handler);
-  }, [open]);
-
-  const label = value ?? placeholder;
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((s) => !s)}
-        className={`flex min-w-[9rem] items-center justify-between gap-2 rounded-lg border px-3 py-1.5 text-left text-xs transition ${
-          open
-            ? 'border-indigo-500/60 bg-indigo-500/10 text-[var(--text-secondary)]'
-            : 'border-[var(--border-card)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--border-high)] hover:bg-[var(--bg-hover)]'
-        }`}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-      >
-        <span className="font-medium truncate">{label}</span>
-        <ChevronDown size={12} className={`shrink-0 text-[var(--text-hint)] transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && (
-        <div className="absolute left-0 z-30 mt-1.5 min-w-full overflow-hidden rounded-lg border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl">
-          <div role="listbox" className="p-1">
-            <button
-              type="button"
-              role="option"
-              aria-selected={value === null}
-              onClick={() => { onChange(null); setOpen(false); }}
-              className={`w-full rounded-md px-3 py-1.5 text-left text-xs font-medium transition ${
-                value === null
-                  ? 'bg-indigo-500/10 text-indigo-400'
-                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-              }`}
-            >
-              {placeholder}
-            </button>
-            {options.map((opt) => (
-              <button
-                key={opt}
-                type="button"
-                role="option"
-                aria-selected={opt === value}
-                onClick={() => { onChange(opt); setOpen(false); }}
-                className={`w-full rounded-md px-3 py-1.5 text-left text-xs font-medium transition ${
-                  opt === value
-                    ? 'bg-indigo-500/10 text-indigo-400'
-                    : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-                }`}
-              >
-                {opt}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function KanbanBoard() {
-  const { tasks, currentView, projects, language } = useAppStore();
+  const { tasks, currentView, language, taskFilter, taskSortBy, activeProject } = useAppStore();
+  // La columna de hechas muestra solo las de los últimos días: con meses de
+  // uso, todas juntas son una pared que empuja todo lo demás.
+  const [showAllDone, setShowAllDone] = useState(false);
+  const recentDoneFrom = addDaysISO(localISODate(), -DONE_RECENT_DAYS);
+  const [addingStatus, setAddingStatus] = useState<TaskStatus | null>(null);
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
 
@@ -194,28 +138,9 @@ export function KanbanBoard() {
   const [targetStatus, setTargetStatus] = useState<TaskStatus | null>(null);
   const [emptyCtxMenu, setEmptyCtxMenu] = useState<{ x: number; y: number } | null>(null);
 
-  // ── Filtros ──────────────────────────────────────────────────────────────────
-  const [filterProject, setFilterProject] = useState<string | null>(null);
-  const [filterTags, setFilterTags] = useState<string[]>([]);
-
-  const allTags = useMemo(() => {
-    const s = new Set<string>();
-    tasks.forEach((t) => t.tags.forEach((tag) => s.add(tag)));
-    return Array.from(s).sort();
-  }, [tasks]);
-
-  const filteredTasks = useMemo(() => {
-    return tasks.filter((t) => {
-      if (filterProject && t.project !== filterProject) return false;
-      if (filterTags.length > 0 && !filterTags.some((tag) => t.tags.includes(tag))) return false;
-      return true;
-    });
-  }, [tasks, filterProject, filterTags]);
-
-  const toggleFilterTag = (tag: string) =>
-    setFilterTags((prev) => prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]);
-
-  const isFiltered = !!filterProject || filterTags.length > 0;
+  // Filtro común (búsqueda y tags; el estado son las columnas) y el mismo
+  // orden que la lista. El proyecto lo da la barra lateral.
+  const filteredTasks = useMemo(() => filterTasks(tasks, taskFilter, { ignoreStatus: true }), [tasks, taskFilter]);
 
   useEffect(() => {
     if (!draggingId) return;
@@ -241,7 +166,9 @@ export function KanbanBoard() {
       if (status) {
         const task = tasksRef.current.find((t) => t.id === id);
         if (task && task.status !== status) {
-          await useAppStore.getState().updateTask({ ...task, status });
+          const { updateTaskWithUndo, language: lang } = useAppStore.getState();
+          const title = status === 'done' ? 'toastCompleted' : task.status === 'done' ? 'toastReopened' : 'toastStatus';
+          await updateTaskWithUndo({ ...task, status }, { title: t(lang, 'tasks', title), description: task.title });
         }
       }
     };
@@ -273,53 +200,20 @@ export function KanbanBoard() {
     >
       {/* Header + filtros */}
       <div className="border-b border-[var(--border)] px-6 pt-4 pb-3 space-y-2.5">
-        <h1 className="text-lg font-semibold text-[var(--text-primary)]">{t(language, 'tasks', 'kanbanTitle')}</h1>
+        {/* El proyecto, como en la lista: se ve que el tablero está filtrado. */}
+        <h1 className="text-lg font-semibold text-[var(--text-primary)] capitalize">{activeProject ?? t(language, 'tasks', 'kanbanTitle')}</h1>
 
-        {/* Barra de filtros */}
-        {(projects.length > 1 || allTags.length > 0) && (
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Proyecto */}
-            {projects.length > 1 && (
-              <ProjectSelect
-                value={filterProject}
-                options={projects}
-                onChange={setFilterProject}
-                placeholder={t(language, 'tasks', 'allProjects')}
-              />
-            )}
-
-            {/* Tags */}
-            {allTags.map((tag) => (
-              <button
-                key={tag}
-                onClick={() => toggleFilterTag(tag)}
-                className={`rounded-full px-2.5 py-0.5 text-[10px] border transition ${
-                  filterTags.includes(tag)
-                    ? 'border-indigo-400/50 bg-indigo-500/15 text-indigo-400'
-                    : 'border-[var(--border-card)] bg-[var(--bg-surface)] text-[var(--text-hint)] hover:border-indigo-400/40 hover:text-indigo-400'
-                }`}
-              >
-                {tag}
-              </button>
-            ))}
-
-            {/* Limpiar filtros */}
-            {isFiltered && (
-              <button
-                onClick={() => { setFilterProject(null); setFilterTags([]); }}
-                className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] text-[var(--text-hint)] transition hover:text-red-400"
-              >
-                <X size={9} /> {t(language, 'tasks', 'clearFilters')}
-              </button>
-            )}
-          </div>
-        )}
+        <TaskFilterBar showStatus={false} />
       </div>
 
       <div key={boardKey} className="flex flex-1 gap-4 overflow-x-auto p-5">
         {COLUMNS.map((col, colIndex) => {
           const { Icon } = col;
-          const colTasks = filteredTasks.filter((t) => t.status === col.status);
+          const allColTasks = sortColumn(filteredTasks.filter((t) => t.status === col.status), taskSortBy);
+          const olderDone = col.status === 'done' ? allColTasks.filter((t) => (t.completedAt ?? '') < recentDoneFrom).length : 0;
+          const colTasks = col.status === 'done' && !showAllDone
+            ? allColTasks.filter((t) => (t.completedAt ?? '') >= recentDoneFrom)
+            : allColTasks;
           const isTarget = targetStatus === col.status;
 
           return (
@@ -337,13 +231,24 @@ export function KanbanBoard() {
                 <div className="flex items-center gap-2">
                   <Icon size={14} className={col.color} />
                   <span className={`text-sm font-medium ${col.color}`}>{col.label}</span>
-                  <span className="text-xs text-[var(--text-hint)]">{colTasks.length}</span>
+                  <span className="text-xs text-[var(--text-hint)]">{allColTasks.length}</span>
                 </div>
-                <KanbanAddButton status={col.status} />
+                <button
+                  onClick={() => setAddingStatus(col.status)}
+                  aria-label={t(language, 'tasks', 'newTask')}
+                  title={t(language, 'tasks', 'newTask')}
+                  className="rounded-lg p-1 text-[var(--text-hint)] transition hover:text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)]"
+                >
+                  <Plus size={14} />
+                </button>
               </div>
 
               {/* Tarjetas */}
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {/* Captura rápida, la misma de la lista, con el estado de la columna. */}
+                {addingStatus === col.status && (
+                  <QuickAddInput compact autoFocus status={col.status} onDismiss={() => setAddingStatus(null)} />
+                )}
                 {colTasks.map((task, cardIndex) => (
                   <KanbanCard
                     key={task.id}
@@ -353,7 +258,17 @@ export function KanbanBoard() {
                     staggerIndex={cardIndex}
                   />
                 ))}
-                {colTasks.length === 0 && !draggingTask && (
+                {olderDone > 0 && (
+                  <button
+                    onClick={() => setShowAllDone((v) => !v)}
+                    className="w-full rounded-lg py-1.5 text-center text-xs text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+                  >
+                    {showAllDone
+                      ? t(language, 'tasks', 'showRecentDone')
+                      : t(language, 'tasks', 'showAllDone').replace('{n}', String(olderDone))}
+                  </button>
+                )}
+                {colTasks.length === 0 && !olderDone && !draggingTask && (
                   <p className="py-4 text-center text-xs text-[var(--text-faint)] italic">{t(language, 'tasks', 'noTasks')}</p>
                 )}
                 {isTarget && draggingTask && (
@@ -376,48 +291,5 @@ export function KanbanBoard() {
         />
       )}
     </div>
-  );
-}
-
-function KanbanAddButton({ status }: { status: TaskStatus }) {
-  const { updateTask, createTask, activeProject, language } = useAppStore();
-  const [newTitle, setNewTitle] = useState('');
-  const [isAdding, setIsAdding] = useState(false);
-
-  const handleCreate = async (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && newTitle.trim()) {
-      const task = await createTask(newTitle.trim(), activeProject || 'inbox');
-      await updateTask({ ...task, status });
-      setNewTitle('');
-      setIsAdding(false);
-    }
-    if (e.key === 'Escape') { setNewTitle(''); setIsAdding(false); }
-  };
-
-  return (
-    <>
-      <button
-        onClick={() => setIsAdding(true)}
-        className="rounded-lg p-1 text-[var(--text-hint)] transition hover:text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)]"
-      >
-        <Plus size={14} />
-      </button>
-      {isAdding && (
-        <ModalOverlay onClose={() => { setIsAdding(false); setNewTitle(''); }}>
-          <ModalPanel className="modal-spring-in w-72 rounded-2xl border border-[var(--border)] bg-[var(--bg-panel)] p-4 shadow-2xl">
-            <p className="mb-2 text-xs font-medium text-[var(--text-secondary)]">{t(language, 'tasks', 'newTask')}</p>
-            <input
-              autoFocus
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              onKeyDown={handleCreate}
-              placeholder={t(language, 'tasks', 'taskNamePlaceholder')}
-              className="w-full rounded-xl border border-indigo-500/40 bg-[var(--bg-surface)] px-3 py-2.5 text-sm text-[var(--text-primary)] outline-none placeholder-[var(--text-hint)]"
-            />
-            <p className="mt-1.5 text-[10px] text-[var(--text-faint)]">{t(language, 'tasks', 'enterToCreate')}</p>
-          </ModalPanel>
-        </ModalOverlay>
-      )}
-    </>
   );
 }

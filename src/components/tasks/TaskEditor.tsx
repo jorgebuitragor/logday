@@ -10,22 +10,35 @@ import {
   Plus,
   AlertTriangle,
   ChevronDown,
+  CircleDot,
+  Clock,
+  Hash,
 } from 'lucide-react';
 import { RichTextEditor } from './RichTextEditor';
+import { TagSuggestInput } from './TagSuggestInput';
 import { AppDatePicker } from '../shared/AppDatePicker';
 import { Task, TaskStatus } from '../../types/task';
 import { useAppStore } from '../../store/appStore';
 import { fs } from '../../lib/invoke';
 import { t } from '../../lib/i18n';
+import { formatLongDate } from '../../lib/taskListing';
 import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
 import { useFieldDrafts } from '../../hooks/useFieldDrafts';
 
-const STATUS_OPTIONS: { value: TaskStatus; color: string }[] = [
-  { value: 'todo', color: 'text-zinc-400 bg-zinc-400/10' },
-  { value: 'in-progress', color: 'text-amber-400 bg-amber-400/10' },
-  { value: 'done', color: 'text-green-400 bg-green-400/10' },
+const STATUS_OPTIONS: { value: TaskStatus; color: string; label: 'statusTodo' | 'statusInProgress' | 'statusDone' }[] = [
+  { value: 'todo', color: 'text-zinc-300 bg-zinc-400/15', label: 'statusTodo' },
+  { value: 'in-progress', color: 'text-amber-400 bg-amber-400/15', label: 'statusInProgress' },
+  { value: 'done', color: 'text-green-400 bg-green-400/15', label: 'statusDone' },
 ];
+
+// Todos los campos del panel con la misma forma: etiqueta con ícono a la
+// izquierda y el valor como un control sin borde que se resalta al pasar.
+// Antes cada uno tenía su estilo (el proyecto plano, la fecha en una caja,
+// el código como texto suelto) y el estado era una píldora en la cabecera
+// que rotaba entre los tres valores, sin parecer clicable.
+const FIELD_LABEL = 'flex w-24 shrink-0 items-center gap-1.5 text-xs text-[var(--text-hint)]';
+const FIELD_CONTROL = 'rounded-md px-2 py-1 text-xs transition hover:bg-[var(--bg-hover)]';
 
 // Valores del formulario como strings, como los guarda useFieldDrafts.
 type TaskFields = {
@@ -78,6 +91,9 @@ export function TaskEditor() {
 
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tagInputRef = useRef<HTMLInputElement>(null);
+  // Esc descarta el tag a medio escribir: al cerrarse, el campo puede
+  // disparar onBlur con el texto viejo, que lo agregaría.
+  const discardTag = useRef(false);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   // Campos de texto editados y todavía sin guardar (debounce de 800 ms), y
   // la task a la que pertenecen.
@@ -108,8 +124,26 @@ export function TaskEditor() {
   }, [showProjectMenu]);
 
   useEffect(() => {
-    if (showTagInput) tagInputRef.current?.focus();
+    if (!showTagInput) return;
+    discardTag.current = false;
+    tagInputRef.current?.focus();
   }, [showTagInput]);
+
+  // Esc cierra el panel, salvo escribiendo (ahí Esc es del campo) o con un
+  // menú o ventana encima.
+  useEffect(() => {
+    if (!activeTask) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const target = e.target as HTMLElement;
+      if (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      if (showProjectMenu || document.querySelector('[role="dialog"], [aria-modal="true"]')) return;
+      e.preventDefault();
+      setActiveTask(null);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [activeTask, showProjectMenu, setActiveTask]);
 
   // Guarda `patch` sobre la task tal como está ahora en el store, no sobre
   // el `activeTask` del render que programó el guardado: si entre medio
@@ -121,7 +155,11 @@ export function TaskEditor() {
       // updateTask() resucita el archivo (fs.writeFile incondicional).
       // Mismo bug que NoteEditor.tsx, mismo fix: chequear el store en
       // vivo antes de escribir.
-      const live = useAppStore.getState().tasks.find((t) => t.id === taskId);
+      // Una task movida a otro proyecto sale de la lista filtrada pero
+      // sigue abierta en el panel: también cuenta como viva.
+      const state = useAppStore.getState();
+      const live = state.tasks.find((t) => t.id === taskId)
+        ?? (state.activeTask?.id === taskId ? state.activeTask : undefined);
       if (live) await updateTask({ ...live, ...patch });
       setIsDirty(false);
     },
@@ -194,13 +232,25 @@ export function TaskEditor() {
     [taskCode, tasks, activeTask?.id]
   );
 
+  // Igual que en la ventana "Nueva tarea": Enter o salir del campo agregan
+  // el tag (sin la @ inicial, por costumbre de la captura rápida).
+  const addTag = (raw: string) => {
+    const tag = raw.trim().replace(/^@/, '');
+    if (tag && !tags.includes(tag)) saveNow('tags', JSON.stringify([...tags, tag]));
+    // El campo se cierra; si al cerrarse dispara onBlur, ya está agregado.
+    discardTag.current = true;
+    setNewTag('');
+    setShowTagInput(false);
+  };
+  const commitNewTag = () => {
+    if (discardTag.current) { discardTag.current = false; return; }
+    addTag(newTag);
+  };
+
   const handleAddTag = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && newTag.trim()) {
-      saveNow('tags', JSON.stringify([...new Set([...tags, newTag.trim()])]));
-      setNewTag('');
-      setShowTagInput(false);
-    }
+    if (e.key === 'Enter') commitNewTag();
     if (e.key === 'Escape') {
+      discardTag.current = true;
       setNewTag('');
       setShowTagInput(false);
     }
@@ -226,8 +276,6 @@ export function TaskEditor() {
 
   if (!activeTask) return null;
 
-  const currentStatus = STATUS_OPTIONS.find((s) => s.value === status)!;
-  const localizedStatusLabel = t(language, 'tasks', status === 'todo' ? 'statusTodo' : status === 'in-progress' ? 'statusInProgress' : 'statusDone');
 
   return (
     <div key={activeTask.id} className="task-panel-enter flex h-full w-[420px] shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-input)]">
@@ -250,18 +298,7 @@ export function TaskEditor() {
       )}
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
-        <div className="flex items-center gap-2">
-          {/* Status badge */}
-          <button
-            onClick={() => {
-              const idx = STATUS_OPTIONS.findIndex((s) => s.value === status);
-              const next = STATUS_OPTIONS[(idx + 1) % STATUS_OPTIONS.length];
-              handleStatusChange(next.value);
-            }}
-            className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition ${currentStatus.color}`}
-          >
-            {localizedStatusLabel}
-          </button>
+        <div className="flex min-h-[1.5rem] items-center gap-2">
           {isDirty && <span className="text-[10px] text-[var(--text-hint)]">{t(language, 'tasks', 'saving')}</span>}
         </div>
         <div className="flex items-center gap-1">
@@ -301,21 +338,43 @@ export function TaskEditor() {
         </div>
 
         {/* Metadata */}
-        <div className="px-5 pb-4 space-y-2 text-sm">
+        <div className="px-5 pb-4 space-y-1.5 text-sm">
+          {/* Status */}
+          <div className="flex items-center gap-3">
+            <span className={FIELD_LABEL}>
+              <CircleDot size={12} />
+              {t(language, 'tasks', 'statusField')}
+            </span>
+            <div role="radiogroup" aria-label={t(language, 'tasks', 'statusField')} className="flex gap-0.5 rounded-lg border border-[var(--border-card)] p-0.5">
+              {STATUS_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={status === opt.value}
+                  onClick={() => handleStatusChange(opt.value)}
+                  className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
+                    status === opt.value ? opt.color : 'text-[var(--text-hint)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                  }`}
+                >
+                  {t(language, 'tasks', opt.label)}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Project */}
           <div className="flex items-center gap-3">
-            <span className="w-24 shrink-0 text-xs text-[var(--text-hint)]">
-              <FolderOpen size={12} className="inline mr-1" />
+            <span className={FIELD_LABEL}>
+              <FolderOpen size={12} />
               {t(language, 'tasks', 'projectField')}
             </span>
             <div ref={projectMenuRef} className="relative flex-1">
               <button
                 type="button"
                 onClick={() => setShowProjectMenu((s) => !s)}
-                className={`flex w-full items-center justify-between gap-1.5 rounded-md px-2 py-0.5 text-xs transition ${
-                  showProjectMenu
-                    ? 'bg-[var(--bg-hover)] text-[var(--text-secondary)]'
-                    : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]'
+                className={`${FIELD_CONTROL} flex w-full items-center justify-between gap-1.5 text-[var(--text-secondary)] ${
+                  showProjectMenu ? 'bg-[var(--bg-hover)]' : ''
                 }`}
               >
                 <span className="truncate">{project}</span>
@@ -344,22 +403,33 @@ export function TaskEditor() {
 
           {/* Due date */}
           <div className="flex items-center gap-3">
-            <span className="w-24 shrink-0 text-xs text-[var(--text-hint)]">
-              <Calendar size={12} className="inline mr-1" />
+            <span className={FIELD_LABEL}>
+              <Calendar size={12} />
               {t(language, 'tasks', 'dueDate')}
             </span>
             <div className="flex-1">
-              <AppDatePicker value={due} onChange={handleDueChange} />
+              <AppDatePicker value={due} onChange={handleDueChange} variant="inline" placeholder={t(language, 'tasks', 'noDue')} />
             </div>
+            {due && (
+              <button
+                type="button"
+                onClick={() => handleDueChange('')}
+                aria-label={t(language, 'tasks', 'dueClear')}
+                title={t(language, 'tasks', 'dueClear')}
+                className="rounded-md p-1 text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-red-400"
+              >
+                <X size={12} />
+              </button>
+            )}
           </div>
 
           {/* Tags */}
           <div className="flex items-start gap-3">
-            <span className="w-24 shrink-0 text-xs text-[var(--text-hint)] mt-1">
-              <Tag size={12} className="inline mr-1" />
+            <span className={`${FIELD_LABEL} pt-1`}>
+              <Tag size={12} />
               {t(language, 'tasks', 'tagsLabel')}
             </span>
-            <div className="flex flex-wrap gap-1.5 flex-1">
+            <div className="flex flex-1 flex-wrap items-center gap-1.5 px-2 py-0.5">
               {tags.map((tag) => (
                 <span
                   key={tag}
@@ -376,12 +446,14 @@ export function TaskEditor() {
                 </span>
               ))}
               {showTagInput ? (
-                <input
+                <TagSuggestInput
                   ref={tagInputRef}
                   value={newTag}
-                  onChange={(e) => setNewTag(e.target.value)}
+                  onChange={setNewTag}
+                  onCommit={addTag}
+                  exclude={tags}
                   onKeyDown={handleAddTag}
-                  onBlur={() => { setShowTagInput(false); setNewTag(''); }}
+                  onBlur={commitNewTag}
                   placeholder={t(language, 'tasks', 'tagPlaceholder')}
                   className="rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-300 outline-none w-24"
                 />
@@ -398,20 +470,25 @@ export function TaskEditor() {
 
           {/* Created */}
           <div className="flex items-center gap-3">
-            <span className="w-24 shrink-0 text-xs text-[var(--text-hint)]">{t(language, 'tasks', 'created')}</span>
-            <span className="text-xs text-[var(--text-hint)]">{activeTask.created}</span>
+            <span className={FIELD_LABEL}>
+              <Clock size={12} />
+              {t(language, 'tasks', 'created')}
+            </span>
+            <span className="px-2 py-1 text-xs text-[var(--text-muted)]">{formatLongDate(activeTask.created, language)}</span>
           </div>
 
           {/* Task Code */}
           <div className="flex items-center gap-3">
-            <span className="w-24 shrink-0 text-xs text-[var(--text-hint)]">
-              # {t(language, 'tasks', 'taskCodeLabel')}
+            <span className={FIELD_LABEL}>
+              <Hash size={12} />
+              {t(language, 'tasks', 'taskCodeLabel')}
             </span>
             <input
               value={taskCode}
               onChange={(e) => handleTaskCodeChange(e.target.value)}
-              className={`flex-1 bg-transparent text-xs outline-none font-mono transition-colors ${
-                isDuplicateCode ? 'text-red-400' : 'text-[var(--text-tertiary)]'
+              placeholder={t(language, 'tasks', 'taskCodeHint')}
+              className={`${FIELD_CONTROL} min-w-0 flex-1 bg-transparent font-mono outline-none placeholder:font-sans placeholder-[var(--text-faint)] focus:bg-[var(--bg-hover)] ${
+                isDuplicateCode ? 'text-red-400' : 'text-[var(--text-secondary)]'
               }`}
               maxLength={32}
               spellCheck={false}

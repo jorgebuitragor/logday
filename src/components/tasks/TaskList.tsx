@@ -1,160 +1,60 @@
-import { useState, useEffect, useRef, useMemo, memo } from 'react';
-import { Plus, Circle, Clock, CheckCircle2, Calendar, AlertTriangle, CheckSquare } from 'lucide-react';
-import { Task, TaskStatus } from '../../types/task';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Plus, CheckSquare, ChevronRight } from 'lucide-react';
+import { Task } from '../../types/task';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../store/appStore';
-import { TaskContextMenu, NewTaskContextMenu } from './TaskContextMenu';
-import { RichTextEditor } from './RichTextEditor';
+import { NewTaskContextMenu } from './TaskContextMenu';
+import { TaskRow } from './TaskRow';
+import { NewTaskModal } from './NewTaskModal';
+import { QuickAddInput } from './QuickAddInput';
+import { TaskFilterBar } from './TaskFilterBar';
+import { TaskSelectionBar } from './TaskSelectionBar';
+import { DatePickerPopover } from './DatePickerPopover';
+import { TaskShortcutsSheet } from './TaskShortcutsSheet';
+import type { AnchorRect } from '../../lib/menuPosition';
+import type { QuickCaptureResult } from '../../lib/quickCapture';
 import { t } from '../../lib/i18n';
-import { ModalOverlay } from '../shared/ModalOverlay';
-import { ModalPanel } from '../shared/ModalPanel';
+import { addDaysISO, localISODate } from '../../lib/localDate';
+import { doneTasks, filterTasks, formatDueLabel, groupOpenTasks, isTaskFilterActive, rangeIds, type TaskGroupKey } from '../../lib/taskListing';
 
-const STATUS_ICONS: Record<TaskStatus, React.ReactNode> = {
-  todo: <Circle size={14} className="text-zinc-500" />,
-  'in-progress': <Clock size={14} className="text-amber-400" />,
-  done: <CheckCircle2 size={14} className="text-green-400" />,
+const DONE_COLLAPSED_KEY = 'logday_tasks_done_collapsed';
+
+const GROUP_LABEL_KEY: Record<TaskGroupKey, 'groupOverdue' | 'groupToday' | 'groupTomorrow' | 'groupWeek' | 'groupLater' | 'groupNone' | 'groupPending'> = {
+  overdue: 'groupOverdue',
+  today: 'groupToday',
+  tomorrow: 'groupTomorrow',
+  week: 'groupWeek',
+  later: 'groupLater',
+  none: 'groupNone',
+  pending: 'groupPending',
 };
 
-const TaskRow = memo(function TaskRow({
-  task,
-  isNew,
-  isRemoving,
-  staggerIndex = 0,
-  onBeforeDelete,
-}: {
-  task: Task;
-  isNew?: boolean;
-  isRemoving?: boolean;
-  staggerIndex?: number;
-  onBeforeDelete?: () => void;
-}) {
-  const { setActiveTask, activeTask, updateTask } = useAppStore(
-    useShallow((s) => ({ setActiveTask: s.setActiveTask, activeTask: s.activeTask, updateTask: s.updateTask }))
-  );
-  const isActive = activeTask?.id === task.id;
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
-  const [statusPopped, setStatusPopped] = useState(false);
-  // Animación de entrada
-  const [visible, setVisible] = useState(!isNew);
-  useEffect(() => {
-    if (isNew) requestAnimationFrame(() => setVisible(true));
-  }, [isNew]);
-
-  const staggerClass = `task-d${Math.min(staggerIndex, 10)}`;
-
-  const today = new Date().toISOString().slice(0, 10);
-  const isOverdue = task.due && task.due < today && task.status !== 'done';
-
-  const cycleStatus = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setStatusPopped(true);
-    const order: TaskStatus[] = ['todo', 'in-progress', 'done'];
-    const next = order[(order.indexOf(task.status) + 1) % order.length];
-    await updateTask({ ...task, status: next });
-  };
-
-  return (
-    <>
-    <div
-      className={`task-row-enter ${staggerClass} transition-all duration-[220ms] ease-out ${
-        isRemoving
-          ? 'opacity-0 scale-95 pointer-events-none'
-          : isNew && !visible
-          ? 'opacity-0 -translate-y-1'
-          : 'opacity-100 translate-y-0 scale-100'
-      }`}
-    >
-    <div
-      onClick={() => setActiveTask(isActive ? null : task)}
-      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
-      className={`flex items-start gap-3 rounded-xl px-4 py-3 cursor-pointer transition group ${
-        isActive
-          ? 'bg-indigo-500/10 border border-indigo-500/20'
-          : 'border border-transparent hover:bg-[var(--bg-hover)]'
-      }`}
-    >
-      {/* Status icon */}
-      <button
-        onClick={cycleStatus}
-        className={`mt-0.5 shrink-0 transition hover:scale-110 ${statusPopped ? 'status-pop' : ''}`}
-        onAnimationEnd={() => setStatusPopped(false)}
-      >
-        {STATUS_ICONS[task.status]}
-      </button>
-
-      {/* Main content */}
-      <div className="flex-1 min-w-0">
-        <p
-          className={`text-sm leading-snug ${
-            task.status === 'done'
-              ? 'line-through text-[var(--text-hint)]'
-              : isActive
-              ? 'text-[var(--text-primary)]'
-              : 'text-[var(--text-secondary)]'
-          }`}
-        >
-          {task.title}
-        </p>
-        {/* Meta */}
-        <div className="mt-1.5 flex flex-wrap items-center gap-2">
-          {task.project !== 'inbox' && (
-            <span className="text-[10px] text-[var(--text-hint)]">{task.project}</span>
-          )}
-          {task.due && (
-            <span
-              className={`flex items-center gap-0.5 text-[10px] ${
-                isOverdue ? 'text-red-400' : 'text-[var(--text-hint)]'
-              }`}
-            >
-              <Calendar size={9} />
-              {task.due}
-            </span>
-          )}
-          {task.tags.slice(0, 3).map((tag) => (
-            <span key={tag} className="rounded-full bg-indigo-500/10 px-1.5 py-0.5 text-[9px] text-indigo-400">
-              {tag}
-            </span>
-          ))}
-        </div>
-      </div>
-    </div>
-    {ctxMenu && (
-      <TaskContextMenu
-        task={task}
-        x={ctxMenu.x}
-        y={ctxMenu.y}
-        onClose={() => setCtxMenu(null)}
-        onBeforeDelete={onBeforeDelete}
-      />
-    )}
-    </div>
-    </>
-  );
-});
-
 export function TaskList() {
-  const { tasks, activeProject, currentView, createTask, deleteTask, isLoading, language, setActiveTask } = useAppStore(
+  const { tasks, activeProject, currentView, deleteTask, deleteTasks, updateTasksWithUndo, isLoading, language, setActiveTask, taskSortBy, taskFilter } = useAppStore(
     useShallow((s) => ({
       tasks: s.tasks,
+      taskSortBy: s.taskSortBy,
+      taskFilter: s.taskFilter,
       activeProject: s.activeProject,
       currentView: s.currentView,
-      createTask: s.createTask,
       deleteTask: s.deleteTask,
+      updateTasksWithUndo: s.updateTasksWithUndo,
+      deleteTasks: s.deleteTasks,
       isLoading: s.isLoading,
       language: s.language,
       setActiveTask: s.setActiveTask,
     }))
   );
-  const [showNewTaskModal, setShowNewTaskModal] = useState(false);
-  const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [newTaskContent, setNewTaskContent] = useState('');
-  const [newTaskCode, setNewTaskCode] = useState('');
-
-  const isDuplicateNewCode = useMemo(
-    () => newTaskCode.length > 0 && tasks.some((t) => t.taskCode === newTaskCode),
-    [newTaskCode, tasks]
-  );
-  const [filter, setFilter] = useState<TaskStatus | 'all'>('all');
+  // Borrador de la ventana "Nueva tarea" (null = cerrada). La captura
+  // rápida le pasa lo que ya se escribió.
+  const [newTaskDraft, setNewTaskDraft] = useState<Partial<QuickCaptureResult> | null>(null);
+  const quickAddRef = useRef<HTMLInputElement>(null);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  // Selección múltiple (⌘-clic, ⇧-clic) y el calendario de la tecla `d`.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [datePicker, setDatePicker] = useState<{ anchor: AnchorRect; ids: string[] } | null>(null);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const filter = taskFilter.status;
   const [emptyCtxMenu, setEmptyCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [newTaskIds, setNewTaskIds] = useState<Set<string>>(new Set());
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
@@ -194,119 +94,172 @@ export function TaskList() {
 
   useEffect(() => {
     setActiveTask(null);
+    setSelectedIds(new Set());
     setListKey((k) => k + 1);
   }, [activeProject, currentView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const handler = () => setShowNewTaskModal(true);
+    // Desde el calendario llega la fecha del día elegido.
+    const handler = (e: Event) => {
+      const due = (e as CustomEvent<{ due?: string } | null>).detail?.due;
+      setNewTaskDraft(due ? { due } : {});
+    };
     window.addEventListener('logday:new-task', handler);
     return () => window.removeEventListener('logday:new-task', handler);
   }, []);
 
-  const filtered = useMemo(
-    () => filter === 'all' ? tasks : tasks.filter((t) => t.status === filter),
-    [tasks, filter]
+  const [doneCollapsed, setDoneCollapsed] = useState(() => {
+    try { return localStorage.getItem(DONE_COLLAPSED_KEY) !== '0'; } catch { return true; }
+  });
+  const toggleDoneCollapsed = () => {
+    setDoneCollapsed((v) => {
+      try { localStorage.setItem(DONE_COLLAPSED_KEY, v ? '0' : '1'); } catch { /* sin almacenamiento */ }
+      return !v;
+    });
+  };
+
+  // "Hoy" en hora local; se recalcula con cada cambio de tareas, y al
+  // volver a la ventana para que la lista no quede en el día anterior.
+  const [today, setToday] = useState(() => localISODate());
+  useEffect(() => {
+    const refresh = () => setToday(localISODate());
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
+  }, []);
+  useEffect(() => { setToday(localISODate()); }, [tasks]);
+
+  const filtered = useMemo(() => filterTasks(tasks, taskFilter), [tasks, taskFilter]);
+  const openGroups = useMemo(() => groupOpenTasks(filtered, taskSortBy, today), [filtered, taskSortBy, today]);
+  const done = useMemo(() => doneTasks(filtered), [filtered]);
+  // Con búsqueda o tags, las hechas que coinciden se muestran desplegadas.
+  const narrowed = isTaskFilterActive({ ...taskFilter, status: 'all' });
+  const showDone = filter === 'done' || narrowed || !doneCollapsed;
+  const visibleCount = openGroups.reduce((n, g) => n + g.tasks.length, 0) + done.length;
+
+  const newTaskModal = newTaskDraft ? (
+    <NewTaskModal initial={newTaskDraft} onClose={() => setNewTaskDraft(null)} />
+  ) : null;
+
+  // Orden en pantalla, para moverse con el teclado.
+  const visibleTasks = useMemo(
+    () => [...openGroups.flatMap((g) => g.tasks), ...(showDone ? done : [])],
+    [openGroups, done, showDone],
   );
 
-  const handleCreateTask = async () => {
-    if (newTaskTitle.trim()) {
-      await createTask(newTaskTitle.trim(), undefined, newTaskContent, newTaskCode.trim() || undefined);
-    }
-    setNewTaskTitle('');
-    setNewTaskContent('');
-    setNewTaskCode('');
-    setShowNewTaskModal(false);
+  const selectedTasks = useMemo(() => visibleTasks.filter((tk) => selectedIds.has(tk.id)), [visibleTasks, selectedIds]);
+  const countLabel = (list: Task[]) =>
+    list.length === 1 ? list[0].title : t(language, 'tasks', 'nTasks').replace('{n}', String(list.length));
+
+  // Acciones sobre una o varias tareas, con un solo aviso para deshacer.
+  const reschedule = (targets: Task[], due: string | undefined, title?: string) => {
+    const nexts = targets.filter((tk) => tk.due !== due).map((tk) => ({ ...tk, due }));
+    if (!nexts.length) return;
+    void updateTasksWithUndo(nexts, {
+      title: title ?? t(language, 'tasks', due ? 'toastDue' : 'toastDueCleared'),
+      description: countLabel(nexts) + (due ? ` · ${formatDueLabel(due, today, language).label}` : ''),
+    });
+  };
+  const toggleDone = (targets: Task[]) => {
+    const reopening = targets.every((tk) => tk.status === 'done');
+    const nexts = targets.filter((tk) => (tk.status === 'done') === reopening).map((tk) => ({ ...tk, status: reopening ? 'todo' as const : 'done' as const }));
+    if (!nexts.length) return;
+    void updateTasksWithUndo(nexts, { title: t(language, 'tasks', reopening ? 'toastReopened' : 'toastCompleted'), description: countLabel(nexts) });
+  };
+  const moveTo = (targets: Task[], project: string) => {
+    const nexts = targets.filter((tk) => tk.project !== project).map((tk) => ({ ...tk, project }));
+    if (nexts.length) void updateTasksWithUndo(nexts, { title: t(language, 'tasks', 'movedTo'), description: project });
+  };
+  const openDatePicker = (targets: Task[]) => {
+    const el = document.querySelector(`[data-task-id="${targets[0]?.id}"]`);
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setDatePicker({ anchor: { left: r.right - 256, top: r.top, right: r.right, bottom: r.bottom }, ids: targets.map((tk) => tk.id) });
   };
 
-  const closeNewTaskModal = () => { setNewTaskTitle(''); setNewTaskContent(''); setNewTaskCode(''); setShowNewTaskModal(false); };
-
-  const handleCreateTaskKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') handleCreateTask();
-    if (e.key === 'Escape') closeNewTaskModal();
+  // ⌘-clic suma o quita una fila; ⇧-clic suma el tramo desde la fila
+  // enfocada. Al empezar con ⌘-clic, la enfocada también entra.
+  const multiSelect = (task: Task, e: React.MouseEvent) => {
+    const order = visibleTasks.map((tk) => tk.id);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (e.shiftKey) rangeIds(order, focusedId ?? task.id, task.id).forEach((id) => next.add(id));
+      else {
+        if (!prev.size && focusedId && focusedId !== task.id) next.add(focusedId);
+        if (next.has(task.id)) next.delete(task.id);
+        else next.add(task.id);
+      }
+      return next;
+    });
+    if (!e.shiftKey || !focusedId) setFocusedId(task.id);
+  };
+  const selectRow = (task: Task) => {
+    setFocusedId(task.id);
+    if (selectedIds.size && !selectedIds.has(task.id)) setSelectedIds(new Set());
   };
 
-  const newTaskModal = showNewTaskModal ? (
-    <ModalOverlay onClose={closeNewTaskModal} className="animate-fade-in">
-      <ModalPanel className="modal-spring-in w-[680px] max-w-[92vw] rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
-        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-          <Plus size={15} className="text-indigo-400" />
-          {t(language, 'tasks', 'modalTitle')}
-        </div>
-        <input
-          autoFocus
-          value={newTaskTitle}
-          onChange={(e) => setNewTaskTitle(e.target.value)}
-          onKeyDown={handleCreateTaskKey}
-          placeholder={t(language, 'tasks', 'taskNamePlaceholder')}
-          className="mb-3 w-full rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-2.5 text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500/60 placeholder-[var(--text-hint)]"
-        />
-        <div className="mb-4 flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-2.5">
-          <span className="shrink-0 text-xs text-[var(--text-hint)]"># {t(language, 'tasks', 'taskCodeLabel')}</span>
-          <input
-            value={newTaskCode}
-            onChange={(e) => setNewTaskCode(e.target.value.replace(/[^a-zA-Z0-9\-_]/g, '').toUpperCase())}
-            onKeyDown={handleCreateTaskKey}
-            maxLength={32}
-            spellCheck={false}
-            className={`flex-1 bg-transparent font-mono text-xs outline-none transition-colors ${
-              isDuplicateNewCode ? 'text-red-400' : 'text-[var(--text-secondary)]'
-            }`}
-          />
-          {isDuplicateNewCode ? (
-            <AlertTriangle size={12} className="shrink-0 text-red-400" aria-label={t(language, 'tasks', 'taskCodeDuplicate')} />
-          ) : (
-            <span className="shrink-0 text-[10px] text-[var(--text-faint)]">{t(language, 'tasks', 'taskCodeHint')}</span>
-          )}
-        </div>
-        <div className="mb-4">
-          <div className="mb-2 text-[10px] uppercase tracking-wider text-[var(--text-hint)]">{t(language, 'tasks', 'descriptionLabel')}</div>
-          <RichTextEditor
-            value={newTaskContent}
-            onChange={setNewTaskContent}
-            placeholder={t(language, 'tasks', 'descriptionPlaceholder')}
-            minHeight="220px"
-          />
-        </div>
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={closeNewTaskModal}
-            className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
-          >
-            {t(language, 'tasks', 'cancel')}
-          </button>
-          <button
-            onClick={handleCreateTask}
-            disabled={!newTaskTitle.trim()}
-            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {t(language, 'tasks', 'createTask')}
-          </button>
-        </div>
-      </ModalPanel>
-    </ModalOverlay>
-  ) : null;
+  // Atajos de la lista (fuera de campos de texto y sin ventanas abiertas):
+  // ↑/↓ o j/k para moverse, Enter para abrir, Espacio o x para completar o
+  // reabrir, t/m/w/0 para la fecha (hoy, mañana, +1 semana, sin fecha), d
+  // para elegirla, n para la captura rápida y Esc para soltar la selección.
+  // Con varias seleccionadas, las acciones van sobre todas.
+  useEffect(() => {
+    if (currentView !== 'list' || newTaskDraft) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+      const target = e.target as HTMLElement;
+      if (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName)) return;
+      if (document.querySelector('[role="dialog"], [aria-modal="true"]')) return;
+      const index = visibleTasks.findIndex((t) => t.id === focusedId);
+      const focused = index >= 0 ? visibleTasks[index] : null;
+      const move = (delta: number) => {
+        if (!visibleTasks.length) return;
+        const next = index < 0 ? (delta > 0 ? 0 : visibleTasks.length - 1) : Math.min(Math.max(index + delta, 0), visibleTasks.length - 1);
+        setFocusedId(visibleTasks[next].id);
+      };
+      if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); move(1); }
+      else if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); move(-1); }
+      else if (e.key === 'Enter' && focused) { e.preventDefault(); setActiveTask(focused); }
+      const targets = selectedTasks.length ? selectedTasks : focused ? [focused] : [];
+      const dueKeys: Record<string, string | undefined> = { t: today, m: addDaysISO(today, 1), w: addDaysISO(today, 7), '0': undefined };
+      if ((e.key === ' ' || e.key === 'x') && targets.length) {
+        e.preventDefault();
+        if (selectedTasks.length) setSelectedIds(new Set());
+        else {
+          // La tarea cambia de grupo: el foco pasa a la siguiente.
+          const neighbor = visibleTasks[index + 1] ?? visibleTasks[index - 1];
+          setFocusedId(neighbor?.id ?? null);
+        }
+        toggleDone(targets);
+      }
+      else if (e.key in dueKeys && targets.length) { e.preventDefault(); reschedule(targets, dueKeys[e.key]); }
+      else if (e.key === 'd' && targets.length) { e.preventDefault(); openDatePicker(targets); }
+      else if (e.key === 'n') { e.preventDefault(); quickAddRef.current?.focus(); }
+      else if (e.key === '?') { e.preventDefault(); setShowShortcuts(true); }
+      else if (e.key === 'Escape' && selectedIds.size) { e.preventDefault(); setSelectedIds(new Set()); }
+      // Con el panel abierto, Esc lo cierra (TaskEditor) y el foco se queda.
+      else if (e.key === 'Escape' && focusedId && !useAppStore.getState().activeTask) setFocusedId(null);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- las acciones se recrean en cada render con los mismos datos
+  }, [currentView, newTaskDraft, visibleTasks, selectedTasks, selectedIds, focusedId, setActiveTask, language, today]);
 
   if (currentView !== 'list') return newTaskModal;
 
   const title = activeProject ? activeProject : t(language, 'tasks', 'title');
-  const counts = {
-    all: tasks.length,
-    todo: tasks.filter((t) => t.status === 'todo').length,
-    'in-progress': tasks.filter((t) => t.status === 'in-progress').length,
-    done: tasks.filter((t) => t.status === 'done').length,
-  };
 
   return (
     <div
-      className="flex flex-1 flex-col overflow-hidden"
+      className="relative flex flex-1 flex-col overflow-hidden"
       onContextMenu={(e) => { e.preventDefault(); setEmptyCtxMenu({ x: e.clientX, y: e.clientY }); }}
     >
       {/* Header */}
       <div className="border-b border-[var(--border)] px-4 py-3">
+        <div className="mx-auto w-full max-w-3xl">
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-lg font-semibold text-[var(--text-primary)] capitalize">{title}</h1>
           <button
-            onClick={() => setShowNewTaskModal(true)}
+            onClick={() => setNewTaskDraft({})}
             className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white transition hover:bg-indigo-500"
           >
             <Plus size={14} />
@@ -314,22 +267,11 @@ export function TaskList() {
           </button>
         </div>
 
-        {/* Filters */}
-        <div className="flex gap-1">
-          {(['all', 'todo', 'in-progress', 'done'] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`rounded-lg px-3 py-1 text-xs transition ${
-                filter === f
-                  ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]'
-                  : 'text-[var(--text-hint)] hover:text-[var(--text-tertiary)]'
-              }`}
-            >
-              {f === 'all' ? t(language, 'tasks', 'filterAll') : f === 'todo' ? t(language, 'tasks', 'filterTodo') : f === 'in-progress' ? t(language, 'tasks', 'filterInProgress') : t(language, 'tasks', 'filterDone')}
-              <span className="ml-1.5 text-[10px] text-[var(--text-hint)]">{counts[f]}</span>
-            </button>
-          ))}
+        <TaskFilterBar />
+        {/* Captura rápida */}
+        <div className="mt-3">
+          <QuickAddInput ref={quickAddRef} onMoreOptions={(draft) => setNewTaskDraft(draft)} />
+        </div>
         </div>
       </div>
 
@@ -337,20 +279,20 @@ export function TaskList() {
       {newTaskModal}
 
       {/* Task list */}
-      <div className="flex-1 overflow-y-auto px-4 py-3">
+      <div className={`flex-1 overflow-y-auto px-4 py-3 ${selectedTasks.length ? 'pb-20' : ''}`}>
         {isLoading ? (
           <div className="flex h-full items-center justify-center">
             <span className="text-sm text-[var(--text-hint)]">{t(language, 'tasks', 'loading')}</span>
           </div>
-        ) : filtered.length === 0 ? (
+        ) : visibleCount === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
             <CheckSquare size={36} className="text-[var(--text-faint)]" strokeWidth={1.5} />
             <p className="text-sm text-[var(--text-hint)]">
-              {filter === 'all' ? t(language, 'tasks', 'emptyAll') : `${t(language, 'tasks', 'emptyFilter')} "${filter}".`}
+              {t(language, 'tasks', narrowed ? 'emptyFiltered' : filter === 'all' ? 'emptyAll' : filter === 'todo' ? 'emptyTodo' : filter === 'in-progress' ? 'emptyInProgress' : 'emptyDone')}
             </p>
-            {filter === 'all' && (
+            {filter === 'all' && !narrowed && (
               <button
-                onClick={() => setShowNewTaskModal(true)}
+                onClick={() => setNewTaskDraft({})}
                 className="mt-1 flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white transition hover:bg-indigo-500"
               >
                 <Plus size={14} />
@@ -359,21 +301,120 @@ export function TaskList() {
             )}
           </div>
         ) : (
-          <div key={listKey} className="space-y-1">
-            {filtered.map((task, idx) => (
-              <TaskRow
-                key={task.id}
-                task={task}
-                isNew={newTaskIds.has(task.id)}
-                isRemoving={removingIds.has(task.id)}
-                staggerIndex={idx}
-                onBeforeDelete={() => handleBeforeDelete(task)}
-              />
-            ))}
+          <div key={listKey} className="mx-auto w-full max-w-3xl space-y-4">
+            {filter === 'all' && !narrowed && openGroups.length === 0 && (
+              <p className="px-3 py-6 text-center text-sm text-[var(--text-hint)]">{t(language, 'tasks', 'emptyAllDone')}</p>
+            )}
+            {openGroups.map((group, groupIdx) => {
+              const offset = openGroups.slice(0, groupIdx).reduce((n, g) => n + g.tasks.length, 0);
+              return (
+                <section key={group.key}>
+                  {/* Con un solo grupo de pendientes (orden por creación o
+                      título) el encabezado no aporta: se omite. */}
+                  {group.key !== 'pending' && (
+                    <h2 className={`mb-1 flex items-center gap-2 px-3 text-[11px] font-semibold uppercase tracking-wider ${
+                      group.key === 'overdue' ? 'text-red-400' : group.key === 'today' ? 'text-amber-400' : 'text-[var(--text-hint)]'
+                    }`}>
+                      {t(language, 'tasks', GROUP_LABEL_KEY[group.key])}
+                      <span className="font-normal text-[var(--text-faint)]">{group.tasks.length}</span>
+                      {/* Reprogramar lo atrasado de una vez, con deshacer. */}
+                      {group.key === 'overdue' && (
+                        <button
+                          onClick={() => reschedule(group.tasks, today, t(language, 'tasks', 'toastMovedToday'))}
+                          className="ml-auto rounded-md px-2 py-0.5 text-[11px] font-normal normal-case tracking-normal text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-indigo-400"
+                        >
+                          {t(language, 'tasks', 'moveOverdueToday')}
+                        </button>
+                      )}
+                    </h2>
+                  )}
+                  <div className="space-y-0.5">
+                    {group.tasks.map((task, idx) => (
+                      <TaskRow
+                        key={task.id}
+                        task={task}
+                        today={today}
+                        isFocused={focusedId === task.id}
+                        isSelected={selectedIds.has(task.id)}
+                        onSelect={() => selectRow(task)}
+                        onMultiSelect={(e) => multiSelect(task, e)}
+                        isNew={newTaskIds.has(task.id)}
+                        isRemoving={removingIds.has(task.id)}
+                        hideDue={group.key === 'today' || group.key === 'tomorrow'}
+                        staggerIndex={offset + idx}
+                        onBeforeDelete={() => handleBeforeDelete(task)}
+                      />
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
+            {done.length > 0 && (
+              <section>
+                {filter === 'all' && (
+                  <button
+                    onClick={toggleDoneCollapsed}
+                    disabled={narrowed}
+                    aria-expanded={showDone}
+                    className="mb-1 flex items-center gap-1.5 rounded-md px-3 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-hint)] transition hover:text-[var(--text-secondary)]"
+                  >
+                    <ChevronRight size={12} className={`transition-transform ${showDone ? 'rotate-90' : ''}`} />
+                    {t(language, 'tasks', 'groupDone')}
+                    <span className="font-normal text-[var(--text-faint)]">{done.length}</span>
+                  </button>
+                )}
+                {showDone && (
+                  <div className="space-y-0.5">
+                    {done.map((task) => (
+                      <TaskRow
+                        key={task.id}
+                        task={task}
+                        today={today}
+                        isFocused={focusedId === task.id}
+                        isSelected={selectedIds.has(task.id)}
+                        onSelect={() => selectRow(task)}
+                        onMultiSelect={(e) => multiSelect(task, e)}
+                        isNew={newTaskIds.has(task.id)}
+                        isRemoving={removingIds.has(task.id)}
+                        onBeforeDelete={() => handleBeforeDelete(task)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+            <button
+              onClick={() => setShowShortcuts(true)}
+              className="mx-auto block pt-2 text-center text-[10px] text-[var(--text-hint)] transition hover:text-[var(--text-secondary)]"
+            >
+              {t(language, 'tasks', 'shortcutsHint')}
+            </button>
           </div>
         )}
       </div>
 
+      {selectedTasks.length > 0 && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center px-4">
+          <TaskSelectionBar
+            tasks={selectedTasks}
+            today={today}
+            onReschedule={(due) => reschedule(selectedTasks, due)}
+            onComplete={() => { setSelectedIds(new Set()); toggleDone(selectedTasks); }}
+            onMove={(project) => { setSelectedIds(new Set()); moveTo(selectedTasks, project); }}
+            onDelete={() => { setSelectedIds(new Set()); void deleteTasks(selectedTasks); }}
+            onClear={() => setSelectedIds(new Set())}
+          />
+        </div>
+      )}
+      {showShortcuts && <TaskShortcutsSheet onClose={() => setShowShortcuts(false)} />}
+      {datePicker && (
+        <DatePickerPopover
+          anchor={datePicker.anchor}
+          value={tasks.find((tk) => tk.id === datePicker.ids[0])?.due}
+          onPick={(due) => reschedule(tasks.filter((tk) => datePicker.ids.includes(tk.id)), due)}
+          onClose={() => setDatePicker(null)}
+        />
+      )}
       {emptyCtxMenu && (
         <NewTaskContextMenu
           x={emptyCtxMenu.x}

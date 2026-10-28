@@ -56,9 +56,11 @@
   --text-body:      #18181b;
   --text-secondary: #3f3f46;
   --text-tertiary:  #52525b;
-  --text-muted:     #71717a;
-  --text-hint:      #a1a1aa;
-  --text-faint:     #d4d4d8;
+  /* Metadatos, conteos y pistas: con #a1a1aa y #d4d4d8 sobre #f4f4f5 no
+     llegaban a 2,5:1 (el faint era casi invisible). */
+  --text-muted:     #5f5f69;
+  --text-hint:      #71717a;
+  --text-faint:     #a1a1aa;
 
   --accent:         #6366f1;
   --accent-strong:  #4f46e5;
@@ -218,6 +220,18 @@
   --accent-link:    #88c0d0;
   --accent-code:    #9eb6d9;
 }
+
+/* Tema claro: los tonos -400 de Tailwind están pensados para fondo oscuro.
+   Sobre blanco el ámbar de "Hoy" o "En progreso" queda en ~1,7:1 y el rojo
+   de "Vencidas" en ~2,8:1. Se oscurecen a sus tonos 600/700. */
+:root[data-theme="light"] .text-amber-400 { color: #b45309; }
+:root[data-theme="light"] .text-red-400,
+:root[data-theme="light"] .hover\:text-red-400:hover { color: #dc2626; }
+:root[data-theme="light"] .text-green-400,
+:root[data-theme="light"] .text-emerald-400 { color: #15803d; }
+:root[data-theme="light"] .text-indigo-400,
+:root[data-theme="light"] .hover\:text-indigo-400:hover { color: #4f46e5; }
+:root[data-theme="light"] .text-indigo-300 { color: #4338ca; }
 
 /* Repinta clases Tailwind indigo-* hardcodeadas al acento del tema activo.
    Se activa vía la clase .theme-tinted en <html>, gestionada por

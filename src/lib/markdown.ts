@@ -1,5 +1,6 @@
 import { Task, TaskStatus } from '../types/task';
 import { Note } from '../types/note';
+import { localISODate } from './localDate';
 /**
  * Parses a markdown file with YAML frontmatter.
  * Returns the parsed metadata and content body.
@@ -33,7 +34,7 @@ export function parseFrontmatter(raw: string, filePath: string): Task | null {
   const status = ((data.status as string) || 'todo') as TaskStatus;
   const tags = Array.isArray(data.tags) ? data.tags : [];
   const project = (data.project as string) || 'inbox';
-  const created = (data.created as string) || new Date().toISOString().slice(0, 10);
+  const created = (data.created as string) || localISODate();
   const completedAt = (data.completed_at as string) || undefined;
   const due = (data.due as string) || undefined;
   const linked_paths = Array.isArray(data.linked_paths) ? data.linked_paths : [];
@@ -86,9 +87,9 @@ export function serializeTask(task: Task): string {
   return lines.join('\n');
 }
 
-/** Format YYYY-MM-DD from a Date object */
+/** Format YYYY-MM-DD from a Date object (hora local, ver localDate.ts) */
 export function formatDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return localISODate(d);
 }
 
 /** Parse YYYY-MM-DD string to Date */

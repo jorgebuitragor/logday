@@ -150,6 +150,25 @@ notas no llegaban a la app:
 - **Chequeo.** Además del intervalo de 4 h, se busca al volver a la app
   si pasaron 30 min desde el último chequeo.
 
+## Acerca de (28 oct 2026)
+
+- `src/lib/releases.ts` reúne la consulta a GitHub (`fetchRelease`, que
+  ahora trae también `published_at`), las URLs del repo y el copyright
+  y la licencia. Una prueba comprueba que el copyright y la licencia
+  coinciden con `tauri.conf.json` y `package.json`.
+- **Fecha de la última actualización:** `showReleaseNotesAfterUpdate`,
+  la primera vez que se abre una versión, guarda
+  `appUpdatedAt = { version, at }` en `localStorage` (local, como las
+  demás preferencias). Acerca de la muestra si es de la versión
+  instalada; si no, usa `published_at` del release.
+- **"Qué trae esta versión":** `openCurrentReleaseNotes` pide las notas
+  de la versión instalada y abre el mismo `ReleaseNotesModal`, en modo
+  `installed`. "Historial de versiones" abre `…/releases` en el
+  navegador.
+- **Licencia:** nombre, un resumen de una frase, el copyright y los
+  enlaces a `LICENSE` y al repo. Es lo que pide la AGPL: que quien usa
+  el programa sepa la licencia y dónde está el código.
+
 ## Fuera de este diseño
 
 - Servidor de updates propio — GitHub Releases alcanza, no se

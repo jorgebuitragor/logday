@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { X, Settings2, SlidersHorizontal, Keyboard, FolderOpen, RefreshCw, GitBranch, Info } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import { GitSettingsTab } from './GitSettingsTab';
@@ -71,38 +72,44 @@ export function SettingsModal() {
   // Barra lateral agrupada en vez de pestañas arriba: con más secciones
   // (Extensiones y, debajo, una entrada por extensión activa) la fila de
   // pestañas ya no cabía en español. Un grupo sin `label` va sin encabezado.
-  const NAV_GROUPS: { label?: string; items: { id: SettingsTab; label: string }[] }[] = [
+  // El icono y el color más claro de las secciones las separan de los
+  // encabezados, que en tema oscuro tenían casi el mismo gris.
+  const NAV_GROUPS: { label?: string; items: { id: SettingsTab; label: string; icon: LucideIcon }[] }[] = [
     {
       label: t(language, 'settings', 'groupApp'),
       items: [
-        { id: 'general',   label: t(language, 'settings', 'tabGeneral') },
-        { id: 'work',      label: t(language, 'settings', 'tabWork') },
-        { id: 'shortcuts', label: t(language, 'settings', 'tabShortcuts') },
+        { id: 'general',   label: t(language, 'settings', 'tabGeneral'),   icon: Settings2 },
+        { id: 'work',      label: t(language, 'settings', 'tabWork'),      icon: SlidersHorizontal },
+        { id: 'shortcuts', label: t(language, 'settings', 'tabShortcuts'), icon: Keyboard },
       ],
     },
     {
       label: t(language, 'settings', 'groupDataConnection'),
       items: [
-        { id: 'data', label: t(language, 'settings', 'tabData') },
-        { id: 'sync', label: t(language, 'settings', 'tabSync') },
-        { id: 'git',  label: t(language, 'settings', 'tabGit') },
+        { id: 'data', label: t(language, 'settings', 'tabData'), icon: FolderOpen },
+        { id: 'sync', label: t(language, 'settings', 'tabSync'), icon: RefreshCw },
+        { id: 'git',  label: t(language, 'settings', 'tabGit'),  icon: GitBranch },
       ],
     },
+    // Acerca de cierra la lista, pegado al último grupo: fijo al pie de la
+    // barra quedaba suelto, con un hueco grande encima.
+    { items: [{ id: 'about', label: t(language, 'settings', 'tabAbout'), icon: Info }] },
   ];
 
-  const navItem = (id: SettingsTab, label: string) => (
+  const navItem = (id: SettingsTab, label: string, Icon: LucideIcon) => (
     <button
       key={id}
       type="button"
       onClick={() => setSettingsTab(id)}
       aria-current={settingsTab === id ? 'page' : undefined}
-      className={`w-full truncate rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition ${
+      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition ${
         settingsTab === id
           ? 'bg-indigo-500/15 text-indigo-400'
-          : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]'
+          : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
       }`}
     >
-      {label}
+      <Icon size={14} className="shrink-0" />
+      <span className="truncate">{label}</span>
     </button>
   );
 
@@ -124,20 +131,16 @@ export function SettingsModal() {
           {/* Navegación lateral */}
           <nav
             aria-label={t(language, 'settings', 'navLabel')}
-            className="flex w-[180px] shrink-0 flex-col gap-4 overflow-y-auto border-r border-[var(--border)] bg-[var(--bg-surface)] px-2 py-4"
+            className="flex w-[180px] shrink-0 flex-col gap-5 overflow-y-auto border-r border-[var(--border)] bg-[var(--bg-surface)] px-2 py-4"
           >
             {NAV_GROUPS.map(({ label, items }, i) => (
               <div key={label ?? i} className="space-y-0.5">
                 {label && (
-                  <p className="px-2.5 pb-1 text-[10px] font-medium uppercase tracking-widest text-[var(--text-hint)]">{label}</p>
+                  <p className="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-hint)]">{label}</p>
                 )}
-                {items.map(({ id, label: itemLabel }) => navItem(id, itemLabel))}
+                {items.map(({ id, label: itemLabel, icon }) => navItem(id, itemLabel, icon))}
               </div>
             ))}
-            {/* Acerca de va siempre al final de la barra */}
-            <div className="mt-auto">
-              {navItem('about', t(language, 'settings', 'tabAbout'))}
-            </div>
           </nav>
 
           {/* Content */}
@@ -152,7 +155,7 @@ export function SettingsModal() {
               />
             )}
 
-            {/* ── WORK: Comportamiento · Notificaciones · Semana laboral · Accesibilidad ── */}
+            {/* ── WORK: Comportamiento · Vista de notas · Notificaciones · Semana laboral · Accesibilidad ── */}
             {settingsTab === 'work' && <WorkSettingsTab />}
 
             {/* ── SHORTCUTS: Atajos de teclado ── */}

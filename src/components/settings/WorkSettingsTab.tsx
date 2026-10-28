@@ -8,6 +8,7 @@ export function WorkSettingsTab() {
   const {
     language,
     confirmDestructiveActions, setConfirmDestructiveActions,
+    notesViewDefault, setNotesViewDefault,
     notificationsEnabled, setNotificationsEnabled,
     defaultReminderMinutes, setDefaultReminderMinutes,
     workWeekDays, setWorkWeekDays,
@@ -48,6 +49,32 @@ export function WorkSettingsTab() {
         </span>
         <ToggleSwitch checked={confirmDestructiveActions} onChange={setConfirmDestructiveActions} size="lg" />
       </div>
+    </div>
+  </div>
+
+  {/* Vista de notas */}
+  <div>
+    <p className="mb-1 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
+      {t(language, 'settings', 'notesViewDefault')}
+    </p>
+    <p className="mb-3 text-[11px] text-[var(--text-hint)]">{t(language, 'settings', 'notesViewDefaultHint')}</p>
+    <div className="flex gap-2">
+      {([
+        { value: 'list', label: t(language, 'settings', 'notesViewOptionList') },
+        { value: 'tree', label: t(language, 'settings', 'notesViewOptionTree') },
+      ] as const).map((opt) => (
+        <button
+          key={opt.value}
+          onClick={() => setNotesViewDefault(opt.value)}
+          className={`flex-1 rounded-xl border px-4 py-3 text-sm font-medium transition ${
+            notesViewDefault === opt.value
+              ? 'border-indigo-500/60 bg-indigo-500/10 text-indigo-400'
+              : 'border-[var(--border-card)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:border-[var(--border-high)] hover:text-[var(--text-secondary)]'
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
     </div>
   </div>
 

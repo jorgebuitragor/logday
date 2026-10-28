@@ -15,6 +15,7 @@ import {
   Hash,
 } from 'lucide-react';
 import { RichTextEditor } from './RichTextEditor';
+import { TagSuggestInput } from './TagSuggestInput';
 import { AppDatePicker } from '../shared/AppDatePicker';
 import { Task, TaskStatus } from '../../types/task';
 import { useAppStore } from '../../store/appStore';
@@ -90,6 +91,9 @@ export function TaskEditor() {
 
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tagInputRef = useRef<HTMLInputElement>(null);
+  // Esc descarta el tag a medio escribir: al cerrarse, el campo puede
+  // disparar onBlur con el texto viejo, que lo agregaría.
+  const discardTag = useRef(false);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   // Campos de texto editados y todavía sin guardar (debounce de 800 ms), y
   // la task a la que pertenecen.
@@ -120,8 +124,26 @@ export function TaskEditor() {
   }, [showProjectMenu]);
 
   useEffect(() => {
-    if (showTagInput) tagInputRef.current?.focus();
+    if (!showTagInput) return;
+    discardTag.current = false;
+    tagInputRef.current?.focus();
   }, [showTagInput]);
+
+  // Esc cierra el panel, salvo escribiendo (ahí Esc es del campo) o con un
+  // menú o ventana encima.
+  useEffect(() => {
+    if (!activeTask) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const target = e.target as HTMLElement;
+      if (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      if (showProjectMenu || document.querySelector('[role="dialog"], [aria-modal="true"]')) return;
+      e.preventDefault();
+      setActiveTask(null);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [activeTask, showProjectMenu, setActiveTask]);
 
   // Guarda `patch` sobre la task tal como está ahora en el store, no sobre
   // el `activeTask` del render que programó el guardado: si entre medio
@@ -210,13 +232,25 @@ export function TaskEditor() {
     [taskCode, tasks, activeTask?.id]
   );
 
+  // Igual que en la ventana "Nueva tarea": Enter o salir del campo agregan
+  // el tag (sin la @ inicial, por costumbre de la captura rápida).
+  const addTag = (raw: string) => {
+    const tag = raw.trim().replace(/^@/, '');
+    if (tag && !tags.includes(tag)) saveNow('tags', JSON.stringify([...tags, tag]));
+    // El campo se cierra; si al cerrarse dispara onBlur, ya está agregado.
+    discardTag.current = true;
+    setNewTag('');
+    setShowTagInput(false);
+  };
+  const commitNewTag = () => {
+    if (discardTag.current) { discardTag.current = false; return; }
+    addTag(newTag);
+  };
+
   const handleAddTag = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && newTag.trim()) {
-      saveNow('tags', JSON.stringify([...new Set([...tags, newTag.trim()])]));
-      setNewTag('');
-      setShowTagInput(false);
-    }
+    if (e.key === 'Enter') commitNewTag();
     if (e.key === 'Escape') {
+      discardTag.current = true;
       setNewTag('');
       setShowTagInput(false);
     }
@@ -412,12 +446,14 @@ export function TaskEditor() {
                 </span>
               ))}
               {showTagInput ? (
-                <input
+                <TagSuggestInput
                   ref={tagInputRef}
                   value={newTag}
-                  onChange={(e) => setNewTag(e.target.value)}
+                  onChange={setNewTag}
+                  onCommit={addTag}
+                  exclude={tags}
                   onKeyDown={handleAddTag}
-                  onBlur={() => { setShowTagInput(false); setNewTag(''); }}
+                  onBlur={commitNewTag}
                   placeholder={t(language, 'tasks', 'tagPlaceholder')}
                   className="rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-300 outline-none w-24"
                 />

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Clock, CalendarDays, Copy, Bell, Repeat2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Clock, CalendarDays, Copy, Bell, Repeat2, X, Check } from 'lucide-react';
 import { Task, TaskStatus } from '../../types/task';
 import { CalendarEvent, EventColor, EventRepeat } from '../../types/calendar';
 import { useAppStore } from '../../store/appStore';
@@ -15,15 +15,18 @@ import { EventEditor } from './EventEditor';
 import { t, MONTHS_TITLE, WEEKDAYS_SHORT } from '../../lib/i18n';
 import { EVENT_COLOR_DOT, EVENT_COLORS, REMINDER_OPTIONS, reminderLabel } from '../../lib/calendarEventPresentation';
 import { localISODate } from '../../lib/localDate';
-import { filterTasks } from '../../lib/taskListing';
+import { filterTasks, formatDueLabel } from '../../lib/taskListing';
 import { TaskFilterBar } from '../tasks/TaskFilterBar';
 
 const ESTIMATED_DAY_CTX_MENU = { width: 190, height: 88 };
 const ESTIMATED_EVENT_CTX_MENU = { width: 190, height: 128 };
 
-// Elementos por celda antes de "+N más": con más, la celda crece y la
-// grilla deja de caber en la pantalla.
-const MAX_CELL_ITEMS = 3;
+// Cuántos eventos y tareas caben en una celda antes de "+N más". Se mide
+// el alto real de las filas: con la ventana grande caben más, y con un tope
+// fijo quedaba espacio vacío junto a "+3 más".
+const CELL_CHROME_PX = 34; // relleno y número del día
+const CELL_ITEM_PX = 18;   // alto de un renglón (evento o tarea) más el espacio
+const CELL_GAP_PX = 4;     // gap-1 entre filas
 
 const STATUS_DOT: Record<TaskStatus, string> = {
   todo: 'bg-zinc-500',
@@ -44,7 +47,7 @@ const EVENT_COLOR_BADGE: Record<EventColor, string> = {
 
 
 export function CalendarView() {
-  const { tasks, currentView, setActiveTask, activeTask, language, calendarEvents, saveCalendarEvent, deleteCalendarEvent, showToast, confirmDestructiveActions, activeCalendarEvent, setActiveCalendarEvent, taskFilter } = useAppStore();
+  const { tasks, currentView, setActiveTask, activeTask, language, calendarEvents, saveCalendarEvent, deleteCalendarEvent, showToast, confirmDestructiveActions, activeCalendarEvent, setActiveCalendarEvent, taskFilter, updateTaskWithUndo } = useAppStore();
   // Mismo filtro que la lista y el Kanban (estado, búsqueda y tags).
   const visibleTasks = useMemo(() => filterTasks(tasks, taskFilter), [tasks, taskFilter]);
 
@@ -86,6 +89,60 @@ export function CalendarView() {
   const [evRepeatEnabled, setEvRepeatEnabled] = useState(false);
   const [evRepeat, setEvRepeat] = useState<Exclude<EventRepeat, 'none'>>('weekly');
   const [evDirty, setEvDirty] = useState(false);
+
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [gridHeight, setGridHeight] = useState(0);
+  // La grilla se vuelve a montar al cambiar de mes (tiene key): se observa
+  // de nuevo cada vez.
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setGridHeight(el.clientHeight));
+    observer.observe(el);
+    setGridHeight(el.clientHeight);
+    return () => observer.disconnect();
+  }, [currentView, year, month]);
+
+  // Arrastrar una tarea a otro día cambia su vencimiento (con deshacer).
+  // Con eventos de puntero, como el Kanban. Hasta moverse 4 px es un clic.
+  const pressRef = useRef<{ task: Task; x: number; y: number } | null>(null);
+  const justDraggedRef = useRef(false);
+  const overRef = useRef<string | null>(null);
+  const [drag, setDrag] = useState<{ task: Task; x: number; y: number; over: string | null } | null>(null);
+  const dragging = !!drag;
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const press = pressRef.current;
+      if (!press) return;
+      if (!dragging && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 4) return;
+      const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-cal-date]')?.getAttribute('data-cal-date') ?? null;
+      overRef.current = over;
+      setDrag({ task: press.task, x: e.clientX, y: e.clientY, over });
+    };
+    const onUp = () => {
+      const press = pressRef.current;
+      pressRef.current = null;
+      if (!dragging || !press) return;
+      const over = overRef.current;
+      overRef.current = null;
+      setDrag(null);
+      if (over && over !== press.task.due) {
+        void updateTaskWithUndo({ ...press.task, due: over }, {
+          title: t(language, 'tasks', 'toastDue'),
+          description: `${press.task.title} · ${formatDueLabel(over, localISODate(), language).label}`,
+        });
+      }
+      // El clic que llega al soltar no debe abrir la tarea ni elegir el día.
+      justDraggedRef.current = true;
+      setTimeout(() => { justDraggedRef.current = false; }, 0);
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    return () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    };
+  }, [dragging, language, updateTaskWithUndo]);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -178,11 +235,20 @@ export function CalendarView() {
     else setMonth(m => m + 1);
     setSelectedDate(null);
   };
+  const goToday = () => {
+    setYear(today.getFullYear());
+    setMonth(today.getMonth());
+    setSelectedDate(null);
+  };
 
   const selectedTasks  = selectedDate ? (tasksByDate[selectedDate]  || []) : [];
   const selectedEvents = selectedDate ? (eventsByDate[selectedDate] || []) : [];
   const todayStr = localISODate(today);
   const weeks = totalCells / 7;
+  const cellCapacity = gridHeight
+    ? Math.max(1, Math.floor(((gridHeight - CELL_GAP_PX * (weeks - 1)) / weeks - CELL_CHROME_PX) / CELL_ITEM_PX))
+    : 3;
+  const editorOpen = !!activeTask || !!activeCalendarEvent;
   const longDate = (iso: string) => {
     const [y, m, d] = iso.split('-').map(Number);
     const label = new Intl.DateTimeFormat(language === 'es' ? 'es-CO' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(y, m - 1, d, 12));
@@ -204,6 +270,7 @@ export function CalendarView() {
   return (
     <div
       className="flex flex-1 flex-col overflow-hidden"
+      style={drag ? { userSelect: 'none', cursor: 'grabbing' } : undefined}
       onContextMenu={(e) => { e.preventDefault(); setEmptyCtxMenu({ x: e.clientX, y: e.clientY }); }}
     >
       {/* Header */}
@@ -211,6 +278,14 @@ export function CalendarView() {
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-[var(--text-primary)]">{t(language, 'tasks', 'calendarTitle')}</h1>
         <div className="flex items-center gap-3">
+          <button
+            onClick={goToday}
+            disabled={year === today.getFullYear() && month === today.getMonth()}
+            title={t(language, 'calendar', 'goToday')}
+            className="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] disabled:opacity-40 disabled:hover:bg-transparent"
+          >
+            {t(language, 'tasks', 'groupToday')}
+          </button>
           <button onClick={prevMonth} className="rounded-lg p-1.5 text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition">
             <ChevronLeft size={18} />
           </button>
@@ -240,8 +315,12 @@ export function CalendarView() {
           {/* Day cells */}
           <div
             key={`${year}-${month}`}
+            ref={gridRef}
             className="cal-grid-enter grid flex-1 grid-cols-7 gap-1"
-            style={{ gridTemplateRows: `repeat(${weeks}, minmax(6rem, 1fr))` }}
+            // Filas de alto fijo (no crecen con el contenido): la capacidad de
+            // cada celda se calcula con este alto, y si las filas crecieran
+            // con lo que muestran, la medida se realimentaría.
+            style={{ gridTemplateRows: `repeat(${weeks}, minmax(0, 1fr))`, minHeight: `${weeks * 6}rem` }}
           >
             {Array.from({ length: totalCells }).map((_, i) => {
               const dayNum = i - startOffset + 1;
@@ -258,16 +337,17 @@ export function CalendarView() {
                 ...dayEvents.map((ev) => ({ kind: 'event' as const, ev })),
                 ...dayTasks.map((task) => ({ kind: 'task' as const, task })),
               ];
-              const shown = items.length > MAX_CELL_ITEMS ? items.slice(0, MAX_CELL_ITEMS - 1) : items;
+              const shown = items.length > cellCapacity ? items.slice(0, cellCapacity - 1) : items;
               const hidden = items.length - shown.length;
 
               return (
                 <div
                   key={i}
                   role="button"
+                  data-cal-date={dateStr}
                   tabIndex={0}
                   aria-pressed={isSelected}
-                  onClick={() => setSelectedDate(isSelected ? null : dateStr)}
+                  onClick={() => { if (!justDraggedRef.current) setSelectedDate(isSelected ? null : dateStr); }}
                   onKeyDown={(e) => {
                     if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
                     e.preventDefault();
@@ -279,7 +359,9 @@ export function CalendarView() {
                     setDayCtxMenu({ x: e.clientX, y: e.clientY, date: dateStr });
                   }}
                   className={`flex min-h-0 cursor-pointer flex-col gap-0.5 overflow-hidden rounded-xl border p-1.5 transition outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${
-                    isSelected
+                    drag?.over === dateStr
+                      ? 'border-indigo-400/70 bg-indigo-500/10'
+                      : isSelected
                       ? 'bg-indigo-500/15 border-indigo-500/40'
                       : 'border-[var(--border)] hover:bg-[var(--bg-hover)]'
                   }`}
@@ -316,7 +398,11 @@ export function CalendarView() {
                       <button
                         key={item.task.id}
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); setActiveTask(item.task); }}
+                        onPointerDown={(e) => {
+                          if (e.button !== 0) return;
+                          pressRef.current = { task: item.task, x: e.clientX, y: e.clientY };
+                        }}
+                        onClick={(e) => { e.stopPropagation(); if (!justDraggedRef.current) setActiveTask(item.task); }}
                         onContextMenu={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -348,12 +434,14 @@ export function CalendarView() {
         </div>
 
         {/* Selected day panel */}
-        {selectedDate && (
+        {/* El panel del día se oculta mientras está abierto el de una tarea o
+            evento: los tres a la vez apretaban la grilla hasta truncar todo. */}
+        {selectedDate && !editorOpen && (
           <div key={selectedDate} className="cal-panel-enter w-72 border-l border-[var(--border)] flex flex-col overflow-hidden">
             <div className="border-b border-[var(--border)] px-4 py-3">
               <p className="text-sm font-medium text-[var(--text-primary)]">{longDate(selectedDate)}</p>
               <p className="text-xs text-[var(--text-hint)]">
-                {selectedTasks.length} {t(language, 'calendar', 'tasks')} · {selectedEvents.length} {t(language, 'calendar', 'events')}
+                {selectedTasks.length} {t(language, 'calendar', selectedTasks.length === 1 ? 'taskOne' : 'taskMany')} · {selectedEvents.length} {t(language, 'calendar', selectedEvents.length === 1 ? 'eventOne' : 'eventMany')}
               </p>
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-3">
@@ -378,14 +466,14 @@ export function CalendarView() {
                     {selectedEvents.map((ev) => (
                       <div
                         key={ev.id}
-                        onClick={() => setActiveCalendarEvent(activeCalendarEvent?.id === ev.id ? null : ev)}
+                        onClick={() => setActiveCalendarEvent(ev)}
                         onContextMenu={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
                           setActiveCalendarEvent(null);
                           setEvCtxMenu({ event: ev, x: e.clientX, y: e.clientY });
                         }}
-                        className={`rounded-xl border px-3 py-2 flex items-start justify-between gap-2 cursor-pointer select-none transition hover:brightness-110 ${activeCalendarEvent?.id === ev.id ? 'ring-1 ring-white/20' : ''} ${EVENT_COLOR_BADGE[ev.color]}`}
+                        className={`rounded-xl border px-3 py-2 flex items-start justify-between gap-2 cursor-pointer select-none transition hover:brightness-110 ${EVENT_COLOR_BADGE[ev.color]}`}
                       >
                         <div className="min-w-0">
                           <p className="truncate text-xs font-medium">{ev.title}</p>
@@ -426,7 +514,7 @@ export function CalendarView() {
                     {t(language, 'calendar', 'tasks')}
                   </span>
                   <button
-                    onClick={() => { window.dispatchEvent(new CustomEvent('logday:new-task')); }}
+                    onClick={() => { window.dispatchEvent(new CustomEvent('logday:new-task', { detail: { due: selectedDate } })); }}
                     className="flex items-center gap-1 text-[10px] text-indigo-400 hover:text-indigo-300 transition"
                   >
                     <Plus size={11} /> {t(language, 'tasks', 'newTask')}
@@ -436,30 +524,48 @@ export function CalendarView() {
                   <p className="text-xs text-[var(--text-faint)] italic py-1">{t(language, 'tasks', 'noTasksDate')}</p>
                 ) : (
                   selectedTasks.map((task) => (
-                    <button
+                    <div
                       key={task.id}
-                      onClick={() => setActiveTask(activeTask?.id === task.id ? null : task)}
                       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ task, x: e.clientX, y: e.clientY }); }}
-                      className={`w-full text-left rounded-xl border px-3 py-2.5 transition mb-1 ${
-                        activeTask?.id === task.id
-                          ? 'border-indigo-500/40 bg-indigo-500/10'
-                          : 'border-[var(--border-card)] hover:border-[var(--border-high)]'
-                      }`}
+                      className="mb-1 flex items-start gap-2 rounded-xl border border-[var(--border-card)] px-3 py-2.5 transition hover:border-[var(--border-high)]"
                     >
-                      <div className="flex items-center gap-2">
-                        <span className={`h-2 w-2 rounded-full ${STATUS_DOT[task.status]}`} />
+                      <button
+                        type="button"
+                        role="checkbox"
+                        aria-checked={task.status === 'done'}
+                        aria-label={t(language, 'tasks', task.status === 'done' ? 'markUndone' : 'markDone')}
+                        title={t(language, 'tasks', task.status === 'done' ? 'markUndone' : 'markDone')}
+                        onClick={() => void updateTaskWithUndo(
+                          { ...task, status: task.status === 'done' ? 'todo' : 'done' },
+                          { title: t(language, 'tasks', task.status === 'done' ? 'toastReopened' : 'toastCompleted'), description: task.title },
+                        )}
+                        className={`mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-[1.5px] transition ${
+                          task.status === 'done'
+                            ? 'border-green-500 bg-green-500 text-white'
+                            : task.status === 'in-progress'
+                            ? 'border-amber-400 text-transparent hover:text-amber-400'
+                            : 'border-[var(--text-hint)] text-transparent hover:border-green-500 hover:text-green-500'
+                        }`}
+                      >
+                        <Check size={10} strokeWidth={3} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTask(task)}
+                        className="min-w-0 flex-1 text-left"
+                      >
                         <p className={`text-xs font-medium ${task.status === 'done' ? 'line-through text-[var(--text-hint)]' : 'text-[var(--text-body)]'}`}>
                           {task.title}
                         </p>
-                      </div>
-                      {task.tags.length > 0 && (
-                        <div className="mt-1 flex flex-wrap gap-1 pl-4">
-                          {task.tags.slice(0, 2).map((tg) => (
-                            <span key={tg} className="text-[8px] text-indigo-400">{tg}</span>
-                          ))}
-                        </div>
-                      )}
-                    </button>
+                        {task.tags.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {task.tags.slice(0, 3).map((tg) => (
+                              <span key={tg} className="rounded-full bg-indigo-500/10 px-1.5 py-px text-[10px] text-indigo-400">{tg}</span>
+                            ))}
+                          </div>
+                        )}
+                      </button>
+                    </div>
                   ))
                 )}
               </div>
@@ -660,6 +766,15 @@ export function CalendarView() {
           </div>
         )}
       </div>
+      {drag && (
+        <div
+          style={{ position: 'fixed', left: drag.x + 12, top: drag.y + 8, zIndex: 9999, pointerEvents: 'none' }}
+          className="max-w-[220px] truncate rounded-lg border border-indigo-400/60 bg-[var(--bg-panel)] px-2.5 py-1.5 text-xs text-[var(--text-body)] shadow-2xl"
+        >
+          {drag.task.title}
+        </div>
+      )}
+
       {/* Event context menu */}
       {evCtxMenu && createPortal(
         <div
@@ -725,6 +840,7 @@ export function CalendarView() {
         <NewTaskContextMenu
           x={emptyCtxMenu.x}
           y={emptyCtxMenu.y}
+          due={selectedDate ?? undefined}
           onClose={() => setEmptyCtxMenu(null)}
           onNewEvent={() => {
             setEventEditor({ event: { date: selectedDate ?? todayStr } });
@@ -742,7 +858,7 @@ export function CalendarView() {
         >
           <button
             onClick={() => {
-              window.dispatchEvent(new CustomEvent('logday:new-task'));
+              window.dispatchEvent(new CustomEvent('logday:new-task', { detail: { due: dayCtxMenu.date } }));
               setDayCtxMenu(null);
             }}
             className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"

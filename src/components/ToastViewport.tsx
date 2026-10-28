@@ -40,6 +40,15 @@ export function ToastViewport() {
                 <p className="mt-0.5 text-xs text-[var(--text-secondary)]">{toast.description}</p>
               )}
             </div>
+            {toast.action && (
+              <button
+                type="button"
+                onClick={() => { toast.action?.onClick(); preExitToast(toast.id); }}
+                className="shrink-0 self-center rounded-lg px-2.5 py-1 text-xs font-medium text-indigo-400 transition hover:bg-indigo-500/10"
+              >
+                {toast.action.label}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => preExitToast(toast.id)}

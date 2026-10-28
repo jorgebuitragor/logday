@@ -7,5 +7,7 @@ export interface AppToast {
   kind: ToastKind;
   title: string;
   description?: string;
+  /** Botón en el aviso, p. ej. "Deshacer". Al pulsarlo el aviso se cierra. */
+  action?: { label: string; onClick: () => void };
   exiting?: boolean;
 }

@@ -59,7 +59,14 @@ export function usePositionedMenu(
 
     recalc();
     window.addEventListener('resize', recalc);
-    return () => window.removeEventListener('resize', recalc);
+    // También cuando el menú cambia de tamaño (una sección que se despliega,
+    // como "Mover a proyecto" o "Elegir fecha…"), para que no se salga.
+    const observer = new ResizeObserver(recalc);
+    observer.observe(ref.current);
+    return () => {
+      window.removeEventListener('resize', recalc);
+      observer.disconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anchor]);
 

@@ -1,25 +1,17 @@
 import { useState, useEffect, useRef, memo } from 'react';
-import { Check, Calendar, AlertTriangle, Folder } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { Task } from '../../types/task';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../store/appStore';
 import { TaskContextMenu } from './TaskContextMenu';
 import { t } from '../../lib/i18n';
-import { formatDueLabel, type DueTone } from '../../lib/taskListing';
+import { DueChip, TaskMeta } from './TaskMeta';
 
 // Fila de la lista de tareas.
 
-const MAX_TAGS = 3;
 // Lo que tarda la casilla en mostrarse marcada antes de que la tarea se
 // mueva a "Hechas": sin esta pausa la fila desaparece sin que se vea el clic.
 const COMPLETE_DELAY_MS = 350;
-
-const DUE_TONE_CLASS: Record<DueTone, string> = {
-  overdue: 'bg-red-500/10 text-red-400',
-  today: 'bg-amber-500/10 text-amber-400',
-  soon: 'bg-indigo-500/10 text-indigo-400',
-  normal: 'text-[var(--text-muted)]',
-};
 
 export const TaskRow = memo(function TaskRow({
   task,
@@ -30,6 +22,9 @@ export const TaskRow = memo(function TaskRow({
   isRemoving,
   staggerIndex = 0,
   onBeforeDelete,
+  hideDue,
+  isSelected,
+  onMultiSelect,
 }: {
   task: Task;
   today: string;
@@ -40,9 +35,16 @@ export const TaskRow = memo(function TaskRow({
   isRemoving?: boolean;
   staggerIndex?: number;
   onBeforeDelete?: () => void;
+  /** Dentro de los grupos "Hoy" y "Mañana" la fecha ya la dice el
+   *  encabezado: repetirla en cada fila era ruido. */
+  hideDue?: boolean;
+  /** En la selección múltiple. */
+  isSelected?: boolean;
+  /** ⌘-clic o ⇧-clic: agrega a la selección en vez de abrir la tarea. */
+  onMultiSelect?: (e: React.MouseEvent) => void;
 }) {
-  const { setActiveTask, activeTask, updateTask, language } = useAppStore(
-    useShallow((s) => ({ setActiveTask: s.setActiveTask, activeTask: s.activeTask, updateTask: s.updateTask, language: s.language }))
+  const { setActiveTask, activeTask, updateTaskWithUndo, language } = useAppStore(
+    useShallow((s) => ({ setActiveTask: s.setActiveTask, activeTask: s.activeTask, updateTaskWithUndo: s.updateTaskWithUndo, language: s.language }))
   );
   const isActive = activeTask?.id === task.id;
   const rowRef = useRef<HTMLDivElement>(null);
@@ -61,8 +63,7 @@ export const TaskRow = memo(function TaskRow({
   const staggerClass = `task-d${Math.min(staggerIndex, 10)}`;
   const isDone = task.status === 'done' || completing;
   const isInProgress = task.status === 'in-progress' && !completing;
-  const due = task.due && task.status !== 'done' ? formatDueLabel(task.due, today, language) : null;
-  const extraTags = task.tags.slice(MAX_TAGS);
+  const showDue = !!task.due && task.status !== 'done' && !hideDue;
 
   // La casilla solo completa o reabre. "En progreso" se elige en el menú
   // contextual o en el panel: antes el ícono rotaba entre los tres estados
@@ -74,12 +75,14 @@ export const TaskRow = memo(function TaskRow({
     onSelect?.();
     setStatusPopped(true);
     if (task.status === 'done') {
-      void updateTask({ ...task, status: 'todo' });
+      void updateTaskWithUndo({ ...task, status: 'todo' }, { title: t(language, 'tasks', 'toastReopened'), description: task.title });
       return;
     }
     setCompleting(true);
+    // La tarea se va a "Hechas" (plegada): el aviso permite deshacerlo.
     setTimeout(() => {
-      void updateTask({ ...task, status: 'done' }).finally(() => setCompleting(false));
+      void updateTaskWithUndo({ ...task, status: 'done' }, { title: t(language, 'tasks', 'toastCompleted'), description: task.title })
+        .finally(() => setCompleting(false));
     }, COMPLETE_DELAY_MS);
   };
 
@@ -96,10 +99,26 @@ export const TaskRow = memo(function TaskRow({
     >
     <div
       ref={rowRef}
-      onClick={() => { onSelect?.(); setActiveTask(isActive ? null : task); }}
-      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
+      data-task-id={task.id}
+      aria-selected={isSelected}
+      // ⇧-clic sin seleccionar el texto de las filas de en medio.
+      onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
+      onClick={(e) => {
+        if ((e.metaKey || e.ctrlKey || e.shiftKey) && onMultiSelect) {
+          e.preventDefault();
+          onMultiSelect(e);
+          return;
+        }
+        onSelect?.();
+        setActiveTask(isActive ? null : task);
+      }}
+      // El clic derecho también selecciona: si no, el menú era de una fila
+      // y el resaltado quedaba en otra.
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onSelect?.(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
       className={`flex items-start gap-3 rounded-xl px-3 py-2.5 cursor-pointer transition group ${
-        isActive
+        isSelected
+          ? 'bg-indigo-500/15 border border-indigo-500/40'
+          : isActive
           ? 'bg-indigo-500/10 border border-indigo-500/20'
           : isFocused
           ? 'border border-indigo-500/40 bg-[var(--bg-hover)]'
@@ -149,46 +168,9 @@ export const TaskRow = memo(function TaskRow({
           >
             {task.title}
           </p>
-          {due && (
-            <span
-              className={`flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium ${DUE_TONE_CLASS[due.tone]}`}
-              title={task.due}
-            >
-              {due.tone === 'overdue' ? <AlertTriangle size={10} /> : <Calendar size={10} />}
-              {due.label}
-            </span>
-          )}
+          {showDue && <DueChip due={task.due!} today={today} language={language} />}
         </div>
-        {/* Meta */}
-        {(task.taskCode || task.project !== 'inbox' || task.tags.length > 0 || isInProgress) && (
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[var(--text-hint)]">
-            {isInProgress && (
-              <span className="font-medium text-amber-400">{t(language, 'tasks', 'statusInProgress')}</span>
-            )}
-            {task.taskCode && (
-              <span className="rounded bg-[var(--bg-surface)] px-1 font-mono text-[10px] text-[var(--text-muted)]">{task.taskCode}</span>
-            )}
-            {task.project !== 'inbox' && (
-              <span className="flex items-center gap-1">
-                <Folder size={10} />
-                {task.project}
-              </span>
-            )}
-            {task.tags.slice(0, MAX_TAGS).map((tag) => (
-              <span key={tag} className="rounded-full bg-indigo-500/10 px-1.5 py-px text-[10px] text-indigo-400">
-                {tag}
-              </span>
-            ))}
-            {extraTags.length > 0 && (
-              <span
-                className="rounded-full bg-[var(--bg-surface)] px-1.5 py-px text-[10px] text-[var(--text-muted)]"
-                title={`${t(language, 'tasks', 'moreTags')}: ${extraTags.join(', ')}`}
-              >
-                +{extraTags.length}
-              </span>
-            )}
-          </div>
-        )}
+        <TaskMeta task={task} language={language} showInProgress={!completing} />
       </div>
     </div>
     {ctxMenu && (

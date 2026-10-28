@@ -3,13 +3,15 @@ import { addDaysISO } from './localDate';
 // Captura rápida de tareas: "Llamar al proveedor #logday @infra mañana".
 //
 // - `#proyecto` asigna el proyecto si existe (sin distinguir mayúsculas);
-//   si no existe, queda en el título tal cual.
+//   un subproyecto también vale por su último tramo (`#mobile` para
+//   `logday/mobile`) si no hay otro igual. Si no existe, queda en el título.
 // - `@tag` agrega un tag.
 // - La fecha se reconoce solo al final del texto ("hoy", "mañana",
-//   "pasado mañana", un día de la semana) o en cualquier lugar si es
-//   explícita (`15/11`, `2026-11-15`). Una palabra como "mañana" en medio
-//   del título ("Preparar la reunión de mañana con Ana") no se toma como
-//   fecha: quitarla del título sorprendería más de lo que ayuda.
+//   "pasado mañana", un día de la semana, `15/11`), salvo la ISO
+//   (`2026-11-15`), que no se confunde y vale en cualquier lugar. Una
+//   palabra como "mañana" o "1/3" en medio del título ("Preparar la reunión
+//   de mañana con Ana", "Leer cap 1/3 del libro") no se toma como fecha:
+//   quitarla del título sorprendería más de lo que ayuda.
 
 export interface QuickCaptureResult {
   title: string;
@@ -70,7 +72,7 @@ export function parseQuickCapture(input: string, projects: string[], today: stri
 
   for (const token of tokens) {
     if (token.length > 1 && token.startsWith('#')) {
-      const match = projects.find((p) => p.toLowerCase() === token.slice(1).toLowerCase());
+      const match = matchProject(token.slice(1), projects);
       if (match) { project = match; continue; }
     }
     if (token.length > 1 && token.startsWith('@')) {
@@ -78,15 +80,18 @@ export function parseQuickCapture(input: string, projects: string[], today: stri
       if (!tags.includes(tag)) tags.push(tag);
       continue;
     }
-    const explicit = explicitDate(token, today);
-    if (explicit) { due = explicit; continue; }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(token) && explicitDate(token, today)) { due = token; continue; }
     kept.push(token);
   }
 
-  // Fecha relativa: solo las últimas palabras del título.
+  // Fecha relativa o d/m: solo las últimas palabras del título.
   if (!due && kept.length > 1) {
     const last2 = kept.slice(-2).map(normalize).join(' ');
-    if (last2 === 'pasado manana') {
+    const lastExplicit = explicitDate(kept[kept.length - 1], today);
+    if (lastExplicit) {
+      due = lastExplicit;
+      kept.pop();
+    } else if (last2 === 'pasado manana') {
       due = addDaysISO(today, 2);
       kept.splice(-2);
     } else {
@@ -97,4 +102,41 @@ export function parseQuickCapture(input: string, projects: string[], today: stri
   }
 
   return { title: kept.join(' '), project, tags, due };
+}
+
+/** El proyecto de `#nombre`: la ruta completa, o el último tramo de un
+ *  subproyecto si es único. Sin distinguir mayúsculas. */
+export function matchProject(name: string, projects: string[]): string | undefined {
+  const n = name.toLowerCase();
+  const exact = projects.find((p) => p.toLowerCase() === n);
+  if (exact) return exact;
+  const bySegment = projects.filter((p) => p.toLowerCase().split('/').pop() === n);
+  return bySegment.length === 1 ? bySegment[0] : undefined;
+}
+
+export interface CaptureToken {
+  kind: '#' | '@';
+  /** Lo escrito después de # o @. */
+  query: string;
+  start: number;
+  end: number;
+}
+
+/** La palabra que se está escribiendo en `caret`, si empieza con # o @:
+ *  la que se completa con las sugerencias. */
+export function tokenAtCaret(value: string, caret: number): CaptureToken | null {
+  const start = value.lastIndexOf(' ', caret - 1) + 1;
+  const spaceAfter = value.indexOf(' ', caret);
+  const end = spaceAfter < 0 ? value.length : spaceAfter;
+  const word = value.slice(start, end);
+  if (word[0] !== '#' && word[0] !== '@') return null;
+  return { kind: word[0] as '#' | '@', query: value.slice(start + 1, caret), start, end };
+}
+
+/** Reemplaza el token por la sugerencia elegida, con un espacio detrás.
+ *  Devuelve el texto nuevo y dónde queda el cursor. */
+export function applySuggestion(value: string, token: CaptureToken, text: string): { value: string; caret: number } {
+  const before = value.slice(0, token.start) + token.kind + text;
+  const after = value.slice(token.end).replace(/^ /, '');
+  return { value: `${before} ${after}`, caret: before.length + 1 };
 }

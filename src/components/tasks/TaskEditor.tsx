@@ -15,6 +15,7 @@ import {
   Hash,
 } from 'lucide-react';
 import { RichTextEditor } from './RichTextEditor';
+import { TagSuggestInput } from './TagSuggestInput';
 import { AppDatePicker } from '../shared/AppDatePicker';
 import { Task, TaskStatus } from '../../types/task';
 import { useAppStore } from '../../store/appStore';
@@ -233,12 +234,17 @@ export function TaskEditor() {
 
   // Igual que en la ventana "Nueva tarea": Enter o salir del campo agregan
   // el tag (sin la @ inicial, por costumbre de la captura rápida).
-  const commitNewTag = () => {
-    if (discardTag.current) { discardTag.current = false; return; }
-    const tag = newTag.trim().replace(/^@/, '');
+  const addTag = (raw: string) => {
+    const tag = raw.trim().replace(/^@/, '');
     if (tag && !tags.includes(tag)) saveNow('tags', JSON.stringify([...tags, tag]));
+    // El campo se cierra; si al cerrarse dispara onBlur, ya está agregado.
+    discardTag.current = true;
     setNewTag('');
     setShowTagInput(false);
+  };
+  const commitNewTag = () => {
+    if (discardTag.current) { discardTag.current = false; return; }
+    addTag(newTag);
   };
 
   const handleAddTag = (e: React.KeyboardEvent) => {
@@ -440,10 +446,12 @@ export function TaskEditor() {
                 </span>
               ))}
               {showTagInput ? (
-                <input
+                <TagSuggestInput
                   ref={tagInputRef}
                   value={newTag}
-                  onChange={(e) => setNewTag(e.target.value)}
+                  onChange={setNewTag}
+                  onCommit={addTag}
+                  exclude={tags}
                   onKeyDown={handleAddTag}
                   onBlur={commitNewTag}
                   placeholder={t(language, 'tasks', 'tagPlaceholder')}

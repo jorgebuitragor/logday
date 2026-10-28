@@ -10,6 +10,7 @@ import { QuickAddInput } from './QuickAddInput';
 import { TaskFilterBar } from './TaskFilterBar';
 import { TaskSelectionBar } from './TaskSelectionBar';
 import { DatePickerPopover } from './DatePickerPopover';
+import { TaskShortcutsSheet } from './TaskShortcutsSheet';
 import type { AnchorRect } from '../../lib/menuPosition';
 import type { QuickCaptureResult } from '../../lib/quickCapture';
 import { t } from '../../lib/i18n';
@@ -52,6 +53,7 @@ export function TaskList() {
   // Selección múltiple (⌘-clic, ⇧-clic) y el calendario de la tecla `d`.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [datePicker, setDatePicker] = useState<{ anchor: AnchorRect; ids: string[] } | null>(null);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const filter = taskFilter.status;
   const [emptyCtxMenu, setEmptyCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [newTaskIds, setNewTaskIds] = useState<Set<string>>(new Set());
@@ -232,6 +234,7 @@ export function TaskList() {
       else if (e.key in dueKeys && targets.length) { e.preventDefault(); reschedule(targets, dueKeys[e.key]); }
       else if (e.key === 'd' && targets.length) { e.preventDefault(); openDatePicker(targets); }
       else if (e.key === 'n') { e.preventDefault(); quickAddRef.current?.focus(); }
+      else if (e.key === '?') { e.preventDefault(); setShowShortcuts(true); }
       else if (e.key === 'Escape' && selectedIds.size) { e.preventDefault(); setSelectedIds(new Set()); }
       // Con el panel abierto, Esc lo cierra (TaskEditor) y el foco se queda.
       else if (e.key === 'Escape' && focusedId && !useAppStore.getState().activeTask) setFocusedId(null);
@@ -380,7 +383,12 @@ export function TaskList() {
                 )}
               </section>
             )}
-            <p className="pt-2 text-center text-[10px] text-[var(--text-faint)]">{t(language, 'tasks', 'shortcutsHint')}</p>
+            <button
+              onClick={() => setShowShortcuts(true)}
+              className="mx-auto block pt-2 text-center text-[10px] text-[var(--text-hint)] transition hover:text-[var(--text-secondary)]"
+            >
+              {t(language, 'tasks', 'shortcutsHint')}
+            </button>
           </div>
         )}
       </div>
@@ -398,6 +406,7 @@ export function TaskList() {
           />
         </div>
       )}
+      {showShortcuts && <TaskShortcutsSheet onClose={() => setShowShortcuts(false)} />}
       {datePicker && (
         <DatePickerPopover
           anchor={datePicker.anchor}

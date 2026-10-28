@@ -5,6 +5,7 @@ import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import type { QuickCaptureResult } from '../../lib/quickCapture';
 import { RichTextEditor } from './RichTextEditor';
+import { TagSuggestInput } from './TagSuggestInput';
 import { AppSelect } from '../calendar/AppSelect';
 import { AppDatePicker } from '../shared/AppDatePicker';
 import { ModalOverlay } from '../shared/ModalOverlay';
@@ -57,8 +58,8 @@ export function NewTaskModal({ initial, onClose }: Props) {
     await createTask(title.trim(), project, content, code.trim() || undefined, { due: due || undefined, tags: finalTags });
   };
 
-  const addTag = () => {
-    const tag = tagInput.trim().replace(/^@/, '');
+  const addTag = (raw = tagInput) => {
+    const tag = raw.trim().replace(/^@/, '');
     if (tag && !tags.includes(tag)) setTags([...tags, tag]);
     setTagInput('');
   };
@@ -120,17 +121,20 @@ export function NewTaskModal({ initial, onClose }: Props) {
                   </button>
                 </span>
               ))}
-              <input
+              <TagSuggestInput
                 value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
+                onChange={setTagInput}
+                onCommit={addTag}
+                exclude={tags}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTag(); }
                   else if (e.key === 'Backspace' && !tagInput && tags.length) setTags(tags.slice(0, -1));
                   else if (e.key === 'Escape') onClose();
                 }}
-                onBlur={addTag}
+                onBlur={() => addTag()}
                 placeholder={t(language, 'tasks', 'tagsInputPlaceholder')}
-                className="min-w-[8rem] flex-1 bg-transparent py-1 text-xs text-[var(--text-secondary)] outline-none placeholder-[var(--text-faint)]"
+                wrapperClassName="min-w-[8rem] flex-1"
+                className="w-full bg-transparent py-1 text-xs text-[var(--text-secondary)] outline-none placeholder-[var(--text-faint)]"
               />
             </div>
           </div>

@@ -77,6 +77,8 @@ import {
   readPersistedUpdate, getContentText, applyTextEdit, applyEditorEdit, rebaseText, mapTextIndex,
   registerOpenNoteDoc, persistYDoc, base64ToBytes,
 } from '../../lib/noteContentSync';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { TauriEvent } from '@tauri-apps/api/event';
 import { useAppStore, syncNoteContent } from '../../store/appStore';
 import { Note } from '../../types/note';
 import { ExportModal } from './ExportModal';
@@ -982,16 +984,53 @@ export function NoteEditor() {
     return { ...latest, ...patch };
   };
 
+  // Guarda lo acumulado. `leaving` es el guardado al salir de la nota: además
+  // sella `updated` si quedó contenido sin sellar (D1, ver NoteUpdatedThrottle).
+  const flushPendingSave = (leaving = false) => {
+    const hadContent = 'content' in pendingPatchRef.current || pendingContentFromEditorRef.current;
+    const updated = takePendingNote();
+    if (!updated) return;
+    void updateNote(updated, { leaving });
+    if (hadContent) void pushContentUpdate(updated, updated.content);
+  };
+
   const scheduleFlush = () => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => {
-      const hadContent = 'content' in pendingPatchRef.current || pendingContentFromEditorRef.current;
-      const updated = takePendingNote();
-      if (!updated) return;
-      updateNote(updated);
-      if (hadContent) void pushContentUpdate(updated, updated.content);
-    }, 600);
+    saveTimeoutRef.current = setTimeout(() => flushPendingSave(), 600);
   };
+
+  // Cerrar la ventana solo la oculta (lib.rs hace `prevent_close` + `hide`),
+  // así que el editor no se desmonta: cuenta como salir de la nota para el
+  // sello final de `updated` (D1). Se escucha el evento crudo y no
+  // `onCloseRequested`, que destruiría la ventana al no cancelarlo. Recargar
+  // el webview (`beforeunload`) también cuenta, como mejor esfuerzo.
+  const leaveNote = () => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+      flushPendingSave(true);
+    } else if (activeNoteRef.current) {
+      void useAppStore.getState().flushNoteUpdated(activeNoteRef.current.id);
+    }
+  };
+  const leaveNoteRef = useRef(leaveNote);
+  leaveNoteRef.current = leaveNote;
+
+  useEffect(() => {
+    const onLeave = () => leaveNoteRef.current();
+    window.addEventListener('beforeunload', onLeave);
+    let unlisten: (() => void) | null = null;
+    let disposed = false;
+    getCurrentWindow()
+      .listen(TauriEvent.WINDOW_CLOSE_REQUESTED, onLeave)
+      .then((fn) => { if (disposed) fn(); else unlisten = fn; })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      window.removeEventListener('beforeunload', onLeave);
+      unlisten?.();
+    };
+  }, []);
 
   const schedulesSave = useCallback(
     (patch: Partial<Note>) => {
@@ -1279,9 +1318,16 @@ export function NoteEditor() {
         const md = readEditorMarkdown();
         if (flushedNote && md !== null) {
           const flushed = { ...flushedNote, content: md };
-          void updateNote(flushed);
+          // Salir de la nota: este guardado lleva también el sello final de
+          // `updated` si quedó contenido sin sellar (D1).
+          void updateNote(flushed, { leaving: true });
           pending = pushContentUpdate(flushed, md);
+        } else if (activeNoteRef.current) {
+          void useAppStore.getState().flushNoteUpdated(activeNoteRef.current.id);
         }
+      } else if (activeNoteRef.current) {
+        // Sin guardado pendiente: sello final de lo ya guardado sin sellar.
+        void useAppStore.getState().flushNoteUpdated(activeNoteRef.current.id);
       }
       // Solo se destruye el Y.Doc después de que el flush pendiente (si lo
       // hay) termine — destruirlo antes rompería el encode/push en curso.

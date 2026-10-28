@@ -1,7 +1,7 @@
 # Fechas de creación, edición y completado — Requirements
 
-Estado: en progreso. Etapa 1 (leer los dos formatos) implementada; etapa 2
-(escribir instantes) pendiente.
+Estado: implementado. Etapa 1 (leer los dos formatos) y etapa 2 (escribir
+instantes, reglas D1 y D2) hechas.
 
 Decisión cross-cliente en el vault: `02 Decisiones/Fechas de creación y
 edición como instantes ISO.md`.
@@ -47,10 +47,40 @@ no cambian: siguen siendo `YYYY-MM-DD` local.
 - R7. Leer NO DEBERÁ normalizar ni reescribir ningún valor guardado: ni el
   parser del frontmatter ni los mapeos de sync cambian, para no generar
   PATCH espurios.
-- R8. En esta etapa Desktop SIGUE escribiendo `YYYY-MM-DD` local.
+- R8. En la etapa 1 Desktop seguía escribiendo `YYYY-MM-DD` local. La
+  etapa 2 lo reemplaza (R9).
 
-## Etapa 2 (pendiente)
+## Requisitos (etapa 2: escribir instantes)
 
-Escribir instantes con `nowInstant()` en `created`, `completedAt` y
-`updated`, cuando Web y Mobile ya lean los dos formatos y la versión de
-Desktop con la etapa 1 esté instalada.
+Las reglas D1 y D2 son decisiones de Jorge y valen igual en Desktop, Web y
+Mobile.
+
+- R9. CUANDO el sistema escriba `created` o `completedAt` de una tarea, o
+  `created` o `updated` de una nota, DEBERÁ escribir un instante de
+  `nowInstant()` (`toISOString()`). Los `YYYY-MM-DD` legados NO DEBERÁN
+  migrarse ni reescribirse: una marca guardada solo cambia cuando R10–R15
+  lo piden.
+- R10. CUANDO se cree una tarea, `created` DEBERÁ ser el instante actual; si
+  nace en `done`, `completedAt` DEBERÁ ser ese mismo instante.
+- R11 (D2). CUANDO una tarea pase de no-`done` a `done`, `completedAt`
+  DEBERÁ ser el instante actual, aunque la tarea traiga un valor viejo de
+  otro cliente. MIENTRAS siga en `done`, DEBERÁ conservar su valor tal cual,
+  también si está vacío: una tarea legada hecha sin `completedAt` no se da
+  por completada hoy porque se le edite otro campo. CUANDO salga de `done`,
+  DEBERÁ limpiarse.
+- R12 (D1). CUANDO se cree, duplique (nota o carpeta) o importe una nota,
+  `created` y `updated` DEBERÁN ser el mismo instante actual.
+- R13 (D1). CUANDO cambie el título, los tags, la carpeta o el fijado de una
+  nota, `updated` DEBERÁ sellarse al momento.
+- R14 (D1). MIENTRAS se edite el contenido de una nota, `updated` DEBERÁ
+  sellarse como mucho una vez cada 60 s por nota. El `.md` DEBERÁ seguir
+  guardando el contenido en cada autoguardado: solo se limita el sello.
+- R15 (D1). CUANDO se salga de una nota (cambiar de nota, cerrarla, salir de
+  Notas, desmontar el editor o cerrar la ventana), el sistema DEBERÁ sellar
+  `updated` SOLO si hubo ediciones de contenido desde el último sello.
+- R16. Releer un `.md` o recibir una marca por sync NO DEBERÁ cambiar su
+  valor, ni generar un PATCH (el parser, la sync entrante, la papelera y la
+  migración copian valores, no los inventan).
+- R17. CUANDO se deshaga un cambio de estado (completar, reabrir), el
+  sistema DEBERÁ dejar `completedAt` exactamente como estaba antes de la
+  acción (incluido vacío o un valor legado), sin aplicar R11.

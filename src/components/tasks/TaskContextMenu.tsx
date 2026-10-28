@@ -156,7 +156,7 @@ export function TaskContextMenu({ task, x, y, onClose, onBeforeDelete }: Props) 
           <button
             key={key}
             onClick={() => void handleDue(due)}
-            className={`flex-1 rounded-md px-1.5 py-1 text-[11px] transition hover:bg-[var(--bg-hover)] ${
+            className={`flex-1 whitespace-nowrap rounded-md px-1.5 py-1 text-[11px] transition hover:bg-[var(--bg-hover)] ${
               task.due === due ? 'bg-indigo-500/10 text-indigo-400' : 'text-[var(--text-secondary)]'
             }`}
           >

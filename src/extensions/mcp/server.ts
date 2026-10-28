@@ -21,8 +21,10 @@ let running = false;
 let serverVersion = '';
 
 /** Abre el servidor con la configuración actual, o lo cierra si no hay
- *  token. Lo usa el panel al cambiar el puerto o el token (R4). */
-export async function restartMcpServer(): Promise<void> {
+ *  token. Lo usa el panel al cambiar el puerto o el token (R4).
+ *  `reloadToken`: el token cambió y Rust tiene que volver a leerlo del
+ *  llavero; para cambiar el puerto usa el que ya tiene en memoria. */
+export async function restartMcpServer({ reloadToken = false } = {}): Promise<void> {
   if (!running) return;
   const { port, hint } = currentSettings();
   if (!hint) {
@@ -30,8 +32,11 @@ export async function restartMcpServer(): Promise<void> {
     setStatus({ state: 'no_token' });
     return;
   }
+  // Leer el llavero puede abrir un aviso de macOS que espera al usuario:
+  // mientras tanto, el panel no dice "escuchando".
+  setStatus({ state: 'starting' });
   try {
-    await invoke('mcp_server_start', { port });
+    await invoke('mcp_server_start', { port, reloadToken });
     setStatus({ state: 'listening', port });
   } catch (err) {
     setStatus(statusFromStartError(err, port));

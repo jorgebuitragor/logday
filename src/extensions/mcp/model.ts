@@ -45,6 +45,7 @@ export function setupCommands(port: number, token: string) {
 
 export type McpServerStatus =
   | { state: 'stopped' }
+  | { state: 'starting' }
   | { state: 'no_token' }
   | { state: 'listening'; port: number }
   | { state: 'port_in_use'; port: number }

@@ -17,7 +17,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use tiny_http::{Header, Response, Server};
 
-use super::{keychain_service, read_secret, SECRET_KEYCHAIN_ERROR, SECRET_NOT_FOUND};
+use super::{keychain_service, read_secret, SECRET_KEYCHAIN_ERROR};
 
 const EXT_ID: &str = "mcp";
 const TOKEN_KEY: &str = "token";
@@ -33,6 +33,11 @@ type Reply = Option<String>;
 #[derive(Default)]
 pub struct McpState {
     server: Mutex<Option<Arc<Server>>>,
+    /// Token leído del llavero. Se guarda para que cambiar el puerto no
+    /// vuelva a leer el llavero: en macOS, con la firma de la app cambiada
+    /// (cada build de QA), leerlo abre un aviso que pide la contraseña, y
+    /// mientras tanto el servidor queda cerrado.
+    token: Mutex<Option<Arc<String>>>,
     pending: Arc<Mutex<HashMap<u64, Sender<Reply>>>>,
     next_id: Arc<AtomicU64>,
 }
@@ -207,15 +212,38 @@ fn stop_current(state: &McpState) {
     state.pending.lock().unwrap().clear();
 }
 
-/// Abre el servidor en `port` con el token del llavero (R1–R4).
+/// Abre el servidor en `port` (R1–R4). El token sale de memoria, salvo
+/// la primera vez o con `reload_token` (al regenerarlo), que se lee del
+/// llavero.
 #[tauri::command]
-pub async fn mcp_server_start(app: AppHandle, state: State<'_, McpState>, port: u16) -> Result<(), String> {
+pub async fn mcp_server_start(
+    app: AppHandle,
+    state: State<'_, McpState>,
+    port: u16,
+    reload_token: Option<bool>,
+) -> Result<(), String> {
     stop_current(&state);
-    let service = keychain_service(&app);
-    let token = tauri::async_runtime::spawn_blocking(move || read_secret(&service, EXT_ID, TOKEN_KEY))
-        .await
-        .map_err(|_| SECRET_KEYCHAIN_ERROR.to_string())?
-        .map_err(|e| if e == SECRET_NOT_FOUND { SECRET_NOT_FOUND.to_string() } else { e.to_string() })?;
+    let cached = state.token.lock().unwrap().clone();
+    let token = match cached {
+        Some(t) if !reload_token.unwrap_or(false) => t,
+        _ => {
+            let service = keychain_service(&app);
+            let read = tauri::async_runtime::spawn_blocking(move || read_secret(&service, EXT_ID, TOKEN_KEY))
+                .await
+                .map_err(|_| SECRET_KEYCHAIN_ERROR.to_string())?;
+            match read {
+                Ok(t) => {
+                    let t = Arc::new(t);
+                    *state.token.lock().unwrap() = Some(t.clone());
+                    t
+                }
+                Err(e) => {
+                    *state.token.lock().unwrap() = None;
+                    return Err(e.to_string());
+                }
+            }
+        }
+    };
 
     // R2: solo la interfaz local.
     let server = match Server::http(("127.0.0.1", port)) {
@@ -231,7 +259,6 @@ pub async fn mcp_server_start(app: AppHandle, state: State<'_, McpState>, port: 
 
     let pending = state.pending.clone();
     let next_id = state.next_id.clone();
-    let token = Arc::new(token);
     std::thread::spawn(move || {
         for req in server.incoming_requests() {
             let (app, token, pending, next_id) = (app.clone(), token.clone(), pending.clone(), next_id.clone());

@@ -34,10 +34,11 @@ Estado: en progreso.
     bien en disco;
   - Codex 0.156 (`codex exec`, servidor pasado con `-c`) usó
     `list_tasks` y `get_daily`.
-- [ ] Claude Code contra la app de QA (la CLI de esta sesión no tenía la
-  sesión iniciada).
-- [ ] El panel en la app: activar con el aviso, generar y regenerar el
-  token, copiar los comandos, cambiar el puerto y el interruptor.
+- [x] QA de Jorge en la app (28 oct 2026): activó la extensión con el
+  aviso, generó el token desde el panel, registró el servidor en su
+  agente y confirmó que la integración funciona.
+- [ ] Probar en la app "Permitir cambios", regenerar el token y cambiar
+  el puerto.
 
 ## Después
 

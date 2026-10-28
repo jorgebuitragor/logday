@@ -1,6 +1,6 @@
 # Chat del equipo: enviar como yo (Google Chat) — Requirements
 
-Estado: borrador, falta una decisión (ver "Pendiente").
+Estado: en progreso (implementado; falta la prueba con un cliente OAuth real).
 
 ## Contexto
 
@@ -79,13 +79,13 @@ Se decidió el 28 oct 2026:
   La guía paso a paso de `SetupGuide` DEBERÁ tener su versión para
   "Como yo": conectar, copiar el enlace del espacio y enviar una prueba.
 
-## Pendiente: de quién es el cliente OAuth
+## Decisión: de quién es el cliente OAuth
 
 Google exige un **cliente OAuth** (de un proyecto de Google Cloud, con la
-API de Chat activada y configurada) para que una app pida permisos. Hay
-dos caminos:
+API de Chat activada y configurada) para que una app pida permisos.
+**Jorge eligió la A el 28 oct 2026.** Estas eran las dos opciones:
 
-- **A. Cada organización crea el suyo (recomendado).** Quien administra
+- **A. Cada organización crea el suyo (elegida).** Quien administra
   el Google Workspace (por ejemplo, la DSI de la FCV) crea un proyecto,
   lo marca como app **interna** y pega en Logday el id y el secreto del
   cliente, una vez por organización.

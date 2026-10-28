@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { AlertCircle, CheckCircle2, KeyRound, Send } from 'lucide-react';
+import { AlertCircle, Bot, CheckCircle2, KeyRound, Send, UserRound } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import type { Language } from '../../types/common';
 import { AppSelect } from '../../components/calendar/AppSelect';
 import { getExtensionSecretHint, setExtensionSecret } from '../secrets';
 import { SetupGuide } from './SetupGuide';
+import { GoogleUserSection } from './GoogleUserSection';
 import { useTeamChatSettings, validateWebhookUrl } from './api';
 import {
-  CHAT_PROVIDERS, TEAM_CHAT_ID, WEBHOOK_SECRET_KEY, chatErrorMessage, toChatError,
-  type ChatLastResult, type ChatProvider,
+  CHAT_PROVIDERS, TEAM_CHAT_ID, WEBHOOK_SECRET_KEY, chatErrorMessage, isReadyToSend, toChatError,
+  type ChatLastResult, type ChatProvider, type SendAs,
 } from './model';
 
 const PROVIDER_LABEL_KEY = {
@@ -33,7 +34,7 @@ export default function TeamChatSettings() {
   const { language, showToast } = useAppStore(
     useShallow((s) => ({ language: s.language, showToast: s.showToast })),
   );
-  const { settings, save, send } = useTeamChatSettings();
+  const { settings, save, saveGoogle, send } = useTeamChatSettings();
 
   const [provider, setProvider] = useState<ChatProvider>(settings.provider ?? 'google_chat');
   const [url, setUrl] = useState('');
@@ -50,7 +51,14 @@ export default function TeamChatSettings() {
     return () => { alive = false; };
   }, [settings.hint]);
 
-  const configured = !!settings.provider && !!settings.hint && !missingSecret;
+  // "Como yo" solo existe con Google Chat (specs/chat-como-usuario C1).
+  const asUser = provider === 'google_chat' && settings.sendAs === 'user';
+  const configured = isReadyToSend(settings) && (asUser || !missingSecret);
+
+  const chooseSendAs = (next: SendAs) => {
+    setError(null);
+    void save(next === 'user' ? { provider: 'google_chat', sendAs: 'user' } : { sendAs: 'bot' });
+  };
 
   const handleSave = async () => {
     setError(null);
@@ -105,6 +113,41 @@ export default function TeamChatSettings() {
         />
       </div>
 
+      {provider === 'google_chat' && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="w-28 shrink-0 text-[var(--text-secondary)]">{t(language, 'teamChat', 'sendAs')}</span>
+          <div role="radiogroup" className="flex gap-1 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-0.5">
+            {([['bot', Bot, 'sendAsBot'], ['user', UserRound, 'sendAsUser']] as const).map(([value, Icon, key]) => {
+              const active = (value === 'user') === asUser;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => chooseSendAs(value)}
+                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                    active ? 'bg-indigo-500/10 text-indigo-400 ring-1 ring-indigo-500/40' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                  }`}
+                >
+                  <Icon size={12} />
+                  {t(language, 'teamChat', key)}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {asUser ? (
+        <GoogleUserSection
+          google={settings.google}
+          saveGoogle={saveGoogle}
+          onError={setError}
+          onBackToBot={() => chooseSendAs('bot')}
+        />
+      ) : (<>
+
       <div className="space-y-1.5">
         <label className="block text-[var(--text-secondary)]" htmlFor="team-chat-webhook">
           {t(language, 'teamChat', 'webhookUrl')}
@@ -152,6 +195,7 @@ export default function TeamChatSettings() {
         )}
       </div>
       <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'teamChat', 'localOnly')}</p>
+      </>)}
 
       {error && (
         <div role="alert" className="flex items-start gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] text-red-400">

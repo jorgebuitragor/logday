@@ -1,7 +1,7 @@
 # Chat del equipo: enviar como yo (Google Chat) — Design
 
-Borrador: asume la opción A del pendiente (cada organización pone su
-cliente OAuth). Con la B cambian solo "Cliente OAuth" y la guía.
+Con la opción A (cada organización pone su cliente OAuth), elegida el
+28 oct 2026.
 
 ## Configuración
 
@@ -25,6 +25,22 @@ En el llavero: `ext:team-chat:google_client_secret` y
 `ext:team-chat:google_refresh`. Google trata el secreto de un cliente de
 escritorio como público, pero igual va al llavero para no dejarlo en
 `config.json`.
+
+## Archivos
+
+- `src-tauri/src/extensions/team_chat_google.rs`: inicio de sesión,
+  tokens, revocación, envío y el enlace del espacio, con sus pruebas.
+- `src/extensions/team-chat/`:
+  - `GoogleUserSection.tsx`: los tres pasos del panel y el aviso;
+  - `model.ts`: `sendAs`, `google` y qué falta;
+  - `api.ts`: los comandos;
+  - `guide.ts` y `SetupGuide.tsx`: las guías.
+- "Quitar configuración" de la base borra también
+  `google_client_secret` y `google_refresh` (los `secretKeys` del
+  registro). No revoca el permiso en Google: para eso está
+  "Desconectar".
+- El navegador se abre con el plugin `opener`, no con `open_url`: en
+  Windows, `cmd /c start` partiría la URL de Google en cada `&`.
 
 ## Cliente OAuth (opción A)
 

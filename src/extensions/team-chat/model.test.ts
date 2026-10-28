@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { chatErrorMessage, readTeamChatSettings, toChatError, wasSentToday } from './model';
+import {
+  chatErrorMessage, googleUserMissing, isReadyToSend, readTeamChatSettings, sendsAsUser, toChatError, wasSentToday,
+} from './model';
 
 describe('configuración de team-chat', () => {
   it('lee la configuración guardada e ignora valores raros', () => {
@@ -55,5 +57,47 @@ describe('ya enviado hoy', () => {
     // 28 oct, 8 p. m. en Bogotá = 29 oct en UTC.
     const night = { ...ok, sentAt: '2026-10-29T01:00:00.000Z' };
     expect(wasSentToday(night, '2026-10-28', '2026-10-28')).toBe(true);
+  });
+});
+
+describe('enviar como yo (specs/chat-como-usuario)', () => {
+  const google = {
+    clientId: 'cid.apps.googleusercontent.com', secretHint: '…abcd', space: 'spaces/AAAA',
+    spaceLink: 'https://chat.google.com/room/AAAA', account: 'jorge@fcv.org', consentAt: '2026-10-28T16:00:00.000Z',
+  };
+
+  it('lee sendAs y google, e ignora lo raro', () => {
+    expect(readTeamChatSettings({ sendAs: 'robot', google: { clientId: 3, account: '' } })).toEqual({});
+    expect(readTeamChatSettings({ provider: 'google_chat', sendAs: 'user', google: { ...google, extra: 'x' } }))
+      .toEqual({ provider: 'google_chat', sendAs: 'user', google });
+  });
+
+  it('solo Google Chat envía como el usuario (C1)', () => {
+    expect(sendsAsUser({ provider: 'google_chat', sendAs: 'user' })).toBe(true);
+    expect(sendsAsUser({ provider: 'slack', sendAs: 'user' })).toBe(false);
+    expect(sendsAsUser({ provider: 'google_chat' })).toBe(false);
+  });
+
+  it('qué falta, en orden', () => {
+    expect(googleUserMissing(undefined)).toEqual(['consent', 'client', 'account', 'space']);
+    expect(googleUserMissing({ ...google, secretHint: undefined, space: undefined })).toEqual(['client', 'space']);
+    expect(googleUserMissing(google)).toEqual([]);
+  });
+
+  it('listo para enviar según el modo', () => {
+    expect(isReadyToSend({ provider: 'google_chat', hint: 'x' })).toBe(true);
+    expect(isReadyToSend({ provider: 'google_chat', hint: 'x', sendAs: 'user' })).toBe(false);
+    expect(isReadyToSend({ provider: 'google_chat', sendAs: 'user', google })).toBe(true);
+    // Con Slack, "como yo" no aplica: vale el webhook.
+    expect(isReadyToSend({ provider: 'slack', hint: 'x', sendAs: 'user' })).toBe(true);
+    expect(isReadyToSend({ sendAs: 'user', google })).toBe(false);
+  });
+
+  it('los errores nuevos tienen mensaje propio, con el código de Google', () => {
+    for (const code of ['needs_client', 'needs_reconnect', 'not_allowed', 'space_not_found', 'invalid_space', 'cancelled', 'state_mismatch', 'token_error', 'browser_error', 'server_error']) {
+      expect(chatErrorMessage('es', { code }), code).not.toBe(chatErrorMessage('es', { code: 'unknown' }));
+      expect(chatErrorMessage('en', { code }), code).not.toBe(chatErrorMessage('en', { code: 'unknown' }));
+    }
+    expect(chatErrorMessage('es', { code: 'not_allowed', status: 403 })).toMatch(/\(403\)$/);
   });
 });

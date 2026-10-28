@@ -1,17 +1,17 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Plus, CheckSquare, ChevronRight, ArrowUpDown } from 'lucide-react';
-import { Task, TaskStatus } from '../../types/task';
-import type { TaskSortBy } from '../../types/config';
+import { Plus, CheckSquare, ChevronRight } from 'lucide-react';
+import { Task } from '../../types/task';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../store/appStore';
 import { NewTaskContextMenu } from './TaskContextMenu';
 import { TaskRow } from './TaskRow';
 import { NewTaskModal } from './NewTaskModal';
 import { QuickAddInput } from './QuickAddInput';
+import { TaskFilterBar } from './TaskFilterBar';
 import type { QuickCaptureResult } from '../../lib/quickCapture';
 import { t } from '../../lib/i18n';
 import { localISODate } from '../../lib/localDate';
-import { doneTasks, groupOpenTasks, type TaskGroupKey } from '../../lib/taskListing';
+import { doneTasks, filterTasks, groupOpenTasks, isTaskFilterActive, type TaskGroupKey } from '../../lib/taskListing';
 
 const DONE_COLLAPSED_KEY = 'logday_tasks_done_collapsed';
 
@@ -25,18 +25,12 @@ const GROUP_LABEL_KEY: Record<TaskGroupKey, 'groupOverdue' | 'groupToday' | 'gro
   pending: 'groupPending',
 };
 
-const SORT_LABEL_KEY: Record<TaskSortBy, 'sortDue' | 'sortCreated' | 'sortTitle'> = {
-  due: 'sortDue',
-  created: 'sortCreated',
-  title: 'sortTitle',
-};
-
 export function TaskList() {
-  const { tasks, activeProject, currentView, deleteTask, updateTask, isLoading, language, setActiveTask, taskSortBy, setTaskSort } = useAppStore(
+  const { tasks, activeProject, currentView, deleteTask, updateTask, isLoading, language, setActiveTask, taskSortBy, taskFilter } = useAppStore(
     useShallow((s) => ({
       tasks: s.tasks,
       taskSortBy: s.taskSortBy,
-      setTaskSort: s.setTaskSort,
+      taskFilter: s.taskFilter,
       activeProject: s.activeProject,
       currentView: s.currentView,
       deleteTask: s.deleteTask,
@@ -51,7 +45,7 @@ export function TaskList() {
   const [newTaskDraft, setNewTaskDraft] = useState<Partial<QuickCaptureResult> | null>(null);
   const quickAddRef = useRef<HTMLInputElement>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<TaskStatus | 'all'>('all');
+  const filter = taskFilter.status;
   const [emptyCtxMenu, setEmptyCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [newTaskIds, setNewTaskIds] = useState<Set<string>>(new Set());
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
@@ -100,8 +94,6 @@ export function TaskList() {
     return () => window.removeEventListener('logday:new-task', handler);
   }, []);
 
-  const [showSortMenu, setShowSortMenu] = useState(false);
-  const sortMenuRef = useRef<HTMLDivElement>(null);
   const [doneCollapsed, setDoneCollapsed] = useState(() => {
     try { return localStorage.getItem(DONE_COLLAPSED_KEY) !== '0'; } catch { return true; }
   });
@@ -111,15 +103,6 @@ export function TaskList() {
       return !v;
     });
   };
-
-  useEffect(() => {
-    if (!showSortMenu) return;
-    const handler = (e: MouseEvent) => {
-      if (sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) setShowSortMenu(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showSortMenu]);
 
   // "Hoy" en hora local; se recalcula con cada cambio de tareas, y al
   // volver a la ventana para que la lista no quede en el día anterior.
@@ -131,12 +114,12 @@ export function TaskList() {
   }, []);
   useEffect(() => { setToday(localISODate()); }, [tasks]);
 
-  const openGroups = useMemo(() => {
-    if (filter === 'done') return [];
-    const source = filter === 'all' ? tasks : tasks.filter((t) => t.status === filter);
-    return groupOpenTasks(source, taskSortBy, today);
-  }, [tasks, filter, taskSortBy, today]);
-  const done = useMemo(() => (filter === 'all' || filter === 'done' ? doneTasks(tasks) : []), [tasks, filter]);
+  const filtered = useMemo(() => filterTasks(tasks, taskFilter), [tasks, taskFilter]);
+  const openGroups = useMemo(() => groupOpenTasks(filtered, taskSortBy, today), [filtered, taskSortBy, today]);
+  const done = useMemo(() => doneTasks(filtered), [filtered]);
+  // Con búsqueda o tags, las hechas que coinciden se muestran desplegadas.
+  const narrowed = isTaskFilterActive({ ...taskFilter, status: 'all' });
+  const showDone = filter === 'done' || narrowed || !doneCollapsed;
   const visibleCount = openGroups.reduce((n, g) => n + g.tasks.length, 0) + done.length;
 
   const newTaskModal = newTaskDraft ? (
@@ -145,8 +128,8 @@ export function TaskList() {
 
   // Orden en pantalla, para moverse con el teclado.
   const visibleTasks = useMemo(
-    () => [...openGroups.flatMap((g) => g.tasks), ...(filter === 'done' || !doneCollapsed ? done : [])],
-    [openGroups, done, filter, doneCollapsed],
+    () => [...openGroups.flatMap((g) => g.tasks), ...(showDone ? done : [])],
+    [openGroups, done, showDone],
   );
 
   // Atajos de la lista (fuera de campos de texto y sin ventanas abiertas):
@@ -186,12 +169,6 @@ export function TaskList() {
   if (currentView !== 'list') return newTaskModal;
 
   const title = activeProject ? activeProject : t(language, 'tasks', 'title');
-  const counts = {
-    all: tasks.length,
-    todo: tasks.filter((t) => t.status === 'todo').length,
-    'in-progress': tasks.filter((t) => t.status === 'in-progress').length,
-    done: tasks.filter((t) => t.status === 'done').length,
-  };
 
   return (
     <div
@@ -212,56 +189,7 @@ export function TaskList() {
           </button>
         </div>
 
-        {/* Filtros y orden */}
-        <div className="flex items-center gap-1">
-          {(['all', 'todo', 'in-progress', 'done'] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`rounded-lg px-3 py-1 text-xs transition ${
-                filter === f
-                  ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]'
-                  : 'text-[var(--text-hint)] hover:text-[var(--text-tertiary)]'
-              }`}
-            >
-              {f === 'all' ? t(language, 'tasks', 'filterAll') : f === 'todo' ? t(language, 'tasks', 'filterTodo') : f === 'in-progress' ? t(language, 'tasks', 'filterInProgress') : t(language, 'tasks', 'filterDone')}
-              <span className="ml-1.5 text-[10px] text-[var(--text-hint)]">{counts[f]}</span>
-            </button>
-          ))}
-          <div className="relative ml-auto" ref={sortMenuRef}>
-            <button
-              onClick={() => setShowSortMenu((v) => !v)}
-              aria-haspopup="menu"
-              aria-expanded={showSortMenu}
-              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs transition ${
-                showSortMenu ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]' : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)]'
-              }`}
-            >
-              <ArrowUpDown size={12} />
-              {t(language, 'tasks', SORT_LABEL_KEY[taskSortBy])}
-            </button>
-            {showSortMenu && (
-              <div role="menu" className="absolute right-0 top-full z-50 mt-1 min-w-[180px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-xl">
-                <p className="px-3 pt-1.5 pb-1 text-[9px] font-bold uppercase tracking-widest text-[var(--text-faint)]">{t(language, 'tasks', 'sortLabel')}</p>
-                {(['due', 'created', 'title'] as const).map((opt) => (
-                  <button
-                    key={opt}
-                    role="menuitemradio"
-                    aria-checked={taskSortBy === opt}
-                    onClick={() => { setTaskSort(opt); setShowSortMenu(false); }}
-                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs transition ${
-                      taskSortBy === opt
-                        ? 'text-indigo-400 bg-indigo-500/10'
-                        : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-                    }`}
-                  >
-                    {t(language, 'tasks', SORT_LABEL_KEY[opt])}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+        <TaskFilterBar />
         {/* Captura rápida */}
         <div className="mt-3">
           <QuickAddInput ref={quickAddRef} onMoreOptions={(draft) => setNewTaskDraft(draft)} />
@@ -282,9 +210,9 @@ export function TaskList() {
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
             <CheckSquare size={36} className="text-[var(--text-faint)]" strokeWidth={1.5} />
             <p className="text-sm text-[var(--text-hint)]">
-              {t(language, 'tasks', filter === 'all' ? 'emptyAll' : filter === 'todo' ? 'emptyTodo' : filter === 'in-progress' ? 'emptyInProgress' : 'emptyDone')}
+              {t(language, 'tasks', narrowed ? 'emptyFiltered' : filter === 'all' ? 'emptyAll' : filter === 'todo' ? 'emptyTodo' : filter === 'in-progress' ? 'emptyInProgress' : 'emptyDone')}
             </p>
-            {filter === 'all' && (
+            {filter === 'all' && !narrowed && (
               <button
                 onClick={() => setNewTaskDraft({})}
                 className="mt-1 flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white transition hover:bg-indigo-500"
@@ -296,7 +224,7 @@ export function TaskList() {
           </div>
         ) : (
           <div key={listKey} className="mx-auto w-full max-w-3xl space-y-4">
-            {filter === 'all' && openGroups.length === 0 && (
+            {filter === 'all' && !narrowed && openGroups.length === 0 && (
               <p className="px-3 py-6 text-center text-sm text-[var(--text-hint)]">{t(language, 'tasks', 'emptyAllDone')}</p>
             )}
             {openGroups.map((group, groupIdx) => {
@@ -336,15 +264,16 @@ export function TaskList() {
                 {filter === 'all' && (
                   <button
                     onClick={toggleDoneCollapsed}
-                    aria-expanded={!doneCollapsed}
+                    disabled={narrowed}
+                    aria-expanded={showDone}
                     className="mb-1 flex items-center gap-1.5 rounded-md px-3 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-hint)] transition hover:text-[var(--text-secondary)]"
                   >
-                    <ChevronRight size={12} className={`transition-transform ${doneCollapsed ? '' : 'rotate-90'}`} />
+                    <ChevronRight size={12} className={`transition-transform ${showDone ? 'rotate-90' : ''}`} />
                     {t(language, 'tasks', 'groupDone')}
                     <span className="font-normal text-[var(--text-faint)]">{done.length}</span>
                   </button>
                 )}
-                {(filter === 'done' || !doneCollapsed) && (
+                {showDone && (
                   <div className="space-y-0.5">
                     {done.map((task) => (
                       <TaskRow

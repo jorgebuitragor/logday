@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Circle, Clock, CheckCircle2, Calendar, GripVertical, X, ChevronDown } from 'lucide-react';
+import { Plus, Circle, Clock, CheckCircle2, Calendar, GripVertical } from 'lucide-react';
 import { Task, TaskStatus } from '../../types/task';
 import { useAppStore } from '../../store/appStore';
 import { TaskContextMenu, NewTaskContextMenu } from './TaskContextMenu';
 import { t } from '../../lib/i18n';
 import { QuickAddInput } from './QuickAddInput';
 import { localISODate } from '../../lib/localDate';
-import { formatDueLabel } from '../../lib/taskListing';
+import { filterTasks, formatDueLabel, sortColumn } from '../../lib/taskListing';
+import { TaskFilterBar } from './TaskFilterBar';
 
 const COLUMN_DEFS: { status: TaskStatus; color: string; border: string; Icon: React.ElementType }[] = [
   { status: 'todo',        color: 'text-zinc-400',  border: 'border-zinc-600/30',  Icon: Circle },
@@ -104,83 +105,8 @@ function DragGhost({ task, x, y }: { task: Task; x: number; y: number }) {
   );
 }
 
-function ProjectSelect({ value, options, onChange, placeholder }: {
-  value: string | null;
-  options: string[];
-  onChange: (v: string | null) => void;
-  placeholder: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener('mousedown', handler);
-    return () => window.removeEventListener('mousedown', handler);
-  }, [open]);
-
-  const label = value ?? placeholder;
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((s) => !s)}
-        className={`flex min-w-[9rem] items-center justify-between gap-2 rounded-lg border px-3 py-1.5 text-left text-xs transition ${
-          open
-            ? 'border-indigo-500/60 bg-indigo-500/10 text-[var(--text-secondary)]'
-            : 'border-[var(--border-card)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--border-high)] hover:bg-[var(--bg-hover)]'
-        }`}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-      >
-        <span className="font-medium truncate">{label}</span>
-        <ChevronDown size={12} className={`shrink-0 text-[var(--text-hint)] transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && (
-        <div className="absolute left-0 z-30 mt-1.5 min-w-full overflow-hidden rounded-lg border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl">
-          <div role="listbox" className="p-1">
-            <button
-              type="button"
-              role="option"
-              aria-selected={value === null}
-              onClick={() => { onChange(null); setOpen(false); }}
-              className={`w-full rounded-md px-3 py-1.5 text-left text-xs font-medium transition ${
-                value === null
-                  ? 'bg-indigo-500/10 text-indigo-400'
-                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-              }`}
-            >
-              {placeholder}
-            </button>
-            {options.map((opt) => (
-              <button
-                key={opt}
-                type="button"
-                role="option"
-                aria-selected={opt === value}
-                onClick={() => { onChange(opt); setOpen(false); }}
-                className={`w-full rounded-md px-3 py-1.5 text-left text-xs font-medium transition ${
-                  opt === value
-                    ? 'bg-indigo-500/10 text-indigo-400'
-                    : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-                }`}
-              >
-                {opt}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function KanbanBoard() {
-  const { tasks, currentView, projects, language } = useAppStore();
+  const { tasks, currentView, language, taskFilter, taskSortBy } = useAppStore();
   const [addingStatus, setAddingStatus] = useState<TaskStatus | null>(null);
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
@@ -200,28 +126,9 @@ export function KanbanBoard() {
   const [targetStatus, setTargetStatus] = useState<TaskStatus | null>(null);
   const [emptyCtxMenu, setEmptyCtxMenu] = useState<{ x: number; y: number } | null>(null);
 
-  // ── Filtros ──────────────────────────────────────────────────────────────────
-  const [filterProject, setFilterProject] = useState<string | null>(null);
-  const [filterTags, setFilterTags] = useState<string[]>([]);
-
-  const allTags = useMemo(() => {
-    const s = new Set<string>();
-    tasks.forEach((t) => t.tags.forEach((tag) => s.add(tag)));
-    return Array.from(s).sort();
-  }, [tasks]);
-
-  const filteredTasks = useMemo(() => {
-    return tasks.filter((t) => {
-      if (filterProject && t.project !== filterProject) return false;
-      if (filterTags.length > 0 && !filterTags.some((tag) => t.tags.includes(tag))) return false;
-      return true;
-    });
-  }, [tasks, filterProject, filterTags]);
-
-  const toggleFilterTag = (tag: string) =>
-    setFilterTags((prev) => prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]);
-
-  const isFiltered = !!filterProject || filterTags.length > 0;
+  // Filtro común (búsqueda y tags; el estado son las columnas) y el mismo
+  // orden que la lista. El proyecto lo da la barra lateral.
+  const filteredTasks = useMemo(() => filterTasks(tasks, taskFilter, { ignoreStatus: true }), [tasks, taskFilter]);
 
   useEffect(() => {
     if (!draggingId) return;
@@ -281,51 +188,13 @@ export function KanbanBoard() {
       <div className="border-b border-[var(--border)] px-6 pt-4 pb-3 space-y-2.5">
         <h1 className="text-lg font-semibold text-[var(--text-primary)]">{t(language, 'tasks', 'kanbanTitle')}</h1>
 
-        {/* Barra de filtros */}
-        {(projects.length > 1 || allTags.length > 0) && (
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Proyecto */}
-            {projects.length > 1 && (
-              <ProjectSelect
-                value={filterProject}
-                options={projects}
-                onChange={setFilterProject}
-                placeholder={t(language, 'tasks', 'allProjects')}
-              />
-            )}
-
-            {/* Tags */}
-            {allTags.map((tag) => (
-              <button
-                key={tag}
-                onClick={() => toggleFilterTag(tag)}
-                className={`rounded-full px-2.5 py-0.5 text-[10px] border transition ${
-                  filterTags.includes(tag)
-                    ? 'border-indigo-400/50 bg-indigo-500/15 text-indigo-400'
-                    : 'border-[var(--border-card)] bg-[var(--bg-surface)] text-[var(--text-hint)] hover:border-indigo-400/40 hover:text-indigo-400'
-                }`}
-              >
-                {tag}
-              </button>
-            ))}
-
-            {/* Limpiar filtros */}
-            {isFiltered && (
-              <button
-                onClick={() => { setFilterProject(null); setFilterTags([]); }}
-                className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] text-[var(--text-hint)] transition hover:text-red-400"
-              >
-                <X size={9} /> {t(language, 'tasks', 'clearFilters')}
-              </button>
-            )}
-          </div>
-        )}
+        <TaskFilterBar showStatus={false} />
       </div>
 
       <div key={boardKey} className="flex flex-1 gap-4 overflow-x-auto p-5">
         {COLUMNS.map((col, colIndex) => {
           const { Icon } = col;
-          const colTasks = filteredTasks.filter((t) => t.status === col.status);
+          const colTasks = sortColumn(filteredTasks.filter((t) => t.status === col.status), taskSortBy);
           const isTarget = targetStatus === col.status;
 
           return (

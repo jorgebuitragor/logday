@@ -53,6 +53,7 @@ import { applyIncomingDailyContentState, applyDailyEditorEdit, deleteDailyConten
 import { parseFrontmatter, serializeTask, parseNote, serializeNote, formatDate } from '../lib/markdown';
 import { t } from '../lib/i18n';
 import { localISODate, localISOMonth } from '../lib/localDate';
+import { EMPTY_TASK_FILTER, type TaskFilter } from '../lib/taskListing';
 import {
   toISO,
   getPreviousWorkingDay,
@@ -146,6 +147,9 @@ export interface AppState {
   noteSortBy: NoteSortBy;
   noteSortDir: NoteSortDir;
   taskSortBy: TaskSortBy;
+  /** Filtro de tareas común a lista, Kanban y calendario. No se guarda:
+   *  dura lo que la sesión. El proyecto lo da la barra lateral. */
+  taskFilter: TaskFilter;
   language: Language;
   fontSize: number;
   isSettingsOpen: boolean;
@@ -226,6 +230,7 @@ export interface AppState {
   setNotesViewDefault: (view: NotesView) => void;
   setNoteSort: (by: NoteSortBy, dir: NoteSortDir) => void;
   setTaskSort: (by: TaskSortBy) => void;
+  setTaskFilter: (patch: Partial<TaskFilter>) => void;
   /** En la vista de árbol: la carpeta donde se crean las notas nuevas.
    *  No recarga ni cierra la nota abierta. */
   setTreeNoteFolder: (folder: string | null) => void;
@@ -2265,6 +2270,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   noteSortBy: 'updated',
   noteSortDir: 'desc',
   taskSortBy: 'due',
+  taskFilter: EMPTY_TASK_FILTER,
   language: (localStorage.getItem('language') as Language) || 'es',
   fontSize: Number(localStorage.getItem('fontSize')) || 17,
   isSettingsOpen: false,
@@ -2953,6 +2959,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ taskSortBy: by });
     persistConfig(get).catch(() => {});
   },
+
+  setTaskFilter: (patch) => set((s) => ({ taskFilter: { ...s.taskFilter, ...patch } })),
 
   setTreeNoteFolder: (folder) => {
     set({ activeNoteFolder: folder });

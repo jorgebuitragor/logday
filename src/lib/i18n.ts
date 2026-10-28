@@ -392,7 +392,7 @@ const dict = {
       noLinkedFiles: 'Sin archivos vinculados. Puedes vincular cualquier archivo o carpeta de tu equipo.',
       kanbanTitle: 'Tablero Kanban',
       allProjects: 'Todos los proyectos',
-      clearFilters: 'Limpiar',
+      clearFilters: 'Limpiar filtros',
       noTasks: 'Sin tareas',
       dropHere: 'Soltar aquí',
       enterToCreate: 'Enter para crear · Esc para cancelar',
@@ -447,6 +447,15 @@ const dict = {
       noDue: 'Sin fecha',
       tagsInputPlaceholder: 'Agregar tag y Enter',
       shortcutsHint: '↑↓ moverse · Enter abrir · Espacio completar',
+      // Barra de filtros y panel
+      searchPlaceholder: 'Buscar tareas…',
+      tagsFilter: 'Tags',
+      tagsFilterSearch: 'Buscar tag…',
+      noTagsFound: 'Ningún tag coincide',
+      noTagsYet: 'Todavía no hay tags',
+      emptyFiltered: 'Ninguna tarea coincide con el filtro.',
+      statusField: 'Estado',
+      moreItems: 'más',
     },
     notes: {
       // NoteList — lista y menú contextual
@@ -1372,7 +1381,7 @@ const dict = {
       noLinkedFiles: 'No linked files. You can link any file or folder on your machine.',
       kanbanTitle: 'Kanban Board',
       allProjects: 'All projects',
-      clearFilters: 'Clear',
+      clearFilters: 'Clear filters',
       noTasks: 'No tasks',
       dropHere: 'Drop here',
       enterToCreate: 'Enter to create · Esc to cancel',
@@ -1427,6 +1436,15 @@ const dict = {
       noDue: 'No date',
       tagsInputPlaceholder: 'Add tag and Enter',
       shortcutsHint: '↑↓ move · Enter open · Space complete',
+      // Filter bar and panel
+      searchPlaceholder: 'Search tasks…',
+      tagsFilter: 'Tags',
+      tagsFilterSearch: 'Search tag…',
+      noTagsFound: 'No matching tags',
+      noTagsYet: 'No tags yet',
+      emptyFiltered: 'No tasks match the filter.',
+      statusField: 'Status',
+      moreItems: 'more',
     },
     notes: {
       // NoteList — list and context menu

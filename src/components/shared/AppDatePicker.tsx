@@ -133,10 +133,14 @@ interface PickerProps {
   value: string;
   max?: string;
   onChange: (iso: string) => void;
+  /** 'inline': sin borde, como los demás campos del panel de una tarea. */
+  variant?: 'box' | 'inline';
+  /** Texto cuando no hay fecha (por defecto, "Seleccionar fecha"). */
+  placeholder?: string;
 }
 
 /** Componente completo: botón que muestra la fecha + dropdown con calendar. */
-export function AppDatePicker({ value, max, onChange }: PickerProps) {
+export function AppDatePicker({ value, max, onChange, variant = 'box', placeholder }: PickerProps) {
   const language = useAppStore((s) => s.language);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -155,9 +159,13 @@ export function AppDatePicker({ value, max, onChange }: PickerProps) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-input)] px-2.5 py-1.5 text-left text-sm text-[var(--text-primary)] hover:border-indigo-500/50 focus:border-indigo-500 focus:outline-none transition-colors"
+        className={variant === 'inline'
+          ? `w-full rounded-md px-2 py-1 text-left text-xs transition hover:bg-[var(--bg-hover)] focus:outline-none ${
+              open ? 'bg-[var(--bg-hover)]' : ''
+            } ${value ? 'text-[var(--text-secondary)]' : 'text-[var(--text-faint)]'}`
+          : 'w-full rounded-md border border-[var(--border)] bg-[var(--bg-input)] px-2.5 py-1.5 text-left text-sm text-[var(--text-primary)] hover:border-indigo-500/50 focus:border-indigo-500 focus:outline-none transition-colors'}
       >
-        {formatDateDisplay(value, language)}
+        {!value && placeholder ? placeholder : formatDateDisplay(value, language)}
       </button>
       {open && (
         <div className="absolute left-0 top-full z-50 mt-1 w-64 rounded-xl border border-[var(--border)] bg-[var(--bg-panel)] p-3 shadow-2xl animate-in">

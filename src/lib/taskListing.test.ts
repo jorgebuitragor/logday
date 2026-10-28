@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Task } from '../types/task';
-import { doneTasks, dueBucket, formatDueLabel, groupOpenTasks } from './taskListing';
+import { EMPTY_TASK_FILTER, doneTasks, dueBucket, filterTasks, formatDueLabel, groupOpenTasks, sortColumn } from './taskListing';
 
 const TODAY = '2026-10-27'; // martes
 
@@ -72,5 +72,48 @@ describe('formatDueLabel', () => {
     expect(formatDueLabel('2026-11-15', TODAY, 'es').label).toBe('15 nov');
     expect(formatDueLabel('2026-10-20', TODAY, 'es')).toEqual({ label: '20 oct', tone: 'overdue' });
     expect(formatDueLabel('2027-01-05', TODAY, 'es').label).toMatch(/2027/);
+  });
+});
+
+describe('sortColumn', () => {
+  it('ordena por vencimiento con las que no tienen fecha al final', () => {
+    const col = [
+      task('sin-fecha', { created: '2026-10-20' }),
+      task('viernes', { due: '2026-10-30' }),
+      task('hoy', { due: '2026-10-27' }),
+      task('hoy-en-curso', { due: '2026-10-27', status: 'in-progress' }),
+    ];
+    expect(sortColumn(col, 'due').map((t) => t.id)).toEqual(['hoy-en-curso', 'hoy', 'viernes', 'sin-fecha']);
+    expect(sortColumn(col, 'title').map((t) => t.id)).toEqual(['hoy', 'hoy-en-curso', 'sin-fecha', 'viernes']);
+  });
+
+  it('la columna de hechas va por fecha de completado', () => {
+    const col = [
+      task('antes', { status: 'done', completedAt: '2026-10-20' }),
+      task('ayer', { status: 'done', completedAt: '2026-10-26' }),
+    ];
+    expect(sortColumn(col, 'title').map((t) => t.id)).toEqual(['ayer', 'antes']);
+  });
+});
+
+describe('filterTasks', () => {
+  const tasks = [
+    task('a', { title: 'Revisar migración', tags: ['sync'], project: 'logday' }),
+    task('b', { title: 'Llamar al proveedor', taskCode: 'MB-12', status: 'in-progress', project: 'maxibot' }),
+    task('c', { title: 'Publicar versión', tags: ['release', 'sync'], status: 'done' }),
+  ];
+  const ids = (list: Task[]) => list.map((t) => t.id);
+
+  it('busca sin distinguir mayúsculas ni tildes, en título, código, tags y proyecto', () => {
+    expect(ids(filterTasks(tasks, { ...EMPTY_TASK_FILTER, query: 'MIGRACION' }))).toEqual(['a']);
+    expect(ids(filterTasks(tasks, { ...EMPTY_TASK_FILTER, query: 'mb-12' }))).toEqual(['b']);
+    expect(ids(filterTasks(tasks, { ...EMPTY_TASK_FILTER, query: 'sync' }))).toEqual(['a', 'c']);
+    expect(ids(filterTasks(tasks, { ...EMPTY_TASK_FILTER, query: 'maxibot llamar' }))).toEqual(['b']);
+  });
+
+  it('combina estado y tags; el Kanban puede ignorar el estado', () => {
+    const filter = { ...EMPTY_TASK_FILTER, status: 'done' as const, tags: ['sync'] };
+    expect(ids(filterTasks(tasks, filter))).toEqual(['c']);
+    expect(ids(filterTasks(tasks, filter, { ignoreStatus: true }))).toEqual(['a', 'c']);
   });
 });

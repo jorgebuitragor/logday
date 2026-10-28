@@ -1,4 +1,4 @@
-import type { Task } from '../types/task';
+import type { Task, TaskStatus } from '../types/task';
 import type { TaskSortBy } from '../types/config';
 import type { Language } from './i18n';
 import { daysBetweenISO } from './localDate';
@@ -60,6 +60,19 @@ export function groupOpenTasks(tasks: Task[], sortBy: TaskSortBy, today: string)
   }));
 }
 
+/** Una columna del Kanban en el mismo orden que la lista: por
+ *  vencimiento (sin fecha al final), más recientes o título. La de hechas,
+ *  de la completada más recientemente a la más antigua. No hay orden manual:
+ *  ningún cliente lo guarda, y agregarlo es un campo nuevo en el sync. */
+export function sortColumn(tasks: Task[], sortBy: TaskSortBy): Task[] {
+  if (tasks.length && tasks.every((t) => t.status === 'done')) return doneTasks(tasks);
+  if (sortBy === 'title') return [...tasks].sort(byTitle);
+  if (sortBy === 'created') return [...tasks].sort(newestFirst);
+  return [...tasks].sort((a, b) =>
+    (a.due ? 0 : 1) - (b.due ? 0 : 1) || (a.due ?? '').localeCompare(b.due ?? '') || inProgressFirst(a, b) || newestFirst(a, b),
+  );
+}
+
 /** Tareas hechas, de la completada más recientemente a la más antigua. */
 export function doneTasks(tasks: Task[]): Task[] {
   return tasks
@@ -93,4 +106,46 @@ export function formatDueLabel(due: string, today: string, language: Language): 
   const month = clean(new Intl.DateTimeFormat(locale, { month: 'short' }).format(date));
   const year = y === Number(today.slice(0, 4)) ? '' : es ? ` ${y}` : `, ${y}`;
   return { label: es ? `${d} ${month}${year}` : `${month} ${d}${year}`, tone };
+}
+
+export interface TaskFilter {
+  status: TaskStatus | 'all';
+  /** Tags elegidos: la tarea tiene que tener al menos uno. */
+  tags: string[];
+  query: string;
+}
+
+export const EMPTY_TASK_FILTER: TaskFilter = { status: 'all', tags: [], query: '' };
+
+export const isTaskFilterActive = (f: TaskFilter) => f.status !== 'all' || f.tags.length > 0 || f.query.trim() !== '';
+
+const fold = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+/** Filtro común de las tres vistas. El texto busca, sin distinguir
+ *  mayúsculas ni tildes, en título, código, tags y proyecto: lo mismo que
+ *  se ve en cada fila. Con `ignoreStatus` no filtra por estado (el Kanban,
+ *  donde el estado son las columnas). */
+export function filterTasks(tasks: Task[], filter: TaskFilter, { ignoreStatus = false } = {}): Task[] {
+  const words = fold(filter.query).split(/\s+/).filter(Boolean);
+  return tasks.filter((t) => {
+    if (!ignoreStatus && filter.status !== 'all' && t.status !== filter.status) return false;
+    if (filter.tags.length && !filter.tags.some((tag) => t.tags.includes(tag))) return false;
+    if (!words.length) return true;
+    const haystack = fold([t.title, t.taskCode ?? '', t.project, ...t.tags].join(' '));
+    return words.every((w) => haystack.includes(w));
+  });
+}
+
+/** Todos los tags de `tasks`, ordenados. */
+export function allTaskTags(tasks: Task[]): string[] {
+  return [...new Set(tasks.flatMap((t) => t.tags))].sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+}
+
+/** "27 de octubre de 2026" / "October 27, 2026", para fechas que se leen
+ *  completas (la creación en el panel de una tarea). */
+export function formatLongDate(iso: string, language: Language): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  return new Intl.DateTimeFormat(language === 'es' ? 'es-CO' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' })
+    .format(new Date(y, m - 1, d, 12));
 }

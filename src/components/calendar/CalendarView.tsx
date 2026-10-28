@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Clock, CalendarDays, Copy, Bell, Repeat2, X } from 'lucide-react';
 import { Task, TaskStatus } from '../../types/task';
@@ -15,9 +15,15 @@ import { EventEditor } from './EventEditor';
 import { t, MONTHS_TITLE, WEEKDAYS_SHORT } from '../../lib/i18n';
 import { EVENT_COLOR_DOT, EVENT_COLORS, REMINDER_OPTIONS, reminderLabel } from '../../lib/calendarEventPresentation';
 import { localISODate } from '../../lib/localDate';
+import { filterTasks } from '../../lib/taskListing';
+import { TaskFilterBar } from '../tasks/TaskFilterBar';
 
 const ESTIMATED_DAY_CTX_MENU = { width: 190, height: 88 };
 const ESTIMATED_EVENT_CTX_MENU = { width: 190, height: 128 };
+
+// Elementos por celda antes de "+N más": con más, la celda crece y la
+// grilla deja de caber en la pantalla.
+const MAX_CELL_ITEMS = 3;
 
 const STATUS_DOT: Record<TaskStatus, string> = {
   todo: 'bg-zinc-500',
@@ -38,7 +44,9 @@ const EVENT_COLOR_BADGE: Record<EventColor, string> = {
 
 
 export function CalendarView() {
-  const { tasks, currentView, setActiveTask, activeTask, language, calendarEvents, saveCalendarEvent, deleteCalendarEvent, showToast, confirmDestructiveActions, activeCalendarEvent, setActiveCalendarEvent } = useAppStore();
+  const { tasks, currentView, setActiveTask, activeTask, language, calendarEvents, saveCalendarEvent, deleteCalendarEvent, showToast, confirmDestructiveActions, activeCalendarEvent, setActiveCalendarEvent, taskFilter } = useAppStore();
+  // Mismo filtro que la lista y el Kanban (estado, búsqueda y tags).
+  const visibleTasks = useMemo(() => filterTasks(tasks, taskFilter), [tasks, taskFilter]);
 
   const MONTHS = MONTHS_TITLE[language];
   const WEEKDAYS = WEEKDAYS_SHORT[language];
@@ -47,10 +55,6 @@ export function CalendarView() {
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth()); // 0-indexed
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  // Hover preview
-  const [hoverDate, setHoverDate] = useState<string | null>(null);
-  const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 });
-  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Context menu en tarea del panel lateral
   const [ctxMenu, setCtxMenu]           = useState<{ task: Task; x: number; y: number } | null>(null);
   const [emptyCtxMenu, setEmptyCtxMenu] = useState<{ x: number; y: number } | null>(null);
@@ -150,7 +154,7 @@ export function CalendarView() {
 
   // Index tasks by due date
   const tasksByDate: Record<string, Task[]> = {};
-  for (const task of tasks) {
+  for (const task of visibleTasks) {
     if (task.due) {
       if (!tasksByDate[task.due]) tasksByDate[task.due] = [];
       tasksByDate[task.due].push(task);
@@ -168,38 +172,22 @@ export function CalendarView() {
     if (month === 0) { setYear(y => y - 1); setMonth(11); }
     else setMonth(m => m - 1);
     setSelectedDate(null);
-    setHoverDate(null);
   };
   const nextMonth = () => {
     if (month === 11) { setYear(y => y + 1); setMonth(0); }
     else setMonth(m => m + 1);
     setSelectedDate(null);
-    setHoverDate(null);
-  };
-
-  const handleDayMouseEnter = (e: React.MouseEvent, dateStr: string) => {
-    if (!tasksByDate[dateStr]?.length && !eventsByDate[dateStr]?.length) return;
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
-    hoverTimerRef.current = setTimeout(() => {
-      const tooltipWidth = 224; // w-56
-      const spaceRight = window.innerWidth - rect.right - 6;
-      const x = spaceRight >= tooltipWidth
-        ? rect.right + 6
-        : rect.left - tooltipWidth - 6;
-      setHoverPos({ x, y: rect.top });
-      setHoverDate(dateStr);
-    }, 350);
-  };
-
-  const handleDayMouseLeave = () => {
-    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
-    setHoverDate(null);
   };
 
   const selectedTasks  = selectedDate ? (tasksByDate[selectedDate]  || []) : [];
   const selectedEvents = selectedDate ? (eventsByDate[selectedDate] || []) : [];
   const todayStr = localISODate(today);
+  const weeks = totalCells / 7;
+  const longDate = (iso: string) => {
+    const [y, m, d] = iso.split('-').map(Number);
+    const label = new Intl.DateTimeFormat(language === 'es' ? 'es-CO' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(y, m - 1, d, 12));
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  };
 
   const handleSaveEvent = async (ev: CalendarEvent) => {
     await saveCalendarEvent(ev);
@@ -219,7 +207,8 @@ export function CalendarView() {
       onContextMenu={(e) => { e.preventDefault(); setEmptyCtxMenu({ x: e.clientX, y: e.clientY }); }}
     >
       {/* Header */}
-      <div className="border-b border-[var(--border)] px-4 py-3 flex items-center justify-between">
+      <div className="border-b border-[var(--border)] px-4 py-3 space-y-2.5">
+      <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-[var(--text-primary)]">{t(language, 'tasks', 'calendarTitle')}</h1>
         <div className="flex items-center gap-3">
           <button onClick={prevMonth} className="rounded-lg p-1.5 text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition">
@@ -233,21 +222,27 @@ export function CalendarView() {
           </button>
         </div>
       </div>
+      <TaskFilterBar showSort={false} />
+      </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Calendar grid */}
-        <div className="flex-1 overflow-y-auto p-5">
+        {/* Calendar grid: ocupa todo el alto, con los títulos en cada día */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
           {/* Weekday headers */}
-          <div className="grid grid-cols-7 mb-2">
+          <div className="grid grid-cols-7 gap-1 mb-1">
             {WEEKDAYS.map((d) => (
-              <div key={d} className="py-2 text-center text-xs text-[var(--text-hint)] font-medium">
+              <div key={d} className="py-1.5 text-center text-xs text-[var(--text-hint)] font-medium">
                 {d}
               </div>
             ))}
           </div>
 
           {/* Day cells */}
-          <div key={`${year}-${month}`} className="cal-grid-enter grid grid-cols-7 gap-1">
+          <div
+            key={`${year}-${month}`}
+            className="cal-grid-enter grid flex-1 grid-cols-7 gap-1"
+            style={{ gridTemplateRows: `repeat(${weeks}, minmax(6rem, 1fr))` }}
+          >
             {Array.from({ length: totalCells }).map((_, i) => {
               const dayNum = i - startOffset + 1;
               const isValid = dayNum >= 1 && dayNum <= lastDay.getDate();
@@ -258,26 +253,39 @@ export function CalendarView() {
               const dayEvents = eventsByDate[dateStr] || [];
               const isToday    = dateStr === todayStr;
               const isSelected = dateStr === selectedDate;
+              const isPast     = dateStr < todayStr;
+              const items = [
+                ...dayEvents.map((ev) => ({ kind: 'event' as const, ev })),
+                ...dayTasks.map((task) => ({ kind: 'task' as const, task })),
+              ];
+              const shown = items.length > MAX_CELL_ITEMS ? items.slice(0, MAX_CELL_ITEMS - 1) : items;
+              const hidden = items.length - shown.length;
 
               return (
-                <button
+                <div
                   key={i}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={isSelected}
                   onClick={() => setSelectedDate(isSelected ? null : dateStr)}
-                  onMouseEnter={(e) => handleDayMouseEnter(e, dateStr)}
-                  onMouseLeave={handleDayMouseLeave}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+                    e.preventDefault();
+                    setSelectedDate(isSelected ? null : dateStr);
+                  }}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     setDayCtxMenu({ x: e.clientX, y: e.clientY, date: dateStr });
                   }}
-                  className={`flex flex-col items-center rounded-xl p-2 transition min-h-[60px] ${
+                  className={`flex min-h-0 cursor-pointer flex-col gap-0.5 overflow-hidden rounded-xl border p-1.5 transition outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${
                     isSelected
-                      ? 'bg-indigo-500/20 border border-indigo-500/40'
-                      : 'hover:bg-[var(--bg-hover)] border border-transparent'
+                      ? 'bg-indigo-500/15 border-indigo-500/40'
+                      : 'border-[var(--border)] hover:bg-[var(--bg-hover)]'
                   }`}
                 >
                   <span
-                    className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium ${
+                    className={`mb-0.5 flex h-5 min-w-5 items-center justify-center self-start rounded-full px-1 text-[11px] font-medium ${
                       isToday
                         ? 'bg-indigo-600 text-white'
                         : isSelected
@@ -287,21 +295,53 @@ export function CalendarView() {
                   >
                     {dayNum}
                   </span>
-                  {/* Task + event dots */}
-                  {(dayTasks.length > 0 || dayEvents.length > 0) && (
-                    <div className="mt-1 flex flex-wrap justify-center gap-0.5">
-                      {dayTasks.slice(0, 2).map((tk) => (
-                        <span key={tk.id} className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[tk.status]}`} />
-                      ))}
-                      {dayEvents.slice(0, 2).map((ev) => (
-                        <span key={ev.id} className={`h-1.5 w-1.5 rounded-full ${EVENT_COLOR_DOT[ev.color]}`} />
-                      ))}
-                      {(dayTasks.length + dayEvents.length) > 4 && (
-                        <span className="text-[8px] text-[var(--text-hint)]">+{dayTasks.length + dayEvents.length - 4}</span>
-                      )}
-                    </div>
+                  {shown.map((item) =>
+                    item.kind === 'event' ? (
+                      <button
+                        key={item.ev.id}
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setActiveCalendarEvent(item.ev); }}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setEvCtxMenu({ event: item.ev, x: e.clientX, y: e.clientY });
+                        }}
+                        title={item.ev.title}
+                        className={`flex w-full items-center gap-1 truncate rounded-md border px-1.5 py-px text-left text-[10px] ${EVENT_COLOR_BADGE[item.ev.color]}`}
+                      >
+                        {item.ev.time && <span className="shrink-0 opacity-70">{item.ev.time}</span>}
+                        <span className="truncate">{item.ev.title}</span>
+                      </button>
+                    ) : (
+                      <button
+                        key={item.task.id}
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setActiveTask(item.task); }}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setCtxMenu({ task: item.task, x: e.clientX, y: e.clientY });
+                        }}
+                        title={item.task.title}
+                        className={`flex w-full items-center gap-1 rounded-md px-1 py-px text-left text-[10px] transition hover:bg-[var(--bg-hover)] ${
+                          activeTask?.id === item.task.id ? 'bg-indigo-500/10' : ''
+                        }`}
+                      >
+                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[item.task.status]}`} />
+                        <span className={`truncate ${
+                          item.task.status === 'done'
+                            ? 'line-through text-[var(--text-hint)]'
+                            : isPast ? 'text-red-400' : 'text-[var(--text-body)]'
+                        }`}>
+                          {item.task.title}
+                        </span>
+                      </button>
+                    ),
                   )}
-                </button>
+                  {hidden > 0 && (
+                    <span className="px-1 text-[10px] text-[var(--text-hint)]">+{hidden} {t(language, 'tasks', 'moreItems')}</span>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -311,7 +351,7 @@ export function CalendarView() {
         {selectedDate && (
           <div key={selectedDate} className="cal-panel-enter w-72 border-l border-[var(--border)] flex flex-col overflow-hidden">
             <div className="border-b border-[var(--border)] px-4 py-3">
-              <p className="text-sm font-medium text-[var(--text-primary)]">{selectedDate}</p>
+              <p className="text-sm font-medium text-[var(--text-primary)]">{longDate(selectedDate)}</p>
               <p className="text-xs text-[var(--text-hint)]">
                 {selectedTasks.length} {t(language, 'calendar', 'tasks')} · {selectedEvents.length} {t(language, 'calendar', 'events')}
               </p>
@@ -620,35 +660,6 @@ export function CalendarView() {
           </div>
         )}
       </div>
-      {hoverDate && (tasksByDate[hoverDate]?.length > 0 || eventsByDate[hoverDate]?.length > 0) && (
-        <div
-          style={{ position: 'fixed', top: hoverPos.y, left: hoverPos.x, zIndex: 9998 }}
-          className="w-56 rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-2 shadow-2xl pointer-events-none"
-        >
-          <p className="border-b border-[var(--border)] px-3 pb-2 text-[10px] font-semibold text-[var(--text-hint)] uppercase tracking-widest">
-            {hoverDate}
-          </p>
-          <div className="space-y-1 px-2 pt-2 max-h-48 overflow-hidden">
-            {(eventsByDate[hoverDate] || []).slice(0, 3).map((ev) => (
-              <div key={ev.id} className="flex items-center gap-2 px-1 py-0.5">
-                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${EVENT_COLOR_DOT[ev.color]}`} />
-                <p className="truncate text-[11px] text-[var(--text-body)]">
-                  {ev.time ? `${ev.time} · ` : ''}{ev.title}
-                </p>
-              </div>
-            ))}
-            {(tasksByDate[hoverDate] || []).slice(0, 3).map((tk) => (
-              <div key={tk.id} className="flex items-center gap-2 px-1 py-0.5">
-                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[tk.status]}`} />
-                <p className={`truncate text-[11px] ${tk.status === 'done' ? 'line-through text-[var(--text-hint)]' : 'text-[var(--text-body)]'}`}>
-                  {tk.title}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Event context menu */}
       {evCtxMenu && createPortal(
         <div

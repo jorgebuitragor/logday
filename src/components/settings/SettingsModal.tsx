@@ -88,6 +88,9 @@ export function SettingsModal() {
         { id: 'git',  label: t(language, 'settings', 'tabGit') },
       ],
     },
+    // Acerca de cierra la lista, pegado al último grupo: fijo al pie de la
+    // barra quedaba suelto, con un hueco grande encima.
+    { items: [{ id: 'about', label: t(language, 'settings', 'tabAbout') }] },
   ];
 
   const navItem = (id: SettingsTab, label: string) => (
@@ -134,10 +137,6 @@ export function SettingsModal() {
                 {items.map(({ id, label: itemLabel }) => navItem(id, itemLabel))}
               </div>
             ))}
-            {/* Acerca de va siempre al final de la barra */}
-            <div className="mt-auto">
-              {navItem('about', t(language, 'settings', 'tabAbout'))}
-            </div>
           </nav>
 
           {/* Content */}

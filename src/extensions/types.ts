@@ -53,6 +53,10 @@ export interface ExtensionDefinition {
   sendsDataExternally?: { to: string };
   /** Si tiene vista propia, aparece como sección del menú (R11). */
   view?: boolean;
+  /** Si tiene panel `Settings`: mientras esté activa, tiene su propia
+   *  entrada en la barra lateral de Opciones (R21). Es metadato para no
+   *  cargar el módulo solo para saberlo (R16). */
+  settings?: boolean;
   /** Claves de sus secretos en el llavero (`ext:<id>:<clave>`). El
    *  llavero no se puede listar, así que "Quitar configuración" (R8)
    *  borra estas. */

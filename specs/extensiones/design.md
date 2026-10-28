@@ -157,9 +157,13 @@ extensions?: Partial<Record<ExtensionId, {
 
 - **Sección nueva** `extensions` en la barra lateral de `SettingsModal`:
   un grupo sin encabezado entre "Datos y conexión" y Acerca de, con el
-  icono `Puzzle`. Queda para después una entrada por cada extensión
-  activa con `Settings`, debajo de Extensiones, al estilo de los
-  complementos de Obsidian.
+  icono `Puzzle`.
+- **Una entrada por extensión activa con panel** (R21), debajo de
+  Extensiones y con sangría, al estilo de los complementos de Obsidian.
+  Se sabe por el metadato `settings: true` del registro, sin cargar el
+  módulo. La pestaña es `ext:<id>` y muestra el icono, el nombre, la
+  descripción y su `Settings` dentro de `ExtensionBoundary`. Si la
+  extensión se desactiva con su página abierta, se vuelve al catálogo.
 - **Dos grupos,** con un encabezado cada uno, y tarjetas en orden
   alfabético. Si un grupo no tiene extensiones en Desktop, no se
   muestra.
@@ -167,7 +171,8 @@ extensions?: Partial<Record<ExtensionId, {
   - icono, nombre y descripción;
   - en qué apps está, con chips "Desktop", "Web" y "Mobile";
   - el interruptor;
-  - si está activa, su `Settings` debajo, dentro de `ExtensionBoundary`;
+  - si está activa y tiene panel, un botón "Configurar" que abre su
+    entrada de la barra (R21);
   - "Quitar configuración" mientras exista su entrada en
     `extensions`, esté activa o no (la configuración se conserva al
     desactivarla). Usa `ConfirmDeleteModal` y respeta "Confirmar

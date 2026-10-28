@@ -12,6 +12,7 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     apps: ['desktop'],
     sendsDataExternally: { to: 'Google Chat, Slack, Microsoft Teams' },
     secretKeys: ['webhook'],
+    settings: true,
     load: () => import('./team-chat').then((m) => m.default),
   },
   {
@@ -22,6 +23,7 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     // Lo que lee el agente llega al proveedor de su modelo (specs/agentes-mcp).
     sendsDataExternally: { to: 'Claude Code, Codex' },
     secretKeys: ['token'],
+    settings: true,
     load: () => import('./mcp').then((m) => m.default),
   },
 ];

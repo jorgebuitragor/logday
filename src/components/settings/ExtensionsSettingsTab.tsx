@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { ShieldAlert } from 'lucide-react';
+import { ChevronRight, Settings2, ShieldAlert } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import type { Language } from '../../types/common';
@@ -58,7 +58,7 @@ function ConsentModal({
 }
 
 function ExtensionCard({
-  def, language, enabled, hasConfig, onToggle, onRemove,
+  def, language, enabled, hasConfig, onToggle, onRemove, onOpenSettings,
 }: {
   def: ExtensionDefinition;
   language: Language;
@@ -66,6 +66,7 @@ function ExtensionCard({
   hasConfig: boolean;
   onToggle: (next: boolean) => void;
   onRemove: () => void;
+  onOpenSettings?: () => void;
 }) {
   const Icon = def.icon;
   return (
@@ -88,18 +89,34 @@ function ExtensionCard({
         </div>
         <ToggleSwitch checked={enabled} onChange={onToggle} />
       </div>
+      {/* R21: el panel de la extensión va en su propia entrada de la barra
+          lateral; aquí solo el acceso. Sin `onOpenSettings` (fuera de
+          Opciones) se dibuja en la tarjeta, como antes. */}
       {(enabled || hasConfig) && (
         <div className="space-y-3 border-t border-[var(--border-card)] px-4 py-3">
-          {enabled && <ExtensionSlot id={def.id} point="Settings" props={{}} />}
-          {hasConfig && (
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={onRemove}
-                className="rounded-lg px-2.5 py-1 text-[11px] text-red-400 transition hover:bg-red-500/10"
-              >
-                {t(language, 'extensions', 'removeConfig')}
-              </button>
+          {enabled && def.settings && !onOpenSettings && <ExtensionSlot id={def.id} point="Settings" props={{}} />}
+          {(hasConfig || (enabled && def.settings && onOpenSettings)) && (
+            <div className="flex items-center justify-end gap-2">
+              {hasConfig && (
+                <button
+                  type="button"
+                  onClick={onRemove}
+                  className="rounded-lg px-2.5 py-1 text-[11px] text-red-400 transition hover:bg-red-500/10"
+                >
+                  {t(language, 'extensions', 'removeConfig')}
+                </button>
+              )}
+              {enabled && def.settings && onOpenSettings && (
+                <button
+                  type="button"
+                  onClick={onOpenSettings}
+                  className="flex items-center gap-1 rounded-lg border border-[var(--border-card)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
+                >
+                  <Settings2 size={12} />
+                  {t(language, 'extensions', 'openSettings')}
+                  <ChevronRight size={12} />
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -110,7 +127,7 @@ function ExtensionCard({
 
 /** Opciones → Extensiones: catálogo, activación con aviso y "Quitar
  *  configuración" (specs/extensiones R1–R8). */
-export function ExtensionsSettingsTab() {
+export function ExtensionsSettingsTab({ onOpenSettings }: { onOpenSettings?: (id: ExtensionId) => void } = {}) {
   const { language, confirmDestructiveActions, removeExtensionConfig, showToast } = useAppStore(
     useShallow((s) => ({
       language: s.language,
@@ -168,6 +185,7 @@ export function ExtensionsSettingsTab() {
                 hasConfig={!!prefs(def.id)}
                 onToggle={(next) => void handleToggle(def.id, next)}
                 onRemove={() => removeDialog.request(def.id, (id) => void handleRemove(id))}
+                onOpenSettings={onOpenSettings && (() => onOpenSettings(def.id))}
               />
             ))}
           </section>

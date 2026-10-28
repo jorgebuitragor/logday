@@ -39,9 +39,15 @@ Estado: en progreso.
   agente y confirmó que la integración funciona.
 - [x] "Permitir cambios" en la app (28 oct 2026): el interruptor se
   guarda y vale en la siguiente petición, sin reiniciar el servidor.
-- [ ] Cambiar el puerto y regenerar el token en la app. Usan el mismo
-  reinicio del servidor que el arranque, y generar el token ya se probó.
-  No se regeneró para no invalidar el que Jorge registró en su agente.
+- [x] Cambiar el puerto en la app (28 oct 2026): 47321 → 47322 guarda el
+  puerto y el servidor reabre en el nuevo. En esa prueba apareció un
+  fallo: reabrir releía el token del llavero, y en macOS (con la firma de
+  la app de QA cambiada) eso abre un aviso que pide la contraseña.
+  Mientras no se respondía, el servidor quedaba cerrado y el panel seguía
+  diciendo "Escuchando". Corregido: el token se guarda en memoria y el
+  panel dice "Abriendo el servidor".
+- [ ] Con la corrección: volver a 47321 sin que salga el aviso del
+  llavero, y regenerar el token (el viejo deja de valer).
 
 ## Después
 

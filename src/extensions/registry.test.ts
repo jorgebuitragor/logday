@@ -8,7 +8,7 @@ describe('registro de extensiones', () => {
     expect(chat?.category).toBe('integration');
     expect(chat?.apps).toContain('desktop');
     expect(chat?.sendsDataExternally).toBeTruthy();
-    expect(chat?.secretKeys).toEqual(['webhook']);
+    expect(chat?.secretKeys).toEqual(['webhook', 'google_client_secret', 'google_refresh']);
   });
 
   it('los ids son únicos y todas existen en Desktop (R4)', () => {

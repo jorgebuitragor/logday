@@ -38,6 +38,10 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 # Servidor HTTP local de la extensión MCP (specs/agentes-mcp/design.md):
 # síncrono y pequeño, solo escucha en 127.0.0.1.
 tiny_http = "0.12"
+# PKCE del inicio de sesión con Google (specs/chat-como-usuario). Ya
+# llegaban por otras dependencias.
+sha2 = "0.10"
+getrandom = "0.2"
 
 # Llavero del sistema para los secretos de las extensiones
 # (specs/extensiones/design.md). keyring 3 no trae ningún almacén por

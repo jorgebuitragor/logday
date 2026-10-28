@@ -2245,11 +2245,13 @@ version = "1.0.8"
 dependencies = [
  "base64 0.22.1",
  "dirs-next",
+ "getrandom 0.2.17",
  "keyring",
  "raw-window-handle",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

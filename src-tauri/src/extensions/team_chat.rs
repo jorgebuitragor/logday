@@ -200,7 +200,9 @@ impl RateLimiter {
     }
 }
 
-fn limiter() -> &'static Mutex<RateLimiter> {
+/// Compartido con el envío "como yo" (team_chat_google.rs): R17 cuenta
+/// los envíos, no el camino.
+pub(super) fn limiter() -> &'static Mutex<RateLimiter> {
     static LIMITER: OnceLock<Mutex<RateLimiter>> = OnceLock::new();
     LIMITER.get_or_init(|| Mutex::new(RateLimiter::new(MAX_SENDS_PER_HOUR, Duration::from_secs(3600))))
 }

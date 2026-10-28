@@ -9,7 +9,7 @@ import { ModalPanel } from '../../components/shared/ModalPanel';
 import { Z_MODAL_NESTED } from '../../lib/zIndex';
 import type { DailyActionProps } from '../types';
 import { useTeamChatSettings } from './api';
-import { chatErrorMessage, wasSentToday } from './model';
+import { chatErrorMessage, isReadyToSend, wasSentToday } from './model';
 
 /** "Enviar al chat" junto a Copiar en el daily (R15, R31). Envía el mismo
  *  texto que Copiar (`buildDailyCopyText`). */
@@ -22,8 +22,8 @@ export default function SendToChatButton({ date, getText }: DailyActionProps) {
   const [sent, setSent] = useState(false);
   const [confirmText, setConfirmText] = useState<string | null>(null);
 
-  // R31: solo con una integración configurada.
-  if (!settings.provider || !settings.hint) return null;
+  // R31: solo con una integración configurada (webhook o "como yo").
+  if (!isReadyToSend(settings)) return null;
 
   const doSend = async (text: string) => {
     setSending(true);

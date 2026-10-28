@@ -37,8 +37,11 @@ Estado: en progreso.
 - [x] QA de Jorge en la app (28 oct 2026): activó la extensión con el
   aviso, generó el token desde el panel, registró el servidor en su
   agente y confirmó que la integración funciona.
-- [ ] Probar en la app "Permitir cambios", regenerar el token y cambiar
-  el puerto.
+- [x] "Permitir cambios" en la app (28 oct 2026): el interruptor se
+  guarda y vale en la siguiente petición, sin reiniciar el servidor.
+- [ ] Cambiar el puerto y regenerar el token en la app. Usan el mismo
+  reinicio del servidor que el arranque, y generar el token ya se probó.
+  No se regeneró para no invalidar el que Jorge registró en su agente.
 
 ## Después
 

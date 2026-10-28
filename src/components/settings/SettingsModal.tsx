@@ -82,7 +82,7 @@ export function SettingsModal() {
 
   return (
     <ModalOverlay onClose={toggleSettings} className="px-4">
-      <ModalPanel className="w-full max-w-xl rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-2xl overflow-hidden h-[90vh] max-h-[720px] flex flex-col">
+      <ModalPanel className="w-full max-w-2xl rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-2xl overflow-hidden h-[90vh] max-h-[720px] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4 shrink-0">
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'settings', 'title')}</h2>
@@ -94,13 +94,15 @@ export function SettingsModal() {
           </button>
         </div>
 
-        {/* Tab navigation */}
-        <div className="flex shrink-0 border-b border-[var(--border)] px-4">
+        {/* Tab navigation. Con la pestaña Extensiones son 8: en español no
+            cabían en max-w-xl y "Acerca de" se partía. Si la ventana es
+            angosta, la barra se desplaza en vez de partir el texto. */}
+        <div className="flex shrink-0 overflow-x-auto border-b border-[var(--border)] px-4">
           {SETTINGS_TABS.map(({ id, label }) => (
             <button
               key={id}
               onClick={() => setSettingsTab(id)}
-              className={`-mb-px border-b-2 px-3 py-2.5 text-xs font-medium transition ${
+              className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-xs font-medium transition ${
                 settingsTab === id
                   ? 'border-indigo-500 text-indigo-400'
                   : 'border-transparent text-[var(--text-hint)] hover:text-[var(--text-secondary)]'

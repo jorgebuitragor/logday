@@ -35,21 +35,30 @@ Estado: en progreso.
 - [x] Textos en `i18n.ts`, en es y en (R20).
 - [x] Pruebas de `useExtensions` y de la resolución de la pantalla de
   inicio.
-- [ ] Probar en la app de QA:
-  - activar y desactivar;
-  - aviso aceptado y cancelado;
-  - "Quitar configuración";
-  - pantalla de inicio en una extensión desactivada;
-  - que las 8 pestañas de Opciones quepan en es y en.
+- [x] Probar en la app de QA (28 oct 2026): activar y desactivar, aviso
+  aceptado y cancelado, reactivar sin volver a pedir el aviso, y "Quitar
+  configuración" (borra la entrada del llavero). Las 8 pestañas no
+  cabían en español: se ensanchó el modal a `max-w-2xl` y la barra
+  ahora se desplaza en vez de partir el texto.
+- [ ] Pantalla de inicio en una extensión desactivada, y las secciones
+  del menú lateral: sin probar en la app, porque todavía ninguna
+  extensión tiene vista. Están cubiertas por pruebas unitarias.
 
 ## Primera extensión
 
 - [x] `team-chat`, en modo local. Ver
   `logday-server/specs/daily-al-chat/` (fase 1). Va en el mismo PR que
   la base.
-- [ ] Probar `team-chat` en la app de QA con webhooks reales de Google
-  Chat, Slack y Teams: guardar, enviar prueba, "Enviar al chat", URL de
-  otro proveedor rechazada y el aviso de "ya se envió hoy".
+- [x] Probar `team-chat` en la app de QA (28 oct 2026), con una URL de
+  Google Chat con formato válido pero falsa:
+  - la URL de otro proveedor se rechaza sin guardarse;
+  - la URL queda solo en el llavero (servicio de QA), y no en
+    `config.json`, WebKit, caché ni datos;
+  - "Enviar prueba" y "Enviar al chat" muestran el 400 del proveedor y lo
+    registran como último envío;
+  - al desactivar la extensión, el botón desaparece del daily.
+- [ ] Envío real con webhooks de Google Chat, Slack y Teams, más el aviso
+  de "ya se envió hoy".
 
 ## Candidatas (sin spec todavía)
 

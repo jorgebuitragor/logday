@@ -133,6 +133,11 @@ http_headers = { Authorization = "Bearer <token>" }
 | `create_task` | `title`, `project?` (`inbox`), `content?`, `due?`, `tags?`, `status?` | No abre el panel de la tarea (`open: false`). |
 | `update_task` | `id`, y al menos uno de `title`, `status`, `due` (`null` lo quita), `tags`, `content` | Pasa `prev` leído de disco, para que D2 y el sync vean el cambio real. |
 | `append_to_daily` | `text`, `date?` (hoy) | Agrega en una línea nueva al final, con `saveDailyEntry(date, nuevo, base)`. |
+| `list_note_folders` | — | Las carpetas de `noteFolders`. |
+| `list_notes` | `folder?` (`""` = sin carpeta), `query?`, `limit?` | Fijadas primero, luego por `updated`. `query` busca en título, etiquetas y contenido; si coincide en el contenido, devuelve un `snippet` de unos 120 caracteres. |
+| `get_note` | `id` | Con contenido. |
+| `get_overtime` | `month?` (`YYYY-MM`, este mes) | Lee el archivo del mes (mismo formato que `loadOvertimeMonth`); entradas ordenadas y totales por tipo de hora. Solo lectura (R11b). |
+| `create_note` | `title`, `content?`, `folder?`, `tags?` | `createNoteWith` del store: escribe el `.md` y avisa al sync como al importar, sin abrir la nota. La carpeta tiene que existir. |
 
 - Las fechas de calendario son locales (`localISODate`), como en el
   resto de la app.

@@ -267,6 +267,9 @@ export interface AppState {
   renameNoteFolder: (folder: string, newName: string) => Promise<void>;
   deleteNoteFolder: (folder: string) => Promise<void>;
   createNote: () => Promise<Note>;
+  /** Nota con título y contenido, sin abrirla (la crea el agente por MCP,
+   *  specs/agentes-mcp). Mismo camino que importar: el `.md` y el sync. */
+  createNoteWith: (input: { title: string; content?: string; folder?: string; tags?: string[] }) => Promise<Note>;
   /** Guarda la nota. `updated` se sella según D1 (ver `NoteUpdatedThrottle`);
    *  `leaving: true` es el guardado al salir de la nota, que sella lo pendiente. */
   updateNote: (note: Note, opts?: { leaving?: boolean }) => Promise<void>;
@@ -3195,6 +3198,34 @@ export const useAppStore = create<AppState>((set, get) => ({
     await fs.writeFile(note.filePath, serializeNote(note));
     noteUpdatedThrottle.markStamped(note.id);
     set((state) => ({ notes: [note, ...state.notes], activeNote: note }));
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    void syncCreateNote(get, set, note);
+    return note;
+  },
+
+  createNoteWith: async ({ title, content = '', folder = '', tags = [] }) => {
+    const { basePath } = get();
+    if (!basePath) throw new Error('No base path');
+    const id = uuidv4();
+    const note: Note = {
+      id,
+      title: title.trim(),
+      folder,
+      tags,
+      ...newNoteStamps(),
+      pinned: false,
+      content,
+      filePath: noteFilePath(basePath, folder, id),
+    };
+    if (folder) await fs.createDir(noteFolderDir(basePath, folder)).catch(() => {});
+    await fs.writeFile(note.filePath, serializeNote(note));
+    noteUpdatedThrottle.markStamped(note.id);
+    // No se abre: lo que crea el agente no le cambia la nota abierta al
+    // usuario. Se agrega a la lista solo si es de lo que está viendo.
+    const { activeNoteFolder, notesView } = get();
+    if (notesView === 'tree' || activeNoteFolder === null || activeNoteFolder === folder) {
+      set((state) => ({ notes: [note, ...state.notes] }));
+    }
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
     void syncCreateNote(get, set, note);
     return note;

@@ -80,8 +80,8 @@ export async function handleMcpMessage(raw: string, ctx: McpContext): Promise<st
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: 'logday', version: ctx.serverVersion },
           instructions:
-            'Logday is the user\'s personal task manager and daily log. Dates are local calendar dates (YYYY-MM-DD). ' +
-            'Write tools only appear when the user allows changes in Logday.',
+            'Logday is the user\'s personal task manager, daily log, notes and overtime log. Dates are local calendar ' +
+            'dates (YYYY-MM-DD). Write tools only appear when the user allows changes in Logday; overtime is read-only.',
         });
       }
       case 'ping':

@@ -58,12 +58,19 @@ OpenAI…), así que la extensión pide el aviso de la base al activarla.
   - `list_tasks`: tareas de todos los proyectos, filtrables por
     proyecto, estado y texto;
   - `get_task`: una tarea con su contenido;
-  - `get_daily`: el texto del daily de una fecha (hoy por defecto).
+  - `get_daily`: el texto del daily de una fecha (hoy por defecto);
+  - `list_note_folders`, `list_notes` (filtrables por carpeta y texto,
+    que busca también en el contenido y devuelve un trozo) y `get_note`;
+  - `get_overtime`: las horas extra de un mes, con sus totales.
 - R11. MIENTRAS el panel tenga activado "Permitir cambios", el servidor
   DEBERÁ ofrecer además:
   - `create_task`;
   - `update_task`: título, estado, vencimiento, etiquetas y contenido;
-  - `append_to_daily`: agrega texto al final del daily de una fecha.
+  - `append_to_daily`: agrega texto al final del daily de una fecha;
+  - `create_note`: una nota con título y contenido, sin abrirla. Usa el
+    mismo camino que importar notas (el `.md` y el sync).
+- R11b. Las horas extra DEBERÁN ser solo de lectura: alimentan la
+  nómina, y un error del agente ahí cuesta.
 - R12. "Permitir cambios" DEBERÁ venir apagado. Mientras esté apagado,
   las herramientas de R11 NO DEBERÁN aparecer en la lista, y llamarlas
   DEBERÁ devolver un error que lo explique.
@@ -95,7 +102,9 @@ OpenAI…), así que la extensión pide el aviso de la base al activarla.
 
 ## Fuera de alcance (por ahora)
 
-- Notas (leer, buscar, crear), horas extra y calendario.
+- Editar notas existentes: su contenido va por el CRDT del editor, y
+  escribir encima desde fuera puede chocar con la nota abierta.
+- Crear o cambiar horas extra (R11b) y el calendario.
 - Modo cuenta en `logday-server`, para usarlo con la app cerrada o desde
   otro equipo.
 - Transporte stdio y SSE.

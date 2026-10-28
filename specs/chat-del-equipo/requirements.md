@@ -35,3 +35,10 @@ Fuera de esta fase:
 - D3. Si el proveedor elegido no corresponde a la URL guardada (porque
   el usuario lo cambió sin pegar una URL nueva), el envío DEBERÁ
   rechazarse con "hay que volver a configurar", sin llamar a la red.
+- D4. El panel DEBERÁ incluir una guía paso a paso, para alguien sin
+  conocimientos técnicos, de cómo conseguir la URL del webhook en el
+  proveedor elegido. Tiene que cubrir el último tramo (pegar, guardar y
+  enviar una prueba), los bloqueos habituales (cuenta personal, canal
+  privado, opción desactivada por la organización) y que la URL se cuida
+  como una contraseña, y enlazar a la ayuda oficial del proveedor.
+  DEBERÁ venir abierta mientras no haya una URL guardada.

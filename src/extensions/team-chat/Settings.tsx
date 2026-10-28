@@ -6,6 +6,7 @@ import { t } from '../../lib/i18n';
 import type { Language } from '../../types/common';
 import { AppSelect } from '../../components/calendar/AppSelect';
 import { getExtensionSecretHint, setExtensionSecret } from '../secrets';
+import { SetupGuide } from './SetupGuide';
 import { useTeamChatSettings, validateWebhookUrl } from './api';
 import {
   CHAT_PROVIDERS, TEAM_CHAT_ID, WEBHOOK_SECRET_KEY, chatErrorMessage, toChatError,
@@ -133,7 +134,8 @@ export default function TeamChatSettings() {
         {settings.hint && provider !== settings.provider && (
           <p className="text-[10px] text-amber-400">{t(language, 'teamChat', 'providerChangedNeedsUrl')}</p>
         )}
-        <p className="text-[10px] leading-relaxed text-[var(--text-hint)]">{t(language, 'teamChat', 'webhookHelp')}</p>
+        {/* Abierta mientras no haya una URL guardada: es justo cuando hace falta. */}
+        <SetupGuide provider={provider} defaultOpen={!settings.hint} />
       </div>
 
       <div className="flex items-center gap-1.5 text-[11px]">

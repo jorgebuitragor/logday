@@ -7,6 +7,7 @@
 
 pub mod mcp;
 pub mod team_chat;
+pub mod team_chat_google;
 
 use tauri::AppHandle;
 
@@ -49,6 +50,22 @@ pub fn read_secret(service: &str, id: &str, key: &str) -> Result<String, &'stati
     match entry(service, &account)?.get_password() {
         Ok(v) => Ok(v),
         Err(keyring::Error::NoEntry) => Err(SECRET_NOT_FOUND),
+        Err(_) => Err(SECRET_KEYCHAIN_ERROR),
+    }
+}
+
+/// Guarda un secreto desde un comando Rust (p. ej. un token de OAuth que
+/// nunca pasa por el webview).
+pub fn write_secret(service: &str, id: &str, key: &str, value: &str) -> Result<(), &'static str> {
+    let account = secret_account(id, key)?;
+    entry(service, &account)?.set_password(value).map_err(|_| SECRET_KEYCHAIN_ERROR)
+}
+
+/// Borra un secreto desde un comando Rust. Que no exista no es un error.
+pub fn delete_secret(service: &str, id: &str, key: &str) -> Result<(), &'static str> {
+    let account = secret_account(id, key)?;
+    match entry(service, &account)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(_) => Err(SECRET_KEYCHAIN_ERROR),
     }
 }

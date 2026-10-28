@@ -28,3 +28,12 @@ export const GUIDES: Record<ChatProvider, { steps: GuideKey[]; tips: GuideKey[];
 /** Los últimos pasos son iguales para los tres: pegar, guardar y probar. */
 export const FINAL_STEPS: GuideKey[] = ['guideFinal1', 'guideFinal2'];
 export const COMMON_TIPS: GuideKey[] = ['guideTipAdmin', 'guideTipSecret'];
+
+/** "Como yo" en Google Chat (specs/chat-como-usuario C13): lo que hace
+ *  cada persona, y lo que hace una vez quien administra el Workspace. */
+export const GOOGLE_USER_GUIDE: { steps: GuideKey[]; adminSteps: GuideKey[]; tips: GuideKey[]; help: { url: string; label: GuideKey } } = {
+  steps: ['guideAsUser1', 'guideAsUser2', 'guideAsUser3', 'guideAsUser4', 'guideAsUser5'],
+  adminSteps: ['guideAdmin1', 'guideAdmin2', 'guideAdmin3', 'guideAdmin4', 'guideAdmin5', 'guideAdmin6'],
+  tips: ['guideAsUserTipWorkspace', 'guideAsUserTipLabel'],
+  help: { url: 'https://developers.google.com/chat/api/guides/auth/users', label: 'guideHelpGoogleOAuth' },
+};

@@ -43,4 +43,6 @@ tres archivos:
 | Cumplimiento de datos personales | en diseño | [`cumplimiento-datos-personales/`](./cumplimiento-datos-personales/requirements.md) |
 | Fechas de creación, edición y completado | en progreso (etapa 1: leer ambos formatos) | [`fechas-creacion-edicion/`](./fechas-creacion-edicion/requirements.md) |
 | Extensiones (integraciones y herramientas) | en progreso | [`extensiones/`](./extensiones/requirements.md) |
+| Agentes de IA (extensión `mcp`) | en progreso | [`agentes-mcp/`](./agentes-mcp/requirements.md) |
 | Chat del equipo (extensión `team-chat`), modo local | en progreso | [`chat-del-equipo/`](./chat-del-equipo/requirements.md) |
+| Chat del equipo: enviar como yo (Google Chat, OAuth) | en progreso | [`chat-como-usuario/`](./chat-como-usuario/requirements.md) |

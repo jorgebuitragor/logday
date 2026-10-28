@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { t } from '../../lib/i18n';
-import { COMMON_TIPS, FINAL_STEPS, GUIDES } from './guide';
+import { COMMON_TIPS, FINAL_STEPS, GOOGLE_USER_GUIDE, GUIDES } from './guide';
 import { CHAT_PROVIDERS } from './model';
 
 describe('guía para conseguir la URL del webhook', () => {
@@ -15,6 +15,7 @@ describe('guía para conseguir la URL del webhook', () => {
     const keys = [
       ...FINAL_STEPS, ...COMMON_TIPS,
       ...CHAT_PROVIDERS.flatMap((p) => [...GUIDES[p].steps, ...GUIDES[p].tips, GUIDES[p].help.label]),
+      ...GOOGLE_USER_GUIDE.steps, ...GOOGLE_USER_GUIDE.adminSteps, ...GOOGLE_USER_GUIDE.tips, GOOGLE_USER_GUIDE.help.label,
     ];
     for (const key of keys) {
       for (const lang of ['es', 'en'] as const) expect(t(lang, 'teamChat', key), `${lang} ${key}`).not.toBe(key);

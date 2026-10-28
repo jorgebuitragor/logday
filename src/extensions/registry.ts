@@ -11,7 +11,8 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     icon: MessagesSquare,
     apps: ['desktop'],
     sendsDataExternally: { to: 'Google Chat, Slack, Microsoft Teams' },
-    secretKeys: ['webhook'],
+    // "Quitar configuración" borra también lo de "como yo" (specs/chat-como-usuario).
+    secretKeys: ['webhook', 'google_client_secret', 'google_refresh'],
     settings: true,
     load: () => import('./team-chat').then((m) => m.default),
   },

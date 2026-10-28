@@ -32,7 +32,9 @@ Los mismos nombres que en Web y Mobile:
 | Función | Qué hace | Quién la usa |
 |---|---|---|
 | `newTaskStamps(status)` | `created` = ahora; `completedAt` = el mismo instante si nace `done` (R10). | `createTask` |
-| `nextCompletedAt(prev, next)` | D2 (R11): transición a `done` → ahora; sigue en `done` → conserva; fuera de `done` → nada. Sin `prev` conserva lo que traiga o sella. | `updateTask` |
+| `nextCompletedAt(prev, next)` | D2 (R11): transición a `done` → ahora; sigue en `done` → conserva tal cual, también vacío; fuera de `done` → nada. Sin `prev` conserva lo que traiga o sella. | `withCompletedAt` |
+| `withCompletedAt(prev, next, { restore })` | La tarea con su `completedAt`: D2, o el valor tal cual si es un deshacer (R17). | `updateTask` |
+| `undoRestore(before, after)` / `applyUndoRestore(current, restore)` | Qué devuelve el deshacer (estado, vencimiento, proyecto, `completedAt`), comparando con la tarea que guardó `updateTask`, y cómo se aplica sin dejar un `completedAt` vacío. | `updateTasksWithUndo` |
 | `newNoteStamps()` | `created = updated = ahora` (R12). | `createNote`, `importNotesFromPaths`, `importNotesFromContent`, `duplicateNote`, `duplicateNoteFolder` |
 | `noteSaveKind(prev, next)` | `meta` si cambió título, tags, carpeta o fijado; `content` si solo el contenido; `none` si nada. | `stampNoteSave` |
 | `NoteUpdatedThrottle` | Límite de D1 por nota (R13–R15). | store (`noteUpdatedThrottle`) |
@@ -79,9 +81,12 @@ como `meta`.
 - **`formatPreviewDate` aparte del componente**, para probarlo sin React y
   porque el componente no puede exportar funciones sin romper Fast Refresh.
 
-- **D2 sella al volver a `done` aunque se esté deshaciendo un "reabrir".**
-  Ya era así: el deshacer restaura `status` pero no `completedAt`, que no
-  cambió en el valor que se pasó a `updateTask`.
+- **El deshacer restaura `completedAt` exacto (R17).** Antes comparaba con
+  la tarea que se pidió guardar, no con la guardada: como quien decide
+  `completedAt` es `updateTask`, no lo veía cambiar y deshacer un "reabrir"
+  volvía a sellar con "ahora". Ahora `updateTask` devuelve la tarea guardada,
+  `updateTasksWithUndo` compara con ella y el deshacer llama a
+  `updateTask(..., { restore: true })`, que salta D2.
 
 ## Pruebas
 
@@ -90,8 +95,8 @@ Bogotá), `taskListing.test.ts` (orden mixto, `completedLocalDate`, frontera
 de semana con un instante del domingo a las 10 p. m.), `noteSort.test.ts`
 (orden mixto) y `linkPreviewDate.test.ts` (no lanza con un instante).
 
-Etapa 2: `entityStamps.test.ts` (D2: transición, sigue en `done`, reabrir y
-valor viejo; D1 con timers falsos: un sello cada 60 s, sello final al salir,
+Etapa 2: `entityStamps.test.ts` (D2: transición, sigue en `done` con y sin
+valor, reabrir y valor viejo; deshacer un reabrir y un completar; D1 con timers falsos: un sello cada 60 s, sello final al salir,
 metadatos al momento, por nota; crear y duplicar escriben instantes) y
 `markdown.test.ts` (un instante y un legado sobreviven a escribir y releer
 el `.md`).

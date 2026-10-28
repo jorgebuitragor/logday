@@ -53,7 +53,9 @@ import { applyIncomingDailyContentState, applyDailyEditorEdit, deleteDailyConten
 import { parseFrontmatter, serializeTask, parseNote, serializeNote } from '../lib/markdown';
 import { t } from '../lib/i18n';
 import { localISODate, localISOMonth, nowInstant, stampSortKey } from '../lib/localDate';
-import { NoteUpdatedThrottle, newNoteStamps, newTaskStamps, nextCompletedAt, stampNoteSave } from '../lib/entityStamps';
+import {
+  NoteUpdatedThrottle, applyUndoRestore, newNoteStamps, newTaskStamps, stampNoteSave, undoRestore, withCompletedAt,
+} from '../lib/entityStamps';
 import { EMPTY_TASK_FILTER, type TaskFilter } from '../lib/taskListing';
 import {
   toISO,
@@ -217,8 +219,11 @@ export interface AppState {
   moveProject: (project: string, targetParent: string) => Promise<void>;
   createTask: (title: string, project?: string, content?: string, taskCode?: string, extra?: NewTaskExtra) => Promise<Task>;
   /** `opts.prev`: la tarea tal como está, cuando no está en la lista
-   *  visible (p. ej. al deshacer un cambio de proyecto que la sacó de ahí). */
-  updateTask: (task: Task, opts?: { prev?: Task }) => Promise<void>;
+   *  visible (p. ej. al deshacer un cambio de proyecto que la sacó de ahí).
+   *  `opts.restore`: es un deshacer; `completedAt` se guarda tal cual viene
+   *  en vez de pasar por D2 (`nextCompletedAt`). Devuelve la tarea guardada,
+   *  o nada si no se guardó (código repetido). */
+  updateTask: (task: Task, opts?: { prev?: Task; restore?: boolean }) => Promise<Task | undefined>;
   deleteTask: (task: Task) => Promise<void>;
   setActiveTask: (task: Task | null) => void;
   setActiveCalendarEvent: (event: CalendarEvent | null) => void;
@@ -2824,19 +2829,16 @@ export const useAppStore = create<AppState>((set, get) => ({
           title: t(language, 'tasks', 'taskCodeDuplicate'),
           description: `"${task.taskCode}"`,
         });
-        return;
+        return undefined;
       }
     }
 
     const prev = get().tasks.find((t) => t.id === task.id) ?? opts?.prev;
-    const normalizedTask: Task = { ...task };
-
     // D2: al pasar a done se sella con el instante actual (aunque la tarea
-    // traiga un valor viejo de otro cliente), si sigue en done se conserva y
-    // al salir de done se limpia. Ver nextCompletedAt.
-    const completedAt = nextCompletedAt(prev, normalizedTask);
-    if (completedAt) normalizedTask.completedAt = completedAt;
-    else delete normalizedTask.completedAt;
+    // traiga un valor viejo de otro cliente), si sigue en done se conserva tal
+    // cual y al salir de done se limpia. Un deshacer (`restore`) trae el valor
+    // exacto de antes de la acción y no se toca. Ver withCompletedAt.
+    const normalizedTask: Task = withCompletedAt(prev, task, { restore: opts?.restore });
 
     // Cambiar de proyecto mueve el archivo a la carpeta del proyecto nuevo.
     // Antes solo cambiaba el frontmatter: el archivo quedaba en la carpeta
@@ -2861,6 +2863,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
     const changedFields = diffTaskFields(prev, normalizedTask);
     if (Object.keys(changedFields).length > 0) void syncPatchTask(get, set, normalizedTask.id, changedFields);
+    return normalizedTask;
   },
 
   deleteTask: async (task) => {
@@ -2917,21 +2920,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
     // Deshacer devuelve solo los campos que cambió esta acción, sobre la
     // tarea como esté en ese momento: si entre medio se editó otra cosa (o
-    // llegó un cambio por sync), eso se conserva.
-    const fields = ['status', 'due', 'project', 'completedAt'] as const;
+    // llegó un cambio por sync), eso se conserva. Se compara con la tarea
+    // que guardó updateTask, que es quien decide `completedAt` (D2): así el
+    // deshacer devuelve su valor exacto (ver undoRestore).
     const undo: { after: Task; restore: Partial<Task> }[] = [];
     for (const next of nexts) {
       const prev = live(next.id) ?? next;
-      await get().updateTask(next);
+      const saved = await get().updateTask(next);
+      if (!saved) continue;
       // Si el cambio la sacó de la lista visible (otro proyecto), el
       // deshacer parte de cómo quedó: con el archivo ya en la carpeta nueva.
-      const { basePath } = get();
-      const after: Task = live(next.id) ?? {
-        ...next,
-        filePath: basePath && prev.project !== next.project ? taskFilePath(basePath, next.project, next.id) : next.filePath,
-      };
-      const changed = fields.filter((f) => prev[f] !== next[f]);
-      if (changed.length) undo.push({ after, restore: Object.fromEntries(changed.map((f) => [f, prev[f]])) as Partial<Task> });
+      const after: Task = live(next.id) ?? saved;
+      const restore = undoRestore(prev, saved);
+      if (Object.keys(restore).length) undo.push({ after, restore });
     }
     if (!undo.length) return;
     get().showToast({
@@ -2943,7 +2944,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           void (async () => {
             for (const { after, restore } of undo) {
               const current = live(after.id) ?? after;
-              await get().updateTask({ ...current, ...restore }, { prev: current });
+              await get().updateTask(applyUndoRestore(current, restore), { prev: current, restore: true });
             }
           })();
         },

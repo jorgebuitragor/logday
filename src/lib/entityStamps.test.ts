@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Note } from '../types/note';
+import type { Task } from '../types/task';
 import {
-  NOTE_UPDATED_MIN_INTERVAL_MS, NoteUpdatedThrottle, newNoteStamps, newTaskStamps, nextCompletedAt,
-  noteSaveKind, stampNoteSave,
+  NOTE_UPDATED_MIN_INTERVAL_MS, NoteUpdatedThrottle, applyUndoRestore, newNoteStamps, newTaskStamps,
+  nextCompletedAt, noteSaveKind, stampNoteSave, undoRestore, withCompletedAt,
 } from './entityStamps';
 
 // Un instante como los de `toISOString()`.
@@ -53,8 +54,11 @@ describe('nextCompletedAt (D2)', () => {
     expect(nextCompletedAt({ status: 'done', completedAt: at }, { status: 'done' }, now)).toBe(at);
   });
 
-  it('si sigue en done pero no tenía valor, lo sella', () => {
-    expect(nextCompletedAt({ status: 'done' }, { status: 'done' }, now)).toBe(NOW);
+  it('si sigue en done sin valor, lo deja vacío (paridad con Web y Mobile)', () => {
+    // Una tarea legada hecha sin completed_at: editarle el título no la da
+    // por completada hoy.
+    expect(nextCompletedAt({ status: 'done' }, { status: 'done' }, now)).toBeUndefined();
+    expect(nextCompletedAt({ status: 'done', completedAt: '' }, { status: 'done', completedAt: '' }, now)).toBeUndefined();
   });
 
   it('al reabrir se limpia', () => {
@@ -230,5 +234,67 @@ describe('stampNoteSave', () => {
     expect(stampNoteSave(prev, { ...prev, title: 'Otro' }, throttle, { now }).updated).toBe(NOW);
     expect(stampNoteSave(prev, { ...prev, tags: ['x'] }, throttle, { now }).updated).toBe(NOW);
     expect(stampNoteSave(prev, { ...prev, pinned: true }, throttle, { now }).updated).toBe(NOW);
+  });
+});
+
+describe('deshacer y completedAt', () => {
+  function task(fields: Partial<Task> = {}): Task {
+    return {
+      id: 't1', title: 'Tarea', status: 'todo', tags: [], project: 'inbox', created: '2026-10-01',
+      linked_paths: [], content: '', filePath: '/t1.md', ...fields,
+    };
+  }
+  // Lo que guarda updateTask: D2, o el valor tal cual si es un deshacer.
+  const save = (prev: Task, next: Task, opts: { restore?: boolean } = {}) => withCompletedAt(prev, next, { ...opts, now });
+
+  it('deshacer un reabrir recupera el instante de completado original', () => {
+    const original = '2026-10-20T15:00:00.000Z';
+    const before = task({ status: 'done', completedAt: original });
+    const after = save(before, { ...before, status: 'todo' });
+    expect(after.completedAt).toBeUndefined();
+    const restore = undoRestore(before, after);
+    expect(restore).toEqual({ status: 'done', completedAt: original });
+    const undone = save(after, applyUndoRestore(after, restore), { restore: true });
+    expect(undone.status).toBe('done');
+    expect(undone.completedAt).toBe(original);
+  });
+
+  it('deshacer un reabrir de una legada conserva el YYYY-MM-DD', () => {
+    const before = task({ status: 'done', completedAt: '2026-09-15' });
+    const after = save(before, { ...before, status: 'todo' });
+    const undone = save(after, applyUndoRestore(after, undoRestore(before, after)), { restore: true });
+    expect(undone.completedAt).toBe('2026-09-15');
+  });
+
+  it('deshacer un completar deja completedAt como estaba', () => {
+    const before = task({ status: 'todo' });
+    const after = save(before, { ...before, status: 'done' });
+    expect(after.completedAt).toBe(NOW);
+    const undone = save(after, applyUndoRestore(after, undoRestore(before, after)), { restore: true });
+    expect(undone.status).toBe('todo');
+    expect('completedAt' in undone).toBe(false);
+  });
+
+  it('deshacer un completar devuelve también un valor viejo que tuviera', () => {
+    const before = task({ status: 'todo', completedAt: '2026-01-15' });
+    const after = save(before, { ...before, status: 'done' });
+    expect(after.completedAt).toBe(NOW);
+    const undone = save(after, applyUndoRestore(after, undoRestore(before, after)), { restore: true });
+    expect(undone).toEqual(before);
+  });
+
+  it('deshacer un cambio de vencimiento no toca completedAt', () => {
+    const before = task({ status: 'done', completedAt: '2026-10-20T15:00:00.000Z', due: '2026-10-30' });
+    const after = save(before, { ...before, due: '2026-11-02' });
+    const restore = undoRestore(before, after);
+    expect(restore).toEqual({ due: '2026-10-30' });
+    expect(save(after, applyUndoRestore(after, restore), { restore: true })).toEqual(before);
+  });
+
+  it('una done sin valor sigue sin valor al editarla y al deshacer', () => {
+    const before = task({ status: 'done', due: '2026-10-30' });
+    const after = save(before, { ...before, due: '2026-11-02' });
+    expect('completedAt' in after).toBe(false);
+    expect(save(after, applyUndoRestore(after, undoRestore(before, after)), { restore: true })).toEqual(before);
   });
 });

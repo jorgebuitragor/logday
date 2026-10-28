@@ -64,8 +64,10 @@ Mobile.
   nace en `done`, `completedAt` DEBERÁ ser ese mismo instante.
 - R11 (D2). CUANDO una tarea pase de no-`done` a `done`, `completedAt`
   DEBERÁ ser el instante actual, aunque la tarea traiga un valor viejo de
-  otro cliente. MIENTRAS siga en `done`, DEBERÁ conservar su valor. CUANDO
-  salga de `done`, DEBERÁ limpiarse.
+  otro cliente. MIENTRAS siga en `done`, DEBERÁ conservar su valor tal cual,
+  también si está vacío: una tarea legada hecha sin `completedAt` no se da
+  por completada hoy porque se le edite otro campo. CUANDO salga de `done`,
+  DEBERÁ limpiarse.
 - R12 (D1). CUANDO se cree, duplique (nota o carpeta) o importe una nota,
   `created` y `updated` DEBERÁN ser el mismo instante actual.
 - R13 (D1). CUANDO cambie el título, los tags, la carpeta o el fijado de una
@@ -79,3 +81,6 @@ Mobile.
 - R16. Releer un `.md` o recibir una marca por sync NO DEBERÁ cambiar su
   valor, ni generar un PATCH (el parser, la sync entrante, la papelera y la
   migración copian valores, no los inventan).
+- R17. CUANDO se deshaga un cambio de estado (completar, reabrir), el
+  sistema DEBERÁ dejar `completedAt` exactamente como estaba antes de la
+  acción (incluido vacío o un valor legado), sin aplicar R11.

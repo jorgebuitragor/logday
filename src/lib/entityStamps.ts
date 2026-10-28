@@ -19,7 +19,9 @@ export function newTaskStamps(status: Task['status'], now: string = nowInstant()
 /** `completedAt` que le toca a `next` al guardarla sobre `prev`:
  *  - pasa de no-`done` a `done`: el instante actual, aunque `next` traiga un
  *    valor viejo (de otro cliente que no lo limpió al reabrir);
- *  - sigue en `done`: conserva su valor;
+ *  - sigue en `done`: conserva su valor tal cual, también si está vacío. Una
+ *    tarea legada hecha sin `completedAt` no se da por completada hoy porque
+ *    se le edite el título (igual que en Web y Mobile);
  *  - no está en `done`: ninguno (se limpia).
  *  Sin `prev` no se sabe si es una transición: se conserva lo que traiga y,
  *  si no trae nada, se sella. */
@@ -29,8 +31,52 @@ export function nextCompletedAt(
   now: () => string = nowInstant,
 ): string | undefined {
   if (next.status !== 'done') return undefined;
-  if (prev && prev.status !== 'done') return now();
-  return next.completedAt || prev?.completedAt || now();
+  if (!prev) return next.completedAt || now();
+  if (prev.status !== 'done') return now();
+  return next.completedAt || prev.completedAt || undefined;
+}
+
+/** La tarea con el `completedAt` con que se guarda: D2 (`nextCompletedAt`),
+ *  salvo en un deshacer (`restore`), que trae el valor exacto de antes de la
+ *  acción. Sin valor, la tarea queda sin la clave. */
+export function withCompletedAt(
+  prev: Task | undefined,
+  next: Task,
+  opts: { restore?: boolean; now?: () => string } = {},
+): Task {
+  const task: Task = { ...next };
+  const completedAt = opts.restore ? task.completedAt : nextCompletedAt(prev, task, opts.now);
+  if (completedAt) task.completedAt = completedAt;
+  else delete task.completedAt;
+  return task;
+}
+
+// ── Deshacer ────────────────────────────────────────────────────────────────
+
+/** Campos de una tarea que devuelve el deshacer de un cambio rápido (estado,
+ *  vencimiento, proyecto) y su `completedAt`. */
+export const UNDO_TASK_FIELDS = ['status', 'due', 'project', 'completedAt'] as const;
+
+/** Lo que el deshacer debe restaurar: los campos que cambiaron entre la tarea
+ *  de antes de la acción y la que quedó guardada. Se compara con la guardada
+ *  (no con la que se pidió) porque `updateTask` es quien decide `completedAt`:
+ *  así deshacer un "reabrir" recupera el instante de completado original y
+ *  deshacer un "completar" lo deja como estaba, también si estaba vacío. */
+export function undoRestore(before: Task, after: Task): Partial<Task> {
+  const restore: Partial<Task> = {};
+  for (const f of UNDO_TASK_FIELDS) {
+    if (before[f] !== after[f]) (restore as Record<string, unknown>)[f] = before[f];
+  }
+  return restore;
+}
+
+/** Aplica lo que restaura el deshacer sobre la tarea como esté ahora, con
+ *  `completedAt` exacto: si antes no tenía, queda sin la clave. Lo que se
+ *  guarda así no pasa por `nextCompletedAt` (`updateTask` con `restore`). */
+export function applyUndoRestore(current: Task, restore: Partial<Task>): Task {
+  const task: Task = { ...current, ...restore };
+  if (!task.completedAt) delete task.completedAt;
+  return task;
 }
 
 // ── Notas (D1) ──────────────────────────────────────────────────────────────

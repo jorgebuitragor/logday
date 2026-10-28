@@ -2,7 +2,7 @@ import type { ComponentType } from 'react';
 import type { LucideIcon } from 'lucide-react';
 
 /** Mismo id en Desktop, Web y Mobile (specs/extensiones/design.md). */
-export type ExtensionId = 'team-chat';
+export type ExtensionId = 'team-chat' | 'mcp';
 
 export type ExtensionCategory = 'integration' | 'tool';
 export type LogdayApp = 'desktop' | 'web' | 'mobile';

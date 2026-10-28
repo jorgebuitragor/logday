@@ -410,7 +410,7 @@ const noteFilePath = (base: string, folder: string, id: string) =>
 const dailysBaseDir = (base: string) => `${base}/dailys`;
 const dailyMonthDir = (base: string, year: string, month: string) =>
   `${base}/dailys/${year}/${month}`;
-const dailyMonthFilePath = (base: string, year: string, month: string) =>
+export const dailyMonthFilePath = (base: string, year: string, month: string) =>
   `${base}/dailys/${year}/${month}/${year}-${month}.md`;
 
 // ── Overtime helpers ──────────────────────────────────────────

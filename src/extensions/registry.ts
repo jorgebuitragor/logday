@@ -1,4 +1,4 @@
-import { MessagesSquare } from 'lucide-react';
+import { Bot, MessagesSquare } from 'lucide-react';
 import type { ExtensionDefinition, ExtensionId } from './types';
 
 /** Extensiones que implementa Desktop (R4). Solo metadatos: el código de
@@ -13,6 +13,16 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     sendsDataExternally: { to: 'Google Chat, Slack, Microsoft Teams' },
     secretKeys: ['webhook'],
     load: () => import('./team-chat').then((m) => m.default),
+  },
+  {
+    id: 'mcp',
+    category: 'integration',
+    icon: Bot,
+    apps: ['desktop'],
+    // Lo que lee el agente llega al proveedor de su modelo (specs/agentes-mcp).
+    sendsDataExternally: { to: 'Claude Code, Codex' },
+    secretKeys: ['token'],
+    load: () => import('./mcp').then((m) => m.default),
   },
 ];
 

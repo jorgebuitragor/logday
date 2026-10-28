@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Circle, Clock, CheckCircle2, Calendar, GripVertical } from 'lucide-react';
+import { Plus, Circle, Clock, CheckCircle2, GripVertical, Check } from 'lucide-react';
 import { Task, TaskStatus } from '../../types/task';
 import { useAppStore } from '../../store/appStore';
 import { TaskContextMenu, NewTaskContextMenu } from './TaskContextMenu';
 import { t } from '../../lib/i18n';
 import { QuickAddInput } from './QuickAddInput';
 import { localISODate } from '../../lib/localDate';
-import { filterTasks, formatDueLabel, sortColumn } from '../../lib/taskListing';
+import { filterTasks, sortColumn } from '../../lib/taskListing';
+import { addDaysISO } from '../../lib/localDate';
+import { TaskMeta } from './TaskMeta';
 import { TaskFilterBar } from './TaskFilterBar';
 
 const COLUMN_DEFS: { status: TaskStatus; color: string; border: string; Icon: React.ElementType }[] = [
@@ -14,6 +16,8 @@ const COLUMN_DEFS: { status: TaskStatus; color: string; border: string; Icon: Re
   { status: 'in-progress', color: 'text-amber-400', border: 'border-amber-500/30', Icon: Clock },
   { status: 'done',        color: 'text-green-400', border: 'border-green-500/30', Icon: CheckCircle2 },
 ];
+
+const DONE_RECENT_DAYS = 14;
 
 // Variable de módulo para el id en drag (evita problemas de closure en async)
 let _draggingId: string | null = null;
@@ -26,18 +30,25 @@ interface KanbanCardProps {
 }
 
 function KanbanCard({ task, isDragging, onPointerDown, staggerIndex = 0 }: KanbanCardProps) {
-  const { setActiveTask, activeTask, language } = useAppStore();
+  const { setActiveTask, activeTask, language, updateTaskWithUndo } = useAppStore();
   const isActive = activeTask?.id === task.id;
-  const due = task.due ? formatDueLabel(task.due, localISODate(), language) : null;
-  const isOverdue = due?.tone === 'overdue' && task.status !== 'done';
-  const isDueToday = due?.tone === 'today' && task.status !== 'done';
+  const isDone = task.status === 'done';
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+
+  // Completar o reabrir sin arrastrar a la otra columna, con deshacer.
+  const toggleDone = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    void updateTaskWithUndo({ ...task, status: isDone ? 'todo' : 'done' }, {
+      title: t(language, 'tasks', isDone ? 'toastReopened' : 'toastCompleted'),
+      description: task.title,
+    });
+  };
 
   return (
     <>
     <div
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
-      className={`kanban-card-enter kanban-d${Math.min(staggerIndex, 7)} rounded-xl border p-3.5 transition select-none ${
+      className={`kanban-card-enter kanban-d${Math.min(staggerIndex, 7)} group rounded-xl border p-3 transition select-none ${
         isDragging
           ? 'opacity-40 border-indigo-400/40 bg-indigo-500/5'
           : isActive
@@ -49,36 +60,33 @@ function KanbanCard({ task, isDragging, onPointerDown, staggerIndex = 0 }: Kanba
         setActiveTask(isActive ? null : task);
       }}
     >
-      <div className="flex items-start gap-2">
+      <div className="flex items-start gap-1.5">
         <div
           className="mt-0.5 shrink-0 touch-none text-[var(--text-faint)] hover:text-[var(--text-hint)] cursor-grab"
           onPointerDown={(e) => onPointerDown(e, task.id)}
         >
           <GripVertical size={13} />
         </div>
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={isDone}
+          aria-label={t(language, 'tasks', isDone ? 'markUndone' : 'markDone')}
+          title={t(language, 'tasks', isDone ? 'markUndone' : 'markDone')}
+          onClick={toggleDone}
+          className={`mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-[1.5px] transition ${
+            isDone
+              ? 'border-green-500 bg-green-500 text-white'
+              : 'border-[var(--text-hint)] text-transparent hover:border-green-500 hover:text-green-500'
+          }`}
+        >
+          <Check size={10} strokeWidth={3} />
+        </button>
         <div className="flex-1 min-w-0">
-          <p className={`text-sm font-medium leading-snug ${task.status === 'done' ? 'line-through text-[var(--text-hint)]' : 'text-[var(--text-body)]'}`}>
+          <p className={`text-sm font-medium leading-snug ${isDone ? 'line-through text-[var(--text-hint)]' : 'text-[var(--text-body)]'}`}>
             {task.title}
           </p>
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {task.project !== 'inbox' && (
-              <span className="text-[9px] text-[var(--text-hint)]">{task.project}</span>
-            )}
-            {task.due && (
-              <span
-                className={`flex items-center gap-0.5 text-[10px] ${isOverdue ? 'text-red-400' : isDueToday ? 'text-amber-400' : 'text-[var(--text-hint)]'}`}
-                title={task.due}
-              >
-                <Calendar size={9} />
-                {due?.label}
-              </span>
-            )}
-            {task.tags.slice(0, 2).map((tag) => (
-              <span key={tag} className="rounded-full bg-indigo-500/10 px-1.5 py-0.5 text-[8px] text-indigo-400">
-                {tag}
-              </span>
-            ))}
-          </div>
+          <TaskMeta task={task} language={language} due={{ today: localISODate() }} />
         </div>
       </div>
     </div>
@@ -106,7 +114,11 @@ function DragGhost({ task, x, y }: { task: Task; x: number; y: number }) {
 }
 
 export function KanbanBoard() {
-  const { tasks, currentView, language, taskFilter, taskSortBy } = useAppStore();
+  const { tasks, currentView, language, taskFilter, taskSortBy, activeProject } = useAppStore();
+  // La columna de hechas muestra solo las de los últimos días: con meses de
+  // uso, todas juntas son una pared que empuja todo lo demás.
+  const [showAllDone, setShowAllDone] = useState(false);
+  const recentDoneFrom = addDaysISO(localISODate(), -DONE_RECENT_DAYS);
   const [addingStatus, setAddingStatus] = useState<TaskStatus | null>(null);
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
@@ -188,7 +200,8 @@ export function KanbanBoard() {
     >
       {/* Header + filtros */}
       <div className="border-b border-[var(--border)] px-6 pt-4 pb-3 space-y-2.5">
-        <h1 className="text-lg font-semibold text-[var(--text-primary)]">{t(language, 'tasks', 'kanbanTitle')}</h1>
+        {/* El proyecto, como en la lista: se ve que el tablero está filtrado. */}
+        <h1 className="text-lg font-semibold text-[var(--text-primary)] capitalize">{activeProject ?? t(language, 'tasks', 'kanbanTitle')}</h1>
 
         <TaskFilterBar showStatus={false} />
       </div>
@@ -196,7 +209,11 @@ export function KanbanBoard() {
       <div key={boardKey} className="flex flex-1 gap-4 overflow-x-auto p-5">
         {COLUMNS.map((col, colIndex) => {
           const { Icon } = col;
-          const colTasks = sortColumn(filteredTasks.filter((t) => t.status === col.status), taskSortBy);
+          const allColTasks = sortColumn(filteredTasks.filter((t) => t.status === col.status), taskSortBy);
+          const olderDone = col.status === 'done' ? allColTasks.filter((t) => (t.completedAt ?? '') < recentDoneFrom).length : 0;
+          const colTasks = col.status === 'done' && !showAllDone
+            ? allColTasks.filter((t) => (t.completedAt ?? '') >= recentDoneFrom)
+            : allColTasks;
           const isTarget = targetStatus === col.status;
 
           return (
@@ -214,7 +231,7 @@ export function KanbanBoard() {
                 <div className="flex items-center gap-2">
                   <Icon size={14} className={col.color} />
                   <span className={`text-sm font-medium ${col.color}`}>{col.label}</span>
-                  <span className="text-xs text-[var(--text-hint)]">{colTasks.length}</span>
+                  <span className="text-xs text-[var(--text-hint)]">{allColTasks.length}</span>
                 </div>
                 <button
                   onClick={() => setAddingStatus(col.status)}
@@ -241,7 +258,17 @@ export function KanbanBoard() {
                     staggerIndex={cardIndex}
                   />
                 ))}
-                {colTasks.length === 0 && !draggingTask && (
+                {olderDone > 0 && (
+                  <button
+                    onClick={() => setShowAllDone((v) => !v)}
+                    className="w-full rounded-lg py-1.5 text-center text-xs text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+                  >
+                    {showAllDone
+                      ? t(language, 'tasks', 'showRecentDone')
+                      : t(language, 'tasks', 'showAllDone').replace('{n}', String(olderDone))}
+                  </button>
+                )}
+                {colTasks.length === 0 && !olderDone && !draggingTask && (
                   <p className="py-4 text-center text-xs text-[var(--text-faint)] italic">{t(language, 'tasks', 'noTasks')}</p>
                 )}
                 {isTarget && draggingTask && (

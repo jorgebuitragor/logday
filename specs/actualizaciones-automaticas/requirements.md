@@ -81,6 +81,18 @@ instalarla sola, sin que nadie tenga que salir de la app.
   actualización antes de instalarla, rechazándola si no coincide
   (protege contra un artefacto corrupto o un release falsificado).
 
+### Acerca de: versión, novedades y licencia
+
+- Ajustes → Acerca de DEBERÁ mostrar la fecha de la última
+  actualización: cuándo se abrió por primera vez la versión instalada
+  en este equipo, o, si no se sabe (se instaló antes de que la app lo
+  guardara), cuándo se publicó su release.
+- Acerca de DEBERÁ permitir ver las novedades de la versión instalada
+  (las mismas notas del release) y abrir el historial de versiones en
+  GitHub. Si no se pueden consultar, DEBERÁ decirlo sin cerrar nada.
+- Acerca de DEBERÁ mostrar la licencia (GNU AGPL-3.0 o posterior), el
+  copyright y enlaces al texto de la licencia y al código fuente.
+
 ### Reemplazo del chequeo actual
 
 - El flujo actual de "Buscar actualizaciones" que abre el navegador

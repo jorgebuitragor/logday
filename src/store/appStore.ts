@@ -59,6 +59,7 @@ import { bytesToBase64, persistYDoc, applyIncomingContentState, deliverToOpenNot
 import { applyIncomingDailyContentState, applyDailyEditorEdit, deleteDailyContentState } from '../lib/dailyContentSync';
 import { parseFrontmatter, serializeTask, parseNote, serializeNote } from '../lib/markdown';
 import { t } from '../lib/i18n';
+import { appUpdatedAt, fetchRelease, recordAppUpdatedAt } from '../lib/releases';
 import { localISODate, localISOMonth, nowInstant, stampSortKey } from '../lib/localDate';
 import {
   NoteUpdatedThrottle, applyUndoRestore, newNoteStamps, newTaskStamps, stampNoteSave, undoRestore, withCompletedAt,
@@ -211,6 +212,9 @@ export interface AppState {
   postponeUpdateRestart: () => void;
   dismissUpdateBanner: () => void;
   openReleaseNotes: () => void;
+  /** Novedades de la versión instalada, desde Acerca de. `false` si no se
+   *  pudieron consultar. */
+  openCurrentReleaseNotes: () => Promise<boolean>;
   closeReleaseNotes: () => void;
   acceptPolicyGate: () => Promise<void>;
   rejectPolicyGate: () => void;
@@ -2062,22 +2066,6 @@ function startUpdateCheckInterval(get: SyncGet, set: SyncSet): void {
 // datos todavía, no se muestra nada.
 const LAST_SEEN_VERSION_KEY = 'lastSeenAppVersion';
 const PENDING_RELEASE_NOTES_KEY = 'pendingReleaseNotes';
-const RELEASES_API = 'https://api.github.com/repos/jorgebuitragor/logday/releases/tags';
-
-// `null`: GitHub respondió que no hay notas (o no hay release con ese
-// tag). `undefined`: no se pudo consultar (sin red, límite de la API).
-async function fetchReleaseNotes(version: string): Promise<string | null | undefined> {
-  try {
-    const res = await fetch(`${RELEASES_API}/v${version}`, { headers: { Accept: 'application/vnd.github+json' } });
-    if (res.status === 404) return null;
-    if (!res.ok) return undefined;
-    const json = (await res.json()) as { body?: unknown };
-    return typeof json.body === 'string' && json.body.trim() ? json.body : null;
-  } catch {
-    return undefined;
-  }
-}
-
 async function showReleaseNotesAfterUpdate(get: SyncGet, set: SyncSet): Promise<void> {
   let current: string;
   try {
@@ -2087,6 +2075,10 @@ async function showReleaseNotesAfterUpdate(get: SyncGet, set: SyncSet): Promise<
   }
   const lastSeen = localStorage.getItem(LAST_SEEN_VERSION_KEY);
   if (lastSeen === current) return;
+  // Primera vez que se abre esta versión: es la fecha de la última
+  // actualización que muestra Acerca de. Se guarda aunque falle la
+  // consulta de las notas (que se reintenta en el próximo arranque).
+  if (appUpdatedAt(current) === undefined) recordAppUpdatedAt(current, nowInstant());
   // La versión se marca como vista solo cuando ya se mostraron sus notas
   // o cuando se sabe que no hay: si la consulta a GitHub falla, se
   // reintenta en el próximo arranque en vez de perder las novedades.
@@ -2106,7 +2098,9 @@ async function showReleaseNotesAfterUpdate(get: SyncGet, set: SyncSet): Promise<
   } catch {
     pending = null;
   }
-  const body = pending?.version === current && pending.body ? pending.body : await fetchReleaseNotes(current);
+  const body = pending?.version === current && pending.body
+    ? pending.body
+    : await fetchRelease(current).then((r) => (r === undefined ? undefined : r?.body ?? null));
   if (body === undefined) return;
   markSeen();
   if (body) set({ releaseNotes: { version: current, body, mode: 'installed' } });
@@ -2634,6 +2628,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   closeReleaseNotes: () => set({ releaseNotes: null }),
+
+  openCurrentReleaseNotes: async () => {
+    let version: string;
+    try {
+      version = await getVersion();
+    } catch {
+      return false;
+    }
+    const release = await fetchRelease(version);
+    if (release === undefined) return false;
+    set({ releaseNotes: { version, body: release?.body ?? null, mode: 'installed' } });
+    return true;
+  },
 
   // ── Tasks ──────────────────────────────────────────────────
 

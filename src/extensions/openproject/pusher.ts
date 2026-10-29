@@ -72,18 +72,21 @@ async function flush(): Promise<void> {
   const done: { wpId: string; sent: PendingPush; managed?: Managed }[] = [];
   let lastPush = settings.lastPush;
   for (const [wpId, change] of Object.entries(settings.pending)) {
-    const prev = settings.managed[wpId];
     const title = taskTitle(settings.imported[wpId]);
-    if (prev?.lockVersion === undefined) {
-      // Importada antes de P12: hace falta importar una vez para tener la versión.
-      lastPush = { at: nowInstant(), status: 'error', error: 'needs_import', title };
-      continue;
-    }
     const status = change.status ? settings.statusMap[change.status]?.id : undefined;
     try {
+      let prev = settings.managed[wpId];
+      if (prev?.lockVersion === undefined) {
+        // Importada antes de P12: no hay versión de referencia. Se toma la
+        // de ahora (una sola vez); desde aquí, la de cada envío.
+        const current = lockVersionOf(await invoke<string>('openproject_work_package', { id: Number(wpId) }));
+        if (current === undefined) throw 'needs_import';
+        prev = { ...(prev ?? { code: '', project: '' }), lockVersion: current };
+      }
+      const lockVersion = prev.lockVersion!;
       const body = await invoke<string>('openproject_update_work_package', {
         id: Number(wpId),
-        lockVersion: prev.lockVersion,
+        lockVersion,
         progress: change.progress ?? null,
         status: status ? Number(status) : null,
       });
@@ -96,7 +99,7 @@ async function flush(): Promise<void> {
           ...prev,
           ...(change.progress !== undefined ? { progress: change.progress } : {}),
           ...(change.status && status ? { status: change.status } : {}),
-          lockVersion: lockVersionOf(body) ?? prev.lockVersion + 1,
+          lockVersion: lockVersionOf(body) ?? lockVersion + 1,
         },
       });
       lastPush = { at: nowInstant(), status: 'ok', title };

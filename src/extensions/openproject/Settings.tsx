@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { invoke } from '@tauri-apps/api/core';
-import { AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, Download, Lightbulb, LogIn, LogOut } from 'lucide-react';
+import { AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, Download, Lightbulb, LogIn, LogOut, RotateCcw } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import ToggleSwitch from '../../components/shared/ToggleSwitch';
@@ -128,7 +128,7 @@ export default function OpenProjectSettings() {
     useShallow((s) => ({ language: s.language, raw: s.extensions[OPENPROJECT_ID]?.settings, update: s.updateExtensionSettings, showToast: s.showToast })),
   );
   const settings = readOpenProjectSettings(raw);
-  const [busy, setBusy] = useState<'connect' | 'disconnect' | 'import' | null>(null);
+  const [busy, setBusy] = useState<'connect' | 'disconnect' | 'import' | 'restore' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [url, setUrl] = useState(settings.baseUrl ?? '');
   const [token, setToken] = useState('');
@@ -165,11 +165,11 @@ export default function OpenProjectSettings() {
     }
   };
 
-  const importNow = async () => {
+  const importNow = async (restoreDeleted = false) => {
     setError(null);
-    setBusy('import');
+    setBusy(restoreDeleted ? 'restore' : 'import');
     try {
-      const { created, updated } = await importFromOpenProject();
+      const { created, updated } = await importFromOpenProject({ restoreDeleted });
       showToast({
         kind: 'success',
         title: created || updated ? resultText(language, created, updated) : t(language, 'openproject', 'nothingNew'),
@@ -313,6 +313,16 @@ export default function OpenProjectSettings() {
           {busy === 'import' ? t(language, 'openproject', 'importing') : t(language, 'openproject', 'importNow')}
         </button>
       </div>
+
+      {settings.account && Object.keys(settings.imported).length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="min-w-0 flex-1 text-[10px] text-[var(--text-hint)]">{t(language, 'openproject', 'restoreDesc')}</p>
+          <button type="button" onClick={() => void importNow(true)} disabled={busy !== null} className={SECONDARY_CLS}>
+            <RotateCcw size={12} className={busy === 'restore' ? 'animate-spin' : ''} />
+            {busy === 'restore' ? t(language, 'openproject', 'importing') : t(language, 'openproject', 'restore')}
+          </button>
+        </div>
+      )}
 
       <div className="rounded-lg border border-[var(--border-card)]">
         <button

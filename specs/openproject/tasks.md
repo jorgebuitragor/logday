@@ -59,6 +59,9 @@ Estado: en progreso.
 - [x] Épica y Feature como carpetas (29 oct 2026). Revisado en el
   navegador: la importada se mueve a `<épica>/<feature>` sin perder lo
   escrito.
-- [ ] Volver a importar en la QA y revisar las carpetas.
+- [x] "Volver a importar las borradas" (29 oct 2026): Jorge borró el
+  proyecto para empezar de cero, y la importación solo trajo 1 tarea
+  nueva, porque cada work package entra una vez.
+- [ ] Volver a importar en la QA (con ese botón) y revisar las carpetas.
 - [ ] Decidir si se importan solo Tasks y Bugs (llegaron 33 Features, 1
   épica y 3 hitos como tareas).

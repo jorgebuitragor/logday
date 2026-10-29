@@ -69,13 +69,14 @@ let importing: Promise<ImportResult> | null = null;
 
 /** Importa lo nuevo, corrige lo ya importado (P5c) y devuelve cuántas
  *  tareas creó y corrigió. Si ya hay una importación en curso, espera esa
- *  en vez de empezar otra. */
-export function importFromOpenProject(): Promise<ImportResult> {
-  importing ??= run().finally(() => { importing = null; });
+ *  en vez de empezar otra. Con `restoreDeleted` (P6b), vuelve a crear las
+ *  ya importadas que el usuario borró en Logday. */
+export function importFromOpenProject(opts: { restoreDeleted?: boolean } = {}): Promise<ImportResult> {
+  importing ??= run(opts.restoreDeleted ?? false).finally(() => { importing = null; });
   return importing;
 }
 
-async function run(): Promise<ImportResult> {
+async function run(restoreDeleted: boolean): Promise<ImportResult> {
   const store = useAppStore.getState;
   const settings = readOpenProjectSettings(store().extensions[OPENPROJECT_ID]?.settings);
   try {
@@ -170,6 +171,17 @@ async function run(): Promise<ImportResult> {
     //    importación.
     let updated = 0;
     const byTask = new Map(known.map((t) => [t.id, t]));
+    // P6b: las que ya no están en Logday vuelven a ser nuevas, solo si se
+    // pidió. Por defecto, lo que el usuario borró queda borrado (P6).
+    if (restoreDeleted) {
+      for (const wp of all) {
+        const taskId = imported[wp.id];
+        if (taskId && !byTask.has(taskId)) {
+          delete imported[wp.id];
+          delete managed[wp.id];
+        }
+      }
+    }
     for (const wp of all) {
       const taskId = imported[wp.id];
       const task = taskId ? byTask.get(taskId) : undefined;

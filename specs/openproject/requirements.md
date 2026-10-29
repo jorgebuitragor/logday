@@ -87,6 +87,10 @@ Usa la API v3 de OpenProject con el token de API personal del usuario
   la tarea, aunque cambie en OpenProject: el usuario pudo editarla, y las
   escrituras van por LWW y el CRDT. Lo que se haga en Logday tampoco
   cambia nada en OpenProject.
+- P6b. El panel DEBERÁ ofrecer "Volver a importar las borradas": vuelve a
+  crear las tareas ya importadas que no existen en Logday. Por defecto, lo
+  que el usuario borró no vuelve (P6). Pedido por Jorge el 29 oct 2026,
+  después de borrar el proyecto para empezar de cero.
 - P7. El panel DEBERÁ permitir importar solo, al abrir la app y cada 30
   minutos (apagado por defecto).
 - P8. El panel DEBERÁ mostrar el resultado de la última importación

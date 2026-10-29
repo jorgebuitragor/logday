@@ -44,7 +44,7 @@ import {
 } from '../lib/sync';
 import type { MigrationProgress } from '../lib/syncMigration';
 import {
-  taskToCreatePayload, taskFieldsToPatchPayload, taskFromApiResponse, TaskApiResponse, TaskCreatePayload, TaskPatchPayload,
+  taskToCreatePayload, taskFieldsToPatchPayload, taskFromApiResponse, diffTaskFields, TaskApiResponse, TaskCreatePayload, TaskPatchPayload,
   noteToCreatePayload, noteFieldsToPatchPayload, noteFromApiResponse, NoteApiResponse, NoteCreatePayload, NotePatchPayload,
   calendarEventToCreatePayload, calendarEventFieldsToPatchPayload, calendarEventFromApiResponse, CalendarEventApiResponse, CalendarEventCreatePayload, CalendarEventPatchPayload,
   absenceDayToCreatePayload, absenceDayFieldsToPatchPayload, absenceDayFromApiResponse, AbsenceDayApiResponse, AbsenceDayCreatePayload, AbsenceDayPatchPayload,
@@ -58,6 +58,7 @@ import * as trash from '../lib/trash';
 import { bytesToBase64, persistYDoc, applyIncomingContentState, deliverToOpenNote, noteContentStatePath } from '../lib/noteContentSync';
 import { applyIncomingDailyContentState, applyDailyEditorEdit, deleteDailyContentState } from '../lib/dailyContentSync';
 import { parseFrontmatter, serializeTask, parseNote, serializeNote } from '../lib/markdown';
+import { withNormalizedProgress } from '../lib/taskProgress';
 import { t } from '../lib/i18n';
 import { emitAppEvent } from '../lib/appEvents';
 import { appUpdatedAt, fetchRelease, recordAppUpdatedAt } from '../lib/releases';
@@ -79,6 +80,8 @@ export interface NewTaskExtra {
   tags?: string[];
   status?: TaskStatus;
   linkedPaths?: string[];
+  /** Progreso 0–100; se normaliza (redondeo y rango) al crear. */
+  progress?: number;
   /** Abrir la tarea en el panel lateral al crearla (por defecto, sí). */
   open?: boolean;
 }
@@ -792,7 +795,7 @@ async function evaluatePolicyGate(set: SyncSet, serverUrl: string, tokens: Token
 
 const TASK_FIELD_MAP: Record<string, string> = {
   title: 'title', taskCode: 'task_code', status: 'status', tags: 'tags', project: 'project',
-  created: 'created', completedAt: 'completed_at', due: 'due', content: 'content',
+  created: 'created', completedAt: 'completed_at', due: 'due', progress: 'progress', content: 'content',
 };
 
 /** Aplica la respuesta del servidor a la task local, campo por campo,
@@ -865,25 +868,6 @@ async function syncDeleteTask(get: SyncGet, set: SyncSet, taskId: string): Promi
   } catch {
     syncQueue.enqueue('task', taskId, 'delete');
   }
-}
-
-/** Solo los campos que de verdad cambiaron entre prev y next — un
- *  PATCH mandando todo pisaría, en el servidor, cualquier edición
- *  concurrente a un campo que acá ni se tocó (ver LWW por campo en
- *  logday-server). */
-function diffTaskFields(prev: Task | undefined, next: Task): Partial<Task> {
-  if (!prev) return { ...next };
-  const fields: Partial<Task> = {};
-  if (prev.title !== next.title) fields.title = next.title;
-  if (prev.taskCode !== next.taskCode) fields.taskCode = next.taskCode;
-  if (prev.status !== next.status) fields.status = next.status;
-  if (JSON.stringify(prev.tags) !== JSON.stringify(next.tags)) fields.tags = next.tags;
-  if (prev.project !== next.project) fields.project = next.project;
-  if (prev.created !== next.created) fields.created = next.created;
-  if (prev.completedAt !== next.completedAt) fields.completedAt = next.completedAt;
-  if (prev.due !== next.due) fields.due = next.due;
-  if (prev.content !== next.content) fields.content = next.content;
-  return fields;
 }
 
 // ── Note (metadata) ──────────────────────────────────────────────
@@ -2830,7 +2814,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         taskCode = undefined;
       }
     }
-    const task: Task = {
+    const task: Task = withNormalizedProgress({
       id,
       title: title.trim() || 'Nueva tarea',
       status: extra.status ?? 'todo',
@@ -2839,11 +2823,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Instantes (D2): si nace hecha, `completedAt` es el mismo instante.
       ...newTaskStamps(extra.status ?? 'todo'),
       ...(extra.due ? { due: extra.due } : {}),
+      ...(extra.progress !== undefined ? { progress: extra.progress } : {}),
       linked_paths: extra.linkedPaths ?? [],
       content,
       taskCode: taskCode || undefined,
       filePath: taskFilePath(basePath, targetProject, id),
-    };
+    });
     await fs.writeFile(task.filePath, serializeTask(task));
     emitAppEvent({ type: 'task.created', task });
     // La captura rápida no abre el panel (`open: false`), y una tarea de
@@ -2881,7 +2866,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     // traiga un valor viejo de otro cliente), si sigue en done se conserva tal
     // cual y al salir de done se limpia. Un deshacer (`restore`) trae el valor
     // exacto de antes de la acción y no se toca. Ver withCompletedAt.
-    const normalizedTask: Task = withCompletedAt(prev, task, { restore: opts?.restore });
+    // El progreso se guarda ya normalizado (entero 0–100 o sin la clave):
+    // un valor inválido haría que el servidor rechazara el PATCH con 400.
+    const normalizedTask: Task = withNormalizedProgress(withCompletedAt(prev, task, { restore: opts?.restore }));
 
     // Cambiar de proyecto mueve el archivo a la carpeta del proyecto nuevo.
     // Antes solo cambiaba el frontmatter: el archivo quedaba en la carpeta

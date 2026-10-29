@@ -1,6 +1,7 @@
 import { Task, TaskStatus } from '../types/task';
 import { Note } from '../types/note';
 import { localISODate } from './localDate';
+import { normalizeProgress } from './taskProgress';
 /**
  * Parses a markdown file with YAML frontmatter.
  * Returns the parsed metadata and content body.
@@ -37,11 +38,18 @@ export function parseFrontmatter(raw: string, filePath: string): Task | null {
   const created = (data.created as string) || localISODate();
   const completedAt = (data.completed_at as string) || undefined;
   const due = (data.due as string) || undefined;
+  // Tolerante: redondea y lleva al rango 0–100; lo que no es un número
+  // cuenta como sin progreso (ver normalizeProgress).
+  const progress = normalizeProgress(data.progress);
   const linked_paths = Array.isArray(data.linked_paths) ? data.linked_paths : [];
 
   if (!id) return null;
 
-  return { id, title, taskCode, status, tags, project, created, completedAt, due, linked_paths, content, filePath };
+  return {
+    id, title, taskCode, status, tags, project, created, completedAt, due,
+    ...(progress !== undefined ? { progress } : {}),
+    linked_paths, content, filePath,
+  };
 }
 
 /**
@@ -72,6 +80,12 @@ export function serializeTask(task: Task): string {
 
   if (task.due) {
     lines.push(`due: ${task.due}`);
+  }
+
+  // Sin progreso, sin la clave (borrarlo la quita del archivo).
+  const progress = normalizeProgress(task.progress);
+  if (progress !== undefined) {
+    lines.push(`progress: ${progress}`);
   }
 
   if (task.linked_paths.length > 0) {

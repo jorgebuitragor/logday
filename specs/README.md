@@ -50,3 +50,4 @@ tres archivos:
 | Webhook saliente (extensión `outgoing-webhook`, n8n) | en progreso | [`webhook-saliente/`](./webhook-saliente/requirements.md) |
 | Granola (extensión `granola`, por su MCP) | en progreso | [`granola/`](./granola/requirements.md) |
 | Excalidraw (extensión `excalidraw`, dibujos en las notas) | en progreso | [`excalidraw/`](./excalidraw/requirements.md) |
+| OpenProject (extensión `openproject`, work packages como tareas) | en progreso | [`openproject/`](./openproject/requirements.md) |

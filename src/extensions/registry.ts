@@ -1,4 +1,4 @@
-import { Bot, CalendarDays, MessagesSquare, NotebookPen, PenTool, Webhook } from 'lucide-react';
+import { Bot, CalendarDays, ClipboardList, MessagesSquare, NotebookPen, PenTool, Webhook } from 'lucide-react';
 import type { ExtensionDefinition, ExtensionId } from './types';
 
 /** Extensiones que implementa Desktop (R4). Solo metadatos: el código de
@@ -59,6 +59,18 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     secretKeys: ['refresh', 'client'],
     settings: true,
     load: () => import('./granola').then((m) => m.default),
+  },
+  {
+    id: 'openproject',
+    category: 'integration',
+    icon: ClipboardList,
+    apps: ['desktop'],
+    // Solo trae de OpenProject (specs/openproject): no envía datos de
+    // Logday, así que no lleva el aviso de R6. Va en Desktop porque el
+    // OpenProject de la empresa solo se alcanza desde la red interna.
+    secretKeys: ['url', 'token'],
+    settings: true,
+    load: () => import('./openproject').then((m) => m.default),
   },
   {
     id: 'excalidraw',

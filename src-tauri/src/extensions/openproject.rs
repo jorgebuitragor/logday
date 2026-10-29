@@ -24,7 +24,7 @@ pub const URL_KEY: &str = "url";
 pub const TOKEN_KEY: &str = "token";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
 const PAGE_SIZE: u32 = 100;
-const MAX_PAGE: u32 = 20; // P4: hasta 2000 work packages
+const MAX_PAGE: u32 = 20; // P4: hasta 2000 work packages por rol
 const MAX_BODY: usize = 8 * 1024 * 1024;
 
 // ── Piezas puras (con pruebas) ────────────────────────────────────────
@@ -69,15 +69,20 @@ fn api(base: &Url, path: &str) -> Result<Url, &'static str> {
     Url::parse(&format!("{}{}", base.as_str().trim_end_matches('/'), path)).map_err(|_| "invalid_url")
 }
 
-/// P4: los work packages abiertos asignados al usuario, los cambiados
-/// hace poco primero.
-pub fn work_packages_url(base: &Url, page: u32) -> Result<Url, &'static str> {
+/// P4: el campo del work package donde está el usuario. La API solo une
+/// filtros con "y", así que los dos roles son dos consultas.
+pub const ROLES: [&str; 2] = ["assignee", "responsible"];
+
+/// P4: los work packages abiertos donde el usuario es `role` (asignado o
+/// responsable), los cambiados hace poco primero.
+pub fn work_packages_url(base: &Url, role: &str, page: u32) -> Result<Url, &'static str> {
+    if !ROLES.contains(&role) {
+        return Err("invalid_role");
+    }
+    let filters = format!(r#"[{{"{role}":{{"operator":"=","values":["me"]}}}},{{"status":{{"operator":"o","values":[]}}}}]"#);
     let mut url = api(base, "/api/v3/work_packages")?;
     url.query_pairs_mut()
-        .append_pair(
-            "filters",
-            r#"[{"assignee":{"operator":"=","values":["me"]}},{"status":{"operator":"o","values":[]}}]"#,
-        )
+        .append_pair("filters", &filters)
         .append_pair("sortBy", r#"[["updatedAt","desc"]]"#)
         .append_pair("pageSize", &PAGE_SIZE.to_string())
         .append_pair("offset", &page.to_string());
@@ -207,15 +212,16 @@ pub async fn openproject_disconnect(app: AppHandle) -> Result<(), String> {
     .map_err(String::from)
 }
 
-/// P4: una página (desde 1) de los work packages abiertos asignados al
-/// usuario, en el JSON de OpenProject, que el webview lee como datos.
+/// P4: una página (desde 1) de los work packages abiertos donde el
+/// usuario es `role` (`assignee` o `responsible`), en el JSON de
+/// OpenProject, que el webview lee como datos.
 #[tauri::command]
-pub async fn openproject_work_packages(app: AppHandle, page: u32) -> Result<String, String> {
+pub async fn openproject_work_packages(app: AppHandle, role: String, page: u32) -> Result<String, String> {
     if !(1..=MAX_PAGE).contains(&page) {
         return Err("invalid_page".into());
     }
     let (base, token) = credentials(&app).await?;
-    get(work_packages_url(&base, page)?, &token).await.map_err(String::from)
+    get(work_packages_url(&base, &role, page)?, &token).await.map_err(String::from)
 }
 
 #[cfg(test)]
@@ -239,7 +245,7 @@ mod tests {
     #[test]
     fn consulta_de_work_packages() {
         let base = validate_url("https://op.fcv.org/openproject").unwrap();
-        let url = work_packages_url(&base, 2).unwrap();
+        let url = work_packages_url(&base, "assignee", 2).unwrap();
         assert_eq!(url.path(), "/openproject/api/v3/work_packages");
         let q: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
         let filters: Value = serde_json::from_str(&q["filters"]).unwrap();
@@ -247,6 +253,13 @@ mod tests {
         assert_eq!(filters[1]["status"]["operator"], "o");
         assert_eq!(q["offset"], "2");
         assert_eq!(q["pageSize"], "100");
+        let url = work_packages_url(&base, "responsible", 1).unwrap();
+        let q: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
+        let filters: Value = serde_json::from_str(&q["filters"]).unwrap();
+        assert_eq!(filters[0]["responsible"]["operator"], "=");
+        assert_eq!(filters[0]["responsible"]["values"][0], "me");
+        // Solo los dos roles: el webview no arma filtros a su gusto.
+        assert_eq!(work_packages_url(&base, "author", 1).unwrap_err(), "invalid_role");
     }
 
     #[test]

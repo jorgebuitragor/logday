@@ -9,7 +9,10 @@ import {
   type WorkPackage,
 } from './model';
 
-const MAX_PAGES = 20; // como en Rust: hasta 2000
+const MAX_PAGES = 20; // como en Rust: hasta 2000 por rol
+/** P4: asignado o responsable. La API solo une filtros con "y", así que
+ *  son dos consultas, y un work package en las dos entra una sola vez. */
+const ROLES = ['assignee', 'responsible'] as const;
 
 function errorCode(err: unknown): string {
   if (err instanceof UnexpectedFormatError) return 'unexpected_format';
@@ -30,13 +33,18 @@ async function run(): Promise<number> {
   const settings = readOpenProjectSettings(store().extensions[OPENPROJECT_ID]?.settings);
   try {
     if (!settings.account || !settings.baseUrl) throw 'needs_connect';
-    // 1. Todos los abiertos asignados (P4).
-    const all: WorkPackage[] = [];
-    for (let page = 1; page <= MAX_PAGES; page++) {
-      const { items, total } = parseWorkPackages(await invoke<string>('openproject_work_packages', { page }));
-      all.push(...items);
-      if (!items.length || all.length >= total) break;
+    // 1. Todos los abiertos donde el usuario es asignado o responsable (P4).
+    const byId = new Map<string, WorkPackage>();
+    for (const role of ROLES) {
+      let seen = 0;
+      for (let page = 1; page <= MAX_PAGES; page++) {
+        const { items, total } = parseWorkPackages(await invoke<string>('openproject_work_packages', { role, page }));
+        for (const wp of items) if (!byId.has(wp.id)) byId.set(wp.id, wp);
+        seen += items.length;
+        if (!items.length || seen >= total) break;
+      }
     }
+    const all = [...byId.values()];
     // 2. P6: nunca dos veces el mismo, aunque cambie en OpenProject.
     const pending = all.filter((wp) => !settings.imported[wp.id]).reverse();
 

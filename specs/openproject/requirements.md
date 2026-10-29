@@ -36,8 +36,9 @@ Usa la API v3 de OpenProject con el token de API personal del usuario
 
 ### Importar
 
-- P4. "Importar ahora" DEBERÁ traer los work packages **abiertos y
-  asignados al usuario** (hasta 2000) y crear una tarea por cada uno en
+- P4. "Importar ahora" DEBERÁ traer los work packages **abiertos** donde
+  el usuario es **asignado o responsable** (hasta 2000 de cada uno; los
+  de responsable, desde el 29 oct 2026, a pedido de Jorge) y crear una tarea por cada uno en
   el proyecto de Logday elegido ("openproject" por defecto, que se crea si
   no existe).
 - P5. Cada tarea DEBERÁ llevar:

@@ -9,9 +9,12 @@
   - guarda la dirección y el token en el llavero;
   - devuelve `{ name, url }`.
 - `openproject_disconnect()`: borra los dos secretos.
-- `openproject_work_packages(page)`: una página (1 a 20, de 100 cada una)
-  de `/api/v3/work_packages`, con estos filtros, devuelta como texto JSON:
-  - `assignee = me` y `status o` (abiertos);
+- `openproject_work_packages(role, page)`: una página (1 a 20, de 100
+  cada una) de `/api/v3/work_packages`, con estos filtros, devuelta como
+  texto JSON:
+  - `<role> = me`, con `role` solo `assignee` o `responsible`: la API une
+    los filtros con "y", así que son dos consultas;
+  - `status o` (abiertos);
   - `sortBy updatedAt desc`.
 - La dirección y el token quedan en memoria tras leerlos una vez, para
   no abrir el aviso del llavero en cada importación.
@@ -29,7 +32,8 @@
   - `workPackageToTask`;
   - `projectSlug`, igual que `createProject`.
 - `importer.ts`:
-  - pide las páginas hasta `total`;
+  - pide las páginas hasta `total`, de los dos roles, y junta por id (un
+    work package en los dos entra una vez);
   - filtra con `imported` (id del work package → id de la tarea);
   - crea el proyecto si falta;
   - crea las tareas con `createTask(…, { tags, due, open: false })`, del

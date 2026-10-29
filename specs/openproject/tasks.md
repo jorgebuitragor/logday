@@ -18,4 +18,9 @@ Estado: en progreso.
     descripción;
   - importar otra vez: 0 tareas nuevas;
   - sin red: muestra el error de la VPN en el último resultado.
-- [ ] QA con el OpenProject de la FCV (con la VPN) en la app de QA.
+- [x] Conexión con el OpenProject de la FCV en la app de QA (29 oct
+  2026): por la VPN, con `http` e IP privada (se acepta con el aviso). La
+  importación corrió sin error y creó 0 tareas. Jorge pidió traer
+  también los work packages de los que es responsable.
+- [x] Traer también los de responsable (29 oct 2026).
+- [ ] Importar en la QA un work package real (asignado o responsable).

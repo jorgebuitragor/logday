@@ -79,12 +79,33 @@ jobs:
       - name: Instalar dependencias del frontend
         run: pnpm install --frozen-lockfile
 
+      # Firma estable de macOS (specs/actualizaciones-automaticas/design.md,
+      # "Firma estable en macOS"): sin los secrets APPLE_CERTIFICATE*, el
+      # build se firma ad hoc y cada versión vuelve a pedir la clave del
+      # llavero a quien usa extensiones. Se avisa en vez de fallar.
+      - name: Revisar el certificado de firma (macOS)
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_SIGNING_IDENTITY" ]; then
+            echo "::warning::Sin APPLE_CERTIFICATE / APPLE_SIGNING_IDENTITY: macOS se firma ad hoc y el llavero volverá a pedir la clave tras esta actualización."
+          fi
+
       - name: Build y publicar
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # macOS: el certificado autofirmado "Logday" (.p12 en base64) y su
+          # nombre. Tauri lo importa en un llavero temporal y firma con él;
+          # sin APPLE_ID no notariza. En Windows y Linux no se usan.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Logday ${{ github.ref_name }}'

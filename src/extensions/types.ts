@@ -2,7 +2,7 @@ import type { ComponentType } from 'react';
 import type { LucideIcon } from 'lucide-react';
 
 /** Mismo id en Desktop, Web y Mobile (specs/extensiones/design.md). */
-export type ExtensionId = 'team-chat' | 'mcp' | 'google-calendar' | 'outgoing-webhook' | 'granola';
+export type ExtensionId = 'team-chat' | 'mcp' | 'google-calendar' | 'outgoing-webhook' | 'granola' | 'excalidraw';
 
 export type ExtensionCategory = 'integration' | 'tool';
 export type LogdayApp = 'desktop' | 'web' | 'mobile';
@@ -27,6 +27,20 @@ export interface DailyActionProps {
   getText: () => Promise<string>;
 }
 
+/** Props del bloque propio de una extensión dentro de una nota (R24). */
+export interface NoteBlockProps {
+  /** El contenido del bloque (lo que va dentro de la cerca de código). */
+  code: string;
+  onEdit: () => void;
+}
+
+/** Props del editor de ese bloque, que se abre al crearlo o editarlo. */
+export interface NoteBlockEditorProps {
+  code: string;
+  onSave: (code: string) => void;
+  onClose: () => void;
+}
+
 /** Lo que aporta una extensión a cada punto de extensión. No es una API
  *  pública: se cambia cuando haga falta, porque todas viven en este repo. */
 export interface ExtensionModule {
@@ -36,11 +50,14 @@ export interface ExtensionModule {
   View?: ComponentType;
   /** Botones junto a Copiar en el daily (R12). */
   dailyActions?: ComponentType<DailyActionProps>;
+  /** Bloque propio en las notas y su editor (R24). */
+  NoteBlock?: ComponentType<NoteBlockProps>;
+  NoteBlockEditor?: ComponentType<NoteBlockEditorProps>;
   /** Procesos propios; devuelve cómo pararlos (R7). */
   start?: () => () => void;
 }
 
-export type ExtensionPoint = 'Settings' | 'View' | 'dailyActions';
+export type ExtensionPoint = 'Settings' | 'View' | 'dailyActions' | 'NoteBlock' | 'NoteBlockEditor';
 
 /** Metadatos del registro: se dibujan sin cargar el código (R16). */
 export interface ExtensionDefinition {
@@ -57,6 +74,10 @@ export interface ExtensionDefinition {
    *  entrada en la barra lateral de Opciones (R21). Es metadato para no
    *  cargar el módulo solo para saberlo (R16). */
   settings?: boolean;
+  /** R24: el lenguaje de su bloque en las notas (```<language>). Es
+   *  metadato para que el editor sepa qué bloques son de la extensión sin
+   *  cargar su código. */
+  noteBlock?: { language: string };
   /** Claves de sus secretos en el llavero (`ext:<id>:<clave>`). El
    *  llavero no se puede listar, así que "Quitar configuración" (R8)
    *  borra estas. */

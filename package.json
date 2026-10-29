@@ -15,6 +15,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@excalidraw/excalidraw": "0.18.1",
     "@tailwindcss/vite": "^4.2.2",
     "@tauri-apps/api": "2.10.1",
     "@tauri-apps/plugin-dialog": "^2.7.0",

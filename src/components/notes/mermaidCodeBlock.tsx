@@ -3,6 +3,8 @@ import CodeBlockLowlight, { type CodeBlockLowlightOptions } from '@tiptap/extens
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { MermaidBlock } from './MermaidBlock';
+import { ExtensionSlot } from '../../extensions/ExtensionSlot';
+import type { ExtensionId } from '../../extensions/types';
 
 // Bloques de código con lenguaje `mermaid`, dibujados dentro del documento.
 //
@@ -24,11 +26,20 @@ export interface MermaidActions {
   remove: (index: number) => void;
 }
 
+/** Bloques propios de las extensiones activas (R24 de specs/extensiones):
+ *  qué extensión dibuja cada lenguaje y cómo abrir su editor. */
+export interface ExtensionBlocks {
+  byLanguage: Record<string, ExtensionId>;
+  /** `index`: el n-ésimo bloque de ese lenguaje en el documento. */
+  edit: (language: string, index: number) => void;
+}
+
 interface Options extends CodeBlockLowlightOptions {
   /** Acciones del NoteEditor, por índice de diagrama en el documento (el
    *  mismo orden que parseMermaidBlocks sobre el markdown). Es un ref para
    *  leer siempre las versiones actuales de los handlers. */
   mermaidActions: MutableRefObject<MermaidActions | null>;
+  extensionBlocks: MutableRefObject<ExtensionBlocks | null>;
 }
 
 const isMermaid = (node: PMNode) => node.type.name === 'codeBlock' && node.attrs.language === 'mermaid';
@@ -50,6 +61,38 @@ function mermaidCount(doc: PMNode): number {
     return !isMermaid(node);
   });
   return count;
+}
+
+const languageOf = (node: PMNode) => (node.type.name === 'codeBlock' ? String(node.attrs.language ?? '') : '');
+
+function blockIndexAt(doc: PMNode, pos: number, language: string): number {
+  let index = -1;
+  doc.descendants((node, nodePos) => {
+    if (nodePos > pos) return false;
+    if (languageOf(node) === language) index += 1;
+    return node.type.name !== 'codeBlock';
+  });
+  return index;
+}
+
+/** Un bloque de extensión: lo dibuja su `NoteBlock`, aislado en su
+ *  ExtensionBoundary; el código sigue en el documento, oculto. */
+function ExtensionCodeBlockView({ node, editor, getPos, extension }: NodeViewProps) {
+  const blocks = (extension.options as Options).extensionBlocks.current;
+  const language = languageOf(node);
+  const id = blocks?.byLanguage[language];
+  const onEdit = () => {
+    const pos = typeof getPos === 'function' ? getPos() : undefined;
+    if (typeof pos === 'number' && blocks) blocks.edit(language, blockIndexAt(editor.state.doc, pos, language));
+  };
+  return (
+    <NodeViewWrapper className="extension-node-view" data-extension-block={language}>
+      <div contentEditable={false} suppressContentEditableWarning>
+        {id && <ExtensionSlot id={id} point="NoteBlock" props={{ code: node.textContent, onEdit }} />}
+      </div>
+      <NodeViewContent<'code'> as="code" className={`language-${language} mermaid-node-source`} />
+    </NodeViewWrapper>
+  );
 }
 
 function MermaidCodeBlockView({ node, editor, getPos, extension }: NodeViewProps) {
@@ -90,6 +133,7 @@ export const MermaidAwareCodeBlock = CodeBlockLowlight.extend<Options>({
     return {
       ...this.parent!(),
       mermaidActions: { current: null },
+      extensionBlocks: { current: null },
     };
   },
 
@@ -102,10 +146,20 @@ export const MermaidAwareCodeBlock = CodeBlockLowlight.extend<Options>({
         return true;
       },
     });
+    const blocks = this.options.extensionBlocks;
+    const isExtensionBlock = (node: PMNode) => !!blocks.current?.byLanguage[languageOf(node)];
+    const extensionView = ReactNodeViewRenderer(ExtensionCodeBlockView, {
+      update: ({ oldNode, newNode, updateProps }) => {
+        if (!isExtensionBlock(newNode) || languageOf(newNode) !== languageOf(oldNode)) return false;
+        updateProps();
+        return true;
+      },
+    });
     const prefix = this.options.languageClassPrefix ?? 'language-';
 
     return (props) => {
       if (isMermaid(props.node)) return mermaidView(props);
+      if (isExtensionBlock(props.node)) return extensionView(props);
 
       // Igual que el renderHTML por defecto: <pre><code class="language-x">.
       let current = props.node;
@@ -121,7 +175,7 @@ export const MermaidAwareCodeBlock = CodeBlockLowlight.extend<Options>({
         dom,
         contentDOM: code,
         update: (node: PMNode) => {
-          if (node.type !== current.type || isMermaid(node)) return false;
+          if (node.type !== current.type || isMermaid(node) || isExtensionBlock(node)) return false;
           current = node;
           setLanguage(node.attrs.language);
           return true;

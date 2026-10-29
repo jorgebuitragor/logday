@@ -95,6 +95,10 @@ tengan su primera extensión.
   (se creó o actualizó una tarea, se guardó una hora extra) con eventos
   que emiten las acciones del store, también cuando el cambio lo hace el
   agente por MCP. Un oyente que falla NO DEBERÁ afectar a la acción.
+- R24. Una extensión DEBERÁ poder tener su propio tipo de bloque en las
+  notas (un bloque de código con su lenguaje, como ```excalidraw), que
+  ella dibuja y edita. Con la extensión apagada, el bloque se ve como un
+  bloque de código normal y no se pierde nada.
 
 ### Robustez
 

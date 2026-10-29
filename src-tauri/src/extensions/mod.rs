@@ -14,6 +14,7 @@ pub mod openproject;
 pub mod outgoing_webhook;
 pub mod team_chat;
 pub mod team_chat_google;
+pub mod vault;
 
 use tauri::AppHandle;
 
@@ -49,10 +50,16 @@ fn entry(service: &str, account: &str) -> Result<keyring::Entry, &'static str> {
     keyring::Entry::new(service, account).map_err(|_| SECRET_KEYCHAIN_ERROR)
 }
 
+// En macOS, todos van en una sola entrada (`vault.rs`): un aviso del
+// llavero en vez de uno por secreto. En Windows y Linux, uno por entrada.
+
 /// Lee un secreto del llavero. Solo para los comandos Rust de las
 /// extensiones; no se expone al webview.
 pub fn read_secret(service: &str, id: &str, key: &str) -> Result<String, &'static str> {
     let account = secret_account(id, key)?;
+    if cfg!(target_os = "macos") {
+        return vault::with(service, |v, store| v.read(store, &account));
+    }
     match entry(service, &account)?.get_password() {
         Ok(v) => Ok(v),
         Err(keyring::Error::NoEntry) => Err(SECRET_NOT_FOUND),
@@ -64,12 +71,18 @@ pub fn read_secret(service: &str, id: &str, key: &str) -> Result<String, &'stati
 /// nunca pasa por el webview).
 pub fn write_secret(service: &str, id: &str, key: &str, value: &str) -> Result<(), &'static str> {
     let account = secret_account(id, key)?;
+    if cfg!(target_os = "macos") {
+        return vault::with(service, |v, store| v.write(store, &account, value));
+    }
     entry(service, &account)?.set_password(value).map_err(|_| SECRET_KEYCHAIN_ERROR)
 }
 
 /// Borra un secreto desde un comando Rust. Que no exista no es un error.
 pub fn delete_secret(service: &str, id: &str, key: &str) -> Result<(), &'static str> {
     let account = secret_account(id, key)?;
+    if cfg!(target_os = "macos") {
+        return vault::with(service, |v, store| v.delete(store, &account));
+    }
     match entry(service, &account)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(_) => Err(SECRET_KEYCHAIN_ERROR),
@@ -103,10 +116,7 @@ async fn blocking<T: Send + 'static>(
 pub async fn ext_secret_set(app: AppHandle, id: String, key: String, value: String) -> Result<String, String> {
     let service = keychain_service(&app);
     blocking(move || {
-        let account = secret_account(&id, &key)?;
-        entry(&service, &account)?
-            .set_password(&value)
-            .map_err(|_| SECRET_KEYCHAIN_ERROR)?;
+        write_secret(&service, &id, &key, &value)?;
         Ok(secret_hint(&value))
     })
     .await
@@ -116,14 +126,7 @@ pub async fn ext_secret_set(app: AppHandle, id: String, key: String, value: Stri
 #[tauri::command]
 pub async fn ext_secret_clear(app: AppHandle, id: String, key: String) -> Result<(), String> {
     let service = keychain_service(&app);
-    blocking(move || {
-        let account = secret_account(&id, &key)?;
-        match entry(&service, &account)?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(_) => Err(SECRET_KEYCHAIN_ERROR),
-        }
-    })
-    .await
+    blocking(move || delete_secret(&service, &id, &key)).await
 }
 
 /// La pista del secreto guardado, o `None` si no hay ninguno (R14: la

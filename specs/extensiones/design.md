@@ -117,6 +117,15 @@ extensions?: Partial<Record<ExtensionId, {
   usuario.
   - Almacén por plataforma: Keychain en macOS, Credential Manager en
     Windows y Secret Service (D-Bus) en Linux.
+  - **En macOS, una sola entrada por app** (`ext:vault`, `vault.rs`),
+    desde el 29 oct 2026. Guarda un JSON `{ "ext:<id>:<clave>": valor }`,
+    se lee una vez y queda en memoria. La app se firma ad hoc, así que
+    cada build de QA y cada versión cambia de firma, y macOS pedía la
+    contraseña una vez por secreto. Ahora la pide una sola vez.
+  - Las entradas viejas `ext:<id>:<clave>` pasan solas a la única la
+    primera vez que se leen, y se borran.
+  - Windows y Linux siguen con una entrada por secreto: no tienen ese
+    aviso, y Windows limita el tamaño de cada entrada.
   - Comandos genéricos: `ext_secret_set(id, key, value)`, que devuelve
     la pista, `ext_secret_clear(id, key)` y `ext_secret_hint(id, key)`,
     que devuelve la pista o `null` si no hay secreto. La pista es el

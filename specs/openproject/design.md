@@ -14,8 +14,14 @@
   texto JSON:
   - `<role> = me`, con `role` solo `assignee` o `responsible`: la API une
     los filtros con "y", así que son dos consultas;
+  - o `customField<n> = <id del usuario>` para los campos de persona
+    elegidos (P4b); el id sale de `/users/me` y queda en memoria;
   - `status o` (abiertos);
   - `sortBy updatedAt desc`.
+- `openproject_person_fields()`: los `customField<n>` de
+  `/api/v3/queries/filter_instance_schemas` cuyo valor con `=` es
+  `[]User`, con su nombre de `/api/v3/queries/filters/<id>`. Sin sesión,
+  la API no los muestra.
 - La dirección y el token quedan en memoria tras leerlos una vez, para
   no abrir el aviso del llavero en cada importación.
 - Errores como códigos, nunca el texto de reqwest, que lleva la URL:

@@ -14,6 +14,12 @@ export interface OpenProjectLast {
   error?: string;
 }
 
+/** P4b: un campo personalizado de persona de OpenProject. */
+export interface PersonField {
+  id: string;
+  name: string;
+}
+
 export interface OpenProjectSettings {
   /** Nombre del usuario en OpenProject; vacío = sin conectar. */
   account?: string;
@@ -21,18 +27,29 @@ export interface OpenProjectSettings {
    *  junto con el token (P2). */
   baseUrl?: string;
   project: string;
+  /** P4b: también se busca al usuario en estos campos personalizados. */
+  personFields: PersonField[];
   auto: boolean;
   /** id del work package → id de la tarea de Logday (P6). */
   imported: Record<string, string>;
   last?: OpenProjectLast;
 }
 
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
 export function readOpenProjectSettings(raw: Record<string, unknown> | undefined): OpenProjectSettings {
-  const out: OpenProjectSettings = { project: DEFAULT_PROJECT, auto: false, imported: {} };
+  const out: OpenProjectSettings = { project: DEFAULT_PROJECT, personFields: [], auto: false, imported: {} };
   if (!raw) return out;
   if (typeof raw.account === 'string' && raw.account) out.account = raw.account;
   if (typeof raw.baseUrl === 'string' && /^https?:\/\//.test(raw.baseUrl)) out.baseUrl = raw.baseUrl;
   if (typeof raw.project === 'string' && raw.project.trim()) out.project = raw.project.trim();
+  if (Array.isArray(raw.personFields)) {
+    for (const f of raw.personFields) {
+      if (isObject(f) && typeof f.id === 'string' && /^customField\d+$/.test(f.id) && typeof f.name === 'string') {
+        out.personFields.push({ id: f.id, name: f.name });
+      }
+    }
+  }
   if (raw.auto === true) out.auto = true;
   if (raw.imported && typeof raw.imported === 'object' && !Array.isArray(raw.imported)) {
     for (const [k, v] of Object.entries(raw.imported as Record<string, unknown>)) {
@@ -74,7 +91,6 @@ export interface WorkPackagePage {
   total: number;
 }
 
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
 const linkTitle = (links: Record<string, unknown>, key: string) => {
   const l = links[key];

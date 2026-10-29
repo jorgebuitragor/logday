@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { invoke } from '@tauri-apps/api/core';
 import { AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, Download, Lightbulb, LogIn, LogOut } from 'lucide-react';
@@ -6,7 +6,7 @@ import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import ToggleSwitch from '../../components/shared/ToggleSwitch';
 import { importFromOpenProject } from './importer';
-import { OPENPROJECT_ID, projectSlug, readOpenProjectSettings } from './model';
+import { OPENPROJECT_ID, projectSlug, readOpenProjectSettings, type PersonField } from './model';
 
 const PRIMARY_CLS =
   'flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50';
@@ -27,6 +27,57 @@ function errorText(language: 'es' | 'en', code: string | undefined): string {
   const c = code && KNOWN_ERRORS.has(code) ? code : 'unknown';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return t(language, 'openproject', `err_${c}` as any);
+}
+
+/** P4b: elegir en qué campos personalizados de persona (como
+ *  "Responsable Desarrollo") se busca también al usuario. */
+function PersonFieldsPicker({ language, selected, onChange }: {
+  language: 'es' | 'en';
+  selected: PersonField[];
+  onChange: (fields: PersonField[]) => void;
+}) {
+  const [available, setAvailable] = useState<PersonField[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    invoke<PersonField[]>('openproject_person_fields')
+      .then((fields) => { if (alive) setAvailable(fields); })
+      .catch((err) => { if (alive) setError(errorText(language, typeof err === 'string' ? err : undefined)); });
+    return () => { alive = false; };
+  }, [language]);
+
+  // Los elegidos siguen a la vista aunque la lista no haya llegado.
+  const fields = [...(available ?? []), ...selected.filter((s) => !available?.some((a) => a.id === s.id))];
+  const toggle = (field: PersonField, on: boolean) =>
+    onChange(on ? [...selected.filter((s) => s.id !== field.id), field] : selected.filter((s) => s.id !== field.id));
+
+  return (
+    <div className="space-y-1.5">
+      <div>
+        <p className="text-[var(--text-secondary)]">{t(language, 'openproject', 'personFields')}</p>
+        <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'openproject', 'personFieldsDesc')}</p>
+      </div>
+      {fields.length > 0 && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+          {fields.map((f) => (
+            <label key={f.id} className="flex items-center gap-1.5 text-[11px] text-[var(--text-primary)]">
+              <input
+                type="checkbox"
+                checked={selected.some((s) => s.id === f.id)}
+                onChange={(e) => toggle(f, e.target.checked)}
+                className="accent-indigo-500"
+              />
+              {f.name}
+            </label>
+          ))}
+        </div>
+      )}
+      {available === null && !error && <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'openproject', 'personFieldsLoading')}</p>}
+      {available?.length === 0 && <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'openproject', 'personFieldsNone')}</p>}
+      {error && <p className="text-[10px] text-red-400">{error}</p>}
+    </div>
+  );
 }
 
 /** Panel de OpenProject en Opciones (specs/openproject). */
@@ -161,6 +212,14 @@ export default function OpenProjectSettings() {
           className="w-40 rounded-lg border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
         />
       </div>
+
+      {settings.account && (
+        <PersonFieldsPicker
+          language={language}
+          selected={settings.personFields}
+          onChange={(fields) => void update(OPENPROJECT_ID, { personFields: fields })}
+        />
+      )}
 
       <div className="flex items-center justify-between gap-3">
         <div>

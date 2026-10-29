@@ -8,7 +8,10 @@ const texts = { open: 'Abrir en OpenProject', project: 'Proyecto', type: 'Tipo',
 
 describe('configuración de OpenProject', () => {
   it('valores por defecto y lectura defensiva', () => {
-    expect(readOpenProjectSettings(undefined)).toEqual({ project: DEFAULT_PROJECT, auto: false, imported: {} });
+    expect(readOpenProjectSettings(undefined)).toEqual({ project: DEFAULT_PROJECT, personFields: [], auto: false, imported: {} });
+    // P4b: solo ids de campos personalizados; el webview no arma otros filtros.
+    expect(readOpenProjectSettings({ personFields: [{ id: 'customField12', name: 'Responsable Desarrollo' }, { id: 'author', name: 'x' }, 'y'] }).personFields)
+      .toEqual([{ id: 'customField12', name: 'Responsable Desarrollo' }]);
     const s = readOpenProjectSettings({
       account: 'Ana', baseUrl: 'https://op.fcv.org', project: ' trabajo ', auto: true,
       imported: { 1: 't1', 2: 5 }, last: { at: '2026-10-29T10:00:00Z', status: 'ok', created: 2 },

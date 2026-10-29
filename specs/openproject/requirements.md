@@ -41,6 +41,10 @@ Usa la API v3 de OpenProject con el token de API personal del usuario
   de responsable, desde el 29 oct 2026, a pedido de Jorge) y crear una tarea por cada uno en
   el proyecto de Logday elegido ("openproject" por defecto, que se crea si
   no existe).
+- P4b. El panel DEBERÁ listar los campos personalizados de persona de ese
+  OpenProject (como "Responsable Desarrollo" en la FCV) para elegir en
+  cuáles buscar también al usuario. En ellos se filtra por el id del
+  usuario, no por `me`. Solo se aceptan ids `customField<n>`.
 - P5. Cada tarea DEBERÁ llevar:
   - el asunto como título;
   - el código `OP-<número>`;

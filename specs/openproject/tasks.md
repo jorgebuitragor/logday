@@ -23,4 +23,7 @@ Estado: en progreso.
   importación corrió sin error y creó 0 tareas. Jorge pidió traer
   también los work packages de los que es responsable.
 - [x] Traer también los de responsable (29 oct 2026).
+- [x] "Buscar también por" con los campos personalizados de persona,
+  como "Responsable Desarrollo" (29 oct 2026). Revisado en el navegador:
+  busca por los tres campos y no duplica.
 - [ ] Importar en la QA un work package real (asignado o responsable).

@@ -27,6 +27,10 @@ const PAGE_SIZE: u32 = 100;
 const MAX_PAGE: u32 = 20; // P4: hasta 2000 work packages por rol
 const MAX_BODY: usize = 8 * 1024 * 1024;
 const MAX_PERSON_FIELDS: usize = 30;
+// Si la lista de filtros falla, se prueban los campos uno por uno, hasta
+// `PROBE_MAX` o tras `PROBE_GAP` seguidos que no existen.
+const PROBE_MAX: u32 = 200;
+const PROBE_GAP: u32 = 25;
 
 // ── Piezas puras (con pruebas) ────────────────────────────────────────
 
@@ -103,24 +107,49 @@ pub fn work_packages_url(base: &Url, role: &str, user_id: &str, page: u32) -> Re
     Ok(url)
 }
 
-/// P4b: los campos personalizados de persona de las
-/// `filter_instance_schemas`: los `customField<n>` cuyo valor con `=` es
-/// `[]User`. Devuelve sus ids, en orden.
-pub fn person_field_ids(schemas: &Value) -> Vec<String> {
+/// Si el valor de un filtro con `=` es una persona (`[]User`), en una
+/// `filter_instance_schema`.
+pub fn is_person_schema(schema: &Value) -> bool {
+    schema.get("_dependencies").and_then(Value::as_array).is_some_and(|deps| {
+        deps.iter().any(|d| {
+            d.pointer("/dependencies/~1api~1v3~1queries~1operators~1%3D/values/type").and_then(Value::as_str) == Some("[]User")
+        })
+    })
+}
+
+/// P4b: los campos personalizados de persona de la lista de
+/// `filter_instance_schemas`: los `customField<n>` cuyo valor es `[]User`.
+/// Devuelve sus ids, en orden, y si la lista traía algún campo
+/// personalizado (sin sesión, o en algunas versiones, no trae ninguno).
+pub fn person_field_ids(schemas: &Value) -> (Vec<String>, bool) {
     let Some(els) = schemas.pointer("/_embedded/elements").and_then(Value::as_array) else {
-        return Vec::new();
+        return (Vec::new(), false);
     };
-    els.iter()
+    let mut any_custom = false;
+    let ids = els
+        .iter()
         .filter_map(|el| {
             let id = el.pointer("/_links/self/href")?.as_str()?.rsplit('/').next()?;
-            let deps = el.get("_dependencies")?.as_array()?;
-            let is_user = deps.iter().any(|d| {
-                d.pointer("/dependencies/~1api~1v3~1queries~1operators~1%3D/values/type").and_then(Value::as_str) == Some("[]User")
-            });
-            (is_custom_field(id) && is_user).then(|| id.to_string())
+            if !is_custom_field(id) {
+                return None;
+            }
+            any_custom = true;
+            is_person_schema(el).then(|| id.to_string())
         })
         .take(MAX_PERSON_FIELDS)
-        .collect()
+        .collect();
+    (ids, any_custom)
+}
+
+/// El nombre de un filtro de `/api/v3/queries/filters/<id>`: OpenProject lo
+/// da como `title` del enlace propio.
+pub fn filter_title(filter: &Value) -> Option<String> {
+    filter
+        .pointer("/_links/self/title")
+        .or_else(|| filter.get("name"))
+        .and_then(Value::as_str)
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 /// Un código para el webview: nunca el texto del error, que puede llevar
@@ -293,17 +322,56 @@ pub async fn openproject_person_fields(app: AppHandle) -> Result<Vec<PersonField
     let (base, token) = credentials(&app).await?;
     let mut url = api(&base, "/api/v3/queries/filter_instance_schemas")?;
     url.query_pairs_mut().append_pair("pageSize", "1000");
-    let schemas: Value = serde_json::from_str(&get(url, &token).await?).map_err(|_| "unexpected_format")?;
+    // En la FCV esta lista falla con sesión, y sin sesión no trae los campos
+    // personalizados: en esos casos se prueban uno por uno.
+    let listed = match get(url, &token).await {
+        Ok(body) => serde_json::from_str::<Value>(&body).ok().map(|v| person_field_ids(&v)),
+        Err("unauthorized") => return Err("unauthorized".into()),
+        Err(_) => None,
+    };
+    let ids = match listed {
+        Some((ids, true)) => ids,
+        _ => probe_person_fields(&base, &token).await?,
+    };
     let mut out = Vec::new();
-    for id in person_field_ids(&schemas) {
-        let body = get(api(&base, &format!("/api/v3/queries/filters/{id}"))?, &token).await?;
-        let name = serde_json::from_str::<Value>(&body)
-            .ok()
-            .and_then(|v| v.get("name")?.as_str().map(str::to_string))
-            .unwrap_or_else(|| id.clone());
-        out.push(PersonField { id, name });
+    for id in ids {
+        // Sin el nombre, el campo se muestra con su id: no se pierde.
+        let name = match get(api(&base, &format!("/api/v3/queries/filters/{id}"))?, &token).await {
+            Ok(body) => serde_json::from_str::<Value>(&body).ok().as_ref().and_then(filter_title),
+            Err(_) => None,
+        };
+        out.push(PersonField { name: name.unwrap_or_else(|| id.clone()), id });
     }
     Ok(out)
+}
+
+async fn probe_person_fields(base: &Url, token: &str) -> Result<Vec<String>, &'static str> {
+    let mut ids = Vec::new();
+    let mut misses = 0;
+    for n in 1..=PROBE_MAX {
+        let id = format!("customField{n}");
+        match get(api(base, &format!("/api/v3/queries/filter_instance_schemas/{id}"))?, token).await {
+            Ok(body) => {
+                misses = 0;
+                if serde_json::from_str::<Value>(&body).is_ok_and(|v| is_person_schema(&v)) {
+                    ids.push(id);
+                    if ids.len() >= MAX_PERSON_FIELDS {
+                        break;
+                    }
+                }
+            }
+            Err("not_found") => {
+                misses += 1;
+                if misses >= PROBE_GAP {
+                    break;
+                }
+            }
+            // Un campo que da error no detiene la búsqueda.
+            Err("provider_error") => misses = 0,
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(ids)
 }
 
 #[cfg(test)]
@@ -362,8 +430,16 @@ mod tests {
           {"_links":{"self":{"href":"/api/v3/queries/filter_instance_schemas/customField3"}},
            "_dependencies":[{"dependencies":{"/api/v3/queries/operators/%3D":{"values":{"type":"[]String"}}}}]}
         ]}}"#).unwrap();
-        assert_eq!(person_field_ids(&schemas), vec!["customField12".to_string()]);
-        assert!(person_field_ids(&Value::Null).is_empty());
+        assert_eq!(person_field_ids(&schemas), (vec!["customField12".to_string()], true));
+        assert_eq!(person_field_ids(&Value::Null), (vec![], false));
+        // Sin campos personalizados en la lista: hay que probar uno por uno.
+        let solo_propios: Value = serde_json::from_str(r#"{"_embedded":{"elements":[
+          {"_links":{"self":{"href":"/api/v3/queries/filter_instance_schemas/assignee"}}}]}}"#).unwrap();
+        assert_eq!(person_field_ids(&solo_propios), (vec![], false));
+        // El nombre viene en el título del enlace (así responde la FCV).
+        let f: Value = serde_json::from_str(r#"{"_type":"QueryFilter","id":"customField11","_links":{"self":{"href":"/x","title":"Responsable Desarrollo "}}}"#).unwrap();
+        assert_eq!(filter_title(&f).as_deref(), Some("Responsable Desarrollo"));
+        assert_eq!(filter_title(&Value::Null), None);
         assert!(is_custom_field("customField7"));
         assert!(!is_custom_field("customField") && !is_custom_field("customFieldx") && !is_custom_field("assignee"));
     }

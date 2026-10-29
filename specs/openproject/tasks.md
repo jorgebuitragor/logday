@@ -71,6 +71,13 @@ Estado: en progreso.
   apagado por defecto, con aviso, equivalencia de estados, `lockVersion`
   y pendientes sin red. Revisado en el navegador: marcar como hecha envió
   "Liberado" con la versión de la importación y guardó la nueva.
-- [ ] Probar el envío en la QA con un work package de prueba de la FCV.
+- [x] En la QA (29 oct 2026), el avance de una tarea no llegó. Se corrigió:
+  - una importada antes de P12, con un envío pendiente, nunca recibía su
+    versión;
+  - después de importar no se reintentaba;
+  - dos cambios seguidos se pisaban en la fila de pendientes (se perdieron
+    dos estados);
+  - la equivalencia no se leía al importar.
+- [ ] Volver a probar el envío en la QA.
 - [x] Solo Tasks y Bugs (29 oct 2026). Las 38 Features, épicas e hitos que
   habían llegado se quitan en la próxima importación y van a la papelera.

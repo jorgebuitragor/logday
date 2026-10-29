@@ -79,8 +79,19 @@ export const isImporting = () => importing !== null;
  *  en vez de empezar otra. Con `restoreDeleted` (P6b), vuelve a crear las
  *  ya importadas que el usuario borró en Logday. */
 export function importFromOpenProject(opts: { restoreDeleted?: boolean } = {}): Promise<ImportResult> {
-  importing ??= run(opts.restoreDeleted ?? false).finally(() => { importing = null; });
+  importing ??= run(opts.restoreDeleted ?? false).finally(() => {
+    importing = null;
+    // P12: con las versiones al día, lo que esperaba se envía ya.
+    afterImport?.();
+  });
   return importing;
+}
+
+let afterImport: (() => void) | null = null;
+/** P12: el módulo de envío se engancha aquí (sin importarlo desde aquí,
+ *  para no dar la vuelta entre los dos archivos). */
+export function onImportDone(fn: (() => void) | null): void {
+  afterImport = fn;
 }
 
 async function run(restoreDeleted: boolean): Promise<ImportResult> {
@@ -136,7 +147,7 @@ async function run(restoreDeleted: boolean): Promise<ImportResult> {
     } catch (err) {
       if (typeof err !== 'string' && !(err instanceof UnexpectedFormatError)) throw err;
     }
-    const statusOf = (wp: WorkPackage) => logdayStatus(wp.status, closedStatuses);
+    const statusOf = (wp: WorkPackage) => logdayStatus(wp.status, closedStatuses, settings.statusMap);
 
     const base = projectSlug(settings.project);
     const projectOf = new Map(all.map((wp) => [wp.id, placement(wp, base, (id) => refs.get(id))]));
@@ -236,15 +247,16 @@ async function run(restoreDeleted: boolean): Promise<ImportResult> {
       // Lo que el usuario cambió queda como lo dejó la importación: así no
       // se confunde con un valor puesto por ella y no se vuelve a tocar.
       const progress = progressMine ? next.progress : prev.progress;
+      // P12: con un envío pendiente se guarda la versión vieja, para que
+      // OpenProject lo rechace si alguien lo cambió mientras tanto. Si no
+      // había ninguna (importada antes de P12), la de ahora.
+      const lockVersion = settings.pending[wp.id] ? prev.lockVersion ?? wp.lockVersion : wp.lockVersion;
       managed[wp.id] = {
         code: (task.taskCode ?? '') === prev.code ? (next.taskCode ?? '') : prev.code,
         project: task.project === prev.project ? next.project : prev.project,
         ...(progress !== undefined ? { progress } : {}),
         status: statusMine ? next.status : prevStatus,
-        // P12: con un envío pendiente se guarda la versión vieja, para que
-        // OpenProject lo rechace si alguien lo cambió mientras tanto.
-        ...(settings.pending[wp.id] ? (prev.lockVersion !== undefined ? { lockVersion: prev.lockVersion } : {})
-          : wp.lockVersion !== undefined ? { lockVersion: wp.lockVersion } : {}),
+        ...(lockVersion !== undefined ? { lockVersion } : {}),
       };
       await save();
     }

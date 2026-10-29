@@ -325,8 +325,16 @@ export function lockVersionOf(body: string): number | undefined {
 /** P5e: el estado de la tarea en Logday según el de OpenProject: los
  *  cerrados, hechas; los que dicen que algo se está haciendo ("En
  *  Desarrollo", "In progress"), en progreso; el resto, por hacer. */
-export function logdayStatus(status: string | undefined, closed: Set<string>): TaskStatus {
+export function logdayStatus(
+  status: string | undefined,
+  closed: Set<string>,
+  statusMap: OpenProjectSettings['statusMap'] = {},
+): TaskStatus {
   const s = (status ?? '').trim();
+  // P12: la equivalencia que eligió el usuario manda, en los dos sentidos;
+  // si no, "Hecha → Por Liberar" volvería como "por hacer" al importar.
+  const mapped = (Object.keys(statusMap) as TaskStatus[]).find((k) => statusMap[k]?.name.trim() === s);
+  if (mapped) return mapped;
   if (closed.has(s)) return 'done';
   return /^(en|in)\s/i.test(s) ? 'in-progress' : 'todo';
 }

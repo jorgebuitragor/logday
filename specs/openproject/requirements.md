@@ -120,6 +120,10 @@ Usa la API v3 de OpenProject con el token de API personal del usuario
     con su mensaje.
   - Sin red o sin VPN, el cambio queda pendiente y se reintenta.
   - Los cambios que hace la propia importación no se envían.
+  - La equivalencia vale en los dos sentidos: al importar, un estado de
+    OpenProject elegido en ella se lee como su estado de Logday antes que
+    con la regla de P5e (si no, "Hecha → Por Liberar" volvería como "por
+    hacer").
 
 ### Red y datos
 

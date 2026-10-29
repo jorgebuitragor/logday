@@ -8,46 +8,72 @@ import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import { nowInstant } from '../../lib/localDate';
 import type { Task } from '../../types/task';
-import { isImporting } from './importer';
-import { OPENPROJECT_ID, changesToPush, lockVersionOf, readOpenProjectSettings } from './model';
+import { isImporting, onImportDone } from './importer';
+import { OPENPROJECT_ID, changesToPush, lockVersionOf, readOpenProjectSettings, type Managed, type PendingPush } from './model';
 
 /** Sin red o sin VPN: queda pendiente y se reintenta. */
 const RETRY = new Set(['network', 'timeout']);
 
+// Los cambios de la configuración van en fila: dos ediciones seguidas (o una
+// edición mientras se envía otra) no se pisan entre sí.
+let queue: Promise<unknown> = Promise.resolve();
+function serial<T>(fn: () => Promise<T>): Promise<T> {
+  const run = queue.then(fn, fn);
+  queue = run.catch(() => undefined);
+  return run;
+}
+
+const settingsNow = () => readOpenProjectSettings(useAppStore.getState().extensions[OPENPROJECT_ID]?.settings);
+
 /** El oyente de `task.updated`. */
 export async function onTaskUpdated(prev: Task | undefined, next: Task): Promise<void> {
   if (isImporting()) return;
-  const store = useAppStore.getState;
-  const settings = readOpenProjectSettings(store().extensions[OPENPROJECT_ID]?.settings);
-  if (!settings.writeBack || !settings.account) return;
-  const wpId = Object.keys(settings.imported).find((k) => settings.imported[k] === next.id);
-  if (!wpId) return;
-  const change = changesToPush(prev, next, (s) => !!settings.statusMap[s]);
-  if (!change) return;
-  const pending = { ...settings.pending, [wpId]: { ...settings.pending[wpId], ...change } };
-  await store().updateExtensionSettings(OPENPROJECT_ID, { pending });
-  await flushPending();
+  const queued = await serial(async () => {
+    const settings = settingsNow();
+    if (!settings.writeBack || !settings.account) return false;
+    const wpId = Object.keys(settings.imported).find((k) => settings.imported[k] === next.id);
+    if (!wpId) return false;
+    const change = changesToPush(prev, next, (s) => !!settings.statusMap[s]);
+    if (!change) return false;
+    const pending = { ...settings.pending, [wpId]: { ...settings.pending[wpId], ...change } };
+    await useAppStore.getState().updateExtensionSettings(OPENPROJECT_ID, { pending });
+    return true;
+  });
+  if (queued) await flushPending();
 }
 
 let flushing: Promise<void> | null = null;
+let again = false;
 
-/** Envía lo pendiente; si ya está enviando, espera ese envío. */
+/** Envía lo pendiente; si ya está enviando, vuelve a mirar al terminar. */
 export function flushPending(): Promise<void> {
-  flushing ??= flush().finally(() => { flushing = null; });
+  if (flushing) {
+    again = true;
+    return flushing;
+  }
+  flushing = (async () => {
+    do {
+      again = false;
+      await flush();
+    } while (again);
+  })().finally(() => { flushing = null; });
   return flushing;
 }
 
+const same = (a: PendingPush | undefined, b: PendingPush) => !!a && a.progress === b.progress && a.status === b.status;
+
 async function flush(): Promise<void> {
   const store = useAppStore.getState;
-  const settings = readOpenProjectSettings(store().extensions[OPENPROJECT_ID]?.settings);
+  const settings = settingsNow();
   if (!settings.writeBack || !settings.account) return;
-  const pending = { ...settings.pending };
-  const managed = { ...settings.managed };
   const language = store().language;
+  // Lo que se resolvió (enviado o rechazado), para quitarlo de la fila al
+  // final sin pisar lo que llegó mientras tanto.
+  const done: { wpId: string; sent: PendingPush; managed?: Managed }[] = [];
   let lastPush = settings.lastPush;
-  for (const [wpId, change] of Object.entries(pending)) {
-    const prev = managed[wpId];
-    const title = await taskTitle(settings.imported[wpId]);
+  for (const [wpId, change] of Object.entries(settings.pending)) {
+    const prev = settings.managed[wpId];
+    const title = taskTitle(settings.imported[wpId]);
     if (prev?.lockVersion === undefined) {
       // Importada antes de P12: hace falta importar una vez para tener la versión.
       lastPush = { at: nowInstant(), status: 'error', error: 'needs_import', title };
@@ -63,23 +89,23 @@ async function flush(): Promise<void> {
       });
       // Ahora OpenProject tiene lo mismo que Logday: la importación sigue
       // trayendo lo que cambie allá (P5d, P5e).
-      managed[wpId] = {
-        ...prev,
-        ...(change.progress !== undefined ? { progress: change.progress } : {}),
-        ...(change.status && status ? { status: change.status } : {}),
-        lockVersion: lockVersionOf(body) ?? prev.lockVersion + 1,
-      };
-      delete pending[wpId];
+      done.push({
+        wpId,
+        sent: change,
+        managed: {
+          ...prev,
+          ...(change.progress !== undefined ? { progress: change.progress } : {}),
+          ...(change.status && status ? { status: change.status } : {}),
+          lockVersion: lockVersionOf(body) ?? prev.lockVersion + 1,
+        },
+      });
       lastPush = { at: nowInstant(), status: 'ok', title };
     } catch (err) {
       const code = typeof err === 'string' ? err : 'unknown';
-      if (RETRY.has(code)) {
-        lastPush = { at: nowInstant(), status: 'error', error: code, title };
-        break;
-      }
-      // Rechazado: no se reintenta; se avisa.
-      delete pending[wpId];
       lastPush = { at: nowInstant(), status: 'error', error: code, title };
+      if (RETRY.has(code)) break;
+      // Rechazado: no se reintenta; se avisa.
+      done.push({ wpId, sent: change });
       const [kind, detail] = code.split('|');
       store().showToast({
         kind: 'error',
@@ -89,10 +115,20 @@ async function flush(): Promise<void> {
       });
     }
   }
-  await store().updateExtensionSettings(OPENPROJECT_ID, { pending, managed, ...(lastPush ? { lastPush } : {}) });
+  await serial(async () => {
+    const cur = settingsNow();
+    const pending = { ...cur.pending };
+    const managed = { ...cur.managed };
+    for (const d of done) {
+      // Si la tarea volvió a cambiar mientras se enviaba, eso sigue en la fila.
+      if (same(pending[d.wpId], d.sent)) delete pending[d.wpId];
+      if (d.managed) managed[d.wpId] = d.managed;
+    }
+    await store().updateExtensionSettings(OPENPROJECT_ID, { pending, managed, ...(lastPush ? { lastPush } : {}) });
+  });
 }
 
-async function taskTitle(taskId: string | undefined): Promise<string | undefined> {
+function taskTitle(taskId: string | undefined): string | undefined {
   const { tasks, activeTask } = useAppStore.getState();
   return [...tasks, ...(activeTask ? [activeTask] : [])].find((t) => t.id === taskId)?.title;
 }
@@ -104,3 +140,9 @@ export function pushErrorText(language: 'es' | 'en', code: string | undefined): 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return t(language, 'openproject', `push_${c}` as any);
 }
+
+// Al terminar cada importación, lo que esperaba se intenta enviar.
+onImportDone(() => {
+  const s = settingsNow();
+  if (s.writeBack && Object.keys(s.pending).length) void flushPending().catch(() => {});
+});

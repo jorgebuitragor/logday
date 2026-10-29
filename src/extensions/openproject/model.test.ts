@@ -139,6 +139,11 @@ describe('estado de la tarea (P5e)', () => {
     expect(logdayStatus('Por Verificar', closed)).toBe('todo');
     expect(logdayStatus('LiberarEspacio(Por verificar)', closed)).toBe('todo');
     expect(logdayStatus(undefined, closed)).toBe('todo');
+    // P12: la equivalencia del usuario manda en los dos sentidos.
+    const map = { done: { id: '11', name: 'Por Liberar' }, 'in-progress': { id: '9', name: 'Por Verificar' } };
+    expect(logdayStatus('Por Liberar', closed, map)).toBe('done');
+    expect(logdayStatus('Por Verificar', closed, map)).toBe('in-progress');
+    expect(logdayStatus('Liberado', closed, map)).toBe('done');
     expect(() => parseClosedStatuses('<html>')).toThrow(UnexpectedFormatError);
   });
 });

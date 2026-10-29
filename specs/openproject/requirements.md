@@ -61,11 +61,15 @@ Usa la API v3 de OpenProject con el token de API personal del usuario
   - la etiqueta `openproject`;
   - en el cuerpo: un enlace al work package, su proyecto, tipo, estado y
     prioridad, y la descripción.
-- P5b. Cada tarea DEBERÁ ir en el proyecto de Logday elegido, dentro de un
-  subproyecto por la **épica** que la contiene, la más cercana entre sus
-  ancestros (en la FCV, las épicas son los proyectos). Por ejemplo,
-  `openproject/app-circuito-cerrado`. Sin épica, en el proyecto elegido.
-  Pedido por Jorge el 29 oct 2026.
+- P5b. Cada tarea DEBERÁ ir en el proyecto de Logday elegido, en un
+  subproyecto por la **épica** que la contiene (la más cercana entre sus
+  ancestros) y, dentro, uno por su **Feature** (la más cercana por debajo
+  de esa épica). En la FCV la estructura es Épica (área o app) > Feature
+  (versión) > Tarea. Por ejemplo,
+  `openproject/medico-asistencial/app-circuito-cerrado-v.x.x.x`. Sin
+  épica ni Feature, en el proyecto elegido. Una épica o una Feature va en
+  su propia carpeta. Pedido por Jorge el 29 oct 2026: primero solo la
+  épica, después la épica y la Feature.
 - P5c. En cada importación, a las tareas ya importadas se les DEBERÁN
   corregir el código y el proyecto (P5, P5b) **solo si siguen como los
   dejó la importación**. Si el usuario los cambió, no se tocan. El título

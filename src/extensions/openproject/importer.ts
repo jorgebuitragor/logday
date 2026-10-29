@@ -130,12 +130,14 @@ async function run(): Promise<ImportResult> {
     const base = projectSlug(settings.project);
     const projectOf = new Map(all.map((wp) => [wp.id, placement(wp, base, (id) => refs.get(id))]));
 
-    // 3. Los proyectos que falten: el elegido y una carpeta por épica.
+    // 3. Los proyectos que falten: el elegido, una carpeta por épica y, dentro,
+    //    una por Feature. Se crea cada nivel que falte.
     const ensureProject = async (path: string) => {
-      if (store().projects.includes(path)) return;
-      const [parent, child] = path.includes('/') ? [path.slice(0, path.indexOf('/')), path.slice(path.indexOf('/') + 1)] : ['', path];
-      if (parent && !store().projects.includes(parent)) await store().createProject(parent);
-      await store().createProject(child, parent);
+      const parts = path.split('/');
+      for (let i = 0; i < parts.length; i++) {
+        const full = parts.slice(0, i + 1).join('/');
+        if (!store().projects.includes(full)) await store().createProject(parts[i], parts.slice(0, i).join('/'));
+      }
     };
 
     // Los códigos ya en uso: un código repetido se cambia por OP-<número>

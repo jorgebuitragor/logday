@@ -48,9 +48,11 @@
 - `importer.ts`:
   - pide las páginas hasta `total`, de los dos roles, y junta por id (un
     work package en los dos entra una vez);
-  - P5b: pide una vez cada ancestro (`_links.ancestors`) y toma la épica
-    más cercana: tipo `Epic` o `Épica`. El proyecto es
-    `<elegido>/<épica>`, creado si falta;
+  - P5b: pide una vez cada ancestro (`_links.ancestors`). Toma la épica
+    más cercana (`Epic` o `Épica`) y la Feature más cercana por debajo de
+    ella. El proyecto es `<elegido>/<épica>/<feature>`, y se crea cada
+    nivel que falte. Los nombres de carpeta van sin `\ / : * ? " < > |`
+    ni guiones repetidos;
   - P5c: `managed` (id del work package → `{ code, project }` que puso la
     importación). Una tarea se corrige solo si su valor actual es igual a
     ese. Las de antes de P5c se toman como `OP-<n>` en el proyecto

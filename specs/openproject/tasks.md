@@ -54,4 +54,11 @@ Estado: en progreso.
   - muchos estados son de la FCV (Liberado, Producción: cerrados).
 - [x] Traer los cerrados, estado según OpenProject y "Tarea" por
   defecto (29 oct 2026). Revisado en el navegador.
-- [ ] Probarlo en la QA con el OpenProject de la FCV.
+- [x] QA con la FCV (29 oct 2026): 329 tareas, con 294 hechas, 13 en
+  progreso y 22 por hacer, con avance y el código de "Tarea".
+- [x] Épica y Feature como carpetas (29 oct 2026). Revisado en el
+  navegador: la importada se mueve a `<épica>/<feature>` sin perder lo
+  escrito.
+- [ ] Volver a importar en la QA y revisar las carpetas.
+- [ ] Decidir si se importan solo Tasks y Bugs (llegaron 33 Features, 1
+  épica y 3 hitos como tareas).

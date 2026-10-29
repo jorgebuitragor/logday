@@ -28,6 +28,7 @@ describe('configuración de OpenProject', () => {
 
   it('el proyecto se nombra como lo hace createProject', () => {
     expect(projectSlug(' Trabajo FCV ')).toBe('trabajo-fcv');
+    expect(projectSlug('App: X? V.1 - "B"')).toBe('app-x-v.1-b');
     expect(projectSlug('a/b')).toBe('a-b');
     expect(projectSlug('  ')).toBe(DEFAULT_PROJECT);
   });
@@ -72,16 +73,27 @@ describe('código, avance y épica (P5, P5b)', () => {
     expect(parseWorkPackages(body({ percentageDone: 140 })).items[0].progress).toBeUndefined();
   });
 
-  it('la tarea va en la carpeta de la épica más cercana', () => {
+  it('la tarea va en épica/feature, como en la FCV', () => {
     const refs: Record<string, { type?: string; subject: string }> = {
       100: { type: 'Epic', subject: 'Programa grande' },
-      200: { type: 'Épica', subject: 'APP Circuito Cerrado' },
-      300: { type: 'Feature', subject: 'Pantalla' },
+      200: { type: 'Epic', subject: 'Medico Asistencial' },
+      300: { type: 'Feature', subject: 'App Circuito Cerrado V.X.X.X - Bombas Infusión' },
+      400: { type: 'Task', subject: 'Tarea madre' },
     };
-    const wp = { id: '7', subject: 'Botón', description: '', ancestors: ['100', '200', '300'] };
-    expect(placement(wp, 'openproject', (id) => refs[id])).toBe('openproject/app-circuito-cerrado');
-    expect(placement({ ...wp, ancestors: ['300'] }, 'openproject', (id) => refs[id])).toBe('openproject');
-    expect(placement({ ...wp, ancestors: [] , type: 'Epic', subject: 'Mi épica' }, 'Trabajo', () => undefined)).toBe('trabajo/mi-épica');
+    const wp = { id: '7', subject: 'Botón', description: '', type: 'Task', ancestors: ['100', '200', '300'] };
+    expect(placement(wp, 'openproject', (id) => refs[id])).toBe('openproject/medico-asistencial/app-circuito-cerrado-v.x.x.x-bombas-infusión');
+    // Un hito debajo de una tarea: la Feature más cercana igual.
+    expect(placement({ ...wp, type: 'Milestone', ancestors: ['200', '300', '400'] }, 'openproject', (id) => refs[id]))
+      .toBe('openproject/medico-asistencial/app-circuito-cerrado-v.x.x.x-bombas-infusión');
+    // Solo épica, solo Feature, o nada.
+    expect(placement({ ...wp, ancestors: ['200'] }, 'openproject', (id) => refs[id])).toBe('openproject/medico-asistencial');
+    expect(placement({ ...wp, ancestors: ['300'] }, 'openproject', (id) => refs[id])).toBe('openproject/app-circuito-cerrado-v.x.x.x-bombas-infusión');
+    expect(placement({ ...wp, ancestors: [] }, 'openproject', () => undefined)).toBe('openproject');
+    // La épica o la Feature en su propia carpeta.
+    expect(placement({ ...wp, type: 'Epic', subject: 'Mi épica', ancestors: [] }, 'Trabajo', () => undefined)).toBe('trabajo/mi-épica');
+    expect(placement({ ...wp, type: 'Feature', subject: 'V1', ancestors: ['200'] }, 'openproject', (id) => refs[id])).toBe('openproject/medico-asistencial/v1');
+    // Una Feature por encima de la épica no cuenta.
+    expect(placement({ ...wp, ancestors: ['300', '200'] }, 'openproject', (id) => refs[id])).toBe('openproject/medico-asistencial');
     expect(isEpicType('epic') && isEpicType(' Épica ') && !isEpicType('Feature')).toBe(true);
   });
 

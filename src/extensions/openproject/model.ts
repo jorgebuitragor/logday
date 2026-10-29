@@ -111,9 +111,17 @@ export function readOpenProjectSettings(raw: Record<string, unknown> | undefined
   return out;
 }
 
-/** El nombre de un proyecto de Logday como lo guarda `createProject`. */
+/** El nombre de un proyecto de Logday como lo guarda `createProject`, sin
+ *  los caracteres que no van en una carpeta y sin guiones repetidos
+ *  ("App X V.1 - Bombas" → "app-x-v.1-bombas"). */
 export function projectSlug(name: string): string {
-  return name.trim().toLowerCase().replace(/[\\/]/g, '-').replace(/\s+/g, '-') || DEFAULT_PROJECT;
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[\\/:*?"<>|]/g, '-')
+    .replace(/\s+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^[-.]+|[-.]+$/g, '') || DEFAULT_PROJECT;
 }
 
 // ── Lectura ───────────────────────────────────────────────────────────
@@ -241,20 +249,27 @@ export function logdayStatus(status: string | undefined, closed: Set<string>): T
 }
 
 export const isEpicType = (type: string | undefined) => !!type && /^(epic|[eé]pica)$/i.test(type.trim());
+export const isFeatureType = (type: string | undefined) => !!type && /^(feature|funcionalidad|caracter[ií]stica)$/i.test(type.trim());
 
-/** P5b: el proyecto de Logday de un work package: un subproyecto del
- *  elegido por la épica que lo contiene (la más cercana), o el elegido si
- *  no está en ninguna. Una épica va en su propio subproyecto. */
+/** P5b: el proyecto de Logday de un work package. En la FCV la estructura
+ *  es Épica > Feature > Tarea, y Jorge pidió las dos como carpetas: un
+ *  subproyecto del elegido por la épica que lo contiene (la más cercana) y,
+ *  dentro, uno por su Feature (la más cercana, por debajo de esa épica).
+ *  Una épica o una Feature va en su propia carpeta. Sin épica ni Feature,
+ *  en el proyecto elegido. */
 export function placement(
   wp: WorkPackage,
   baseProject: string,
   ancestor: (id: string) => { type?: string; subject: string } | undefined,
 ): string {
   const base = projectSlug(baseProject);
-  const epic = isEpicType(wp.type)
-    ? wp.subject
-    : [...wp.ancestors].reverse().map(ancestor).find((a) => a && isEpicType(a.type))?.subject;
-  return epic ? `${base}/${projectSlug(epic)}` : base;
+  // Del propio work package hacia arriba.
+  const chain = [{ type: wp.type, subject: wp.subject }, ...[...wp.ancestors].reverse().map(ancestor)];
+  const epicAt = chain.findIndex((a) => a && isEpicType(a.type));
+  const below = epicAt === -1 ? chain : chain.slice(0, epicAt);
+  const feature = below.find((a) => a && isFeatureType(a.type));
+  const parts = [epicAt === -1 ? undefined : chain[epicAt]?.subject, feature?.subject].filter((s): s is string => !!s);
+  return [base, ...parts.map(projectSlug)].join('/');
 }
 
 /** P4b: los ids de una página de `/api/v3/projects`. */

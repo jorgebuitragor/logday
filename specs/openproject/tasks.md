@@ -30,4 +30,16 @@ Estado: en progreso.
   prueban uno por uno. Fuera de un proyecto, "Cf 11 no existe": se busca
   en cada proyecto (verificado sin sesión en un proyecto público, con el
   id de un miembro, el 29 oct 2026).
-- [ ] Importar en la QA un work package real (asignado o responsable).
+- [x] Importar en la QA (29 oct 2026): 35 tareas, con los de responsable y
+  los de "Responsable Desarrollo".
+- [x] Código desde el campo "Tarea", subproyecto por épica y corrección
+  de las ya importadas (29 oct 2026). Revisado en el navegador con
+  archivos simulados:
+  - la importada se movió a `openproject/app-circuito-cerrado` con el
+    código `TAR-0042` y sin perder lo escrito;
+  - la nueva fue a la épica más cercana;
+  - la que el usuario movió a mano no se tocó;
+  - la segunda importación no cambió nada.
+- [ ] Avance (%): espera el campo `progress` en las tareas, que se hace en
+  otra sesión (servidor, Desktop, Web y Mobile).
+- [ ] Probarlo en la QA con el OpenProject de la FCV.

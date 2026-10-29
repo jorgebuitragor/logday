@@ -49,11 +49,23 @@ Usa la API v3 de OpenProject con el token de API personal del usuario
   activo, saltando los proyectos donde no existe.
 - P5. Cada tarea DEBERÁ llevar:
   - el asunto como título;
-  - el código `OP-<número>`;
+  - como código, el valor del campo de texto que el usuario elija en
+    "Código de la tarea" (en la FCV, "Tarea"), o `OP-<número>` si no
+    elige ninguno o el work package no lo tiene. Si ese código ya lo usa
+    otra tarea, va `OP-<número>`;
   - la fecha de fin (o la del hito);
   - la etiqueta `openproject`;
   - en el cuerpo: un enlace al work package, su proyecto, tipo, estado y
     prioridad, y la descripción.
+- P5b. Cada tarea DEBERÁ ir en el proyecto de Logday elegido, dentro de un
+  subproyecto por la **épica** que la contiene, la más cercana entre sus
+  ancestros (en la FCV, las épicas son los proyectos). Por ejemplo,
+  `openproject/app-circuito-cerrado`. Sin épica, en el proyecto elegido.
+  Pedido por Jorge el 29 oct 2026.
+- P5c. En cada importación, a las tareas ya importadas se les DEBERÁN
+  corregir el código y el proyecto (P5, P5b) **solo si siguen como los
+  dejó la importación**. Si el usuario los cambió, no se tocan. El título
+  y el cuerpo nunca se tocan.
 - P6. Un work package ya importado NO DEBERÁ importarse otra vez ni pisar
   la tarea, aunque cambie en OpenProject: el usuario pudo editarla, y las
   escrituras van por LWW y el CRDT. Lo que se haga en Logday tampoco

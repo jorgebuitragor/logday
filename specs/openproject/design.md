@@ -23,7 +23,10 @@
     404;
   - `status o` (abiertos);
   - `sortBy updatedAt desc`.
-- `openproject_person_fields()`: los `customField<n>` de
+- `openproject_work_package(id)`: un work package suelto, para saber el
+  tipo de sus ancestros (P5b).
+- `openproject_custom_fields()` (antes `openproject_person_fields`): los
+  `customField<n>` de persona (`[]User`) y de texto (`[1]String`) de
   `/api/v3/queries/filter_instance_schemas` cuyo valor con `=` es
   `[]User`, con su nombre de `/api/v3/queries/filters/<id>`. Sin sesión,
   la API no los muestra.
@@ -45,6 +48,16 @@
 - `importer.ts`:
   - pide las páginas hasta `total`, de los dos roles, y junta por id (un
     work package en los dos entra una vez);
+  - P5b: pide una vez cada ancestro (`_links.ancestors`) y toma la épica
+    más cercana: tipo `Epic` o `Épica`. El proyecto es
+    `<elegido>/<épica>`, creado si falta;
+  - P5c: `managed` (id del work package → `{ code, project }` que puso la
+    importación). Una tarea se corrige solo si su valor actual es igual a
+    ese. Las de antes de P5c se toman como `OP-<n>` en el proyecto
+    elegido. Las tareas se leen del disco, porque la lista del store solo
+    tiene las del proyecto que se está viendo. Se mueven con
+    `updateTask(next, { prev })`, que va por LWW;
+  - un código repetido se cambia por `OP-<n>`;
   - filtra con `imported` (id del work package → id de la tarea);
   - crea el proyecto si falta;
   - crea las tareas con `createTask(…, { tags, due, open: false })`, del

@@ -6,7 +6,7 @@ import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import ToggleSwitch from '../../components/shared/ToggleSwitch';
 import { importFromOpenProject } from './importer';
-import { OPENPROJECT_ID, projectSlug, readOpenProjectSettings, type PersonField } from './model';
+import { OPENPROJECT_ID, projectSlug, readOpenProjectSettings, type CustomField, type PersonField } from './model';
 
 const PRIMARY_CLS =
   'flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50';
@@ -29,53 +29,87 @@ function errorText(language: 'es' | 'en', code: string | undefined): string {
   return t(language, 'openproject', `err_${c}` as any);
 }
 
-/** P4b: elegir en qué campos personalizados de persona (como
- *  "Responsable Desarrollo") se busca también al usuario. */
-function PersonFieldsPicker({ language, selected, onChange }: {
+/** "3 tareas nuevas · 35 actualizadas", o solo lo que haya. */
+function resultText(language: 'es' | 'en', created: number, updated: number): string {
+  const parts = [`${created} ${t(language, 'openproject', created === 1 ? 'importedOne' : 'importedMany')}`];
+  if (updated) parts.push(`${updated} ${t(language, 'openproject', updated === 1 ? 'updatedOne' : 'updatedMany')}`);
+  return parts.join(' · ');
+}
+
+/** P4b y P5: los campos personalizados de ese OpenProject. El de texto
+ *  que da el código de la tarea (en la FCV, "Tarea") y los de persona en
+ *  los que se busca también al usuario (como "Responsable Desarrollo"). */
+function CustomFieldsSection({ language, codeField, personFields, onCodeField, onPersonFields }: {
   language: 'es' | 'en';
-  selected: PersonField[];
-  onChange: (fields: PersonField[]) => void;
+  codeField?: PersonField;
+  personFields: PersonField[];
+  onCodeField: (field: PersonField | null) => void;
+  onPersonFields: (fields: PersonField[]) => void;
 }) {
-  const [available, setAvailable] = useState<PersonField[] | null>(null);
+  const [available, setAvailable] = useState<CustomField[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
-    invoke<PersonField[]>('openproject_person_fields')
+    invoke<CustomField[]>('openproject_custom_fields')
       .then((fields) => { if (alive) setAvailable(fields); })
       .catch((err) => { if (alive) setError(errorText(language, typeof err === 'string' ? err : undefined)); });
     return () => { alive = false; };
   }, [language]);
 
   // Los elegidos siguen a la vista aunque la lista no haya llegado.
-  const fields = [...(available ?? []), ...selected.filter((s) => !available?.some((a) => a.id === s.id))];
+  const withSelected = (kind: CustomField['kind'], selected: PersonField[]) => [
+    ...(available ?? []).filter((f) => f.kind === kind),
+    ...selected.filter((s) => !available?.some((a) => a.id === s.id)),
+  ];
+  const textFields = withSelected('text', codeField ? [codeField] : []);
+  const userFields = withSelected('user', personFields);
   const toggle = (field: PersonField, on: boolean) =>
-    onChange(on ? [...selected.filter((s) => s.id !== field.id), field] : selected.filter((s) => s.id !== field.id));
+    onPersonFields(on ? [...personFields.filter((s) => s.id !== field.id), field] : personFields.filter((s) => s.id !== field.id));
+  const loading = available === null && !error;
 
   return (
-    <div className="space-y-1.5">
-      <div>
-        <p className="text-[var(--text-secondary)]">{t(language, 'openproject', 'personFields')}</p>
-        <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'openproject', 'personFieldsDesc')}</p>
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <label htmlFor="op-code" className="w-28 shrink-0 text-[var(--text-secondary)]">{t(language, 'openproject', 'codeField')}</label>
+        <select
+          id="op-code"
+          value={codeField?.id ?? ''}
+          onChange={(e) => {
+            const f = textFields.find((x) => x.id === e.target.value);
+            onCodeField(f ? { id: f.id, name: f.name } : null);
+          }}
+          className="w-56 rounded-lg border border-[var(--border-card)] bg-[var(--bg-surface)] px-2 py-1.5 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+        >
+          <option value="">{t(language, 'openproject', 'codeFieldNumber')}</option>
+          {textFields.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+        </select>
       </div>
-      {fields.length > 0 && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-          {fields.map((f) => (
-            <label key={f.id} className="flex items-center gap-1.5 text-[11px] text-[var(--text-primary)]">
-              <input
-                type="checkbox"
-                checked={selected.some((s) => s.id === f.id)}
-                onChange={(e) => toggle(f, e.target.checked)}
-                className="accent-indigo-500"
-              />
-              {f.name}
-            </label>
-          ))}
+
+      <div className="space-y-1.5">
+        <div>
+          <p className="text-[var(--text-secondary)]">{t(language, 'openproject', 'personFields')}</p>
+          <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'openproject', 'personFieldsDesc')}</p>
         </div>
-      )}
-      {available === null && !error && <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'openproject', 'personFieldsLoading')}</p>}
-      {available?.length === 0 && <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'openproject', 'personFieldsNone')}</p>}
-      {error && <p className="text-[10px] text-red-400">{error}</p>}
+        {userFields.length > 0 && (
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+            {userFields.map((f) => (
+              <label key={f.id} className="flex items-center gap-1.5 text-[11px] text-[var(--text-primary)]">
+                <input
+                  type="checkbox"
+                  checked={personFields.some((s) => s.id === f.id)}
+                  onChange={(e) => toggle({ id: f.id, name: f.name }, e.target.checked)}
+                  className="accent-indigo-500"
+                />
+                {f.name}
+              </label>
+            ))}
+          </div>
+        )}
+        {loading && <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'openproject', 'personFieldsLoading')}</p>}
+        {available && userFields.length === 0 && <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'openproject', 'personFieldsNone')}</p>}
+        {error && <p className="text-[10px] text-red-400">{error}</p>}
+      </div>
     </div>
   );
 }
@@ -127,10 +161,10 @@ export default function OpenProjectSettings() {
     setError(null);
     setBusy('import');
     try {
-      const created = await importFromOpenProject();
+      const { created, updated } = await importFromOpenProject();
       showToast({
         kind: 'success',
-        title: created ? `${created} ${t(language, 'openproject', created === 1 ? 'importedOne' : 'importedMany')}` : t(language, 'openproject', 'nothingNew'),
+        title: created || updated ? resultText(language, created, updated) : t(language, 'openproject', 'nothingNew'),
       });
     } catch {
       // El detalle queda en settings.last y se muestra abajo.
@@ -214,10 +248,12 @@ export default function OpenProjectSettings() {
       </div>
 
       {settings.account && (
-        <PersonFieldsPicker
+        <CustomFieldsSection
           language={language}
-          selected={settings.personFields}
-          onChange={(fields) => void update(OPENPROJECT_ID, { personFields: fields })}
+          codeField={settings.codeField}
+          personFields={settings.personFields}
+          onCodeField={(field) => void update(OPENPROJECT_ID, { codeField: field ?? undefined })}
+          onPersonFields={(fields) => void update(OPENPROJECT_ID, { personFields: fields })}
         />
       )}
 
@@ -243,7 +279,7 @@ export default function OpenProjectSettings() {
             <span className={last.status === 'ok' ? 'text-emerald-400' : 'text-red-400'}>
               {last.status === 'ok' ? <CheckCircle2 size={11} className="mr-1 inline" /> : <AlertCircle size={11} className="mr-1 inline" />}
               {last.status === 'ok'
-                ? `${last.created ?? 0} ${t(language, 'openproject', (last.created ?? 0) === 1 ? 'importedOne' : 'importedMany')}`
+                ? resultText(language, last.created ?? 0, last.updated ?? 0)
                 : errorText(language, last.error)}
               <span className="text-[var(--text-hint)]"> · {new Date(last.at).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })}</span>
             </span>

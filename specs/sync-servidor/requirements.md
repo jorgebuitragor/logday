@@ -72,6 +72,10 @@ no los redefine.
   (`Task.filePath`, `Task.linked_paths`, `Note.filePath`) NO DEBERÁN
   enviarse al servidor ni esperarse en sus respuestas — ya están
   explícitamente excluidos del lado servidor.
+- `Task.progress` (entero 0–100 o `null`, logday-server#15) viaja como
+  un campo LWW más: siempre en el `POST`, en el `PATCH` solo si cambió
+  (`null` lo borra), y la clave ausente en una respuesta cuenta como
+  `null`. Detalle en `specs/progreso-tareas/`.
 - El `id` de cada entidad DEBERÁ seguir generándose client-side (UUID)
   como ya ocurre hoy, sin cambios — el servidor nunca asigna IDs de
   entidad.

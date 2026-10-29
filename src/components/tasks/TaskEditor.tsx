@@ -25,6 +25,8 @@ import { formatLongDate } from '../../lib/taskListing';
 import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
 import { useFieldDrafts } from '../../hooks/useFieldDrafts';
+import { normalizeProgress } from '../../lib/taskProgress';
+import { TaskProgressField } from './TaskProgressField';
 
 const STATUS_OPTIONS: { value: TaskStatus; color: string; label: 'statusTodo' | 'statusInProgress' | 'statusDone' }[] = [
   { value: 'todo', color: 'text-zinc-300 bg-zinc-400/15', label: 'statusTodo' },
@@ -47,6 +49,8 @@ type TaskFields = {
   taskCode: string;
   status: string;
   due: string;
+  // '' = sin progreso; si no, el entero 0–100 como texto.
+  progress: string;
   project: string;
   tags: string;
 };
@@ -58,6 +62,7 @@ function taskFields(task: Task): TaskFields {
     taskCode: task.taskCode || '',
     status: task.status,
     due: task.due || '',
+    progress: task.progress === undefined ? '' : String(task.progress),
     project: task.project,
     tags: JSON.stringify(task.tags),
   };
@@ -70,6 +75,9 @@ function fieldPatch(field: keyof TaskFields, value: string): Partial<Task> {
       return { taskCode: value || undefined };
     case 'due':
       return { due: value || undefined };
+    case 'progress':
+      // '' lo borra (la clave desaparece del .md y viaja null al servidor).
+      return { progress: normalizeProgress(value) };
     case 'status':
       return { status: value as TaskStatus };
     case 'tags':
@@ -112,6 +120,7 @@ export function TaskEditor() {
   const tags = JSON.parse(values?.tags ?? '[]') as string[];
   const project = values?.project ?? 'inbox';
   const taskCode = values?.taskCode ?? '';
+  const progress = values?.progress ?? '';
 
   // Cerrar menú de proyecto al hacer clic fuera
   useEffect(() => {
@@ -422,6 +431,14 @@ export function TaskEditor() {
               </button>
             )}
           </div>
+
+          {/* Progreso: el slider y el número cambian muy seguido (arrastrar,
+              teclear), así que van con el debounce de los campos de texto. */}
+          <TaskProgressField
+            value={progress} language={language} labelClass={FIELD_LABEL} controlClass={FIELD_CONTROL}
+            onChange={(v) => { edit('progress', v); scheduleSave('progress'); }}
+            onCommit={flushPending} onClear={() => saveNow('progress', '')}
+          />
 
           {/* Tags */}
           <div className="flex items-start gap-3">

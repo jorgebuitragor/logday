@@ -17,6 +17,13 @@ import { GitConfig, GitStatus, GitRemoteStatus } from '../types/git';
 import { SyncConfig, SyncConnectionStatus } from '../types/sync';
 import { AppConfig, ViewMode, ActiveSection, StartupScreen, Shortcuts, DEFAULT_SHORTCUTS, NotesView, NoteSortBy, NoteSortDir, TaskSortBy } from '../types/config';
 import { Language, AppToast, ToastKind } from '../types/common';
+import type { ExtensionId, ExtensionsConfig } from '../extensions/types';
+import { EXTENSIONS, getExtension } from '../extensions/registry';
+import {
+  parseExtensionsConfig, resolveSection, withExtensionEnabled, withExtensionSettings, withoutExtension,
+  extensionSection,
+} from '../extensions/state';
+import { clearExtensionSecret } from '../extensions/secrets';
 import { deriveCustomThemeVars } from '../lib/themeColor';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
 import { parseDailyFile, serializeDailyFile } from '../lib/dailyFileFormat';
@@ -37,7 +44,7 @@ import {
 } from '../lib/sync';
 import type { MigrationProgress } from '../lib/syncMigration';
 import {
-  taskToCreatePayload, taskFieldsToPatchPayload, taskFromApiResponse, TaskApiResponse, TaskCreatePayload, TaskPatchPayload,
+  taskToCreatePayload, taskFieldsToPatchPayload, taskFromApiResponse, diffTaskFields, TaskApiResponse, TaskCreatePayload, TaskPatchPayload,
   noteToCreatePayload, noteFieldsToPatchPayload, noteFromApiResponse, NoteApiResponse, NoteCreatePayload, NotePatchPayload,
   calendarEventToCreatePayload, calendarEventFieldsToPatchPayload, calendarEventFromApiResponse, CalendarEventApiResponse, CalendarEventCreatePayload, CalendarEventPatchPayload,
   absenceDayToCreatePayload, absenceDayFieldsToPatchPayload, absenceDayFromApiResponse, AbsenceDayApiResponse, AbsenceDayCreatePayload, AbsenceDayPatchPayload,
@@ -51,7 +58,10 @@ import * as trash from '../lib/trash';
 import { bytesToBase64, persistYDoc, applyIncomingContentState, deliverToOpenNote, noteContentStatePath } from '../lib/noteContentSync';
 import { applyIncomingDailyContentState, applyDailyEditorEdit, deleteDailyContentState } from '../lib/dailyContentSync';
 import { parseFrontmatter, serializeTask, parseNote, serializeNote } from '../lib/markdown';
+import { withNormalizedProgress } from '../lib/taskProgress';
 import { t } from '../lib/i18n';
+import { emitAppEvent } from '../lib/appEvents';
+import { appUpdatedAt, fetchRelease, recordAppUpdatedAt } from '../lib/releases';
 import { localISODate, localISOMonth, nowInstant, stampSortKey } from '../lib/localDate';
 import {
   NoteUpdatedThrottle, applyUndoRestore, newNoteStamps, newTaskStamps, stampNoteSave, undoRestore, withCompletedAt,
@@ -70,6 +80,8 @@ export interface NewTaskExtra {
   tags?: string[];
   status?: TaskStatus;
   linkedPaths?: string[];
+  /** Progreso 0–100; se normaliza (redondeo y rango) al crear. */
+  progress?: number;
   /** Abrir la tarea en el panel lateral al crearla (por defecto, sí). */
   open?: boolean;
 }
@@ -145,6 +157,8 @@ export interface AppState {
   theme: Theme;
   customThemes: CustomTheme[];
   startupScreen: StartupScreen;
+  /** Preferencias de extensiones (specs/extensiones). */
+  extensions: ExtensionsConfig;
   notesView: NotesView;
   notesViewDefault: NotesView;
   noteSortBy: NoteSortBy;
@@ -202,6 +216,9 @@ export interface AppState {
   postponeUpdateRestart: () => void;
   dismissUpdateBanner: () => void;
   openReleaseNotes: () => void;
+  /** Novedades de la versión instalada, desde Acerca de. `false` si no se
+   *  pudieron consultar. */
+  openCurrentReleaseNotes: () => Promise<boolean>;
   closeReleaseNotes: () => void;
   acceptPolicyGate: () => Promise<void>;
   rejectPolicyGate: () => void;
@@ -254,6 +271,9 @@ export interface AppState {
   renameNoteFolder: (folder: string, newName: string) => Promise<void>;
   deleteNoteFolder: (folder: string) => Promise<void>;
   createNote: () => Promise<Note>;
+  /** Nota con título y contenido, sin abrirla (la crea el agente por MCP,
+   *  specs/agentes-mcp). Mismo camino que importar: el `.md` y el sync. */
+  createNoteWith: (input: { title: string; content?: string; folder?: string; tags?: string[] }) => Promise<Note>;
   /** Guarda la nota. `updated` se sella según D1 (ver `NoteUpdatedThrottle`);
    *  `leaving: true` es el guardado al salir de la nota, que sella lo pendiente. */
   updateNote: (note: Note, opts?: { leaving?: boolean }) => Promise<void>;
@@ -342,6 +362,16 @@ export interface AppState {
   updateCustomTheme: (id: string, patch: Partial<Omit<CustomTheme, 'id' | 'createdAt'>>) => void;
   replaceCustomThemes: (customThemes: CustomTheme[]) => void;
   setStartupScreen: (screen: StartupScreen) => Promise<void>;
+  /** Activa o desactiva una extensión. El aviso de R6 lo pide la UI antes
+   *  y pasa aquí `consentAt`. Al desactivarla con su vista abierta, vuelve
+   *  a Inicio (R14). */
+  setExtensionEnabled: (id: ExtensionId, enabled: boolean, consentAt?: string) => Promise<void>;
+  /** Mezcla configuración no secreta de una extensión. */
+  updateExtensionSettings: (id: ExtensionId, patch: Record<string, unknown>) => Promise<void>;
+  /** "Quitar configuración" (R8): borra la configuración y los secretos. */
+  removeExtensionConfig: (id: ExtensionId) => Promise<void>;
+  /** Reemplaza todas las preferencias de extensiones (restaurar un backup). */
+  replaceExtensionsConfig: (config: ExtensionsConfig) => Promise<void>;
   setLanguage: (lang: Language) => Promise<void>;
   setFontSize: (size: number) => void;
   setShortcut: (action: keyof Shortcuts, key: string) => void;
@@ -391,7 +421,7 @@ const noteFilePath = (base: string, folder: string, id: string) =>
 const dailysBaseDir = (base: string) => `${base}/dailys`;
 const dailyMonthDir = (base: string, year: string, month: string) =>
   `${base}/dailys/${year}/${month}`;
-const dailyMonthFilePath = (base: string, year: string, month: string) =>
+export const dailyMonthFilePath = (base: string, year: string, month: string) =>
   `${base}/dailys/${year}/${month}/${year}-${month}.md`;
 
 // ── Overtime helpers ──────────────────────────────────────────
@@ -433,7 +463,7 @@ async function persistConfig(get: SyncGet): Promise<void> {
     configDir, basePath, startupScreen, language, confirmDestructiveActions,
     notificationsEnabled, defaultReminderMinutes, workWeekDays, holidaysAsNonWork,
     animationsEnabled, trashAutoPurgeEnabled, sidebarLabelsVisible, activeProject, activeNoteFolder,
-    notesView, notesViewDefault, noteSortBy, noteSortDir, taskSortBy,
+    notesView, notesViewDefault, noteSortBy, noteSortDir, taskSortBy, extensions,
   } = get();
   if (!configDir || !basePath) return;
   await saveConfig(configDir, {
@@ -455,7 +485,14 @@ async function persistConfig(get: SyncGet): Promise<void> {
     noteSortBy,
     noteSortDir,
     taskSortBy,
+    extensions,
   });
+}
+
+/** R14: si la vista de la extensión está abierta, vuelve a Inicio. Una
+ *  pantalla de inicio en esa vista se resuelve al abrir la app (R13). */
+function leaveExtensionSection(get: SyncGet, set: (partial: Partial<AppState>) => void, id: ExtensionId) {
+  if (get().activeSection === extensionSection(id)) set({ activeSection: 'dashboard' });
 }
 
 export async function readTaskFromPath(filePath: string): Promise<Task | null> {
@@ -758,7 +795,7 @@ async function evaluatePolicyGate(set: SyncSet, serverUrl: string, tokens: Token
 
 const TASK_FIELD_MAP: Record<string, string> = {
   title: 'title', taskCode: 'task_code', status: 'status', tags: 'tags', project: 'project',
-  created: 'created', completedAt: 'completed_at', due: 'due', content: 'content',
+  created: 'created', completedAt: 'completed_at', due: 'due', progress: 'progress', content: 'content',
 };
 
 /** Aplica la respuesta del servidor a la task local, campo por campo,
@@ -831,25 +868,6 @@ async function syncDeleteTask(get: SyncGet, set: SyncSet, taskId: string): Promi
   } catch {
     syncQueue.enqueue('task', taskId, 'delete');
   }
-}
-
-/** Solo los campos que de verdad cambiaron entre prev y next — un
- *  PATCH mandando todo pisaría, en el servidor, cualquier edición
- *  concurrente a un campo que acá ni se tocó (ver LWW por campo en
- *  logday-server). */
-function diffTaskFields(prev: Task | undefined, next: Task): Partial<Task> {
-  if (!prev) return { ...next };
-  const fields: Partial<Task> = {};
-  if (prev.title !== next.title) fields.title = next.title;
-  if (prev.taskCode !== next.taskCode) fields.taskCode = next.taskCode;
-  if (prev.status !== next.status) fields.status = next.status;
-  if (JSON.stringify(prev.tags) !== JSON.stringify(next.tags)) fields.tags = next.tags;
-  if (prev.project !== next.project) fields.project = next.project;
-  if (prev.created !== next.created) fields.created = next.created;
-  if (prev.completedAt !== next.completedAt) fields.completedAt = next.completedAt;
-  if (prev.due !== next.due) fields.due = next.due;
-  if (prev.content !== next.content) fields.content = next.content;
-  return fields;
 }
 
 // ── Note (metadata) ──────────────────────────────────────────────
@@ -2036,22 +2054,6 @@ function startUpdateCheckInterval(get: SyncGet, set: SyncSet): void {
 // datos todavía, no se muestra nada.
 const LAST_SEEN_VERSION_KEY = 'lastSeenAppVersion';
 const PENDING_RELEASE_NOTES_KEY = 'pendingReleaseNotes';
-const RELEASES_API = 'https://api.github.com/repos/jorgebuitragor/logday/releases/tags';
-
-// `null`: GitHub respondió que no hay notas (o no hay release con ese
-// tag). `undefined`: no se pudo consultar (sin red, límite de la API).
-async function fetchReleaseNotes(version: string): Promise<string | null | undefined> {
-  try {
-    const res = await fetch(`${RELEASES_API}/v${version}`, { headers: { Accept: 'application/vnd.github+json' } });
-    if (res.status === 404) return null;
-    if (!res.ok) return undefined;
-    const json = (await res.json()) as { body?: unknown };
-    return typeof json.body === 'string' && json.body.trim() ? json.body : null;
-  } catch {
-    return undefined;
-  }
-}
-
 async function showReleaseNotesAfterUpdate(get: SyncGet, set: SyncSet): Promise<void> {
   let current: string;
   try {
@@ -2061,6 +2063,10 @@ async function showReleaseNotesAfterUpdate(get: SyncGet, set: SyncSet): Promise<
   }
   const lastSeen = localStorage.getItem(LAST_SEEN_VERSION_KEY);
   if (lastSeen === current) return;
+  // Primera vez que se abre esta versión: es la fecha de la última
+  // actualización que muestra Acerca de. Se guarda aunque falle la
+  // consulta de las notas (que se reintenta en el próximo arranque).
+  if (appUpdatedAt(current) === undefined) recordAppUpdatedAt(current, nowInstant());
   // La versión se marca como vista solo cuando ya se mostraron sus notas
   // o cuando se sabe que no hay: si la consulta a GitHub falla, se
   // reintenta en el próximo arranque en vez de perder las novedades.
@@ -2080,7 +2086,9 @@ async function showReleaseNotesAfterUpdate(get: SyncGet, set: SyncSet): Promise<
   } catch {
     pending = null;
   }
-  const body = pending?.version === current && pending.body ? pending.body : await fetchReleaseNotes(current);
+  const body = pending?.version === current && pending.body
+    ? pending.body
+    : await fetchRelease(current).then((r) => (r === undefined ? undefined : r?.body ?? null));
   if (body === undefined) return;
   markSeen();
   if (body) set({ releaseNotes: { version: current, body, mode: 'installed' } });
@@ -2308,6 +2316,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch { return []; }
   })(),
   startupScreen: 'dashboard',
+  extensions: {},
   notesView: 'list',
   notesViewDefault: 'list',
   noteSortBy: 'updated',
@@ -2423,13 +2432,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (cfg?.basePath) {
         const exists = await fs.exists(cfg.basePath);
         if (exists) {
-          const startupScreen: StartupScreen = cfg.startupScreen ?? 'dashboard';
+          const extensions = parseExtensionsConfig(cfg.extensions);
+          // R13: si la pantalla de inicio es la vista de una extensión
+          // desactivada (o que ya no existe), se abre en Inicio.
+          const startupScreen: StartupScreen = resolveSection(cfg.startupScreen ?? 'dashboard', extensions, EXTENSIONS);
           const language: Language = (cfg.language as Language) ?? 'es';
           set({
             basePath: cfg.basePath,
             isConfigured: true,
             startupScreen,
             activeSection: startupScreen,
+            extensions,
             language,
             confirmDestructiveActions: cfg.confirmDestructiveActions ?? true,
             notificationsEnabled: cfg.notificationsEnabled ?? true,
@@ -2603,6 +2616,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   closeReleaseNotes: () => set({ releaseNotes: null }),
+
+  openCurrentReleaseNotes: async () => {
+    let version: string;
+    try {
+      version = await getVersion();
+    } catch {
+      return false;
+    }
+    const release = await fetchRelease(version);
+    if (release === undefined) return false;
+    set({ releaseNotes: { version, body: release?.body ?? null, mode: 'installed' } });
+    return true;
+  },
 
   // ── Tasks ──────────────────────────────────────────────────
 
@@ -2788,7 +2814,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         taskCode = undefined;
       }
     }
-    const task: Task = {
+    const task: Task = withNormalizedProgress({
       id,
       title: title.trim() || 'Nueva tarea',
       status: extra.status ?? 'todo',
@@ -2797,12 +2823,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Instantes (D2): si nace hecha, `completedAt` es el mismo instante.
       ...newTaskStamps(extra.status ?? 'todo'),
       ...(extra.due ? { due: extra.due } : {}),
+      ...(extra.progress !== undefined ? { progress: extra.progress } : {}),
       linked_paths: extra.linkedPaths ?? [],
       content,
       taskCode: taskCode || undefined,
       filePath: taskFilePath(basePath, targetProject, id),
-    };
+    });
     await fs.writeFile(task.filePath, serializeTask(task));
+    emitAppEvent({ type: 'task.created', task });
     // La captura rápida no abre el panel (`open: false`), y una tarea de
     // otro proyecto no se agrega a la lista filtrada que se está viendo.
     const open = extra.open ?? true;
@@ -2838,7 +2866,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     // traiga un valor viejo de otro cliente), si sigue en done se conserva tal
     // cual y al salir de done se limpia. Un deshacer (`restore`) trae el valor
     // exacto de antes de la acción y no se toca. Ver withCompletedAt.
-    const normalizedTask: Task = withCompletedAt(prev, task, { restore: opts?.restore });
+    // El progreso se guarda ya normalizado (entero 0–100 o sin la clave):
+    // un valor inválido haría que el servidor rechazara el PATCH con 400.
+    const normalizedTask: Task = withNormalizedProgress(withCompletedAt(prev, task, { restore: opts?.restore }));
 
     // Cambiar de proyecto mueve el archivo a la carpeta del proyecto nuevo.
     // Antes solo cambiaba el frontmatter: el archivo quedaba en la carpeta
@@ -2850,6 +2880,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     await fs.writeFile(normalizedTask.filePath, serializeTask(normalizedTask));
     if (oldFilePath !== normalizedTask.filePath) await fs.deleteFile(oldFilePath).catch(() => {});
+    emitAppEvent({ type: 'task.updated', prev, next: normalizedTask });
     const visible = taskInView(normalizedTask.project, get().activeProject);
     set((state) => ({
       // Si vuelve a la vista (deshacer un cambio de proyecto), se agrega.
@@ -3157,6 +3188,34 @@ export const useAppStore = create<AppState>((set, get) => ({
     await fs.writeFile(note.filePath, serializeNote(note));
     noteUpdatedThrottle.markStamped(note.id);
     set((state) => ({ notes: [note, ...state.notes], activeNote: note }));
+    if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
+    void syncCreateNote(get, set, note);
+    return note;
+  },
+
+  createNoteWith: async ({ title, content = '', folder = '', tags = [] }) => {
+    const { basePath } = get();
+    if (!basePath) throw new Error('No base path');
+    const id = uuidv4();
+    const note: Note = {
+      id,
+      title: title.trim(),
+      folder,
+      tags,
+      ...newNoteStamps(),
+      pinned: false,
+      content,
+      filePath: noteFilePath(basePath, folder, id),
+    };
+    if (folder) await fs.createDir(noteFolderDir(basePath, folder)).catch(() => {});
+    await fs.writeFile(note.filePath, serializeNote(note));
+    noteUpdatedThrottle.markStamped(note.id);
+    // No se abre: lo que crea el agente no le cambia la nota abierta al
+    // usuario. Se agrega a la lista solo si es de lo que está viendo.
+    const { activeNoteFolder, notesView } = get();
+    if (notesView === 'tree' || activeNoteFolder === null || activeNoteFolder === folder) {
+      set((state) => ({ notes: [note, ...state.notes] }));
+    }
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
     void syncCreateNote(get, set, note);
     return note;
@@ -3779,6 +3838,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ overtimeMonths: [ym, ...overtimeMonths].sort().reverse() });
     }
     await fs.writeFile(path, `---\n${JSON.stringify({ entries }, null, 2)}\n---\n`);
+    emitAppEvent({ type: 'overtime.saved', entry });
     // Navegar al mes de la entrada para que aparezca en la lista
     await get().loadOvertimeMonth(ym);
     if (get().gitConfig.enabled) set({ gitStatus: 'pending' });
@@ -3991,7 +4051,40 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setStartupScreen: async (screen) => {
-    set({ startupScreen: screen, activeSection: screen });
+    const resolved = resolveSection(screen, get().extensions, EXTENSIONS);
+    set({ startupScreen: resolved, activeSection: resolved });
+    await persistConfig(get);
+  },
+
+  setExtensionEnabled: async (id, enabled, consentAt) => {
+    set((s) => ({ extensions: withExtensionEnabled(s.extensions, id, enabled, consentAt) }));
+    if (!enabled) leaveExtensionSection(get, set, id);
+    await persistConfig(get);
+  },
+
+  updateExtensionSettings: async (id, patch) => {
+    set((s) => ({ extensions: withExtensionSettings(s.extensions, id, patch) }));
+    await persistConfig(get);
+  },
+
+  removeExtensionConfig: async (id) => {
+    const keys = getExtension(id)?.secretKeys ?? [];
+    // Primero los secretos: si el llavero falla, la configuración queda y
+    // el usuario puede reintentar.
+    await Promise.all(keys.map((key) => clearExtensionSecret(id, key)));
+    set((s) => ({ extensions: withoutExtension(s.extensions, id) }));
+    leaveExtensionSection(get, set, id);
+    await persistConfig(get);
+  },
+
+  replaceExtensionsConfig: async (config) => {
+    const extensions = parseExtensionsConfig(config);
+    set({ extensions });
+    const { activeSection, startupScreen } = get();
+    set({
+      activeSection: resolveSection(activeSection, extensions, EXTENSIONS),
+      startupScreen: resolveSection(startupScreen, extensions, EXTENSIONS),
+    });
     await persistConfig(get);
   },
 

@@ -43,6 +43,7 @@ import { buildFolderTree } from '../../lib/folderTree';
 import { exportDailyMonthEntries } from '../../lib/dailyMonthExport';
 import { FolderTreeItem } from './FolderTreeItem';
 import { NoteTree } from './NoteTree';
+import { ExtensionSections } from './ExtensionSections';
 import { ProjectTreeItem } from './ProjectTreeItem';
 import { RootDropLine } from './RootDropLine';
 import { ModalOverlay } from '../shared/ModalOverlay';
@@ -559,6 +560,7 @@ export function Sidebar() {
         >
           <Timer size={18} />
         </button>
+        <ExtensionSections collapsed />
         <div className="my-1 h-px w-6 bg-[var(--border)]" />
         {activeSection === 'tasks' &&
           views.map(({ id, Icon, label }) => (
@@ -670,6 +672,7 @@ export function Sidebar() {
           );
         })}
       </div>
+      <ExtensionSections collapsed={false} />
 
       {/* TASKS SECTION */}
       {activeSection === 'tasks' && (

@@ -1,3 +1,5 @@
+mod extensions;
+
 use std::fs;
 use std::path::Path;
 use serde::{Deserialize, Serialize};
@@ -488,6 +490,7 @@ fn open_in_system(path: String) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(extensions::mcp::McpState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -606,6 +609,35 @@ pub fn run() {
             git_run,
             sync_request,
             fetch_url_metadata,
+            extensions::ext_secret_set,
+            extensions::ext_secret_clear,
+            extensions::ext_secret_hint,
+            extensions::team_chat::team_chat_validate_url,
+            extensions::team_chat::team_chat_send,
+            extensions::team_chat_google::team_chat_google_connect,
+            extensions::team_chat_google::team_chat_google_disconnect,
+            extensions::team_chat_google::team_chat_google_parse_space,
+            extensions::team_chat_google::team_chat_google_send,
+            extensions::google_calendar::google_calendar_connect,
+            extensions::google_calendar::google_calendar_disconnect,
+            extensions::google_calendar::google_calendar_copy_client,
+            extensions::google_calendar::google_calendar_events,
+            extensions::outgoing_webhook::outgoing_webhook_validate_url,
+            extensions::outgoing_webhook::outgoing_webhook_send,
+            extensions::granola::granola_connect,
+            extensions::granola::granola_disconnect,
+            extensions::granola::granola_call,
+            extensions::openproject::openproject_connect,
+            extensions::openproject::openproject_disconnect,
+            extensions::openproject::openproject_work_packages,
+            extensions::openproject::openproject_custom_fields,
+            extensions::openproject::openproject_projects,
+            extensions::openproject::openproject_work_package,
+            extensions::openproject::openproject_statuses,
+            extensions::openproject::openproject_update_work_package,
+            extensions::mcp::mcp_server_start,
+            extensions::mcp::mcp_server_stop,
+            extensions::mcp::mcp_reply,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

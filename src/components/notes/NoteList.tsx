@@ -14,6 +14,11 @@ import { ModalOverlay } from '../shared/ModalOverlay';
 import { ModalPanel } from '../shared/ModalPanel';
 import { t as tFn } from '../../lib/i18n';
 import { pickMarkdownFiles } from '../../lib/invoke';
+import { stripFencedBlocks } from '../../lib/fencedBlocks';
+import { EXTENSIONS } from '../../extensions/registry';
+
+// Los bloques propios de las extensiones (R24) no van en el resumen.
+const EXTENSION_BLOCK_LANGUAGES = EXTENSIONS.flatMap((def) => (def.noteBlock ? [def.noteBlock.language] : []));
 
 type CtxMenu = { note: Note; x: number; y: number } | null;
 type SubMenuAnchor = { left: number; top: number; right: number; bottom: number } | null;
@@ -508,7 +513,7 @@ export function NoteList() {
         ) : (
           sorted.map((note) => {
             const isActive = activeNote?.id === note.id;
-            const preview = note.content.replace(/#{1,6}\s/g, '').slice(0, 100);
+            const preview = stripFencedBlocks(note.content, EXTENSION_BLOCK_LANGUAGES).replace(/#{1,6}\s/g, '').trim().slice(0, 100);
             const isRenaming = renamingNote?.id === note.id;
 
             return (

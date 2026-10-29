@@ -1,6 +1,6 @@
 [package]
 name = "logday"
-version = "1.0.8"
+version = "1.1.0"
 description = "Logday — local task and notes manager with markdown files"
 authors = ["Jorge Buitrago"]
 license = "AGPL-3.0-or-later"
@@ -35,8 +35,29 @@ base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+# Servidor HTTP local de la extensión MCP (specs/agentes-mcp/design.md):
+# síncrono y pequeño, solo escucha en 127.0.0.1.
+tiny_http = "0.12"
+# PKCE del inicio de sesión con Google (specs/chat-como-usuario). Ya
+# llegaban por otras dependencias.
+sha2 = "0.10"
+getrandom = "0.2"
+
+# Llavero del sistema para los secretos de las extensiones
+# (specs/extensiones/design.md). keyring 3 no trae ningún almacén por
+# defecto: hay que elegir el nativo de cada plataforma, o compila con un
+# almacén falso en memoria que no guarda nada.
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.6", features = ["apple-native"] }
+
+# En Linux, Secret Service por D-Bus (GNOME Keyring, KWallet). Usa
+# libdbus del sistema, que ya llega con las dependencias de webkit2gtk
+# que instala el workflow de release.
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3.6", features = ["sync-secret-service", "crypto-rust"] }
 
 [target.'cfg(windows)'.dependencies]
+keyring = { version = "3.6", features = ["windows-native"] }
 windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_Graphics_Gdi"] }
 raw-window-handle = "0.6"
 

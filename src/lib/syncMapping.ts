@@ -3,6 +3,7 @@ import { Note } from '../types/note';
 import { OvertimeEntry, OvertimeMonthMeta } from '../types/overtime';
 import { CalendarEvent, EventColor, EventRepeat } from '../types/calendar';
 import { AbsenceDay, AbsenceType } from '../types/absence';
+import { normalizeProgress, progressToPayload } from './taskProgress';
 
 // Conversión tipo local <-> payload REST de logday-server, por
 // entidad. `filePath`/`linked_paths` quedan afuera a propósito (son
@@ -26,6 +27,8 @@ export interface TaskCreatePayload {
   created: string;
   completed_at: string | null;
   due: string | null;
+  // Entero 0–100 o null (sin progreso). Ver lib/taskProgress.ts.
+  progress: number | null;
   content: string;
   updated_at: string;
 }
@@ -39,11 +42,15 @@ export interface TaskPatchPayload {
   created?: string;
   completed_at?: string | null;
   due?: string | null;
+  progress?: number | null;
   content?: string;
   updated_at: string;
 }
 
-export interface TaskApiResponse extends TaskCreatePayload {
+// `progress` es opcional en la respuesta: los servidores anteriores a
+// logday-server#15 no mandan la clave, y ausente cuenta como null.
+export interface TaskApiResponse extends Omit<TaskCreatePayload, 'progress'> {
+  progress?: number | null;
   seq: number;
   deleted_at?: string;
 }
@@ -59,6 +66,7 @@ export function taskToCreatePayload(task: Task): TaskCreatePayload {
     created: task.created,
     completed_at: task.completedAt ?? null,
     due: task.due ?? null,
+    progress: progressToPayload(task.progress),
     content: task.content,
     updated_at: nowIso(),
   };
@@ -74,6 +82,8 @@ export function taskFieldsToPatchPayload(fields: Partial<Task>): TaskPatchPayloa
   if ('created' in fields) payload.created = fields.created;
   if ('completedAt' in fields) payload.completed_at = fields.completedAt ?? null;
   if ('due' in fields) payload.due = fields.due ?? null;
+  // Solo si cambió (quien llama manda solo los campos cambiados); null lo borra.
+  if ('progress' in fields) payload.progress = progressToPayload(fields.progress);
   if ('content' in fields) payload.content = fields.content;
   return payload;
 }
@@ -89,8 +99,32 @@ export function taskFromApiResponse(payload: TaskApiResponse): Omit<Task, 'fileP
     created: payload.created,
     completedAt: payload.completed_at ?? undefined,
     due: payload.due ?? undefined,
+    // Clave ausente o null = sin progreso. La clave queda siempre en el
+    // objeto (con undefined) para que al mezclarlo sobre la tarea local
+    // borre un progreso que ya no existe en el servidor.
+    progress: normalizeProgress(payload.progress),
     content: payload.content,
   };
+}
+
+/** Solo los campos que de verdad cambiaron entre prev y next — un
+ *  PATCH mandando todo pisaría, en el servidor, cualquier edición
+ *  concurrente a un campo que acá ni se tocó (ver LWW por campo en
+ *  logday-server). */
+export function diffTaskFields(prev: Task | undefined, next: Task): Partial<Task> {
+  if (!prev) return { ...next };
+  const fields: Partial<Task> = {};
+  if (prev.title !== next.title) fields.title = next.title;
+  if (prev.taskCode !== next.taskCode) fields.taskCode = next.taskCode;
+  if (prev.status !== next.status) fields.status = next.status;
+  if (JSON.stringify(prev.tags) !== JSON.stringify(next.tags)) fields.tags = next.tags;
+  if (prev.project !== next.project) fields.project = next.project;
+  if (prev.created !== next.created) fields.created = next.created;
+  if (prev.completedAt !== next.completedAt) fields.completedAt = next.completedAt;
+  if (prev.due !== next.due) fields.due = next.due;
+  if (prev.progress !== next.progress) fields.progress = next.progress;
+  if (prev.content !== next.content) fields.content = next.content;
+  return fields;
 }
 
 // ─── Note (metadata) ───

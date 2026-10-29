@@ -54,6 +54,7 @@ export function DataSettingsTab() {
     theme, setTheme,
     customThemes, replaceCustomThemes,
     startupScreen, setStartupScreen,
+    extensions, replaceExtensionsConfig,
     fontSize, setFontSize,
     confirmDestructiveActions, setConfirmDestructiveActions,
     setLanguage,
@@ -90,6 +91,9 @@ export function DataSettingsTab() {
         folderTags,
         overtimeMeta,
         customThemes,
+        // Activación y configuración no secreta. Los secretos (URLs de
+        // webhook) están en el llavero y no entran al backup (R10).
+        extensions,
       };
       zip.file(BACKUP_SETTINGS_PATH, JSON.stringify(backupSettings, null, 2));
 
@@ -187,6 +191,11 @@ export function DataSettingsTab() {
       }
       if (importedSettings?.language) {
         await setLanguage(importedSettings.language);
+      }
+      // Antes que la pantalla de inicio: si es la vista de una extensión,
+      // se resuelve con las extensiones ya restauradas.
+      if (importedSettings?.extensions) {
+        await replaceExtensionsConfig(importedSettings.extensions);
       }
       if (importedSettings?.startupScreen) {
         await setStartupScreen(importedSettings.startupScreen);

@@ -19,6 +19,10 @@ import { ReleaseNotesModal } from './components/ReleaseNotesModal';
 import { PolicyGateModal } from './components/PolicyGateModal';
 import { OvertimeEntry } from './types/overtime';
 import { useEventNotifier } from './lib/eventNotifier';
+import { useExtensionLifecycle } from './extensions/useExtensions';
+import { ExtensionSlot } from './extensions/ExtensionSlot';
+import { extensionIdOfSection } from './extensions/state';
+import { getExtension } from './extensions/registry';
 
 const KanbanBoard   = lazy(() => import('./components/tasks/KanbanBoard').then(m => ({ default: m.KanbanBoard })));
 const CalendarView  = lazy(() => import('./components/calendar/CalendarView').then(m => ({ default: m.CalendarView })));
@@ -101,6 +105,7 @@ export default function App() {
   }, []);
 
   useEventNotifier();
+  useExtensionLifecycle();
 
   useEffect(() => {
     const handler = async (e: KeyboardEvent) => {
@@ -188,7 +193,17 @@ export default function App() {
       {/* Main content area */}
       <div className="flex flex-1 overflow-hidden">
         <Suspense fallback={null}>
-        {activeSection === 'dashboard' ? (
+        {extensionIdOfSection(activeSection) !== null ? (
+          // Vista de una extensión activa (specs/extensiones R11). Una
+          // sección de una extensión que ya no existe no llega aquí:
+          // resolveSection la cambia por Inicio.
+          <div className="flex flex-1 flex-col overflow-auto bg-[var(--bg-base)]">
+            {(() => {
+              const def = getExtension(extensionIdOfSection(activeSection) ?? '');
+              return def ? <ExtensionSlot key={def.id} id={def.id} point="View" props={{}} /> : null;
+            })()}
+          </div>
+        ) : activeSection === 'dashboard' ? (
           <DashboardView />
         ) : activeSection === 'tasks' ? (
           <>

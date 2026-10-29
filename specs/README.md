@@ -42,3 +42,13 @@ tres archivos:
 | Actualizaciones automáticas | implementado, sin validar con release real | [`actualizaciones-automaticas/`](./actualizaciones-automaticas/requirements.md) |
 | Cumplimiento de datos personales | en diseño | [`cumplimiento-datos-personales/`](./cumplimiento-datos-personales/requirements.md) |
 | Fechas de creación, edición y completado | en progreso (etapa 1: leer ambos formatos) | [`fechas-creacion-edicion/`](./fechas-creacion-edicion/requirements.md) |
+| Extensiones (integraciones y herramientas) | en progreso | [`extensiones/`](./extensiones/requirements.md) |
+| Agentes de IA (extensión `mcp`) | en progreso | [`agentes-mcp/`](./agentes-mcp/requirements.md) |
+| Chat del equipo (extensión `team-chat`), modo local | en progreso | [`chat-del-equipo/`](./chat-del-equipo/requirements.md) |
+| Chat del equipo: enviar como yo (Google Chat, OAuth) | en progreso | [`chat-como-usuario/`](./chat-como-usuario/requirements.md) |
+| Google Calendar (extensión `google-calendar`) | en progreso | [`google-calendar/`](./google-calendar/requirements.md) |
+| Webhook saliente (extensión `outgoing-webhook`, n8n) | en progreso | [`webhook-saliente/`](./webhook-saliente/requirements.md) |
+| Granola (extensión `granola`, por su MCP) | en progreso | [`granola/`](./granola/requirements.md) |
+| Excalidraw (extensión `excalidraw`, dibujos en las notas) | en progreso | [`excalidraw/`](./excalidraw/requirements.md) |
+| OpenProject (extensión `openproject`, work packages como tareas) | en progreso | [`openproject/`](./openproject/requirements.md) |
+| Progreso de tareas (`Task.progress`, 0–100) | implementado, sin probar en la app | [`progreso-tareas/`](./progreso-tareas/requirements.md) |

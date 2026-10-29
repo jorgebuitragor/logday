@@ -17,6 +17,9 @@ import { EVENT_COLOR_DOT, EVENT_COLORS, REMINDER_OPTIONS, reminderLabel } from '
 import { localISODate } from '../../lib/localDate';
 import { filterTasks, formatDueLabel } from '../../lib/taskListing';
 import { TaskFilterBar } from '../tasks/TaskFilterBar';
+import { useExternalEvents, groupByDate, type ExternalEvent } from '../../extensions/externalEvents';
+import { extensionText } from '../../extensions/text';
+import { fs } from '../../lib/invoke';
 
 const ESTIMATED_DAY_CTX_MENU = { width: 190, height: 88 };
 const ESTIMATED_EVENT_CTX_MENU = { width: 190, height: 128 };
@@ -202,6 +205,18 @@ export function CalendarView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [evDirty, evTitle, evDate, evAllDay, evTime, evDesc, evColor, evReminderEnabled, evReminder, evRepeatEnabled, evRepeat]);
 
+  // R22 de specs/extensiones: el mes visible, para las extensiones que
+  // ponen eventos de solo lectura (Google Calendar).
+  const setExternalRange = useExternalEvents((s) => s.setRange);
+  const externalBySource = useExternalEvents((s) => s.bySource);
+  const externalByDate = useMemo(() => groupByDate(externalBySource), [externalBySource]);
+  useEffect(() => {
+    if (currentView !== 'calendar') return;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const next = month === 11 ? { y: year + 1, m: 1 } : { y: year, m: month + 2 };
+    setExternalRange({ from: `${year}-${pad(month + 1)}-01`, to: `${next.y}-${pad(next.m)}-01` });
+  }, [currentView, year, month, setExternalRange]);
+
   if (currentView !== 'calendar') return null;
 
   const firstDay    = new Date(year, month, 1);
@@ -335,6 +350,7 @@ export function CalendarView() {
               const isPast     = dateStr < todayStr;
               const items = [
                 ...dayEvents.map((ev) => ({ kind: 'event' as const, ev })),
+                ...(externalByDate[dateStr] ?? []).map((ex) => ({ kind: 'external' as const, ex })),
                 ...dayTasks.map((task) => ({ kind: 'task' as const, task })),
               ];
               const shown = items.length > cellCapacity ? items.slice(0, cellCapacity - 1) : items;
@@ -378,7 +394,9 @@ export function CalendarView() {
                     {dayNum}
                   </span>
                   {shown.map((item) =>
-                    item.kind === 'event' ? (
+                    item.kind === 'external' ? (
+                      <ExternalEventChip key={`${item.ex.source}:${item.ex.id}:${item.ex.date}`} ev={item.ex} />
+                    ) : item.kind === 'event' ? (
                       <button
                         key={item.ev.id}
                         type="button"
@@ -506,6 +524,15 @@ export function CalendarView() {
 
               {/* Divider */}
               <div className="border-t border-[var(--border)]" />
+
+              {/* Eventos de otras apps, de solo lectura (R22 de specs/extensiones) */}
+              {selectedDate && (externalByDate[selectedDate]?.length ?? 0) > 0 && (
+                <div className="space-y-1.5">
+                  {externalByDate[selectedDate].map((ex) => (
+                    <ExternalEventRow key={`${ex.source}:${ex.id}`} ev={ex} />
+                  ))}
+                </div>
+              )}
 
               {/* Tasks section */}
               <div>
@@ -894,3 +921,39 @@ export function CalendarView() {
     </div>
   );
 }
+
+/** Evento de otra app en una celda: borde punteado y se abre en su app. */
+function ExternalEventChip({ ev }: { ev: ExternalEvent }) {
+  const language = useAppStore((s) => s.language);
+  const source = extensionText(language, ev.source, 'name');
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); if (ev.url) void fs.openUrl(ev.url); }}
+      title={`${ev.title} · ${source}`}
+      className="flex w-full items-center gap-1 truncate rounded-md border border-dashed border-sky-500/50 bg-sky-500/5 px-1.5 py-px text-left text-[10px] text-[var(--text-secondary)]"
+    >
+      {ev.time && <span className="shrink-0 opacity-70">{ev.time}</span>}
+      <span className="truncate">{ev.title}</span>
+    </button>
+  );
+}
+
+/** Evento de otra app en el panel del día seleccionado. */
+function ExternalEventRow({ ev }: { ev: ExternalEvent }) {
+  const language = useAppStore((s) => s.language);
+  return (
+    <button
+      type="button"
+      onClick={() => { if (ev.url) void fs.openUrl(ev.url); }}
+      className="w-full rounded-xl border border-dashed border-sky-500/50 bg-sky-500/5 px-3 py-2 text-left text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
+    >
+      <p className="truncate text-xs font-medium">{ev.title}</p>
+      <p className="mt-0.5 flex items-center gap-1 text-[10px] opacity-70">
+        {ev.time ? <><Clock size={9} /> {ev.time}</> : <><CalendarDays size={9} /> {t(language, 'calendar', 'allDayBadge')}</>}
+        <span>· {extensionText(language, ev.source, 'name')}</span>
+      </p>
+    </button>
+  );
+}
+

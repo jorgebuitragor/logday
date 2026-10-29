@@ -2,6 +2,9 @@ import { Monitor, Sun, Moon, Minus, Plus, Type, ChevronDown, AlertTriangle, Eye,
 import { useState } from 'react';
 import { Theme, CustomTheme } from '../../types/theme';
 import { StartupScreen } from '../../types/config';
+import { useExtensions } from '../../extensions/useExtensions';
+import { extensionSection } from '../../extensions/state';
+import { extensionText } from '../../extensions/text';
 import { Language } from '../../types/common';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
@@ -45,12 +48,12 @@ export function GeneralSettingsTab({ isStartupSelectorOpen, setIsStartupSelector
     theme, setTheme,
     customThemes, renameCustomTheme, duplicateCustomTheme, deleteCustomTheme,
     startupScreen, setStartupScreen,
-    notesViewDefault, setNotesViewDefault,
     fontSize, setFontSize,
     confirmDestructiveActions,
     sidebarLabelsVisible, setSidebarLabelsVisible,
   } = useAppStore();
 
+  const enabledExtensions = useExtensions().enabled;
   const [editingCustomTheme, setEditingCustomTheme] = useState<CustomTheme | 'new' | null>(null);
   const [showAllCustomThemes, setShowAllCustomThemes] = useState(false);
   const [visibleCustomCount, setVisibleCustomCount] = useState(6);
@@ -58,13 +61,22 @@ export function GeneralSettingsTab({ isStartupSelectorOpen, setIsStartupSelector
   const [renamingThemeId, setRenamingThemeId] = useState<string | null>(null);
   const confirmDeleteThemeDialog = useConfirmDelete<CustomTheme>(confirmDestructiveActions);
 
-  const startupScreenOptions = STARTUP_SCREEN_VALUES.map((value) => ({
-    value,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    label: t(language, 'settings', `startup${value.charAt(0).toUpperCase() + value.slice(1)}` as any),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    desc: t(language, 'settings', `startupDesc${value.charAt(0).toUpperCase() + value.slice(1)}` as any),
-  }));
+  const startupScreenOptions: { value: StartupScreen; label: string; desc: string }[] = [
+    ...STARTUP_SCREEN_VALUES.map((value) => ({
+      value,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      label: t(language, 'settings', `startup${value.charAt(0).toUpperCase() + value.slice(1)}` as any),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      desc: t(language, 'settings', `startupDesc${value.charAt(0).toUpperCase() + value.slice(1)}` as any),
+    })),
+    // Las vistas de las extensiones activas también pueden ser la pantalla
+    // de inicio (specs/extensiones R13).
+    ...enabledExtensions.filter((def) => def.view).map((def) => ({
+      value: extensionSection(def.id) as StartupScreen,
+      label: extensionText(language, def.id, 'name'),
+      desc: extensionText(language, def.id, 'description'),
+    })),
+  ];
   const themeOptions = THEME_VALUES.map(({ value, Icon }) => {
     const keySuffix = value
       .split('-')
@@ -326,32 +338,6 @@ export function GeneralSettingsTab({ isStartupSelectorOpen, setIsStartupSelector
       zIndex={Z_MODAL_NESTED}
     />
   )}
-
-  {/* Notes view section */}
-  <div>
-    <p className="mb-1 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
-      {t(language, 'settings', 'notesViewDefault')}
-    </p>
-    <p className="mb-3 text-[11px] text-[var(--text-hint)]">{t(language, 'settings', 'notesViewDefaultHint')}</p>
-    <div className="flex gap-2">
-      {([
-        { value: 'list', label: t(language, 'settings', 'notesViewOptionList') },
-        { value: 'tree', label: t(language, 'settings', 'notesViewOptionTree') },
-      ] as const).map((opt) => (
-        <button
-          key={opt.value}
-          onClick={() => setNotesViewDefault(opt.value)}
-          className={`flex-1 rounded-xl border px-4 py-3 text-sm font-medium transition ${
-            notesViewDefault === opt.value
-              ? 'border-indigo-500/60 bg-indigo-500/10 text-indigo-400'
-              : 'border-[var(--border-card)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:border-[var(--border-high)] hover:text-[var(--text-secondary)]'
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  </div>
 
   {/* Startup screen section */}
   <div>

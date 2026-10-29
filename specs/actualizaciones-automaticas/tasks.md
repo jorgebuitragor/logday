@@ -52,6 +52,15 @@ al menos un tag `v*` real).
       (`src/lib/invoke.ts`).
 - [x] i18n es/en (`src/lib/i18n.ts`, namespace `settings`).
 
+## Acerca de: versión, novedades y licencia (28 oct 2026)
+
+- [x] `src/lib/releases.ts` y sus pruebas (fecha local por versión,
+      `fetchRelease` con y sin red, copyright y licencia iguales a la
+      configuración).
+- [x] Fecha de la última actualización, "Qué trae esta versión",
+      "Historial de versiones" y la sección Licencia en
+      `AboutSettingsTab.tsx`, con textos en es y en.
+
 ## Validación
 
 - [x] `tsc --noEmit` / `eslint` / `cargo check` en verde.

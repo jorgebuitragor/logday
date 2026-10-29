@@ -47,10 +47,14 @@ Usa la API v3 de OpenProject con el token de API personal del usuario
   usuario, no por `me`. Solo se aceptan ids `customField<n>`. Un campo
   que no está en todos los proyectos se busca dentro de cada proyecto
   activo, saltando los proyectos donde no existe.
+- P4c. El panel DEBERÁ permitir traer también los work packages cerrados
+  (apagado por defecto). Pedido por Jorge el 29 oct 2026: en la FCV la
+  mayoría de sus tareas ya están liberadas.
 - P5. Cada tarea DEBERÁ llevar:
   - el asunto como título;
   - como código, el valor del campo de texto que el usuario elija en
-    "Código de la tarea" (en la FCV, "Tarea"), o `OP-<número>` si no
+    "Código de la tarea" (en la FCV, "Tarea", que se elige sola si existe),
+    o `OP-<número>` si no
     elige ninguno o el work package no lo tiene. Si ese código ya lo usa
     otra tarea, va `OP-<número>`;
   - la fecha de fin (o la del hito);
@@ -70,6 +74,11 @@ Usa la API v3 de OpenProject con el token de API personal del usuario
   (`percentageDone`) en su campo de progreso (`progress`, logday#36). En
   cada importación se actualiza con la misma regla de P5c: solo si el
   usuario no lo cambió en Logday.
+- P5e. El estado de la tarea DEBERÁ seguir al de OpenProject, con la regla
+  de P5c:
+  - un estado que OpenProject cuenta como cerrado (`isClosed`) → hecha;
+  - uno que empieza por "En " o "In " ("En Desarrollo") → en progreso;
+  - el resto → por hacer.
 - P6. Un work package ya importado NO DEBERÁ importarse otra vez ni pisar
   la tarea, aunque cambie en OpenProject: el usuario pudo editarla, y las
   escrituras van por LWW y el CRDT. Lo que se haga en Logday tampoco

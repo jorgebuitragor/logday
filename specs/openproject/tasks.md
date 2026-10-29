@@ -43,4 +43,15 @@ Estado: en progreso.
 - [x] Avance (%) desde `percentageDone` en `Task.progress` (29 oct 2026),
   con la rama de logday#36 mergeada en esta. El campo es de la sesión de
   progreso: servidor, Desktop, Web y Mobile.
+- [x] Estructura real de la FCV (29 oct 2026), con un script que Jorge
+  corrió con su token, sin pasarlo al chat:
+  - no tiene nada como Asignado: es Responsable Desarrollo (35 abiertos,
+    328 en total), Responsable Análisis (25 y 178) y Autor (30);
+  - las épicas son áreas ("Medico Asistencial", "Corporativo
+    Financiero") o apps ("App Autenticador (SoyFCV)"), con Features
+    (versiones) debajo;
+  - "Tarea" (`customField2`) es el número de ticket;
+  - muchos estados son de la FCV (Liberado, Producción: cerrados).
+- [x] Traer los cerrados, estado según OpenProject y "Tarea" por
+  defecto (29 oct 2026). Revisado en el navegador.
 - [ ] Probarlo en la QA con el OpenProject de la FCV.

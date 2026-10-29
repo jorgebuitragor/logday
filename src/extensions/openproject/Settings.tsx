@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { invoke } from '@tauri-apps/api/core';
 import { AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, Download, Lightbulb, LogIn, LogOut } from 'lucide-react';
@@ -64,6 +64,14 @@ function CustomFieldsSection({ language, codeField, personFields, onCodeField, o
   ];
   const textFields = withSelected('text', codeField ? [codeField] : []);
   const userFields = withSelected('user', personFields);
+  // P5: si no se eligió ningún campo de código y hay uno llamado "Tarea"
+  // (como en la FCV), se toma ese.
+  useEffect(() => {
+    if (codeField || !available) return;
+    const tarea = available.find((f) => f.kind === 'text' && /^(tarea|task)$/i.test(f.name.trim()));
+    if (tarea) onCodeField({ id: tarea.id, name: tarea.name });
+  }, [available, codeField, onCodeField]);
+
   const toggle = (field: PersonField, on: boolean) =>
     onPersonFields(on ? [...personFields.filter((s) => s.id !== field.id), field] : personFields.filter((s) => s.id !== field.id));
   const loading = available === null && !error;
@@ -173,6 +181,11 @@ export default function OpenProjectSettings() {
     }
   };
 
+  const setCodeField = useCallback(
+    (field: PersonField | null) => void update(OPENPROJECT_ID, { codeField: field ?? undefined }),
+    [update],
+  );
+
   const saveProject = () => {
     const name = projectSlug(project);
     setProject(name);
@@ -252,10 +265,18 @@ export default function OpenProjectSettings() {
           language={language}
           codeField={settings.codeField}
           personFields={settings.personFields}
-          onCodeField={(field) => void update(OPENPROJECT_ID, { codeField: field ?? undefined })}
+          onCodeField={setCodeField}
           onPersonFields={(fields) => void update(OPENPROJECT_ID, { personFields: fields })}
         />
       )}
+
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[var(--text-secondary)]">{t(language, 'openproject', 'includeClosed')}</p>
+          <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'openproject', 'includeClosedDesc')}</p>
+        </div>
+        <ToggleSwitch checked={settings.includeClosed} onChange={(v) => void update(OPENPROJECT_ID, { includeClosed: v })} />
+      </div>
 
       <div className="flex items-center justify-between gap-3">
         <div>

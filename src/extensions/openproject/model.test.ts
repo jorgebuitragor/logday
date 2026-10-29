@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { PAGE_1, PAGE_2 } from './fixtures';
 import {
-  DEFAULT_PROJECT, UnexpectedFormatError, isEpicType, parseProjectIds, parseWorkPackageRef, parseWorkPackages, placement, projectSlug, readOpenProjectSettings, workPackageToTask,
+  DEFAULT_PROJECT, UnexpectedFormatError, isEpicType, logdayStatus, parseClosedStatuses, parseProjectIds, parseWorkPackageRef, parseWorkPackages, placement, projectSlug, readOpenProjectSettings, workPackageToTask,
 } from './model';
 
 const texts = { open: 'Abrir en OpenProject', project: 'Proyecto', type: 'Tipo', status: 'Estado', priority: 'Prioridad', untitled: 'Work package' };
 
 describe('configuración de OpenProject', () => {
   it('valores por defecto y lectura defensiva', () => {
-    expect(readOpenProjectSettings(undefined)).toEqual({ project: DEFAULT_PROJECT, personFields: [], managed: {}, auto: false, imported: {} });
+    expect(readOpenProjectSettings(undefined)).toEqual({ project: DEFAULT_PROJECT, personFields: [], managed: {}, includeClosed: false, auto: false, imported: {} });
     expect(readOpenProjectSettings({
       codeField: { id: 'customField2', name: 'Tarea' },
       managed: { 1234: { code: 'T-1', project: 'openproject/app', progress: 40 }, 9: { code: 1 } },
@@ -95,6 +95,22 @@ describe('código, avance y épica (P5, P5b)', () => {
     const t = { open: 'Abrir', project: 'P', type: 'T', status: 'S', priority: 'Pr', untitled: 'WP' };
     expect(workPackageToTask({ id: '7', subject: 'X', description: '', ancestors: [], code: 'TAR-1' }, 'https://op', t).taskCode).toBe('TAR-1');
     expect(workPackageToTask({ id: '7', subject: 'X', description: '', ancestors: [] }, 'https://op', t).taskCode).toBe('OP-7');
+  });
+});
+
+describe('estado de la tarea (P5e)', () => {
+  it('cerrados → hecha; "En …" → en progreso; el resto → por hacer', () => {
+    const closed = parseClosedStatuses(JSON.stringify({ _embedded: { elements: [
+      { name: 'Liberado', isClosed: true }, { name: 'Producción', isClosed: true }, { name: 'En Desarrollo', isClosed: false }, { name: 'x' },
+    ] } }));
+    expect([...closed]).toEqual(['Liberado', 'Producción']);
+    expect(logdayStatus('Liberado', closed)).toBe('done');
+    expect(logdayStatus('En Desarrollo', closed)).toBe('in-progress');
+    expect(logdayStatus('In progress', closed)).toBe('in-progress');
+    expect(logdayStatus('Por Verificar', closed)).toBe('todo');
+    expect(logdayStatus('LiberarEspacio(Por verificar)', closed)).toBe('todo');
+    expect(logdayStatus(undefined, closed)).toBe('todo');
+    expect(() => parseClosedStatuses('<html>')).toThrow(UnexpectedFormatError);
   });
 });
 

@@ -93,7 +93,16 @@ pub fn is_custom_field(id: &str) -> bool {
 /// Con `project` (su id), dentro de ese proyecto: un campo personalizado
 /// que no está en todos los proyectos solo se acepta así (en la FCV, fuera
 /// de un proyecto, "Cf 11 no existe").
-pub fn work_packages_url(base: &Url, role: &str, user_id: &str, project: Option<u64>, page: u32) -> Result<Url, &'static str> {
+///
+/// Con `closed`, también los cerrados (P4c): sin el filtro de estado.
+pub fn work_packages_url(
+    base: &Url,
+    role: &str,
+    user_id: &str,
+    project: Option<u64>,
+    closed: bool,
+    page: u32,
+) -> Result<Url, &'static str> {
     let value = if ROLES.contains(&role) {
         "me"
     } else if is_custom_field(role) && !user_id.is_empty() && user_id.chars().all(|c| c.is_ascii_digit()) {
@@ -101,7 +110,10 @@ pub fn work_packages_url(base: &Url, role: &str, user_id: &str, project: Option<
     } else {
         return Err("invalid_role");
     };
-    let filters = format!(r#"[{{"{role}":{{"operator":"=","values":["{value}"]}}}},{{"status":{{"operator":"o","values":[]}}}}]"#);
+    let status = if closed { "*" } else { "o" };
+    let filters = format!(
+        r#"[{{"{role}":{{"operator":"=","values":["{value}"]}}}},{{"status":{{"operator":"{status}","values":[]}}}}]"#
+    );
     let path = match project {
         Some(id) => format!("/api/v3/projects/{id}/work_packages"),
         None => "/api/v3/work_packages".to_string(),
@@ -315,13 +327,29 @@ pub async fn openproject_disconnect(app: AppHandle) -> Result<(), String> {
 /// usuario está en `role` (`assignee`, `responsible` o `customField<n>`),
 /// en el JSON de OpenProject, que el webview lee como datos.
 #[tauri::command]
-pub async fn openproject_work_packages(app: AppHandle, role: String, project: Option<u64>, page: u32) -> Result<String, String> {
+pub async fn openproject_work_packages(
+    app: AppHandle,
+    role: String,
+    project: Option<u64>,
+    closed: Option<bool>,
+    page: u32,
+) -> Result<String, String> {
     if !(1..=MAX_PAGE).contains(&page) {
         return Err("invalid_page".into());
     }
     let (base, token) = credentials(&app).await?;
     let user = if is_custom_field(&role) { user_id(&base, &token).await? } else { String::new() };
-    get(work_packages_url(&base, &role, &user, project, page)?, &token).await.map_err(String::from)
+    get(work_packages_url(&base, &role, &user, project, closed.unwrap_or(false), page)?, &token)
+        .await
+        .map_err(String::from)
+}
+
+/// P5e: los estados de ese OpenProject, con si cuentan como cerrados, para
+/// poner el estado de la tarea en Logday.
+#[tauri::command]
+pub async fn openproject_statuses(app: AppHandle) -> Result<String, String> {
+    let (base, token) = credentials(&app).await?;
+    get(api(&base, "/api/v3/statuses")?, &token).await.map_err(String::from)
 }
 
 /// P5b: un work package por su id, para saber el tipo de sus ancestros
@@ -441,7 +469,7 @@ mod tests {
     #[test]
     fn consulta_de_work_packages() {
         let base = validate_url("https://op.fcv.org/openproject").unwrap();
-        let url = work_packages_url(&base, "assignee", "", None, 2).unwrap();
+        let url = work_packages_url(&base, "assignee", "", None, false, 2).unwrap();
         assert_eq!(url.path(), "/openproject/api/v3/work_packages");
         let q: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
         let filters: Value = serde_json::from_str(&q["filters"]).unwrap();
@@ -449,22 +477,24 @@ mod tests {
         assert_eq!(filters[1]["status"]["operator"], "o");
         assert_eq!(q["offset"], "2");
         assert_eq!(q["pageSize"], "100");
-        let url = work_packages_url(&base, "responsible", "", None, 1).unwrap();
+        let url = work_packages_url(&base, "responsible", "", None, false, 1).unwrap();
         let q: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
         let filters: Value = serde_json::from_str(&q["filters"]).unwrap();
         assert_eq!(filters[0]["responsible"]["operator"], "=");
         assert_eq!(filters[0]["responsible"]["values"][0], "me");
         // Un campo personalizado va con el id del usuario.
-        let url = work_packages_url(&base, "customField12", "57", Some(46), 1).unwrap();
+        let url = work_packages_url(&base, "customField12", "57", Some(46), true, 1).unwrap();
         let q: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
         let filters: Value = serde_json::from_str(&q["filters"]).unwrap();
         assert_eq!(filters[0]["customField12"]["values"][0], "57");
         assert_eq!(url.path(), "/openproject/api/v3/projects/46/work_packages");
+        // Con los cerrados (P4c), el estado es "cualquiera".
+        assert_eq!(filters[1]["status"]["operator"], "*");
         // Solo esos campos: el webview no arma filtros a su gusto.
-        assert_eq!(work_packages_url(&base, "author", "", None, 1).unwrap_err(), "invalid_role");
-        assert_eq!(work_packages_url(&base, "customField12", "", None, 1).unwrap_err(), "invalid_role");
-        assert_eq!(work_packages_url(&base, "customField1\"}]", "5", None, 1).unwrap_err(), "invalid_role");
-        assert_eq!(work_packages_url(&base, "customField12", "5\"", None, 1).unwrap_err(), "invalid_role");
+        assert_eq!(work_packages_url(&base, "author", "", None, false, 1).unwrap_err(), "invalid_role");
+        assert_eq!(work_packages_url(&base, "customField12", "", None, false, 1).unwrap_err(), "invalid_role");
+        assert_eq!(work_packages_url(&base, "customField1\"}]", "5", None, false, 1).unwrap_err(), "invalid_role");
+        assert_eq!(work_packages_url(&base, "customField12", "5\"", None, false, 1).unwrap_err(), "invalid_role");
     }
 
     #[test]

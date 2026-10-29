@@ -4,6 +4,8 @@
 // La respuesta se lee como datos (P9): solo los campos que se usan, y si
 // no tiene la forma esperada se avisa en vez de crear tareas a medias.
 
+import type { TaskStatus } from '../../types/task';
+
 export const OPENPROJECT_ID = 'openproject' as const;
 export const DEFAULT_PROJECT = 'openproject';
 
@@ -35,6 +37,8 @@ export interface Managed {
   project: string;
   /** P5d: el avance que puso; sin valor si todavía no puso ninguno. */
   progress?: number;
+  /** P5e: el estado que puso. */
+  status?: TaskStatus;
 }
 
 export interface OpenProjectSettings {
@@ -51,6 +55,8 @@ export interface OpenProjectSettings {
   codeField?: PersonField;
   /** P5: id del work package → lo que la importación le puso. */
   managed: Record<string, Managed>;
+  /** P4c: traer también los work packages cerrados (como tareas hechas). */
+  includeClosed: boolean;
   auto: boolean;
   /** id del work package → id de la tarea de Logday (P6). */
   imported: Record<string, string>;
@@ -60,7 +66,7 @@ export interface OpenProjectSettings {
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 export function readOpenProjectSettings(raw: Record<string, unknown> | undefined): OpenProjectSettings {
-  const out: OpenProjectSettings = { project: DEFAULT_PROJECT, personFields: [], managed: {}, auto: false, imported: {} };
+  const out: OpenProjectSettings = { project: DEFAULT_PROJECT, personFields: [], managed: {}, includeClosed: false, auto: false, imported: {} };
   if (!raw) return out;
   if (typeof raw.account === 'string' && raw.account) out.account = raw.account;
   if (typeof raw.baseUrl === 'string' && /^https?:\/\//.test(raw.baseUrl)) out.baseUrl = raw.baseUrl;
@@ -79,10 +85,16 @@ export function readOpenProjectSettings(raw: Record<string, unknown> | undefined
   if (isObject(raw.managed)) {
     for (const [k, v] of Object.entries(raw.managed)) {
       if (isObject(v) && typeof v.code === 'string' && typeof v.project === 'string') {
-        out.managed[k] = { code: v.code, project: v.project, ...(typeof v.progress === 'number' ? { progress: v.progress } : {}) };
+        out.managed[k] = {
+          code: v.code,
+          project: v.project,
+          ...(typeof v.progress === 'number' ? { progress: v.progress } : {}),
+          ...(v.status === 'todo' || v.status === 'in-progress' || v.status === 'done' ? { status: v.status } : {}),
+        };
       }
     }
   }
+  if (raw.includeClosed === true) out.includeClosed = true;
   if (raw.auto === true) out.auto = true;
   if (raw.imported && typeof raw.imported === 'object' && !Array.isArray(raw.imported)) {
     for (const [k, v] of Object.entries(raw.imported as Record<string, unknown>)) {
@@ -198,6 +210,34 @@ export function parseWorkPackageRef(body: string): { type?: string; subject: str
   if (!isObject(json) || json._type !== 'WorkPackage') throw new UnexpectedFormatError('work_package');
   const links = isObject(json._links) ? json._links : {};
   return { type: linkTitle(links, 'type'), subject: (str(json.subject) ?? '').trim() };
+}
+
+/** P5e: los nombres de los estados que OpenProject cuenta como cerrados
+ *  (`/api/v3/statuses`, `isClosed`). */
+export function parseClosedStatuses(body: string): Set<string> {
+  let json: unknown;
+  try {
+    json = JSON.parse(body);
+  } catch {
+    throw new UnexpectedFormatError('json');
+  }
+  if (!isObject(json) || !isObject(json._embedded) || !Array.isArray(json._embedded.elements)) {
+    throw new UnexpectedFormatError('statuses');
+  }
+  return new Set(
+    json._embedded.elements
+      .filter((s): s is Record<string, unknown> => isObject(s) && s.isClosed === true && typeof s.name === 'string')
+      .map((s) => (s.name as string).trim()),
+  );
+}
+
+/** P5e: el estado de la tarea en Logday según el de OpenProject: los
+ *  cerrados, hechas; los que dicen que algo se está haciendo ("En
+ *  Desarrollo", "In progress"), en progreso; el resto, por hacer. */
+export function logdayStatus(status: string | undefined, closed: Set<string>): TaskStatus {
+  const s = (status ?? '').trim();
+  if (closed.has(s)) return 'done';
+  return /^(en|in)\s/i.test(s) ? 'in-progress' : 'todo';
 }
 
 export const isEpicType = (type: string | undefined) => !!type && /^(epic|[eé]pica)$/i.test(type.trim());

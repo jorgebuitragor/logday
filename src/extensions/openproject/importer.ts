@@ -8,8 +8,8 @@ import type { Task } from '../../types/task';
 import { fs } from '../../lib/invoke';
 import { projectDir, readTaskFromPath } from '../../store/appStore';
 import {
-  OPENPROJECT_ID, UnexpectedFormatError, parseProjectIds, parseWorkPackageRef, parseWorkPackages, placement, projectSlug,
-  readOpenProjectSettings, workPackageToTask, type Managed, type WorkPackage,
+  OPENPROJECT_ID, UnexpectedFormatError, logdayStatus, parseClosedStatuses, parseProjectIds, parseWorkPackageRef,
+  parseWorkPackages, placement, projectSlug, readOpenProjectSettings, workPackageToTask, type Managed, type WorkPackage,
 } from './model';
 
 const MAX_PAGES = 20; // como en Rust: hasta 2000 por rol
@@ -24,10 +24,10 @@ function errorCode(err: unknown): string {
 }
 
 /** Todas las páginas de una consulta (P4). */
-async function fetchAll(role: string, codeField: string | undefined, project?: number): Promise<WorkPackage[]> {
+async function fetchAll(role: string, codeField: string | undefined, closed: boolean, project?: number): Promise<WorkPackage[]> {
   const out: WorkPackage[] = [];
   for (let page = 1; page <= MAX_PAGES; page++) {
-    const body = await invoke<string>('openproject_work_packages', { role, project: project ?? null, page });
+    const body = await invoke<string>('openproject_work_packages', { role, project: project ?? null, closed, page });
     const { items, total } = parseWorkPackages(body, codeField);
     out.push(...items);
     if (!items.length || out.length >= total) break;
@@ -81,22 +81,23 @@ async function run(): Promise<ImportResult> {
   try {
     if (!settings.account || !settings.baseUrl) throw 'needs_connect';
     const codeField = settings.codeField?.id;
+    const withClosed = settings.includeClosed;
     // 1. Todos los abiertos donde está el usuario (P4, P4b).
     const byId = new Map<string, WorkPackage>();
     const add = (items: WorkPackage[]) => { for (const wp of items) if (!byId.has(wp.id)) byId.set(wp.id, wp); };
-    for (const role of ROLES) add(await fetchAll(role, codeField));
+    for (const role of ROLES) add(await fetchAll(role, codeField, withClosed));
     // P4b: un campo personalizado que no está en todos los proyectos solo
     // se acepta dentro de cada uno (en la FCV, fuera: "Cf 11 no existe").
     let projects: number[] | null = null;
     for (const field of settings.personFields) {
       try {
-        add(await fetchAll(field.id, codeField));
+        add(await fetchAll(field.id, codeField, withClosed));
       } catch (err) {
         if (err !== 'bad_request') throw err;
         projects ??= await activeProjects();
         for (const project of projects) {
           try {
-            add(await fetchAll(field.id, codeField, project));
+            add(await fetchAll(field.id, codeField, withClosed, project));
           } catch (e) {
             if (typeof e !== 'string' || !SKIP_PROJECT.has(e)) throw e;
           }
@@ -116,6 +117,16 @@ async function run(): Promise<ImportResult> {
         refs.set(id, undefined);
       }
     }
+    // P5e: qué estados cuentan como cerrados en ese OpenProject. Si no se
+    // pueden leer, nada se marca como hecho.
+    let closedStatuses = new Set<string>();
+    try {
+      closedStatuses = parseClosedStatuses(await invoke<string>('openproject_statuses'));
+    } catch (err) {
+      if (typeof err !== 'string' && !(err instanceof UnexpectedFormatError)) throw err;
+    }
+    const statusOf = (wp: WorkPackage) => logdayStatus(wp.status, closedStatuses);
+
     const base = projectSlug(settings.project);
     const projectOf = new Map(all.map((wp) => [wp.id, placement(wp, base, (id) => refs.get(id))]));
 
@@ -152,7 +163,7 @@ async function run(): Promise<ImportResult> {
     const managed = { ...settings.managed };
     const save = () => store().updateExtensionSettings(OPENPROJECT_ID, { imported, managed });
 
-    // 4. P5c, P5d: las ya importadas se corrigen (código, proyecto y avance)
+    // 4. P5c–P5e: las ya importadas se corrigen (código, proyecto, avance y estado)
     //    solo si el usuario no los cambió: si siguen como los dejó la
     //    importación.
     let updated = 0;
@@ -171,7 +182,12 @@ async function run(): Promise<ImportResult> {
       // P5d: el avance sigue al de OpenProject mientras el usuario no lo cambie.
       const progressMine = task.progress === prev.progress;
       if (progressMine && wp.progress !== undefined && wp.progress !== prev.progress) next.progress = wp.progress;
-      if (next.taskCode !== task.taskCode || next.project !== task.project || next.progress !== task.progress) {
+      // P5e: el estado, igual. Las importadas antes de P5e quedaron "por hacer".
+      const prevStatus = prev.status ?? 'todo';
+      const statusMine = task.status === prevStatus;
+      const status = statusOf(wp);
+      if (statusMine && status !== prevStatus) next.status = status;
+      if (next.taskCode !== task.taskCode || next.project !== task.project || next.progress !== task.progress || next.status !== task.status) {
         if (next.project !== task.project) await ensureProject(next.project);
         if (next.taskCode !== task.taskCode) {
           if (task.taskCode) codeOwner.delete(task.taskCode);
@@ -187,6 +203,7 @@ async function run(): Promise<ImportResult> {
         code: (task.taskCode ?? '') === prev.code ? (next.taskCode ?? '') : prev.code,
         project: task.project === prev.project ? next.project : prev.project,
         ...(progress !== undefined ? { progress } : {}),
+        status: statusMine ? next.status : prevStatus,
       };
       await save();
     }
@@ -203,11 +220,17 @@ async function run(): Promise<ImportResult> {
         tags: ['openproject'],
         ...(due ? { due } : {}),
         ...(wp.progress !== undefined ? { progress: wp.progress } : {}),
+        status: statusOf(wp),
         open: false,
       });
       codeOwner.set(taskCode, task.id);
       imported[wp.id] = task.id;
-      managed[wp.id] = { code: task.taskCode ?? '', project, ...(task.progress !== undefined ? { progress: task.progress } : {}) };
+      managed[wp.id] = {
+        code: task.taskCode ?? '',
+        project,
+        ...(task.progress !== undefined ? { progress: task.progress } : {}),
+        status: task.status,
+      };
       created++;
       // Se guarda tras cada tarea: si algo falla a mitad, lo creado ya no
       // se repite en la próxima importación.

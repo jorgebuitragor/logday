@@ -128,6 +128,23 @@ export function parseWorkPackages(body: string): WorkPackagePage {
   return { items, total: typeof json.total === 'number' ? json.total : items.length };
 }
 
+/** P4b: los ids de una página de `/api/v3/projects`. */
+export function parseProjectIds(body: string): { ids: number[]; total: number } {
+  let json: unknown;
+  try {
+    json = JSON.parse(body);
+  } catch {
+    throw new UnexpectedFormatError('json');
+  }
+  if (!isObject(json) || !isObject(json._embedded) || !Array.isArray(json._embedded.elements)) {
+    throw new UnexpectedFormatError('projects');
+  }
+  const ids = json._embedded.elements
+    .map((el) => (isObject(el) && typeof el.id === 'number' && Number.isInteger(el.id) && el.id > 0 ? el.id : null))
+    .filter((id): id is number => id !== null);
+  return { ids, total: typeof json.total === 'number' ? json.total : ids.length };
+}
+
 // ── La tarea ──────────────────────────────────────────────────────────
 
 export interface TaskTexts {

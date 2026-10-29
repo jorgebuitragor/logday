@@ -16,7 +16,7 @@ const INPUT_CLS =
   'min-w-0 flex-1 rounded-lg border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-hint)] focus:border-indigo-500 focus:outline-none';
 
 const KNOWN_ERRORS = new Set([
-  'invalid_url', 'not_https', 'missing_token', 'unauthorized', 'forbidden', 'not_found', 'not_openproject', 'redirected',
+  'invalid_url', 'not_https', 'missing_token', 'bad_request', 'unauthorized', 'forbidden', 'not_found', 'not_openproject', 'redirected',
   'rate_limited', 'provider_error', 'timeout', 'network', 'too_big', 'needs_connect', 'unexpected_format', 'keychain_error',
 ]);
 

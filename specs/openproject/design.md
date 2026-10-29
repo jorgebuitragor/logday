@@ -15,7 +15,12 @@
   - `<role> = me`, con `role` solo `assignee` o `responsible`: la API une
     los filtros con "y", así que son dos consultas;
   - o `customField<n> = <id del usuario>` para los campos de persona
-    elegidos (P4b); el id sale de `/users/me` y queda en memoria;
+    elegidos (P4b); el id sale de `/users/me` y queda en memoria. Si
+    OpenProject no acepta el filtro fuera de un proyecto (400: el campo
+    no está en todos), el importador repite la consulta en cada proyecto
+    activo (`openproject_projects`, y `project` en
+    `/api/v3/projects/<id>/work_packages`) y salta los que dan 400, 403 o
+    404;
   - `status o` (abiertos);
   - `sortBy updatedAt desc`.
 - `openproject_person_fields()`: los `customField<n>` de

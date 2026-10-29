@@ -26,4 +26,8 @@ Estado: en progreso.
 - [x] "Buscar también por" con los campos personalizados de persona,
   como "Responsable Desarrollo" (29 oct 2026). Revisado en el navegador:
   busca por los tres campos y no duplica.
+- [x] En la FCV, la lista de filtros falla con sesión: los campos se
+  prueban uno por uno. Fuera de un proyecto, "Cf 11 no existe": se busca
+  en cada proyecto (verificado sin sesión en un proyecto público, con el
+  id de un miembro, el 29 oct 2026).
 - [ ] Importar en la QA un work package real (asignado o responsable).

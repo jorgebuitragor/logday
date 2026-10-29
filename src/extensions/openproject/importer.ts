@@ -5,7 +5,7 @@ import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import { nowInstant } from '../../lib/localDate';
 import {
-  OPENPROJECT_ID, UnexpectedFormatError, parseWorkPackages, projectSlug, readOpenProjectSettings, workPackageToTask,
+  OPENPROJECT_ID, UnexpectedFormatError, parseProjectIds, parseWorkPackages, projectSlug, readOpenProjectSettings, workPackageToTask,
   type WorkPackage,
 } from './model';
 
@@ -19,6 +19,31 @@ function errorCode(err: unknown): string {
   if (err instanceof UnexpectedFormatError) return 'unexpected_format';
   return typeof err === 'string' ? err : 'unknown';
 }
+
+/** Todas las páginas de una consulta (P4). */
+async function fetchAll(role: string, project?: number): Promise<WorkPackage[]> {
+  const out: WorkPackage[] = [];
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const body = await invoke<string>('openproject_work_packages', { role, project: project ?? null, page });
+    const { items, total } = parseWorkPackages(body);
+    out.push(...items);
+    if (!items.length || out.length >= total) break;
+  }
+  return out;
+}
+
+async function activeProjects(): Promise<number[]> {
+  const ids: number[] = [];
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const { ids: pageIds, total } = parseProjectIds(await invoke<string>('openproject_projects', { page }));
+    ids.push(...pageIds);
+    if (!pageIds.length || ids.length >= total) break;
+  }
+  return ids;
+}
+
+// Un proyecto donde no está el campo, o que ya no se puede ver: se salta.
+const SKIP_PROJECT = new Set(['bad_request', 'forbidden', 'not_found']);
 
 let importing: Promise<number> | null = null;
 
@@ -36,13 +61,24 @@ async function run(): Promise<number> {
     if (!settings.account || !settings.baseUrl) throw 'needs_connect';
     // 1. Todos los abiertos donde está el usuario (P4, P4b).
     const byId = new Map<string, WorkPackage>();
-    for (const role of [...ROLES, ...settings.personFields.map((f) => f.id)]) {
-      let seen = 0;
-      for (let page = 1; page <= MAX_PAGES; page++) {
-        const { items, total } = parseWorkPackages(await invoke<string>('openproject_work_packages', { role, page }));
-        for (const wp of items) if (!byId.has(wp.id)) byId.set(wp.id, wp);
-        seen += items.length;
-        if (!items.length || seen >= total) break;
+    const add = (items: WorkPackage[]) => { for (const wp of items) if (!byId.has(wp.id)) byId.set(wp.id, wp); };
+    for (const role of ROLES) add(await fetchAll(role));
+    // P4b: un campo personalizado que no está en todos los proyectos solo
+    // se acepta dentro de cada uno (en la FCV, fuera: "Cf 11 no existe").
+    let projects: number[] | null = null;
+    for (const field of settings.personFields) {
+      try {
+        add(await fetchAll(field.id));
+      } catch (err) {
+        if (err !== 'bad_request') throw err;
+        projects ??= await activeProjects();
+        for (const project of projects) {
+          try {
+            add(await fetchAll(field.id, project));
+          } catch (e) {
+            if (typeof e !== 'string' || !SKIP_PROJECT.has(e)) throw e;
+          }
+        }
       }
     }
     const all = [...byId.values()];

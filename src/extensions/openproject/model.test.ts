@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PAGE_1, PAGE_2 } from './fixtures';
 import {
-  DEFAULT_PROJECT, UnexpectedFormatError, parseWorkPackages, projectSlug, readOpenProjectSettings, workPackageToTask,
+  DEFAULT_PROJECT, UnexpectedFormatError, parseProjectIds, parseWorkPackages, projectSlug, readOpenProjectSettings, workPackageToTask,
 } from './model';
 
 const texts = { open: 'Abrir en OpenProject', project: 'Proyecto', type: 'Tipo', status: 'Estado', priority: 'Prioridad', untitled: 'Work package' };
@@ -44,6 +44,14 @@ describe('lectura de la API v3 (P9)', () => {
   it('una respuesta que no es una colección avisa en vez de seguir', () => {
     expect(() => parseWorkPackages('<html>login</html>')).toThrow(UnexpectedFormatError);
     expect(() => parseWorkPackages(JSON.stringify({ _type: 'Error', message: 'x' }))).toThrow(UnexpectedFormatError);
+  });
+});
+
+describe('proyectos (P4b)', () => {
+  it('lee solo ids enteros positivos', () => {
+    const body = JSON.stringify({ _type: 'Collection', total: 3, _embedded: { elements: [{ id: 46 }, { id: '40' }, { id: 37 }, null] } });
+    expect(parseProjectIds(body)).toEqual({ ids: [46, 37], total: 3 });
+    expect(() => parseProjectIds('<html>')).toThrow(UnexpectedFormatError);
   });
 });
 

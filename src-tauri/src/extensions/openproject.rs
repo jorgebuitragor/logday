@@ -89,7 +89,11 @@ pub fn is_custom_field(id: &str) -> bool {
 /// (asignado, responsable o un campo personalizado de persona), los
 /// cambiados hace poco primero. En los campos personalizados va el id del
 /// usuario: `me` solo es seguro en los campos propios de OpenProject.
-pub fn work_packages_url(base: &Url, role: &str, user_id: &str, page: u32) -> Result<Url, &'static str> {
+///
+/// Con `project` (su id), dentro de ese proyecto: un campo personalizado
+/// que no está en todos los proyectos solo se acepta así (en la FCV, fuera
+/// de un proyecto, "Cf 11 no existe").
+pub fn work_packages_url(base: &Url, role: &str, user_id: &str, project: Option<u64>, page: u32) -> Result<Url, &'static str> {
     let value = if ROLES.contains(&role) {
         "me"
     } else if is_custom_field(role) && !user_id.is_empty() && user_id.chars().all(|c| c.is_ascii_digit()) {
@@ -98,7 +102,11 @@ pub fn work_packages_url(base: &Url, role: &str, user_id: &str, page: u32) -> Re
         return Err("invalid_role");
     };
     let filters = format!(r#"[{{"{role}":{{"operator":"=","values":["{value}"]}}}},{{"status":{{"operator":"o","values":[]}}}}]"#);
-    let mut url = api(base, "/api/v3/work_packages")?;
+    let path = match project {
+        Some(id) => format!("/api/v3/projects/{id}/work_packages"),
+        None => "/api/v3/work_packages".to_string(),
+    };
+    let mut url = api(base, &path)?;
     url.query_pairs_mut()
         .append_pair("filters", &filters)
         .append_pair("sortBy", r#"[["updatedAt","desc"]]"#)
@@ -157,6 +165,9 @@ pub fn filter_title(filter: &Value) -> Option<String> {
 pub fn status_error(status: u16) -> &'static str {
     match status {
         300..=399 => "redirected",
+        // Filtro que OpenProject no acepta (un campo que no está en ese
+        // proyecto, o un valor que no corresponde).
+        400 => "bad_request",
         401 => "unauthorized",
         403 => "forbidden",
         404 => "not_found",
@@ -300,13 +311,30 @@ pub async fn openproject_disconnect(app: AppHandle) -> Result<(), String> {
 /// usuario está en `role` (`assignee`, `responsible` o `customField<n>`),
 /// en el JSON de OpenProject, que el webview lee como datos.
 #[tauri::command]
-pub async fn openproject_work_packages(app: AppHandle, role: String, page: u32) -> Result<String, String> {
+pub async fn openproject_work_packages(app: AppHandle, role: String, project: Option<u64>, page: u32) -> Result<String, String> {
     if !(1..=MAX_PAGE).contains(&page) {
         return Err("invalid_page".into());
     }
     let (base, token) = credentials(&app).await?;
     let user = if is_custom_field(&role) { user_id(&base, &token).await? } else { String::new() };
-    get(work_packages_url(&base, &role, &user, page)?, &token).await.map_err(String::from)
+    get(work_packages_url(&base, &role, &user, project, page)?, &token).await.map_err(String::from)
+}
+
+/// P4b: una página (desde 1) de los proyectos activos que ve el usuario,
+/// para buscar en cada uno los campos personalizados que no están en
+/// todos.
+#[tauri::command]
+pub async fn openproject_projects(app: AppHandle, page: u32) -> Result<String, String> {
+    if !(1..=MAX_PAGE).contains(&page) {
+        return Err("invalid_page".into());
+    }
+    let (base, token) = credentials(&app).await?;
+    let mut url = api(&base, "/api/v3/projects")?;
+    url.query_pairs_mut()
+        .append_pair("filters", r#"[{"active":{"operator":"=","values":["t"]}}]"#)
+        .append_pair("pageSize", &PAGE_SIZE.to_string())
+        .append_pair("offset", &page.to_string());
+    get(url, &token).await.map_err(String::from)
 }
 
 #[derive(Serialize)]
@@ -395,7 +423,7 @@ mod tests {
     #[test]
     fn consulta_de_work_packages() {
         let base = validate_url("https://op.fcv.org/openproject").unwrap();
-        let url = work_packages_url(&base, "assignee", "", 2).unwrap();
+        let url = work_packages_url(&base, "assignee", "", None, 2).unwrap();
         assert_eq!(url.path(), "/openproject/api/v3/work_packages");
         let q: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
         let filters: Value = serde_json::from_str(&q["filters"]).unwrap();
@@ -403,21 +431,22 @@ mod tests {
         assert_eq!(filters[1]["status"]["operator"], "o");
         assert_eq!(q["offset"], "2");
         assert_eq!(q["pageSize"], "100");
-        let url = work_packages_url(&base, "responsible", "", 1).unwrap();
+        let url = work_packages_url(&base, "responsible", "", None, 1).unwrap();
         let q: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
         let filters: Value = serde_json::from_str(&q["filters"]).unwrap();
         assert_eq!(filters[0]["responsible"]["operator"], "=");
         assert_eq!(filters[0]["responsible"]["values"][0], "me");
         // Un campo personalizado va con el id del usuario.
-        let url = work_packages_url(&base, "customField12", "57", 1).unwrap();
+        let url = work_packages_url(&base, "customField12", "57", Some(46), 1).unwrap();
         let q: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
         let filters: Value = serde_json::from_str(&q["filters"]).unwrap();
         assert_eq!(filters[0]["customField12"]["values"][0], "57");
+        assert_eq!(url.path(), "/openproject/api/v3/projects/46/work_packages");
         // Solo esos campos: el webview no arma filtros a su gusto.
-        assert_eq!(work_packages_url(&base, "author", "", 1).unwrap_err(), "invalid_role");
-        assert_eq!(work_packages_url(&base, "customField12", "", 1).unwrap_err(), "invalid_role");
-        assert_eq!(work_packages_url(&base, "customField1\"}]", "5", 1).unwrap_err(), "invalid_role");
-        assert_eq!(work_packages_url(&base, "customField12", "5\"", 1).unwrap_err(), "invalid_role");
+        assert_eq!(work_packages_url(&base, "author", "", None, 1).unwrap_err(), "invalid_role");
+        assert_eq!(work_packages_url(&base, "customField12", "", None, 1).unwrap_err(), "invalid_role");
+        assert_eq!(work_packages_url(&base, "customField1\"}]", "5", None, 1).unwrap_err(), "invalid_role");
+        assert_eq!(work_packages_url(&base, "customField12", "5\"", None, 1).unwrap_err(), "invalid_role");
     }
 
     #[test]
@@ -447,6 +476,7 @@ mod tests {
     #[test]
     fn codigos_de_error() {
         assert_eq!(status_error(302), "redirected");
+        assert_eq!(status_error(400), "bad_request");
         assert_eq!(status_error(401), "unauthorized");
         assert_eq!(status_error(404), "not_found");
         assert_eq!(status_error(500), "provider_error");

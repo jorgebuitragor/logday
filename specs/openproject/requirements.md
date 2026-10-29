@@ -44,7 +44,9 @@ Usa la API v3 de OpenProject con el token de API personal del usuario
 - P4b. El panel DEBERÁ listar los campos personalizados de persona de ese
   OpenProject (como "Responsable Desarrollo" en la FCV) para elegir en
   cuáles buscar también al usuario. En ellos se filtra por el id del
-  usuario, no por `me`. Solo se aceptan ids `customField<n>`.
+  usuario, no por `me`. Solo se aceptan ids `customField<n>`. Un campo
+  que no está en todos los proyectos se busca dentro de cada proyecto
+  activo, saltando los proyectos donde no existe.
 - P5. Cada tarea DEBERÁ llevar:
   - el asunto como título;
   - el código `OP-<número>`;

@@ -80,19 +80,39 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # Firma estable de macOS (specs/actualizaciones-automaticas/design.md,
-      # "Firma estable en macOS"): sin los secrets APPLE_CERTIFICATE*, el
-      # build se firma ad hoc y cada versión vuelve a pedir la clave del
-      # llavero a quien usa extensiones. Se avisa en vez de fallar.
-      - name: Revisar el certificado de firma (macOS)
+      # "Firma estable en macOS"). El certificado "Logday" es autofirmado:
+      # si se le pasa a Tauri como APPLE_CERTIFICATE, solo busca identidades
+      # en las que macOS confía y falla ("failed to resolve signing
+      # identity", v1.1.0). Por eso se importa aquí, en un llavero temporal,
+      # y a Tauri solo se le da el nombre (APPLE_SIGNING_IDENTITY), igual que
+      # en el Mac de Jorge. Sin los secrets, se avisa y se firma ad hoc.
+      - name: Importar el certificado de firma (macOS)
         if: matrix.platform == 'macos-latest'
         shell: bash
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
           if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_SIGNING_IDENTITY" ]; then
             echo "::warning::Sin APPLE_CERTIFICATE / APPLE_SIGNING_IDENTITY: macOS se firma ad hoc y el llavero volverá a pedir la clave tras esta actualización."
+            exit 0
           fi
+          kc="$RUNNER_TEMP/logday-firma.keychain-db"
+          kp="$(openssl rand -hex 24)"
+          p12="$RUNNER_TEMP/logday-firma.p12"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$p12"
+          security create-keychain -p "$kp" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$kp" "$kc"
+          security import "$p12" -k "$kc" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kp" "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          rm -f "$p12"
+          # Sin -v: un certificado autofirmado aparece igual, como "no confiable".
+          security find-identity -p codesigning "$kc" | grep -F "\"$APPLE_SIGNING_IDENTITY\"" > /dev/null \
+            || { echo "::error::El certificado importado no se llama \"$APPLE_SIGNING_IDENTITY\"."; exit 1; }
+          echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY" >> "$GITHUB_ENV"
 
       - name: Build y publicar
         uses: tauri-apps/tauri-action@v0
@@ -100,12 +120,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS: el certificado autofirmado "Logday" (.p12 en base64) y su
-          # nombre. Tauri lo importa en un llavero temporal y firma con él;
-          # sin APPLE_ID no notariza. En Windows y Linux no se usan.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # macOS: APPLE_SIGNING_IDENTITY llega del paso anterior (GITHUB_ENV),
+          # solo si el certificado se importó. Sin APPLE_ID no notariza.
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Logday ${{ github.ref_name }}'

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatFence, parseFencedBlocks } from './fencedBlocks';
+import { formatFence, parseFencedBlocks, stripFencedBlocks } from './fencedBlocks';
 
 describe('bloques con cerca de un lenguaje (R24)', () => {
   const md = 'Texto\n\n```excalidraw\n{"a":1}\n```\n\n```js\nx()\n```\n\n```excalidraw\n{"b":2}\n```\n';
@@ -9,6 +9,11 @@ describe('bloques con cerca de un lenguaje (R24)', () => {
     expect(blocks.map((b) => b.code)).toEqual(['{"a":1}', '{"b":2}']);
     expect(md.slice(blocks[0].start, blocks[0].end)).toBe('```excalidraw\n{"a":1}\n```');
     expect(parseFencedBlocks(md, 'excalidraw-x')).toEqual([]);
+  });
+
+  it('quita los bloques de esos lenguajes y deja el resto', () => {
+    expect(stripFencedBlocks(md, ['excalidraw'])).toBe('Texto\n\n\n\n```js\nx()\n```\n\n\n');
+    expect(stripFencedBlocks(md, [])).toBe(md);
   });
 
   it('formatea y vuelve a leer igual', () => {

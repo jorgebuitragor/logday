@@ -32,8 +32,8 @@ export default function ExcalidrawBlock({ code, onEdit }: NoteBlockProps) {
       }))
       .then((el) => {
         if (!alive) return;
-        el.setAttribute('width', '100%');
-        el.removeAttribute('height');
+        // Tamaño natural, sin agrandar un dibujo pequeño; solo se achica
+        // si no cabe (CSS del contenedor).
         el.style.maxHeight = '420px';
         setSvg(el.outerHTML);
         setFailed(false);

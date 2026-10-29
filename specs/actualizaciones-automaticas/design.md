@@ -100,9 +100,12 @@ tres variables:
 - `APPLE_CERTIFICATE_PASSWORD`;
 - `APPLE_SIGNING_IDENTITY`: el nombre del certificado, "Logday".
 
-Tauri lo importa en un llavero temporal y firma con él. Sin `APPLE_ID`
-no notariza. Si faltan los secrets, el job de macOS avisa y firma ad hoc
-como antes. `tauri.conf.json` sigue con `"-"` para los builds locales
+El job de macOS importa el certificado en un llavero temporal y a Tauri
+solo le pasa el nombre, como en el Mac de Jorge. Si Tauri recibe el
+certificado él mismo (`APPLE_CERTIFICATE`), solo busca identidades en las
+que macOS confía, y un autofirmado no lo es: así falló el primer intento de
+v1.1.0 ("failed to resolve signing identity"). Sin `APPLE_ID` no notariza.
+Si faltan los secrets, el job de macOS avisa y firma ad hoc como antes. `tauri.conf.json` sigue con `"-"` para los builds locales
 sin certificado.
 
 **Crear el certificado (una sola vez, en el Mac de Jorge):**

@@ -62,6 +62,10 @@ Estado: en progreso.
 - [x] "Volver a importar las borradas" (29 oct 2026): Jorge borró el
   proyecto para empezar de cero, y la importación solo trajo 1 tarea
   nueva, porque cada work package entra una vez.
-- [ ] Volver a importar en la QA (con ese botón) y revisar las carpetas.
+- [x] QA con la FCV, con "Volver a importar las borradas" (29 oct 2026):
+  - 330 tareas en 100 carpetas de Feature;
+  - 307 en `<épica>/<feature>`, 21 solo con épica o solo con Feature, y 2 sin ninguna;
+  - estados: 294 hechas, 14 en progreso y 22 por hacer;
+  - 47 con `OP-<n>` porque no tienen "Tarea".
 - [ ] Decidir si se importan solo Tasks y Bugs (llegaron 33 Features, 1
   épica y 3 hitos como tareas).

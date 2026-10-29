@@ -6,7 +6,12 @@ import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import ToggleSwitch from '../../components/shared/ToggleSwitch';
 import { importFromOpenProject } from './importer';
-import { OPENPROJECT_ID, projectSlug, readOpenProjectSettings, type CustomField, type PersonField } from './model';
+import {
+  OPENPROJECT_ID, parseStatuses, projectSlug, readOpenProjectSettings, type CustomField, type OpenProjectSettings, type OpStatus,
+  type PersonField,
+} from './model';
+import { pushErrorText } from './pusher';
+import type { TaskStatus } from '../../types/task';
 
 const PRIMARY_CLS =
   'flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50';
@@ -119,6 +124,96 @@ function CustomFieldsSection({ language, codeField, personFields, onCodeField, o
         {available && userFields.length === 0 && <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'openproject', 'personFieldsNone')}</p>}
         {error && <p className="text-[10px] text-red-400">{error}</p>}
       </div>
+    </div>
+  );
+}
+
+const LOGDAY_STATUSES: TaskStatus[] = ['todo', 'in-progress', 'done'];
+
+/** P12: enviar a OpenProject el avance y el estado que cambies en Logday.
+ *  Apagado por defecto, con un aviso que lo dice. */
+function WriteBackSection({ language, settings, update }: {
+  language: 'es' | 'en';
+  settings: OpenProjectSettings;
+  update: (patch: Record<string, unknown>) => void;
+}) {
+  const [statuses, setStatuses] = useState<OpStatus[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const on = settings.writeBack;
+  const locale = language === 'en' ? 'en-US' : 'es-CO';
+
+  useEffect(() => {
+    if (!on) return;
+    let alive = true;
+    invoke<string>('openproject_statuses')
+      .then((body) => { if (alive) setStatuses(parseStatuses(body)); })
+      .catch((err) => { if (alive) setError(errorText(language, typeof err === 'string' ? err : undefined)); });
+    return () => { alive = false; };
+  }, [on, language]);
+
+  const pendingCount = Object.keys(settings.pending).length;
+  const last = settings.lastPush;
+
+  return (
+    <div className="space-y-2 rounded-lg border border-[var(--border-card)] px-3 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[var(--text-secondary)]">{t(language, 'openproject', 'writeBack')}</p>
+          <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'openproject', 'writeBackDesc')}</p>
+        </div>
+        <ToggleSwitch checked={on} onChange={(v) => update({ writeBack: v })} />
+      </div>
+
+      {on ? (
+        <p className="flex gap-1.5 rounded-lg bg-amber-500/10 px-3 py-2 text-[10px] leading-relaxed text-amber-400">
+          <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+          <span>{t(language, 'openproject', 'writeBackOn')}</span>
+        </p>
+      ) : (
+        <p className="flex gap-1.5 rounded-lg bg-[var(--bg-hover)] px-3 py-2 text-[10px] leading-relaxed text-[var(--text-hint)]">
+          <Lightbulb size={11} className="mt-0.5 shrink-0 text-amber-400" />
+          <span>{t(language, 'openproject', 'writeBackOff')}</span>
+        </p>
+      )}
+
+      {on && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'openproject', 'statusMapDesc')}</p>
+          {LOGDAY_STATUSES.map((s) => (
+            <div key={s} className="flex flex-wrap items-center gap-2">
+              <label htmlFor={`op-map-${s}`} className="w-28 shrink-0 text-[var(--text-secondary)]">{t(language, 'openproject', `status_${s.replace('-', '_')}` as 'status_todo')}</label>
+              <select
+                id={`op-map-${s}`}
+                value={settings.statusMap[s]?.id ?? ''}
+                onChange={(e) => {
+                  const picked = statuses?.find((x) => x.id === e.target.value);
+                  update({ statusMap: { ...settings.statusMap, [s]: picked ? { id: picked.id, name: picked.name } : undefined } });
+                }}
+                className="w-56 rounded-lg border border-[var(--border-card)] bg-[var(--bg-surface)] px-2 py-1.5 text-xs text-[var(--text-primary)] focus:border-indigo-500 focus:outline-none"
+              >
+                <option value="">{t(language, 'openproject', 'statusMapNone')}</option>
+                {/* El elegido sigue a la vista aunque la lista no haya llegado. */}
+                {!statuses && settings.statusMap[s] && <option value={settings.statusMap[s]!.id}>{settings.statusMap[s]!.name}</option>}
+                {statuses?.map((x) => <option key={x.id} value={x.id}>{x.name}{x.isClosed ? ` (${t(language, 'openproject', 'closedTag')})` : ''}</option>)}
+              </select>
+            </div>
+          ))}
+          {error && <p className="text-[10px] text-red-400">{error}</p>}
+        </div>
+      )}
+
+      {on && (pendingCount > 0 || last) && (
+        <p className="text-[11px]">
+          {pendingCount > 0 && <span className="text-amber-400">{t(language, 'openproject', 'pushPending').replace('{n}', String(pendingCount))} </span>}
+          {last && (
+            <span className={last.status === 'ok' ? 'text-emerald-400' : 'text-red-400'}>
+              {t(language, 'openproject', 'pushLast')}: {last.status === 'ok' ? t(language, 'openproject', 'pushOk') : pushErrorText(language, last.error)}
+              {last.title && <span className="text-[var(--text-hint)]"> · {last.title}</span>}
+              <span className="text-[var(--text-hint)]"> · {new Date(last.at).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })}</span>
+            </span>
+          )}
+        </p>
+      )}
     </div>
   );
 }
@@ -269,6 +364,10 @@ export default function OpenProjectSettings() {
           onCodeField={setCodeField}
           onPersonFields={(fields) => void update(OPENPROJECT_ID, { personFields: fields })}
         />
+      )}
+
+      {settings.account && (
+        <WriteBackSection language={language} settings={settings} update={(patch) => void update(OPENPROJECT_ID, patch)} />
       )}
 
       <div className="flex items-center justify-between gap-3">

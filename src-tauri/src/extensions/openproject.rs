@@ -187,6 +187,11 @@ pub fn status_error(status: u16) -> &'static str {
         401 => "unauthorized",
         403 => "forbidden",
         404 => "not_found",
+        // P12: alguien cambió el work package desde que se importó.
+        409 => "conflict",
+        // P12: OpenProject no acepta el valor (p. ej. un avance que sale
+        // del estado, o una transición de estado que el flujo no permite).
+        422 => "rejected",
         429 => "rate_limited",
         _ => "provider_error",
     }
@@ -270,6 +275,33 @@ async fn get(url: Url, token: &str) -> Result<String, &'static str> {
     Ok(body)
 }
 
+/// P12: el cuerpo del PATCH: `lockVersion` (para que OpenProject rechace el
+/// cambio si alguien lo editó entretanto), y solo lo que cambió.
+pub fn update_body(lock_version: u64, progress: Option<u8>, status: Option<u64>) -> Result<Value, &'static str> {
+    if progress.is_none() && status.is_none() {
+        return Err("nothing_to_send");
+    }
+    let mut body = serde_json::json!({ "lockVersion": lock_version });
+    if let Some(p) = progress {
+        if p > 100 {
+            return Err("invalid_progress");
+        }
+        body["percentageDone"] = p.into();
+    }
+    if let Some(s) = status {
+        body["_links"] = serde_json::json!({ "status": { "href": format!("/api/v3/statuses/{s}") } });
+    }
+    Ok(body)
+}
+
+/// El mensaje de un error de OpenProject, recortado: se muestra como dato.
+fn op_message(body: &str) -> String {
+    serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|v| v.get("message")?.as_str().map(|m| m.chars().take(200).collect()))
+        .unwrap_or_default()
+}
+
 // ── Comandos ──────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
@@ -350,6 +382,40 @@ pub async fn openproject_work_packages(
 pub async fn openproject_statuses(app: AppHandle) -> Result<String, String> {
     let (base, token) = credentials(&app).await?;
     get(api(&base, "/api/v3/statuses")?, &token).await.map_err(String::from)
+}
+
+/// P12: envía a OpenProject el avance y/o el estado de un work package. Con
+/// `lockVersion`, OpenProject rechaza el cambio (409, `conflict`) si alguien
+/// lo editó desde la última importación. Devuelve el work package tal como
+/// quedó (JSON). Un 422 vuelve como `rejected|<mensaje de OpenProject>`.
+#[tauri::command]
+pub async fn openproject_update_work_package(
+    app: AppHandle,
+    id: u64,
+    lock_version: u64,
+    progress: Option<u8>,
+    status: Option<u64>,
+) -> Result<String, String> {
+    if id == 0 {
+        return Err("invalid_id".into());
+    }
+    let body = update_body(lock_version, progress, status)?;
+    let (base, token) = credentials(&app).await?;
+    let resp = http()?
+        .patch(api(&base, &format!("/api/v3/work_packages/{id}"))?)
+        .basic_auth("apikey", Some(&token))
+        .header("Accept", "application/hal+json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| if e.is_timeout() { "timeout" } else { "network" })?;
+    let status_code = resp.status().as_u16();
+    let text = resp.text().await.map_err(|_| "network")?;
+    match status_code {
+        200..=299 => Ok(text),
+        422 => Err(format!("rejected|{}", op_message(&text))),
+        s => Err(status_error(s).into()),
+    }
 }
 
 /// P5b: un work package por su id, para saber el tipo de sus ancestros
@@ -527,11 +593,27 @@ mod tests {
     }
 
     #[test]
+    fn cuerpo_del_cambio() {
+        let b = update_body(7, Some(40), Some(12)).unwrap();
+        assert_eq!(b["lockVersion"], 7);
+        assert_eq!(b["percentageDone"], 40);
+        assert_eq!(b["_links"]["status"]["href"], "/api/v3/statuses/12");
+        let solo_avance = update_body(7, Some(0), None).unwrap();
+        assert!(solo_avance.get("_links").is_none());
+        assert_eq!(update_body(7, None, None).unwrap_err(), "nothing_to_send");
+        assert_eq!(update_body(7, Some(101), None).unwrap_err(), "invalid_progress");
+        assert_eq!(op_message(r#"{"_type":"Error","message":"% no se puede cambiar"}"#), "% no se puede cambiar");
+        assert_eq!(op_message("<html>"), "");
+    }
+
+    #[test]
     fn codigos_de_error() {
         assert_eq!(status_error(302), "redirected");
         assert_eq!(status_error(400), "bad_request");
         assert_eq!(status_error(401), "unauthorized");
         assert_eq!(status_error(404), "not_found");
+        assert_eq!(status_error(409), "conflict");
+        assert_eq!(status_error(422), "rejected");
         assert_eq!(status_error(500), "provider_error");
     }
 }

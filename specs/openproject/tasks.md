@@ -67,5 +67,10 @@ Estado: en progreso.
   - 307 en `<épica>/<feature>`, 21 solo con épica o solo con Feature, y 2 sin ninguna;
   - estados: 294 hechas, 14 en progreso y 22 por hacer;
   - 47 con `OP-<n>` porque no tienen "Tarea".
+- [x] Enviar el avance y el estado a OpenProject (P12, 29 oct 2026):
+  apagado por defecto, con aviso, equivalencia de estados, `lockVersion`
+  y pendientes sin red. Revisado en el navegador: marcar como hecha envió
+  "Liberado" con la versión de la importación y guardó la nueva.
+- [ ] Probar el envío en la QA con un work package de prueba de la FCV.
 - [x] Solo Tasks y Bugs (29 oct 2026). Las 38 Features, épicas e hitos que
   habían llegado se quitan en la próxima importación y van a la papelera.

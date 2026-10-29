@@ -4,7 +4,7 @@
 // La respuesta se lee como datos (P9): solo los campos que se usan, y si
 // no tiene la forma esperada se avisa en vez de crear tareas a medias.
 
-import type { TaskStatus } from '../../types/task';
+import type { Task, TaskStatus } from '../../types/task';
 
 export const OPENPROJECT_ID = 'openproject' as const;
 export const DEFAULT_PROJECT = 'openproject';
@@ -41,6 +41,30 @@ export interface Managed {
   progress?: number;
   /** P5e: el estado que puso. */
   status?: TaskStatus;
+  /** P12: la versión del work package en la última importación o envío;
+   *  con ella OpenProject rechaza un envío si alguien lo cambió entretanto. */
+  lockVersion?: number;
+}
+
+/** P12: un estado de OpenProject (para la equivalencia de estados). */
+export interface OpStatus {
+  id: string;
+  name: string;
+  isClosed: boolean;
+}
+
+/** P12: lo que falta enviar a OpenProject (sin red, se reintenta). */
+export interface PendingPush {
+  progress?: number;
+  status?: TaskStatus;
+}
+
+export interface PushLast {
+  at: string;
+  status: 'ok' | 'error';
+  error?: string;
+  /** El título de la tarea, para el aviso. */
+  title?: string;
 }
 
 export interface OpenProjectSettings {
@@ -59,6 +83,15 @@ export interface OpenProjectSettings {
   managed: Record<string, Managed>;
   /** P4c: traer también los work packages cerrados (como tareas hechas). */
   includeClosed: boolean;
+  /** P12: enviar a OpenProject el avance y el estado que se cambien en
+   *  Logday. Apagado por defecto. */
+  writeBack: boolean;
+  /** P12: el estado de OpenProject que corresponde a cada uno de Logday; sin
+   *  equivalencia, ese estado no se envía. */
+  statusMap: Partial<Record<TaskStatus, { id: string; name: string }>>;
+  /** P12: id del work package → lo que falta enviar. */
+  pending: Record<string, PendingPush>;
+  lastPush?: PushLast;
   auto: boolean;
   /** id del work package → id de la tarea de Logday (P6). */
   imported: Record<string, string>;
@@ -66,9 +99,13 @@ export interface OpenProjectSettings {
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const isTaskStatus = (v: unknown): v is TaskStatus => v === 'todo' || v === 'in-progress' || v === 'done';
 
 export function readOpenProjectSettings(raw: Record<string, unknown> | undefined): OpenProjectSettings {
-  const out: OpenProjectSettings = { project: DEFAULT_PROJECT, personFields: [], managed: {}, includeClosed: false, auto: false, imported: {} };
+  const out: OpenProjectSettings = {
+    project: DEFAULT_PROJECT, personFields: [], managed: {}, includeClosed: false, writeBack: false, statusMap: {}, pending: {},
+    auto: false, imported: {},
+  };
   if (!raw) return out;
   if (typeof raw.account === 'string' && raw.account) out.account = raw.account;
   if (typeof raw.baseUrl === 'string' && /^https?:\/\//.test(raw.baseUrl)) out.baseUrl = raw.baseUrl;
@@ -91,12 +128,36 @@ export function readOpenProjectSettings(raw: Record<string, unknown> | undefined
           code: v.code,
           project: v.project,
           ...(typeof v.progress === 'number' ? { progress: v.progress } : {}),
-          ...(v.status === 'todo' || v.status === 'in-progress' || v.status === 'done' ? { status: v.status } : {}),
+          ...(isTaskStatus(v.status) ? { status: v.status } : {}),
+          ...(typeof v.lockVersion === 'number' ? { lockVersion: v.lockVersion } : {}),
         };
       }
     }
   }
   if (raw.includeClosed === true) out.includeClosed = true;
+  if (raw.writeBack === true) out.writeBack = true;
+  if (isObject(raw.statusMap)) {
+    for (const [k, v] of Object.entries(raw.statusMap)) {
+      if (isTaskStatus(k) && isObject(v) && typeof v.id === 'string' && /^\d+$/.test(v.id) && typeof v.name === 'string') {
+        out.statusMap[k] = { id: v.id, name: v.name };
+      }
+    }
+  }
+  if (isObject(raw.pending)) {
+    for (const [k, v] of Object.entries(raw.pending)) {
+      if (!isObject(v)) continue;
+      const p: PendingPush = {};
+      if (typeof v.progress === 'number') p.progress = v.progress;
+      if (isTaskStatus(v.status)) p.status = v.status;
+      if (p.progress !== undefined || p.status) out.pending[k] = p;
+    }
+  }
+  const lp = raw.lastPush;
+  if (isObject(lp) && typeof lp.at === 'string' && (lp.status === 'ok' || lp.status === 'error')) {
+    out.lastPush = { at: lp.at, status: lp.status };
+    if (typeof lp.error === 'string') out.lastPush.error = lp.error;
+    if (typeof lp.title === 'string') out.lastPush.title = lp.title;
+  }
   if (raw.auto === true) out.auto = true;
   if (raw.imported && typeof raw.imported === 'object' && !Array.isArray(raw.imported)) {
     for (const [k, v] of Object.entries(raw.imported as Record<string, unknown>)) {
@@ -147,6 +208,8 @@ export interface WorkPackage {
   progress?: number;
   /** P5b: ids de los ancestros, del más alto al padre. */
   ancestors: string[];
+  /** P12: para enviar cambios sin pisar los de otros. */
+  lockVersion?: number;
 }
 
 export interface WorkPackagePage {
@@ -204,6 +267,7 @@ export function parseWorkPackages(body: string, codeField?: string): WorkPackage
       ...(code ? { code } : {}),
       ...(progress !== undefined ? { progress } : {}),
       ancestors,
+      ...(typeof el.lockVersion === 'number' ? { lockVersion: el.lockVersion } : {}),
     });
   }
   return { items, total: typeof json.total === 'number' ? json.total : items.length };
@@ -223,9 +287,8 @@ export function parseWorkPackageRef(body: string): { type?: string; subject: str
   return { type: linkTitle(links, 'type'), subject: (str(json.subject) ?? '').trim() };
 }
 
-/** P5e: los nombres de los estados que OpenProject cuenta como cerrados
- *  (`/api/v3/statuses`, `isClosed`). */
-export function parseClosedStatuses(body: string): Set<string> {
+/** P5e, P12: los estados de OpenProject (`/api/v3/statuses`). */
+export function parseStatuses(body: string): OpStatus[] {
   let json: unknown;
   try {
     json = JSON.parse(body);
@@ -235,11 +298,28 @@ export function parseClosedStatuses(body: string): Set<string> {
   if (!isObject(json) || !isObject(json._embedded) || !Array.isArray(json._embedded.elements)) {
     throw new UnexpectedFormatError('statuses');
   }
-  return new Set(
-    json._embedded.elements
-      .filter((s): s is Record<string, unknown> => isObject(s) && s.isClosed === true && typeof s.name === 'string')
-      .map((s) => (s.name as string).trim()),
-  );
+  return json._embedded.elements
+    .filter((s): s is Record<string, unknown> => isObject(s) && typeof s.name === 'string')
+    .map((s) => ({
+      id: typeof s.id === 'number' || typeof s.id === 'string' ? String(s.id) : '',
+      name: (s.name as string).trim(),
+      isClosed: s.isClosed === true,
+    }));
+}
+
+/** P5e: los nombres de los estados que OpenProject cuenta como cerrados. */
+export function parseClosedStatuses(body: string): Set<string> {
+  return new Set(parseStatuses(body).filter((s) => s.isClosed).map((s) => s.name));
+}
+
+/** P12: la versión de un work package en la respuesta de un envío. */
+export function lockVersionOf(body: string): number | undefined {
+  try {
+    const json: unknown = JSON.parse(body);
+    return isObject(json) && typeof json.lockVersion === 'number' ? json.lockVersion : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** P5e: el estado de la tarea en Logday según el de OpenProject: los
@@ -328,4 +408,17 @@ export function workPackageToTask(wp: WorkPackage, baseUrl: string, texts: TaskT
     content,
     due: wp.due,
   };
+}
+
+/** P12: lo que cambió en una tarea y se puede enviar: el avance, y el
+ *  estado si tiene equivalencia en OpenProject. */
+export function changesToPush(
+  prev: Task | undefined,
+  next: Task,
+  statusMapped: (status: TaskStatus) => boolean,
+): PendingPush | null {
+  const out: PendingPush = {};
+  if (next.progress !== undefined && next.progress !== prev?.progress) out.progress = next.progress;
+  if (prev && next.status !== prev.status && statusMapped(next.status)) out.status = next.status;
+  return out.progress !== undefined || out.status ? out : null;
 }

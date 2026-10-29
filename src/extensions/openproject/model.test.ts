@@ -1,14 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { PAGE_1, PAGE_2 } from './fixtures';
 import {
-  DEFAULT_PROJECT, UnexpectedFormatError, isEpicType, isWorkItemType, logdayStatus, parseClosedStatuses, parseProjectIds, parseWorkPackageRef, parseWorkPackages, placement, projectSlug, readOpenProjectSettings, workPackageToTask,
+  DEFAULT_PROJECT, UnexpectedFormatError, changesToPush, isEpicType, lockVersionOf, parseStatuses, isWorkItemType, logdayStatus, parseClosedStatuses, parseProjectIds, parseWorkPackageRef, parseWorkPackages, placement, projectSlug, readOpenProjectSettings, workPackageToTask,
 } from './model';
 
 const texts = { open: 'Abrir en OpenProject', project: 'Proyecto', type: 'Tipo', status: 'Estado', priority: 'Prioridad', untitled: 'Work package' };
 
 describe('configuración de OpenProject', () => {
   it('valores por defecto y lectura defensiva', () => {
-    expect(readOpenProjectSettings(undefined)).toEqual({ project: DEFAULT_PROJECT, personFields: [], managed: {}, includeClosed: false, auto: false, imported: {} });
+    expect(readOpenProjectSettings(undefined)).toEqual({
+      project: DEFAULT_PROJECT, personFields: [], managed: {}, includeClosed: false, writeBack: false, statusMap: {}, pending: {}, auto: false, imported: {},
+    });
+    // P12: apagado por defecto; la equivalencia solo con ids numéricos.
+    expect(readOpenProjectSettings({
+      writeBack: true, statusMap: { done: { id: '6', name: 'Liberado' }, todo: { id: 'x', name: 'Mal' }, otro: { id: '1', name: 'X' } },
+      pending: { 1234: { progress: 40, status: 'done' }, 9: {} }, managed: { 1: { code: 'A', project: 'p', lockVersion: 3 } },
+    })).toMatchObject({
+      writeBack: true, statusMap: { done: { id: '6', name: 'Liberado' } }, pending: { 1234: { progress: 40, status: 'done' } },
+      managed: { 1: { lockVersion: 3 } },
+    });
     expect(readOpenProjectSettings({
       codeField: { id: 'customField2', name: 'Tarea' },
       managed: { 1234: { code: 'T-1', project: 'openproject/app', progress: 40 }, 9: { code: 1 } },
@@ -40,7 +50,7 @@ describe('lectura de la API v3 (P9)', () => {
     expect(total).toBe(3);
     expect(items[0]).toEqual({
       id: '1234', subject: 'Definir el módulo de admisiones', description: 'Revisar con **Ana** el flujo.\n\n- paso 1\n- paso 2',
-      due: '2026-11-04', status: 'In progress', type: 'Task', priority: 'Normal', project: 'SAHI Offline', ancestors: [],
+      due: '2026-11-04', status: 'In progress', type: 'Task', priority: 'Normal', project: 'SAHI Offline', ancestors: [], lockVersion: 3,
     });
     expect(items[1]).toMatchObject({ id: '1240', due: '2026-11-15', type: 'Milestone', status: 'New' });
     expect(parseWorkPackages(PAGE_2).items[0]).toMatchObject({ id: '1251', subject: '', priority: 'High' });
@@ -130,6 +140,34 @@ describe('estado de la tarea (P5e)', () => {
     expect(logdayStatus('LiberarEspacio(Por verificar)', closed)).toBe('todo');
     expect(logdayStatus(undefined, closed)).toBe('todo');
     expect(() => parseClosedStatuses('<html>')).toThrow(UnexpectedFormatError);
+  });
+});
+
+describe('enviar a OpenProject (P12)', () => {
+  const task = (over: Partial<import('../../types/task').Task> = {}) => ({
+    id: 't', title: 'T', status: 'todo' as const, tags: [], project: 'p', created: '', linked_paths: [], content: '', filePath: '', ...over,
+  });
+
+  it('solo el avance que cambió y el estado con equivalencia', () => {
+    const mapped = (s: string) => s === 'done';
+    expect(changesToPush(task({ progress: 10 }), task({ progress: 40 }), mapped)).toEqual({ progress: 40 });
+    expect(changesToPush(task(), task({ status: 'done' }), mapped)).toEqual({ status: 'done' });
+    expect(changesToPush(task(), task({ status: 'in-progress' }), mapped)).toBeNull();
+    expect(changesToPush(task({ progress: 40 }), task({ progress: 40, title: 'Otro' }), mapped)).toBeNull();
+    // Sin la tarea anterior, el estado no se envía (no se sabe si cambió).
+    expect(changesToPush(undefined, task({ status: 'done' }), mapped)).toBeNull();
+  });
+
+  it('estados y versión de la respuesta', () => {
+    expect(parseStatuses(JSON.stringify({ _embedded: { elements: [{ id: 6, name: ' Liberado ', isClosed: true }, { id: 3, name: 'En Desarrollo' }] } })))
+      .toEqual([{ id: '6', name: 'Liberado', isClosed: true }, { id: '3', name: 'En Desarrollo', isClosed: false }]);
+    expect(lockVersionOf(JSON.stringify({ _type: 'WorkPackage', lockVersion: 8 }))).toBe(8);
+    expect(lockVersionOf('<html>')).toBeUndefined();
+  });
+
+  it('la versión del work package se lee al importar', () => {
+    const body = JSON.stringify({ _type: 'WorkPackageCollection', total: 1, _embedded: { elements: [{ id: 1, subject: 'X', lockVersion: 5, _links: {} }] } });
+    expect(parseWorkPackages(body).items[0].lockVersion).toBe(5);
   });
 });
 

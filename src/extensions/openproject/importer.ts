@@ -70,6 +70,10 @@ export interface ImportResult {
 
 let importing: Promise<ImportResult> | null = null;
 
+/** P12: mientras importa, los cambios de tareas son de la importación y no
+ *  se envían de vuelta a OpenProject. */
+export const isImporting = () => importing !== null;
+
 /** Importa lo nuevo, corrige lo ya importado (P5c) y devuelve cuántas
  *  tareas creó y corrigió. Si ya hay una importación en curso, espera esa
  *  en vez de empezar otra. Con `restoreDeleted` (P6b), vuelve a crear las
@@ -237,6 +241,10 @@ async function run(restoreDeleted: boolean): Promise<ImportResult> {
         project: task.project === prev.project ? next.project : prev.project,
         ...(progress !== undefined ? { progress } : {}),
         status: statusMine ? next.status : prevStatus,
+        // P12: con un envío pendiente se guarda la versión vieja, para que
+        // OpenProject lo rechace si alguien lo cambió mientras tanto.
+        ...(settings.pending[wp.id] ? (prev.lockVersion !== undefined ? { lockVersion: prev.lockVersion } : {})
+          : wp.lockVersion !== undefined ? { lockVersion: wp.lockVersion } : {}),
       };
       await save();
     }
@@ -263,6 +271,7 @@ async function run(restoreDeleted: boolean): Promise<ImportResult> {
         project,
         ...(task.progress !== undefined ? { progress: task.progress } : {}),
         status: task.status,
+        ...(wp.lockVersion !== undefined ? { lockVersion: wp.lockVersion } : {}),
       };
       created++;
       // Se guarda tras cada tarea: si algo falla a mitad, lo creado ya no

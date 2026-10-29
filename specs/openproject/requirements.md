@@ -101,14 +101,35 @@ Usa la API v3 de OpenProject con el token de API personal del usuario
   (cuándo, cuántas tareas nuevas o el error). Sin VPN se ve "No se pudo
   conectar", y se reintenta en la próxima.
 
+### Enviar cambios a OpenProject (29 oct 2026)
+
+- P12. Con "Enviar cambios a OpenProject", apagado por defecto, el
+  avance y el estado que el usuario cambie en Logday en una tarea
+  importada DEBERÁN enviarse a OpenProject con su token.
+  - Mientras esté apagado, el panel DEBERÁ decir que lo que se cambia en
+    Logday no se envía.
+  - Al encenderlo, DEBERÁ avisar de qué se envía y con qué usuario.
+  - Solo se envían el avance y el estado; nunca el título ni la
+    descripción.
+  - El estado solo se envía si el usuario eligió a qué estado de
+    OpenProject corresponde (Por hacer, En progreso, Hecha). Sin elegir,
+    no se envía.
+  - Va con la versión (`lockVersion`) de la última importación: si alguien
+    cambió el work package entretanto, OpenProject lo rechaza (409) y se
+    avisa, sin pisarlo. Un valor que OpenProject no acepta (422) se avisa
+    con su mensaje.
+  - Sin red o sin VPN, el cambio queda pendiente y se reintenta.
+  - Los cambios que hace la propia importación no se envían.
+
 ### Red y datos
 
 - P9. La respuesta de OpenProject se lee como datos, solo los campos que
   se usan. Si no tiene la forma esperada, se avisa y no se crea ninguna
   tarea.
-- P10. Solo lee de OpenProject y no envía datos de Logday, así que no
-  lleva el aviso de R6 de la base. El permiso lo da el usuario al crear
-  el token.
+- P10. Por defecto solo lee de OpenProject y no envía datos de Logday, así
+  que no lleva el aviso de R6 de la base. El permiso lo da el usuario al
+  crear el token. El envío de P12 lo activa el usuario en el panel, con
+  su propio aviso.
 - P11. Textos en español e inglés, con tú y sin voseo, con una guía paso
   a paso para conseguir el token.
 

@@ -634,6 +634,7 @@ pub fn run() {
             extensions::openproject::openproject_projects,
             extensions::openproject::openproject_work_package,
             extensions::openproject::openproject_statuses,
+            extensions::openproject::openproject_update_work_package,
             extensions::mcp::mcp_server_start,
             extensions::mcp::mcp_server_stop,
             extensions::mcp::mcp_reply,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PAGE_1, PAGE_2 } from './fixtures';
 import {
-  DEFAULT_PROJECT, UnexpectedFormatError, isEpicType, logdayStatus, parseClosedStatuses, parseProjectIds, parseWorkPackageRef, parseWorkPackages, placement, projectSlug, readOpenProjectSettings, workPackageToTask,
+  DEFAULT_PROJECT, UnexpectedFormatError, isEpicType, isWorkItemType, logdayStatus, parseClosedStatuses, parseProjectIds, parseWorkPackageRef, parseWorkPackages, placement, projectSlug, readOpenProjectSettings, workPackageToTask,
 } from './model';
 
 const texts = { open: 'Abrir en OpenProject', project: 'Proyecto', type: 'Tipo', status: 'Estado', priority: 'Prioridad', untitled: 'Work package' };
@@ -107,6 +107,13 @@ describe('código, avance y épica (P5, P5b)', () => {
     const t = { open: 'Abrir', project: 'P', type: 'T', status: 'S', priority: 'Pr', untitled: 'WP' };
     expect(workPackageToTask({ id: '7', subject: 'X', description: '', ancestors: [], code: 'TAR-1' }, 'https://op', t).taskCode).toBe('TAR-1');
     expect(workPackageToTask({ id: '7', subject: 'X', description: '', ancestors: [] }, 'https://op', t).taskCode).toBe('OP-7');
+  });
+});
+
+describe('qué se importa (P4d)', () => {
+  it('solo tareas y errores; los contenedores no', () => {
+    for (const t of ['Task', 'Bug', 'tarea', ' Error ', undefined]) expect(isWorkItemType(t)).toBe(true);
+    for (const t of ['Feature', 'Epic', 'Milestone', 'Phase', 'User story']) expect(isWorkItemType(t)).toBe(false);
   });
 });
 

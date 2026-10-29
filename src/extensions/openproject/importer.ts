@@ -9,7 +9,8 @@ import { fs } from '../../lib/invoke';
 import { projectDir, readTaskFromPath } from '../../store/appStore';
 import {
   OPENPROJECT_ID, UnexpectedFormatError, logdayStatus, parseClosedStatuses, parseProjectIds, parseWorkPackageRef,
-  parseWorkPackages, placement, projectSlug, readOpenProjectSettings, workPackageToTask, type Managed, type WorkPackage,
+  isWorkItemType, parseWorkPackages, placement, projectSlug, readOpenProjectSettings, workPackageToTask, type Managed,
+  type WorkPackage,
 } from './model';
 
 const MAX_PAGES = 20; // como en Rust: hasta 2000 por rol
@@ -63,6 +64,8 @@ async function readProjectTasks(basePath: string, project: string): Promise<Task
 export interface ImportResult {
   created: number;
   updated: number;
+  /** P4d: las que ya habían llegado y no son tareas ni errores. */
+  removed: number;
 }
 
 let importing: Promise<ImportResult> | null = null;
@@ -105,12 +108,15 @@ async function run(restoreDeleted: boolean): Promise<ImportResult> {
         }
       }
     }
-    const all = [...byId.values()];
+    // P4d: solo tareas y errores; las épicas, Features e hitos solo dan las
+    // carpetas (sus ancestros se leen igual, abajo).
+    const fetched = [...byId.values()];
+    const all = fetched.filter((wp) => isWorkItemType(wp.type));
 
     // 2. P5b: la épica de cada uno, mirando el tipo de sus ancestros (cada
     //    ancestro se pide una vez). Uno que no se puede leer no detiene nada.
     const refs = new Map<string, { type?: string; subject: string } | undefined>();
-    for (const id of new Set(all.flatMap((wp) => wp.ancestors))) {
+    for (const id of new Set(fetched.flatMap((wp) => wp.ancestors))) {
       try {
         refs.set(id, parseWorkPackageRef(await invoke<string>('openproject_work_package', { id: Number(id) })));
       } catch (err) {
@@ -166,10 +172,6 @@ async function run(restoreDeleted: boolean): Promise<ImportResult> {
     const managed = { ...settings.managed };
     const save = () => store().updateExtensionSettings(OPENPROJECT_ID, { imported, managed });
 
-    // 4. P5c–P5e: las ya importadas se corrigen (código, proyecto, avance y estado)
-    //    solo si el usuario no los cambió: si siguen como los dejó la
-    //    importación.
-    let updated = 0;
     const byTask = new Map(known.map((t) => [t.id, t]));
     // P6b: las que ya no están en Logday vuelven a ser nuevas, solo si se
     // pidió. Por defecto, lo que el usuario borró queda borrado (P6).
@@ -182,6 +184,23 @@ async function run(restoreDeleted: boolean): Promise<ImportResult> {
         }
       }
     }
+
+    // P4d: las que llegaron antes de P4d y no son tareas ni errores se quitan
+    // (van a la papelera, así que se pueden recuperar).
+    const leftovers = fetched.filter((wp) => !isWorkItemType(wp.type) && imported[wp.id]);
+    const toTrash = leftovers.map((wp) => byTask.get(imported[wp.id])).filter((t): t is Task => !!t);
+    if (toTrash.length) await store().deleteTasks(toTrash);
+    for (const wp of leftovers) {
+      delete imported[wp.id];
+      delete managed[wp.id];
+    }
+    const removed = toTrash.length;
+    if (leftovers.length) await save();
+
+    // 4. P5c–P5e: las ya importadas se corrigen (código, proyecto, avance y estado)
+    //    solo si el usuario no los cambió: si siguen como los dejó la
+    //    importación.
+    let updated = 0;
     for (const wp of all) {
       const taskId = imported[wp.id];
       const task = taskId ? byTask.get(taskId) : undefined;
@@ -253,9 +272,9 @@ async function run(restoreDeleted: boolean): Promise<ImportResult> {
     await store().updateExtensionSettings(OPENPROJECT_ID, {
       imported,
       managed,
-      last: { at: nowInstant(), status: 'ok', created, updated },
+      last: { at: nowInstant(), status: 'ok', created, updated, removed },
     });
-    return { created, updated };
+    return { created, updated, removed };
   } catch (err) {
     await store().updateExtensionSettings(OPENPROJECT_ID, { last: { at: nowInstant(), status: 'error', error: errorCode(err) } }).catch(() => {});
     throw err;

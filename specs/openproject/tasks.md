@@ -67,5 +67,5 @@ Estado: en progreso.
   - 307 en `<épica>/<feature>`, 21 solo con épica o solo con Feature, y 2 sin ninguna;
   - estados: 294 hechas, 14 en progreso y 22 por hacer;
   - 47 con `OP-<n>` porque no tienen "Tarea".
-- [ ] Decidir si se importan solo Tasks y Bugs (llegaron 33 Features, 1
-  épica y 3 hitos como tareas).
+- [x] Solo Tasks y Bugs (29 oct 2026). Las 38 Features, épicas e hitos que
+  habían llegado se quitan en la próxima importación y van a la papelera.

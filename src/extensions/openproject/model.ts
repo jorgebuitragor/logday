@@ -15,6 +15,8 @@ export interface OpenProjectLast {
   created?: number;
   /** Tareas ya importadas a las que se les corrigió código o proyecto. */
   updated?: number;
+  /** P4d: las que se quitaron por no ser tareas ni errores. */
+  removed?: number;
   error?: string;
 }
 
@@ -106,6 +108,7 @@ export function readOpenProjectSettings(raw: Record<string, unknown> | undefined
     out.last = { at: l.at, status: l.status };
     if (typeof l.created === 'number') out.last.created = l.created;
     if (typeof l.updated === 'number') out.last.updated = l.updated;
+    if (typeof l.removed === 'number') out.last.removed = l.removed;
     if (typeof l.error === 'string') out.last.error = l.error;
   }
   return out;
@@ -249,6 +252,12 @@ export function logdayStatus(status: string | undefined, closed: Set<string>): T
 }
 
 export const isEpicType = (type: string | undefined) => !!type && /^(epic|[eé]pica)$/i.test(type.trim());
+/** P4d: solo las tareas y los errores se importan como tareas; las
+ *  épicas, Features, hitos y fases son contenedores (las carpetas). Un
+ *  work package sin tipo se importa. */
+export const isWorkItemType = (type: string | undefined) =>
+  !type || /^(task|bug|tarea|error|defecto)$/i.test(type.trim());
+
 export const isFeatureType = (type: string | undefined) => !!type && /^(feature|funcionalidad|caracter[ií]stica)$/i.test(type.trim());
 
 /** P5b: el proyecto de Logday de un work package. En la FCV la estructura

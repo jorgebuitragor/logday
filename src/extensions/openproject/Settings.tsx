@@ -30,9 +30,10 @@ function errorText(language: 'es' | 'en', code: string | undefined): string {
 }
 
 /** "3 tareas nuevas · 35 actualizadas", o solo lo que haya. */
-function resultText(language: 'es' | 'en', created: number, updated: number): string {
+function resultText(language: 'es' | 'en', created: number, updated: number, removed = 0): string {
   const parts = [`${created} ${t(language, 'openproject', created === 1 ? 'importedOne' : 'importedMany')}`];
   if (updated) parts.push(`${updated} ${t(language, 'openproject', updated === 1 ? 'updatedOne' : 'updatedMany')}`);
+  if (removed) parts.push(`${removed} ${t(language, 'openproject', removed === 1 ? 'removedOne' : 'removedMany')}`);
   return parts.join(' · ');
 }
 
@@ -169,10 +170,10 @@ export default function OpenProjectSettings() {
     setError(null);
     setBusy(restoreDeleted ? 'restore' : 'import');
     try {
-      const { created, updated } = await importFromOpenProject({ restoreDeleted });
+      const { created, updated, removed } = await importFromOpenProject({ restoreDeleted });
       showToast({
         kind: 'success',
-        title: created || updated ? resultText(language, created, updated) : t(language, 'openproject', 'nothingNew'),
+        title: created || updated || removed ? resultText(language, created, updated, removed) : t(language, 'openproject', 'nothingNew'),
       });
     } catch {
       // El detalle queda en settings.last y se muestra abajo.
@@ -300,7 +301,7 @@ export default function OpenProjectSettings() {
             <span className={last.status === 'ok' ? 'text-emerald-400' : 'text-red-400'}>
               {last.status === 'ok' ? <CheckCircle2 size={11} className="mr-1 inline" /> : <AlertCircle size={11} className="mr-1 inline" />}
               {last.status === 'ok'
-                ? resultText(language, last.created ?? 0, last.updated ?? 0)
+                ? resultText(language, last.created ?? 0, last.updated ?? 0, last.removed ?? 0)
                 : errorText(language, last.error)}
               <span className="text-[var(--text-hint)]"> · {new Date(last.at).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })}</span>
             </span>

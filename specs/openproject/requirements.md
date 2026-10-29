@@ -50,6 +50,10 @@ Usa la API v3 de OpenProject con el token de API personal del usuario
 - P4c. El panel DEBERÁ permitir traer también los work packages cerrados
   (apagado por defecto). Pedido por Jorge el 29 oct 2026: en la FCV la
   mayoría de sus tareas ya están liberadas.
+- P4d. Solo las tareas y los errores (tipos Task y Bug) DEBERÁN
+  importarse como tareas. Las épicas, Features, hitos y fases dan las
+  carpetas (P5b). Las que habían llegado antes se quitan y van a la
+  papelera de Logday. Pedido por Jorge el 29 oct 2026.
 - P5. Cada tarea DEBERÁ llevar:
   - el asunto como título;
   - como código, el valor del campo de texto que el usuario elija en

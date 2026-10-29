@@ -10,6 +10,7 @@ pub mod google_oauth;
 pub mod granola;
 pub mod mcp;
 pub mod oauth_loopback;
+pub mod openproject;
 pub mod outgoing_webhook;
 pub mod team_chat;
 pub mod team_chat_google;

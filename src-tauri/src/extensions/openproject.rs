@@ -1,0 +1,259 @@
+//! Extensión "OpenProject" (`openproject`, specs/openproject): trae los
+//! work packages asignados al usuario como tareas de Logday.
+//!
+//! Va en Desktop porque el OpenProject de la empresa solo se alcanza desde
+//! la red interna o la VPN. Usa la API v3 con el token personal del
+//! usuario (Basic, usuario `apikey`). La URL y el token se guardan juntos en
+//! el llavero: el token solo viaja a la URL con la que se guardó, y ninguno
+//! de los dos llega al webview (R10, R17).
+
+use std::net::IpAddr;
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
+
+use reqwest::Url;
+use serde::Serialize;
+use serde_json::Value;
+use tauri::AppHandle;
+
+use super::google_oauth::keychain;
+use super::{delete_secret, read_secret, write_secret, SECRET_NOT_FOUND};
+
+pub const EXTENSION_ID: &str = "openproject";
+pub const URL_KEY: &str = "url";
+pub const TOKEN_KEY: &str = "token";
+const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
+const PAGE_SIZE: u32 = 100;
+const MAX_PAGE: u32 = 20; // P4: hasta 2000 work packages
+const MAX_BODY: usize = 8 * 1024 * 1024;
+
+// ── Piezas puras (con pruebas) ────────────────────────────────────────
+
+/// Nombres que solo existen dentro de una red: un nombre sin puntos o
+/// con un dominio reservado para redes privadas.
+fn is_internal_host(host: &str) -> bool {
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return match ip {
+            IpAddr::V4(v4) => v4.is_private() || v4.is_loopback() || v4.is_link_local(),
+            IpAddr::V6(v6) => v6.is_loopback() || (v6.segments()[0] & 0xfe00) == 0xfc00,
+        };
+    }
+    !host.contains('.')
+        || [".local", ".lan", ".internal", ".intranet", ".corp", ".home.arpa", ".localhost"]
+            .iter()
+            .any(|suffix| host.ends_with(suffix))
+}
+
+/// P1: `https` con cualquier host; `http` solo dentro de la red interna
+/// (con un aviso en el panel), porque el token va en cada petición. Se
+/// guarda sin `/` final, y puede tener ruta (`https://host/openproject`).
+pub fn validate_url(raw: &str) -> Result<Url, &'static str> {
+    let mut url = Url::parse(raw.trim()).map_err(|_| "invalid_url")?;
+    if !url.username().is_empty() || url.password().is_some() || url.query().is_some() || url.fragment().is_some() {
+        return Err("invalid_url");
+    }
+    let host = url.host_str().ok_or("invalid_url")?.to_ascii_lowercase();
+    match url.scheme() {
+        "https" => {}
+        "http" if is_internal_host(&host) => {}
+        "http" => return Err("not_https"),
+        _ => return Err("invalid_url"),
+    }
+    let path = url.path().trim_end_matches('/').to_string();
+    url.set_path(&path);
+    Ok(url)
+}
+
+fn api(base: &Url, path: &str) -> Result<Url, &'static str> {
+    Url::parse(&format!("{}{}", base.as_str().trim_end_matches('/'), path)).map_err(|_| "invalid_url")
+}
+
+/// P4: los work packages abiertos asignados al usuario, los cambiados
+/// hace poco primero.
+pub fn work_packages_url(base: &Url, page: u32) -> Result<Url, &'static str> {
+    let mut url = api(base, "/api/v3/work_packages")?;
+    url.query_pairs_mut()
+        .append_pair(
+            "filters",
+            r#"[{"assignee":{"operator":"=","values":["me"]}},{"status":{"operator":"o","values":[]}}]"#,
+        )
+        .append_pair("sortBy", r#"[["updatedAt","desc"]]"#)
+        .append_pair("pageSize", &PAGE_SIZE.to_string())
+        .append_pair("offset", &page.to_string());
+    Ok(url)
+}
+
+/// Un código para el webview: nunca el texto del error, que puede llevar
+/// la URL.
+pub fn status_error(status: u16) -> &'static str {
+    match status {
+        300..=399 => "redirected",
+        401 => "unauthorized",
+        403 => "forbidden",
+        404 => "not_found",
+        429 => "rate_limited",
+        _ => "provider_error",
+    }
+}
+
+// ── URL y token en memoria tras leerlos una vez ───────────────────────
+
+type Credentials = (Url, String);
+
+fn cache() -> &'static Mutex<Option<Credentials>> {
+    static CACHE: OnceLock<Mutex<Option<Credentials>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(None))
+}
+
+fn set_cache(value: Option<Credentials>) {
+    if let Ok(mut g) = cache().lock() {
+        *g = value;
+    }
+}
+
+async fn credentials(app: &AppHandle) -> Result<Credentials, &'static str> {
+    if let Some(c) = cache().lock().ok().and_then(|g| g.clone()) {
+        return Ok(c);
+    }
+    let (raw, token) = keychain(app, |s| {
+        Ok((read_secret(&s, EXTENSION_ID, URL_KEY)?, read_secret(&s, EXTENSION_ID, TOKEN_KEY)?))
+    })
+    .await
+    .map_err(|e| if e == SECRET_NOT_FOUND { "needs_connect" } else { e })?;
+    let url = validate_url(&raw).map_err(|_| "needs_connect")?;
+    set_cache(Some((url.clone(), token.clone())));
+    Ok((url, token))
+}
+
+fn http() -> Result<reqwest::Client, &'static str> {
+    reqwest::Client::builder()
+        .timeout(HTTP_TIMEOUT)
+        // Sin redirecciones: el token iría a otro sitio.
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent("Logday")
+        .build()
+        .map_err(|_| "network")
+}
+
+async fn get(url: Url, token: &str) -> Result<String, &'static str> {
+    let resp = http()?
+        .get(url)
+        .basic_auth("apikey", Some(token))
+        .header("Accept", "application/hal+json")
+        .send()
+        .await
+        .map_err(|e| if e.is_timeout() { "timeout" } else { "network" })?;
+    if !resp.status().is_success() {
+        return Err(status_error(resp.status().as_u16()));
+    }
+    let body = resp.text().await.map_err(|_| "network")?;
+    if body.len() > MAX_BODY {
+        return Err("too_big");
+    }
+    Ok(body)
+}
+
+// ── Comandos ──────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct Connected {
+    pub name: String,
+    /// La URL tal como quedó guardada, para los enlaces de las tareas.
+    pub url: String,
+}
+
+/// P2: prueba la URL y el token con `/api/v3/users/me` y, si responden,
+/// los guarda en el llavero. Devuelve el nombre del usuario y la URL.
+#[tauri::command]
+pub async fn openproject_connect(app: AppHandle, url: String, token: String) -> Result<Connected, String> {
+    let base = validate_url(&url)?;
+    let token = token.trim().to_string();
+    if token.is_empty() {
+        return Err("missing_token".into());
+    }
+    let body = get(api(&base, "/api/v3/users/me")?, &token).await?;
+    let me: Value = serde_json::from_str(&body).map_err(|_| "not_openproject")?;
+    if me.get("_type").and_then(Value::as_str) != Some("User") {
+        return Err("not_openproject".into());
+    }
+    let name = me
+        .get("name")
+        .or_else(|| me.get("login"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let (raw, secret) = (base.to_string(), token.clone());
+    keychain(&app, move |s| {
+        write_secret(&s, EXTENSION_ID, URL_KEY, &raw)?;
+        write_secret(&s, EXTENSION_ID, TOKEN_KEY, &secret)
+    })
+    .await?;
+    let url = base.as_str().trim_end_matches('/').to_string();
+    set_cache(Some((base, token)));
+    Ok(Connected { name, url })
+}
+
+/// P3: borra la URL y el token. El token sigue vivo en OpenProject hasta
+/// que el usuario lo revoque en "Mi cuenta → Tokens de acceso".
+#[tauri::command]
+pub async fn openproject_disconnect(app: AppHandle) -> Result<(), String> {
+    set_cache(None);
+    keychain(&app, |s| {
+        delete_secret(&s, EXTENSION_ID, URL_KEY)?;
+        delete_secret(&s, EXTENSION_ID, TOKEN_KEY)
+    })
+    .await
+    .map_err(String::from)
+}
+
+/// P4: una página (desde 1) de los work packages abiertos asignados al
+/// usuario, en el JSON de OpenProject, que el webview lee como datos.
+#[tauri::command]
+pub async fn openproject_work_packages(app: AppHandle, page: u32) -> Result<String, String> {
+    if !(1..=MAX_PAGE).contains(&page) {
+        return Err("invalid_page".into());
+    }
+    let (base, token) = credentials(&app).await?;
+    get(work_packages_url(&base, page)?, &token).await.map_err(String::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn urls_permitidas() {
+        assert_eq!(validate_url("https://op.fcv.org/").unwrap().as_str(), "https://op.fcv.org/");
+        assert_eq!(validate_url(" https://intranet.fcv.org/openproject/ ").unwrap().as_str(), "https://intranet.fcv.org/openproject");
+        for ok in ["http://openproject/", "http://op.fcv.local", "http://10.1.2.3:8080", "http://192.168.0.5", "http://op.corp", "http://localhost:3000"] {
+            assert!(validate_url(ok).is_ok(), "{ok}");
+        }
+        assert_eq!(validate_url("http://op.fcv.org").unwrap_err(), "not_https");
+        assert_eq!(validate_url("http://8.8.8.8").unwrap_err(), "not_https");
+        for bad in ["ftp://op.fcv.org", "https://u:p@op.fcv.org", "https://op.fcv.org/?x=1", "no es url"] {
+            assert_eq!(validate_url(bad).unwrap_err(), "invalid_url", "{bad}");
+        }
+    }
+
+    #[test]
+    fn consulta_de_work_packages() {
+        let base = validate_url("https://op.fcv.org/openproject").unwrap();
+        let url = work_packages_url(&base, 2).unwrap();
+        assert_eq!(url.path(), "/openproject/api/v3/work_packages");
+        let q: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
+        let filters: Value = serde_json::from_str(&q["filters"]).unwrap();
+        assert_eq!(filters[0]["assignee"]["values"][0], "me");
+        assert_eq!(filters[1]["status"]["operator"], "o");
+        assert_eq!(q["offset"], "2");
+        assert_eq!(q["pageSize"], "100");
+    }
+
+    #[test]
+    fn codigos_de_error() {
+        assert_eq!(status_error(302), "redirected");
+        assert_eq!(status_error(401), "unauthorized");
+        assert_eq!(status_error(404), "not_found");
+        assert_eq!(status_error(500), "provider_error");
+    }
+}

@@ -28,11 +28,13 @@ export interface CustomField extends PersonField {
   kind: 'user' | 'text';
 }
 
-/** P5: el código y el proyecto que la importación le puso a una tarea. Si
- *  el usuario los cambió después, no se vuelven a tocar. */
+/** P5: el código, el proyecto y el avance que la importación le puso a
+ *  una tarea. Lo que el usuario cambió después no se vuelve a tocar. */
 export interface Managed {
   code: string;
   project: string;
+  /** P5d: el avance que puso; sin valor si todavía no puso ninguno. */
+  progress?: number;
 }
 
 export interface OpenProjectSettings {
@@ -76,7 +78,9 @@ export function readOpenProjectSettings(raw: Record<string, unknown> | undefined
   }
   if (isObject(raw.managed)) {
     for (const [k, v] of Object.entries(raw.managed)) {
-      if (isObject(v) && typeof v.code === 'string' && typeof v.project === 'string') out.managed[k] = { code: v.code, project: v.project };
+      if (isObject(v) && typeof v.code === 'string' && typeof v.project === 'string') {
+        out.managed[k] = { code: v.code, project: v.project, ...(typeof v.progress === 'number' ? { progress: v.progress } : {}) };
+      }
     }
   }
   if (raw.auto === true) out.auto = true;

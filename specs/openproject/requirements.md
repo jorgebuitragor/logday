@@ -66,6 +66,10 @@ Usa la API v3 de OpenProject con el token de API personal del usuario
   corregir el código y el proyecto (P5, P5b) **solo si siguen como los
   dejó la importación**. Si el usuario los cambió, no se tocan. El título
   y el cuerpo nunca se tocan.
+- P5d. Cada tarea DEBERÁ llevar el avance de OpenProject
+  (`percentageDone`) en su campo de progreso (`progress`, logday#36). En
+  cada importación se actualiza con la misma regla de P5c: solo si el
+  usuario no lo cambió en Logday.
 - P6. Un work package ya importado NO DEBERÁ importarse otra vez ni pisar
   la tarea, aunque cambie en OpenProject: el usuario pudo editarla, y las
   escrituras van por LWW y el CRDT. Lo que se haga en Logday tampoco

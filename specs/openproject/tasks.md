@@ -40,6 +40,7 @@ Estado: en progreso.
   - la nueva fue a la épica más cercana;
   - la que el usuario movió a mano no se tocó;
   - la segunda importación no cambió nada.
-- [ ] Avance (%): espera el campo `progress` en las tareas, que se hace en
-  otra sesión (servidor, Desktop, Web y Mobile).
+- [x] Avance (%) desde `percentageDone` en `Task.progress` (29 oct 2026),
+  con la rama de logday#36 mergeada en esta. El campo es de la sesión de
+  progreso: servidor, Desktop, Web y Mobile.
 - [ ] Probarlo en la QA con el OpenProject de la FCV.

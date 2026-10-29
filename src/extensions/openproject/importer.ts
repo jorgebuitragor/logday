@@ -152,8 +152,9 @@ async function run(): Promise<ImportResult> {
     const managed = { ...settings.managed };
     const save = () => store().updateExtensionSettings(OPENPROJECT_ID, { imported, managed });
 
-    // 4. P5c: las ya importadas se corrigen (código y proyecto) solo si el
-    //    usuario no los cambió: si siguen como los dejó la importación.
+    // 4. P5c, P5d: las ya importadas se corrigen (código, proyecto y avance)
+    //    solo si el usuario no los cambió: si siguen como los dejó la
+    //    importación.
     let updated = 0;
     const byTask = new Map(known.map((t) => [t.id, t]));
     for (const wp of all) {
@@ -167,7 +168,10 @@ async function run(): Promise<ImportResult> {
       const next: Task = { ...task };
       if ((task.taskCode ?? '') === prev.code && code !== prev.code) next.taskCode = code;
       if (task.project === prev.project && project !== prev.project) next.project = project;
-      if (next.taskCode !== task.taskCode || next.project !== task.project) {
+      // P5d: el avance sigue al de OpenProject mientras el usuario no lo cambie.
+      const progressMine = task.progress === prev.progress;
+      if (progressMine && wp.progress !== undefined && wp.progress !== prev.progress) next.progress = wp.progress;
+      if (next.taskCode !== task.taskCode || next.project !== task.project || next.progress !== task.progress) {
         if (next.project !== task.project) await ensureProject(next.project);
         if (next.taskCode !== task.taskCode) {
           if (task.taskCode) codeOwner.delete(task.taskCode);
@@ -178,9 +182,11 @@ async function run(): Promise<ImportResult> {
       }
       // Lo que el usuario cambió queda como lo dejó la importación: así no
       // se confunde con un valor puesto por ella y no se vuelve a tocar.
+      const progress = progressMine ? next.progress : prev.progress;
       managed[wp.id] = {
         code: (task.taskCode ?? '') === prev.code ? (next.taskCode ?? '') : prev.code,
         project: task.project === prev.project ? next.project : prev.project,
+        ...(progress !== undefined ? { progress } : {}),
       };
       await save();
     }
@@ -196,11 +202,12 @@ async function run(): Promise<ImportResult> {
       const task = await store().createTask(title, project, content, taskCode, {
         tags: ['openproject'],
         ...(due ? { due } : {}),
+        ...(wp.progress !== undefined ? { progress: wp.progress } : {}),
         open: false,
       });
       codeOwner.set(taskCode, task.id);
       imported[wp.id] = task.id;
-      managed[wp.id] = { code: task.taskCode ?? '', project };
+      managed[wp.id] = { code: task.taskCode ?? '', project, ...(task.progress !== undefined ? { progress: task.progress } : {}) };
       created++;
       // Se guarda tras cada tarea: si algo falla a mitad, lo creado ya no
       // se repite en la próxima importación.

@@ -11,8 +11,8 @@ describe('configuración de OpenProject', () => {
     expect(readOpenProjectSettings(undefined)).toEqual({ project: DEFAULT_PROJECT, personFields: [], managed: {}, auto: false, imported: {} });
     expect(readOpenProjectSettings({
       codeField: { id: 'customField2', name: 'Tarea' },
-      managed: { 1234: { code: 'T-1', project: 'openproject/app' }, 9: { code: 1 } },
-    })).toMatchObject({ codeField: { id: 'customField2', name: 'Tarea' }, managed: { 1234: { code: 'T-1', project: 'openproject/app' } } });
+      managed: { 1234: { code: 'T-1', project: 'openproject/app', progress: 40 }, 9: { code: 1 } },
+    })).toMatchObject({ codeField: { id: 'customField2', name: 'Tarea' }, managed: { 1234: { code: 'T-1', project: 'openproject/app', progress: 40 } } });
     expect(readOpenProjectSettings({ codeField: { id: 'subject', name: 'x' } }).codeField).toBeUndefined();
     // P4b: solo ids de campos personalizados; el webview no arma otros filtros.
     expect(readOpenProjectSettings({ personFields: [{ id: 'customField12', name: 'Responsable Desarrollo' }, { id: 'author', name: 'x' }, 'y'] }).personFields)

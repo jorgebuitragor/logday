@@ -70,7 +70,63 @@ reconocido", no bloquea, y mejora solo con reputación/tiempo).
 Se prueba explícitamente en la validación (`tasks.md`). Si el bloqueo
 aparece en la práctica, la única solución real es conseguir una cuenta
 de Apple Developer ($99/año) para notarizar — eso queda fuera de este
-spec, se documenta acá como riesgo aceptado por ahora.
+spec, se documenta acá como riesgo aceptado por ahora. El certificado
+autofirmado de la sección siguiente no cambia esto; resuelve otra cosa
+(el llavero).
+
+## Firma estable en macOS (certificado autofirmado)
+
+Decidido con Jorge el 29 oct 2026, **sin pagar** la cuenta de Apple
+Developer.
+
+**El problema.** Con la firma ad hoc, cada versión tiene otra firma y
+macOS la trata como otra app. Así, el llavero vuelve a pedir la clave
+tras cada actualización a quien usa extensiones con secretos (MCP,
+Granola, OpenProject…). Los secretos no se pierden; solo se vuelve a
+pedir permiso.
+
+**La solución.** Firmar todas las versiones con **el mismo certificado
+autofirmado**, llamado "Logday":
+- macOS reconoce cada versión como la misma app, y el "Permitir siempre"
+  dura entre actualizaciones;
+- la primera versión firmada así todavía pide la clave una vez;
+- el aviso de Gatekeeper ("desarrollador no identificado") sigue igual:
+  solo lo quita notarizar, con la cuenta paga;
+- el updater no cambia: su firma (arriba) es aparte.
+
+**Qué se configura en el repo.** En `release.yml`, `tauri-action` recibe
+tres variables:
+- `APPLE_CERTIFICATE`: el `.p12` en base64;
+- `APPLE_CERTIFICATE_PASSWORD`;
+- `APPLE_SIGNING_IDENTITY`: el nombre del certificado, "Logday".
+
+Tauri lo importa en un llavero temporal y firma con él. Sin `APPLE_ID`
+no notariza. Si faltan los secrets, el job de macOS avisa y firma ad hoc
+como antes. `tauri.conf.json` sigue con `"-"` para los builds locales
+sin certificado.
+
+**Crear el certificado (una sola vez, en el Mac de Jorge):**
+1. Acceso a Llaveros → menú Acceso a Llaveros → Asistente de
+   certificados → Crear un certificado…
+2. Nombre: `Logday`. Tipo de identidad: Raíz autofirmada. Tipo de
+   certificado: Firma de código. Marcar "Permitir anular valores
+   predeterminados".
+3. Período de validez: `7300` días (20 años). El resto, como viene.
+   Llavero: Inicio de sesión. Crear.
+4. En "Mis certificados", clic derecho en "Logday" → Exportar → formato
+   `.p12`, con una contraseña. Guardar el `.p12` y la contraseña en el
+   gestor de contraseñas.
+5. Subir los secrets al repo:
+   - `gh secret set APPLE_CERTIFICATE --repo jorgebuitragor/logday < <(base64 -i Logday.p12)`
+   - `gh secret set APPLE_CERTIFICATE_PASSWORD --repo jorgebuitragor/logday`
+   - `gh secret set APPLE_SIGNING_IDENTITY --repo jorgebuitragor/logday --body Logday`
+
+**Cuidados.**
+- Si alguien obtiene el `.p12`, podría firmar apps que macOS tomaría por
+  Logday.
+- Si se pierde, se crea otro, y los usuarios ven el aviso del llavero
+  una vez más.
+- No usar los certificados de la FCV.
 
 ## Frontend
 

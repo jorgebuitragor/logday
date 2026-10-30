@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 import { invoke } from '@tauri-apps/api/core';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import TauriWebSocket from '@tauri-apps/plugin-websocket';
 import { check as checkUpdateRemote, Update as TauriUpdate } from '@tauri-apps/plugin-updater';
 import { getVersion } from '@tauri-apps/api/app';
@@ -12,7 +11,7 @@ import { Note } from '../types/note';
 import { OvertimeEntry, OvertimeMonthMeta } from '../types/overtime';
 import { CalendarEvent } from '../types/calendar';
 import { AbsenceDay, AbsenceType } from '../types/absence';
-import { Theme, BuiltInTheme, CustomTheme } from '../types/theme';
+import { Theme, CustomTheme } from '../types/theme';
 import { GitConfig, GitStatus, GitRemoteStatus } from '../types/git';
 import { SyncConfig, SyncConnectionStatus } from '../types/sync';
 import { AppConfig, ViewMode, ActiveSection, StartupScreen, Shortcuts, DEFAULT_SHORTCUTS, NotesView, NoteSortBy, NoteSortDir, TaskSortBy } from '../types/config';
@@ -24,7 +23,6 @@ import {
   extensionSection,
 } from '../extensions/state';
 import { clearExtensionSecret } from '../extensions/secrets';
-import { deriveCustomThemeVars } from '../lib/themeColor';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
 import { parseDailyFile, serializeDailyFile } from '../lib/dailyFileFormat';
 import { generateOvertimeXlsx } from '../lib/overtimeExcel';
@@ -598,59 +596,10 @@ export function applyAnimationsToDOM(enabled: boolean) {
   document.documentElement.classList.toggle('no-animations', !enabled);
 }
 
-const CUSTOM_THEME_VARS = [
-  '--bg-base', '--bg-panel', '--bg-surface', '--bg-secondary', '--bg-hover', '--bg-elevated', '--bg-input',
-  '--border', '--border-card', '--border-high',
-  '--text-primary', '--text-body', '--text-secondary', '--text-tertiary', '--text-muted', '--text-hint', '--text-faint',
-  '--accent', '--accent-strong', '--accent-soft', '--accent-ink', '--accent-inline', '--accent-link', '--accent-code',
-] as const;
-
-const TINTED_BUILTIN_THEMES: BuiltInTheme[] = ['high-contrast', 'visual-rest', 'sepia', 'oled', 'nordic'];
-
-export function applyCustomThemeToDOM(customTheme: CustomTheme | null) {
-  const root = document.documentElement.style;
-  if (!customTheme) {
-    CUSTOM_THEME_VARS.forEach((v) => root.removeProperty(v));
-    return;
-  }
-  const vars = deriveCustomThemeVars(customTheme);
-  Object.entries(vars).forEach(([k, v]) => root.setProperty(k, v));
-}
-
-export function applyThemeToDOM(theme: Theme, animate = false, customThemes: CustomTheme[] = []) {
-  let resolved: BuiltInTheme;
-  let custom: CustomTheme | null = null;
-
-  if (theme.startsWith('custom:')) {
-    custom = customThemes.find((t) => `custom:${t.id}` === theme) ?? null;
-    resolved = custom?.base ?? 'dark';
-  } else {
-    resolved = theme === 'system'
-      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-      : (theme as BuiltInTheme);
-  }
-
-  if (animate) {
-    document.documentElement.classList.add('theme-animating');
-    window.setTimeout(() => {
-      document.documentElement.classList.remove('theme-animating');
-    }, 280);
-  }
-
-  document.documentElement.dataset.theme = resolved;
-  applyCustomThemeToDOM(custom);
-  document.documentElement.classList.toggle(
-    'theme-tinted',
-    custom !== null || TINTED_BUILTIN_THEMES.includes(resolved),
-  );
-
-  try {
-    const nativeTheme = theme === 'system' ? null : (resolved === 'dark' ? 'dark' : 'light');
-    void getCurrentWindow().setTheme(nativeTheme).catch(() => {});
-  } catch {
-    // Puede ejecutarse fuera del contexto Tauri (tests o navegador)
-  }
-}
+// Los temas se aplican desde `lib/theme.ts`, que también usa la ventana
+// de la captura rápida sin cargar el store (specs/captura-rapida).
+import { applyCustomThemeToDOM, applyThemeToDOM } from '../lib/theme';
+export { applyCustomThemeToDOM, applyThemeToDOM };
 
 // ── Sync (logday-server): escritura con cola offline ───────────────
 // Al crear/editar/borrar una entidad localmente, si sync está

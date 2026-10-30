@@ -99,6 +99,11 @@ tengan su primera extensión.
   notas (un bloque de código con su lenguaje, como ```excalidraw), que
   ella dibuja y edita. Con la extensión apagada, el bloque se ve como un
   bloque de código normal y no se pierde nada.
+- R25. Una extensión DEBERÁ poder registrar un atajo de teclado global y
+  tener su propia ventana (por ejemplo, la captura rápida). La ventana se
+  crea al activarla y se destruye al desactivarla, y NO DEBERÁ escribir
+  en disco por su cuenta: le pide a la ventana principal que lo haga con
+  las acciones del store (R18).
 
 ### Robustez
 

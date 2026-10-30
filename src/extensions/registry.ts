@@ -1,4 +1,4 @@
-import { Bot, CalendarDays, ClipboardList, MessagesSquare, NotebookPen, PenTool, Webhook } from 'lucide-react';
+import { Bot, CalendarDays, ClipboardList, MessagesSquare, NotebookPen, PenTool, Webhook, Zap } from 'lucide-react';
 import type { ExtensionDefinition, ExtensionId } from './types';
 
 /** Extensiones que implementa Desktop (R4). Solo metadatos: el código de
@@ -80,6 +80,15 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     // R24: sus dibujos van en bloques ```excalidraw dentro de las notas.
     noteBlock: { language: 'excalidraw' },
     load: () => import('./excalidraw').then((m) => m.default),
+  },
+  {
+    id: 'quick-capture',
+    category: 'tool',
+    icon: Zap,
+    apps: ['desktop'],
+    // C19: no envía nada fuera del equipo, así que no lleva el aviso de R6.
+    settings: true,
+    load: () => import('./quick-capture').then((m) => m.default),
   },
 ];
 

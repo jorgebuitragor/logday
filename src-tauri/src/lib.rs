@@ -678,6 +678,7 @@ pub fn run() {
             extensions::quick_capture::quick_capture_configure,
             extensions::quick_capture::quick_capture_disable,
             extensions::quick_capture::quick_capture_hide,
+            extensions::quick_capture::quick_capture_focus,
             extensions::quick_capture::quick_capture_open_main,
         ])
         .run(tauri::generate_context!())

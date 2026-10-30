@@ -73,7 +73,15 @@ function CaptureForm() {
 
   useEffect(() => {
     applyThemeToDOM((localStorage.getItem('theme') as Theme) || 'system');
-    const focus = () => window.setTimeout(() => textRef.current?.focus(), 0);
+    // Si la ventana no quedó con el foco del sistema, se pide otra vez:
+    // en macOS, activar la app desde el atajo a veces falla (QA).
+    const focus = (tries = 5) => window.setTimeout(() => {
+      textRef.current?.focus();
+      if (!document.hasFocus() && tries > 0) {
+        void invoke('quick_capture_focus').catch(() => {});
+        focus(tries - 1);
+      }
+    }, tries === 5 ? 0 : 120);
     focus();
     void loadContext();
     const unlisten = listen(EVT_SHOWN, () => {

@@ -21,7 +21,23 @@ Estado: en progreso.
 - [x] Registro de la extensión (`quick-capture`, Herramientas) y textos
   en es y en (C22).
 - [x] Pruebas, build, lint y `cargo test`.
-- [ ] QA en la app aislada: atajo con la app oculta y con otra app al
-  frente, guardar tarea y nota, ⌘+Enter, Esc con borrador, foco de
-  vuelta, atajo ocupado, bandeja, desactivar.
+- [x] QA en la app aislada (29 oct 2026, macOS, con el atajo de verdad):
+  - con la app activa y con Editor de Texto al frente, el atajo abre la
+    captura en el monitor del puntero y con el foco (tres veces seguidas);
+  - Enter guarda la tarea en `inbox` con título y contenido, confirma
+    "Tarea creada en inbox" y se oculta, sin cambiar la sección;
+  - Esc conserva el borrador, que vuelve al abrirla otra vez, y devuelve
+    el foco a Editor de Texto;
+  - Tab llega a Tarea y Nota; con la ventana principal en la bandeja solo
+    aparece la captura;
+  - ⌘Enter abre la nota en Notas y la tarea en Inbox con su panel;
+  - el panel muestra el atajo y su estado, y cambiarlo a ⌃⌥L libera
+    ⌘⇧Espacio; "Restablecer" vuelve al de antes;
+  - al desactivarla, el atajo deja de abrirla y se va su entrada de
+    Opciones; al activarla otra vez no pide aviso y el atajo vuelve.
+  - La QA encontró y se corrigieron: el foco con otra app al frente, el
+    editor de notas al abrir con ⌘Enter y el panel de la tarea que se
+    cerraba.
+- [ ] Probar la entrada de la bandeja, el aviso de atajo ocupado y los
+  textos en inglés.
 - [ ] Compilar en Windows y Linux (el plugin de atajos y la ventana).

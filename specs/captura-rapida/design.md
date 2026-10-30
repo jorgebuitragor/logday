@@ -43,8 +43,12 @@ desde Rust, así que el webview no necesita permisos del plugin.
   bandeja y destruye la ventana (C5, C20).
 - `toggle(app)` (no es comando): lo que hacen el atajo y la bandeja. Si
   está visible la oculta (C7); si no, anota si Logday era la app activa,
-  la pone en el monitor del puntero, la muestra, le da el foco y emite
-  `quick-capture:shown` (C6).
+  la pone en el monitor del puntero, la muestra y, ya en el bucle de
+  eventos, le da el foco y emite `quick-capture:shown` (C6). En macOS,
+  `set_focus` no hace nada si la ventana todavía no se ve.
+- `quick_capture_focus()`: la ventana lo pide hasta cinco veces si al
+  mostrarse no tiene el foco. Con otra app al frente, activar Logday
+  desde el atajo a veces falla a la primera (QA, 29 oct 2026).
 - `quick_capture_hide()`: Esc, después de guardar o el atajo con la
   ventana abierta. En macOS, si Logday no era la app activa al abrirla,
   llama a `AppHandle::hide()` para que el foco vuelva a la app anterior
@@ -107,8 +111,15 @@ ventana carga el mismo bundle firmado, así que se acepta.
   - tarea: `createTask(title, project || 'inbox', content, undefined, { open })`;
   - nota: `createNoteWith({ title, content, folder })` y, con `open`,
     `setActiveNote(note)`;
-  - con `open`: antes cambia a la sección y después llama a
-    `quick_capture_open_main`.
+  - con `open`: primero muestra la ventana principal
+    (`quick_capture_open_main`), después la sección con el editor vacío
+    y, ya montado, lo creado. La tarea se abre en su proyecto, para que se
+    vea en la lista.
+  - Ese orden sale de la QA: si el editor de notas se monta por primera
+    vez con una nota ya elegida, falla (`commandManager` nulo), y Kanban y
+    Calendario, que se cargan con `lazy`, cierran el panel de la tarea al
+    montarse. Por eso se cargan antes esos módulos y se esperan dos
+    cuadros antes de abrir lo creado.
   - Responde `{ ok: true, kind, where }` o `{ ok: false, error }`.
 - `Settings`: grabador del atajo (escucha `keydown` y lo traduce al
   formato del plugin, `CommandOrControl+Shift+Space`), el estado del
@@ -138,6 +149,13 @@ destruye al desactivarla, y no escribe en disco por su cuenta.
 - **Conflictos del atajo:** macOS no siempre avisa si otra app ya usa el
   atajo; puede registrarse y no dispararse. Si pasa, se cambia en el
   panel; la entrada de la bandeja sigue sirviendo.
+- **macOS trae la ventana principal:** al activar Logday desde el atajo,
+  macOS también trae al frente su ventana principal si estaba abierta
+  (detrás de la captura). Al cerrar la captura, Logday se oculta y vuelve
+  la app anterior (C11). Si la ventana principal estaba cerrada (en la
+  bandeja), solo aparece la captura. Evitarlo del todo pide una ventana
+  que no active la app (un `NSPanel`, con el crate `tauri-nspanel`); se
+  deja para después si molesta.
 - **Wayland:** el plugin no admite atajos globales ahí; queda la bandeja
   (C3, C4).
 - **Ventana principal ocupada:** si está bloqueada en algo largo (la

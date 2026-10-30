@@ -105,8 +105,16 @@ fn show(app: &AppHandle, win: &WebviewWindow) {
     app.state::<QuickCaptureState>().from_other_app.store(!logday_active, Ordering::Relaxed);
     place_on_cursor_monitor(app, win);
     let _ = win.show();
-    let _ = win.set_focus();
-    let _ = app.emit("quick-capture:shown", ());
+    // En macOS, `set_focus` no hace nada si la ventana todavía no se ve, y
+    // `show` se aplica después en el bucle de eventos. Con otra app al
+    // frente, la ventana aparecía sin el foco (QA, 29 oct 2026). Se pide
+    // el foco detrás de `show`, para que active Logday y la ventana.
+    let focus = win.clone();
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let _ = focus.set_focus();
+        let _ = handle.emit("quick-capture:shown", ());
+    });
 }
 
 /// Oculta la ventana y, si Logday no era la app activa, devuelve el foco
@@ -192,6 +200,21 @@ pub async fn quick_capture_disable(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn quick_capture_hide(app: AppHandle) -> Result<(), String> {
     hide(&app);
+    Ok(())
+}
+
+/// La ventana lo pide si al mostrarse no quedó con el foco: en macOS,
+/// activar la app desde un atajo global no siempre funciona a la primera
+/// (QA, 29 oct 2026).
+#[tauri::command]
+pub async fn quick_capture_focus(app: AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window(WINDOW_LABEL) {
+        if win.is_visible().unwrap_or(false) {
+            #[cfg(target_os = "macos")]
+            let _ = app.show();
+            let _ = win.set_focus();
+        }
+    }
     Ok(())
 }
 

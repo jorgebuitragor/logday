@@ -52,3 +52,4 @@ tres archivos:
 | Excalidraw (extensión `excalidraw`, dibujos en las notas) | en progreso | [`excalidraw/`](./excalidraw/requirements.md) |
 | OpenProject (extensión `openproject`, work packages como tareas) | en progreso | [`openproject/`](./openproject/requirements.md) |
 | Progreso de tareas (`Task.progress`, 0–100) | implementado, sin probar en la app | [`progreso-tareas/`](./progreso-tareas/requirements.md) |
+| Captura rápida (extensión `quick-capture`, atajo global) | en diseño | [`captura-rapida/`](./captura-rapida/requirements.md) |

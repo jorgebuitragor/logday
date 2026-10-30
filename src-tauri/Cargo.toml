@@ -30,6 +30,9 @@ tauri-plugin-notification = "2"
 tauri-plugin-websocket = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# Atajo global de la captura rápida (specs/captura-rapida/design.md). Se
+# registra desde Rust, así que el webview no necesita permisos del plugin.
+tauri-plugin-global-shortcut = "2"
 dirs-next = "2"
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }

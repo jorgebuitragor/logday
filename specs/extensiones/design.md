@@ -274,3 +274,17 @@ Siguen el mismo modelo cuando tengan su primera extensión:
   quien no usa ninguna.
 - **Un ErrorBoundary global:** ya existe y cierra la app entera. Fue la
   causa del fallo de la vista previa de enlaces arreglado en v1.0.7.
+
+## Atajo global y ventana propia (R25)
+
+La primera es la captura rápida (`specs/captura-rapida/design.md`).
+
+- El atajo lo registra Rust con `tauri-plugin-global-shortcut`, así que
+  el webview no necesita permisos del plugin. El manejador del plugin es
+  uno solo, en `lib.rs`, y despacha a la extensión.
+- La ventana usa el mismo bundle; `main.tsx` la reconoce por su etiqueta
+  y carga solo su componente, sin `App` ni el store.
+- Su capacidad (`capabilities/<id>.json`) da solo eventos: habla con la
+  ventana principal por eventos de Tauri, y esta escribe con el store.
+- La bandeja se arma con `build_tray_menu`, que agrega las entradas de
+  las extensiones activas; `refresh_tray` la rehace.

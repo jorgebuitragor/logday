@@ -5,7 +5,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{IsMenuItem, Menu, MenuItem},
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
 };
 
@@ -487,10 +487,39 @@ fn open_in_system(path: String) -> Result<(), String> {
     Ok(())
 }
 
+const TRAY_ID: &str = "main";
+
+/// Menú de la bandeja. "Captura rápida" aparece solo con la extensión
+/// activa (specs/captura-rapida C4), por eso se rearma con `refresh_tray`.
+fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let show_item = MenuItem::with_id(app, "show", "Mostrar Logday", true, None::<&str>)?;
+    let capture_item = match app.state::<extensions::quick_capture::QuickCaptureState>().tray_label() {
+        Some(label) => Some(MenuItem::with_id(app, "quick_capture", label, true, None::<&str>)?),
+        None => None,
+    };
+    let new_note_item = MenuItem::with_id(app, "new_note", "Nueva nota", true, None::<&str>)?;
+    let new_task_item = MenuItem::with_id(app, "new_task", "Nueva tarea", true, None::<&str>)?;
+    let sep = tauri::menu::PredefinedMenuItem::separator(app)?;
+    let quit_item = MenuItem::with_id(app, "quit", "Salir", true, None::<&str>)?;
+    let mut items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![&show_item];
+    if let Some(item) = &capture_item {
+        items.push(item);
+    }
+    items.extend([&new_note_item as &dyn IsMenuItem<tauri::Wry>, &new_task_item, &sep, &quit_item]);
+    Menu::with_items(app, &items)
+}
+
+pub(crate) fn refresh_tray(app: &tauri::AppHandle) {
+    if let (Some(tray), Ok(menu)) = (app.tray_by_id(TRAY_ID), build_tray_menu(app)) {
+        let _ = tray.set_menu(Some(menu));
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(extensions::mcp::McpState::default())
+        .manage(extensions::quick_capture::QuickCaptureState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -502,15 +531,22 @@ pub fn run() {
             // que necesita el AppHandle ya construido.
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            // El atajo de la captura rápida solo se registra si la extensión
+            // está activa (quick_capture_configure); el plugin solo avisa.
+            #[cfg(desktop)]
+            app.handle().plugin(
+                tauri_plugin_global_shortcut::Builder::new()
+                    .with_handler(|app, _shortcut, event| {
+                        if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                            extensions::quick_capture::toggle(app);
+                        }
+                    })
+                    .build(),
+            )?;
 
-            let show_item = MenuItem::with_id(app, "show", "Mostrar Logday", true, None::<&str>)?;
-            let new_note_item = MenuItem::with_id(app, "new_note", "Nueva nota", true, None::<&str>)?;
-            let new_task_item = MenuItem::with_id(app, "new_task", "Nueva tarea", true, None::<&str>)?;
-            let sep = tauri::menu::PredefinedMenuItem::separator(app)?;
-            let quit_item = MenuItem::with_id(app, "quit", "Salir", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_item, &new_note_item, &new_task_item, &sep, &quit_item])?;
+            let menu = build_tray_menu(app.handle())?;
 
-            TrayIconBuilder::new()
+            TrayIconBuilder::with_id(TRAY_ID)
                 .icon(tauri::include_image!("icons/tray-icon.png"))
                 .tooltip("Logday")
                 .menu(&menu)
@@ -522,6 +558,7 @@ pub fn run() {
                             let _ = w.set_focus();
                         }
                     }
+                    "quick_capture" => extensions::quick_capture::toggle(app),
                     "new_note" => {
                         if let Some(w) = app.get_webview_window("main") {
                             let _ = w.show();
@@ -638,6 +675,10 @@ pub fn run() {
             extensions::mcp::mcp_server_start,
             extensions::mcp::mcp_server_stop,
             extensions::mcp::mcp_reply,
+            extensions::quick_capture::quick_capture_configure,
+            extensions::quick_capture::quick_capture_disable,
+            extensions::quick_capture::quick_capture_hide,
+            extensions::quick_capture::quick_capture_open_main,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

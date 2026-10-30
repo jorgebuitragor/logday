@@ -32,30 +32,37 @@ Descartado:
 Plugin nuevo: `tauri-plugin-global-shortcut` 2. El atajo se registra
 desde Rust, así que el webview no necesita permisos del plugin.
 
-- `quick_capture_enable(shortcut)`: registra el atajo (C1), crea la
-  ventana oculta si no existe y agrega "Captura rápida" a la bandeja
-  (C4). Devuelve `ok` o el error de C3: `invalid`, `taken` o
-  `unsupported`.
-- `quick_capture_set_shortcut(shortcut)`: libera el anterior y registra
-  el nuevo. Si el nuevo falla, vuelve a registrar el anterior.
-- `quick_capture_disable()`: libera el atajo, cierra la ventana y quita
-  la entrada de la bandeja (C5, C20).
-- `quick_capture_toggle()`: lo que hace el atajo y la bandeja. Si está
-  visible la oculta (C7); si no, la centra en el monitor del puntero, la
-  muestra, le da el foco y le emite `quick-capture:shown` (C6).
-- `quick_capture_hide()`: la oculta. En macOS, si la ventana principal
-  no está visible, llama a `AppHandle::hide()` para que el foco vuelva a
-  la app anterior (C11). En Windows el sistema ya lo devuelve; en Linux
-  depende del gestor de ventanas.
+- `quick_capture_configure(shortcut, label, pretty)`: activa la captura o
+  cambia su atajo. Libera el anterior, registra el nuevo (C1), crea la
+  ventana oculta si no existe y deja "Captura rápida" en la bandeja (C4),
+  con el atajo al lado si quedó registrado. `label` y `pretty` los arma el
+  webview, en el idioma de la app. Si el atajo falla devuelve `invalid`,
+  `taken` o `unsupported` (C3), pero la ventana y la bandeja quedan; el
+  panel vuelve a registrar el atajo anterior.
+- `quick_capture_disable()`: libera el atajo, quita la entrada de la
+  bandeja y destruye la ventana (C5, C20).
+- `toggle(app)` (no es comando): lo que hacen el atajo y la bandeja. Si
+  está visible la oculta (C7); si no, anota si Logday era la app activa,
+  la pone en el monitor del puntero, la muestra, le da el foco y emite
+  `quick-capture:shown` (C6).
+- `quick_capture_hide()`: Esc, después de guardar o el atajo con la
+  ventana abierta. En macOS, si Logday no era la app activa al abrirla,
+  llama a `AppHandle::hide()` para que el foco vuelva a la app anterior
+  sin traer la ventana principal (C11). En Windows el sistema ya lo
+  devuelve; en Linux depende del gestor de ventanas.
+- Perder el foco (un clic fuera) solo oculta la ventana: el foco ya fue a
+  donde se hizo clic, aunque sea la ventana principal (C10).
+- `quick_capture_open_main()`: ⌘/Ctrl+Enter (C13). Oculta la captura y
+  muestra la ventana principal, que ya abrió lo creado.
 
-Ventana: etiqueta `quick-capture`, URL `index.html?window=quick-capture`,
-600 × 220, sin decoración, `always_on_top`, `skip_taskbar`, no
+Ventana: etiqueta `quick-capture`, URL `index.html` (el frontend la
+reconoce por la etiqueta), 600 × 220, sin decoración, `always_on_top`, `skip_taskbar`, no
 redimensionable, `visible_on_all_workspaces` (para que aparezca sobre
-apps en pantalla completa en macOS). Al perder el foco, Rust la oculta
-(C10).
+apps en pantalla completa en macOS).
 
-La bandeja se arma hoy en `setup()` con un menú fijo. Pasa a una función
-`build_tray_menu(app, capture: Option<&str>)` que se vuelve a llamar con
+La bandeja se armaba en `setup()` con un menú fijo. Ahora lo arma
+`build_tray_menu(app)` en `lib.rs`, que lee el texto de "Captura rápida"
+del estado de la extensión, y `refresh_tray(app)` lo vuelve a poner con
 `tray.set_menu(...)` al activar, desactivar o cambiar el atajo.
 
 Capacidades: `capabilities/quick-capture.json` solo para esa ventana,
@@ -66,9 +73,10 @@ ventana carga el mismo bundle firmado, así que se acepta.
 
 ## Ventana de captura (frontend)
 
-- `main.tsx`: si `?window=quick-capture`, carga con `import()` solo
-  `src/extensions/quick-capture/CaptureWindow.tsx` y no `App`. No importa
-  el store ni lee archivos.
+- `main.tsx`: lee la etiqueta de la ventana (`getCurrentWindow().label`).
+  Si es `quick-capture`, carga con `import()` solo
+  `src/extensions/quick-capture/CaptureWindow.tsx`; si no, `App`, también
+  con `import()`, para que la captura no cargue el store ni lea archivos.
 - `applyThemeToDOM` vive hoy en `appStore.ts`. Se mueve a
   `src/lib/theme.ts` (el store la reexporta), para aplicar el tema sin
   importar el store (C12).
@@ -81,24 +89,26 @@ ventana carga el mismo bundle firmado, así que se acepta.
   destino (C8).
 - El borrador vive en el estado de la ventana, que solo se oculta, nunca
   se cierra mientras la extensión esté activa (C10). Se vacía al guardar.
-- Al guardar, emite a `main` `quick-capture:save`
-  `{ id, kind, title, content, project | folder, open }` y espera
-  `quick-capture:reply` con el mismo `id`, 5 s como mucho (C17).
+- Las dos ventanas hablan con `quick-capture:request` y
+  `quick-capture:reply` (eventos de Tauri, con un `id` por petición):
+  `{ type: 'context' }` y `{ type: 'save', kind, title, content, target,
+  open }`. La captura espera la respuesta 5 s como mucho (C17).
 - Un ErrorBoundary propio envuelve la ventana (C21).
 
 ## Módulo en la ventana principal (`extensions/quick-capture/index.ts`)
 
 - `start()`:
-  - llama a `quick_capture_enable` con el atajo de `settings`;
-  - escucha `quick-capture:context` y `quick-capture:save`;
+  - llama a `quick_capture_configure` con el atajo de `settings`, y otra
+    vez si cambia el idioma (el texto de la bandeja);
+  - escucha `quick-capture:request`;
   - devuelve la función que deja de escuchar y llama a
     `quick_capture_disable`.
 - `save`:
-  - tarea: `createTask(title, project, content, undefined, { open: false })`;
-  - nota: `createNoteWith({ title, content, folder })`;
-  - con `open`: muestra la ventana principal (comando existente o
-    `getCurrentWindow().show()`), cambia a la sección y abre lo creado,
-    como hace hoy "Nueva tarea" de la bandeja.
+  - tarea: `createTask(title, project || 'inbox', content, undefined, { open })`;
+  - nota: `createNoteWith({ title, content, folder })` y, con `open`,
+    `setActiveNote(note)`;
+  - con `open`: antes cambia a la sección y después llama a
+    `quick_capture_open_main`.
   - Responde `{ ok: true, kind, where }` o `{ ok: false, error }`.
 - `Settings`: grabador del atajo (escucha `keydown` y lo traduce al
   formato del plugin, `CommandOrControl+Shift+Space`), el estado del
@@ -110,8 +120,8 @@ ventana carga el mismo bundle firmado, así que se acepta.
 // AppConfig.extensions["quick-capture"].settings (sin secretos)
 { "shortcut": "CommandOrControl+Shift+Space",
   "kind": "task",
-  "project": "",   // "" = raíz
-  "folder": "" }
+  "project": "inbox", // las tareas sin proyecto
+  "folder": "" }     // "" = raíz
 ```
 
 Sin `secretKeys` ni `sendsDataExternally` (C19).
@@ -126,8 +136,8 @@ destruye al desactivarla, y no escribe en disco por su cuenta.
 ## Riesgos
 
 - **Conflictos del atajo:** macOS no siempre avisa si otra app ya usa el
-  atajo; puede registrarse y no dispararse. El panel lo explica y deja
-  probarlo ("Probar atajo").
+  atajo; puede registrarse y no dispararse. Si pasa, se cambia en el
+  panel; la entrada de la bandeja sigue sirviendo.
 - **Wayland:** el plugin no admite atajos globales ahí; queda la bandeja
   (C3, C4).
 - **Ventana principal ocupada:** si está bloqueada en algo largo (la

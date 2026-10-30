@@ -1,6 +1,6 @@
 # Captura rápida — Requirements
 
-Estado: en diseño.
+Estado: en progreso.
 
 ## Contexto
 
@@ -52,8 +52,9 @@ nuevas de herramientas (la otra candidata era el informe del periodo).
 - C10. Esc, o perder el foco, DEBERÁ ocultar la ventana sin guardar. El
   texto escrito DEBERÁ conservarse hasta la próxima vez que se abra
   mientras Logday siga abierto, para no perderlo por un clic fuera.
-- C11. Al ocultarse, el foco DEBERÁ volver a la app que se estaba usando
-  si la ventana principal de Logday estaba oculta.
+- C11. Al ocultarse, SI Logday no era la app activa al abrirla, el foco
+  DEBERÁ volver a la app que se estaba usando, sin traer al frente la
+  ventana principal.
 - C12. La ventana DEBERÁ usar el idioma y el tema de la app.
 
 ### Guardar
@@ -100,10 +101,10 @@ nuevas de herramientas (la otra candidata era el informe del periodo).
 - Captura en Web y Mobile (en Mobile sería el menú Compartir o un widget,
   con su propia spec).
 
-## Preguntas abiertas
+## Decisiones de Jorge (29 oct 2026)
 
-- ¿El atajo por defecto le sirve a Jorge? En Windows y Linux,
-  Ctrl+Shift+Espacio lo usan algunos IDE (sugerencias de parámetros), y
-  un atajo global se lo quita a todas las apps.
-- ¿Destino por defecto: la raíz (sin proyecto, sin carpeta) o un
-  proyecto "Bandeja" que se crea al activar?
+- Atajo por defecto: ⌘⇧Espacio en macOS y Ctrl+Shift+Espacio en Windows
+  y Linux, los propuestos. Quien lo tenga ocupado lo cambia en el panel.
+- Destino por defecto: la raíz. Para una tarea es `inbox`, el proyecto
+  que la app ya usa para las tareas sin proyecto; para una nota, sin
+  carpeta.

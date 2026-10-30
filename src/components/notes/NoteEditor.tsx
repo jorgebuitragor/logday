@@ -1142,8 +1142,16 @@ export function NoteEditor() {
 
   // Lo que se ve en pantalla se resuelve igual que siempre — síncrono,
   // directo desde `activeNote.content` — sin esperar nada del canal CRDT.
+  //
+  // `useEditor` crea el editor al renderizar y lo destruye si los efectos
+  // del componente no corren en ~1 ms (supone que el render se descartó).
+  // Cuando NoteEditor se monta al resolver su `lazy` (abrir una nota desde
+  // el Inicio recién abierta la app), React corre los efectos más tarde: el
+  // editor de este render ya está destruido (`commands` lanza) y TipTap
+  // crea otro. Se salta este y se carga la nota en el nuevo, que llega en
+  // el siguiente render y vuelve a disparar este efecto por `editor`.
   useEffect(() => {
-    if (!activeNote || !editor) return;
+    if (!activeNote || !editor || editor.isDestroyed) return;
     const normalizedContent = normalizeEditorMarkdown(activeNote.content || '');
     setTitle(activeNote.title);
     setViewMode('wysiwyg');
@@ -1320,6 +1328,10 @@ export function NoteEditor() {
   // `setTimeout` de `schedulesSave` no se cancela solo con React — si no se
   // hace flush acá, la última edición dentro de la ventana de debounce de
   // 600ms se perdería del todo al cambiar de nota rápido.
+  // Solo al desmontar, no cuando cambia `editor`: TipTap puede reemplazar el
+  // editor al montar (ver el efecto que carga la nota) y esta limpieza
+  // destruiría el Y.Doc que la hidratación acaba de llenar. Lo que lee del
+  // editor va por `editorRef`, que siempre apunta al vigente.
   useEffect(() => {
     return () => {
       disposedRef.current = true;
@@ -1360,7 +1372,7 @@ export function NoteEditor() {
       else ydoc?.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor]);
+  }, []);
 
   useEffect(() => {
     if (skipNextContentSaveRef.current) {

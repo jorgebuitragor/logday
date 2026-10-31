@@ -47,7 +47,7 @@ function ConsentModal({
           <button
             type="button"
             onClick={onAccept}
-            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500"
+            className="rounded-lg bg-[var(--accent-solid)] px-3 py-1.5 text-xs font-medium text-[var(--accent-on)] transition hover:brightness-110"
           >
             {t(language, 'extensions', 'consentAccept')}
           </button>

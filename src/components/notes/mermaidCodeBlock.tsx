@@ -1,10 +1,12 @@
-import type { MutableRefObject } from 'react';
+import { useEffect, useState, type MutableRefObject } from 'react';
 import CodeBlockLowlight, { type CodeBlockLowlightOptions } from '@tiptap/extension-code-block-lowlight';
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { MermaidBlock } from './MermaidBlock';
 import { ExtensionSlot } from '../../extensions/ExtensionSlot';
 import type { ExtensionId } from '../../extensions/types';
+import { emitNoteBlockRun } from '../../extensions/noteBlockEvents';
+import { blockIndexAt, inlineRunTarget, languageOf } from './extensionBlockPos';
 
 // Bloques de código con lenguaje `mermaid`, dibujados dentro del documento.
 //
@@ -30,6 +32,11 @@ export interface MermaidActions {
  *  qué extensión dibuja cada lenguaje y cómo abrir su editor. */
 export interface ExtensionBlocks {
   byLanguage: Record<string, ExtensionId>;
+  /** Lenguajes de los bloques en modo inline (`noteBlock.inline`): el
+   *  código se edita en la nota y la extensión pone barra y franja. */
+  inline: Record<string, boolean>;
+  /** La nota abierta, para que el bloque sepa de cuál es. */
+  noteId?: string;
   /** `index`: el n-ésimo bloque de ese lenguaje en el documento. */
   edit: (language: string, index: number) => void;
 }
@@ -63,26 +70,18 @@ function mermaidCount(doc: PMNode): number {
   return count;
 }
 
-const languageOf = (node: PMNode) => (node.type.name === 'codeBlock' ? String(node.attrs.language ?? '') : '');
-
-function blockIndexAt(doc: PMNode, pos: number, language: string): number {
-  let index = -1;
-  doc.descendants((node, nodePos) => {
-    if (nodePos > pos) return false;
-    if (languageOf(node) === language) index += 1;
-    return node.type.name !== 'codeBlock';
-  });
-  return index;
-}
+const posOf = (getPos: NodeViewProps['getPos']) => (typeof getPos === 'function' ? getPos() : undefined);
 
 /** Un bloque de extensión: lo dibuja su `NoteBlock`, aislado en su
- *  ExtensionBoundary; el código sigue en el documento, oculto. */
+ *  ExtensionBoundary; el código sigue en el documento, oculto. En el modo
+ *  inline el código se ve y se edita, entre la barra y la franja de la
+ *  extensión. */
 function ExtensionCodeBlockView({ node, editor, getPos, extension }: NodeViewProps) {
   const blocks = (extension.options as Options).extensionBlocks.current;
   const language = languageOf(node);
   const id = blocks?.byLanguage[language];
   const onEdit = () => {
-    const pos = typeof getPos === 'function' ? getPos() : undefined;
+    const pos = posOf(getPos);
     if (typeof pos === 'number' && blocks) blocks.edit(language, blockIndexAt(editor.state.doc, pos, language));
   };
   return (
@@ -91,6 +90,56 @@ function ExtensionCodeBlockView({ node, editor, getPos, extension }: NodeViewPro
         {id && <ExtensionSlot id={id} point="NoteBlock" props={{ code: node.textContent, onEdit }} />}
       </div>
       <NodeViewContent<'code'> as="code" className={`language-${language} mermaid-node-source`} />
+    </NodeViewWrapper>
+  );
+}
+
+/** El índice del bloque y el cursor cambian sin que cambie el nodo (se
+ *  agrega un bloque arriba, se mueve el cursor): se recalculan con cada
+ *  transacción del editor, y solo se vuelve a dibujar si cambian. */
+function InlineExtensionBlockView({ node, editor, getPos, extension }: NodeViewProps) {
+  const blocks = (extension.options as Options).extensionBlocks.current;
+  const language = languageOf(node);
+  const id = blocks?.byLanguage[language];
+  const read = () => {
+    const pos = posOf(getPos);
+    if (typeof pos !== 'number') return { index: -1, cursor: null as number | null };
+    const { $from } = editor.state.selection;
+    const inside = $from.parent.type.name === 'codeBlock' && $from.before() === pos;
+    return { index: blockIndexAt(editor.state.doc, pos, language), cursor: inside ? $from.parentOffset : null };
+  };
+  const [where, setWhere] = useState(read);
+  useEffect(() => {
+    const onTransaction = () => {
+      const next = read();
+      setWhere((prev) => (prev.index === next.index && prev.cursor === next.cursor ? prev : next));
+    };
+    editor.on('transaction', onTransaction);
+    return () => {
+      editor.off('transaction', onTransaction);
+    };
+  // `read` lee siempre el estado actual del editor.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, language]);
+  const slotProps = (part: 'header' | 'footer') => ({
+    code: node.textContent,
+    onEdit: () => {},
+    part,
+    noteId: blocks?.noteId,
+    index: where.index,
+    cursor: where.cursor,
+  });
+  return (
+    <NodeViewWrapper className="extension-node-view extension-node-inline" data-extension-block={language}>
+      <div contentEditable={false} suppressContentEditableWarning className="extension-block-ui">
+        {id && <ExtensionSlot id={id} point="NoteBlock" props={slotProps('header')} />}
+      </div>
+      <pre>
+        <NodeViewContent<'code'> as="code" className={`language-${language}`} />
+      </pre>
+      <div contentEditable={false} suppressContentEditableWarning className="extension-block-ui">
+        {id && <ExtensionSlot id={id} point="NoteBlock" props={slotProps('footer')} />}
+      </div>
     </NodeViewWrapper>
   );
 }
@@ -137,6 +186,28 @@ export const MermaidAwareCodeBlock = CodeBlockLowlight.extend<Options>({
     };
   },
 
+  addKeyboardShortcuts() {
+    return {
+      ...this.parent?.(),
+      // ⌘↵ (Ctrl+Enter) dentro de un bloque inline lo atiende su extensión
+      // (specs/cliente-http HT30). Fuera, sigue lo de siempre.
+      'Mod-Enter': () => {
+        const blocks = this.options.extensionBlocks.current;
+        if (!blocks) return false;
+        const target = inlineRunTarget(this.editor.state, (language) => !!blocks.inline[language]);
+        if (!target) return false;
+        emitNoteBlockRun({
+          language: target.language,
+          noteId: blocks.noteId,
+          index: target.index,
+          offset: target.offset,
+          dom: this.editor.view.nodeDOM(target.pos) as Element | null,
+        });
+        return true;
+      },
+    };
+  },
+
   addNodeView() {
     const mermaidView = ReactNodeViewRenderer(MermaidCodeBlockView, {
       // Si deja de ser mermaid, que ProseMirror cree la vista normal.
@@ -148,9 +219,23 @@ export const MermaidAwareCodeBlock = CodeBlockLowlight.extend<Options>({
     });
     const blocks = this.options.extensionBlocks;
     const isExtensionBlock = (node: PMNode) => !!blocks.current?.byLanguage[languageOf(node)];
+    const isInlineBlock = (node: PMNode) => isExtensionBlock(node) && !!blocks.current?.inline[languageOf(node)];
     const extensionView = ReactNodeViewRenderer(ExtensionCodeBlockView, {
       update: ({ oldNode, newNode, updateProps }) => {
-        if (!isExtensionBlock(newNode) || languageOf(newNode) !== languageOf(oldNode)) return false;
+        if (!isExtensionBlock(newNode) || isInlineBlock(newNode) || languageOf(newNode) !== languageOf(oldNode)) return false;
+        updateProps();
+        return true;
+      },
+    });
+    const inlineView = ReactNodeViewRenderer(InlineExtensionBlockView, {
+      // Las islas (barra y respuesta) son de la extensión: ProseMirror no
+      // maneja sus teclas, clics ni selección. El código sí es suyo.
+      stopEvent: ({ event }) => {
+        const target = event.target as Element | null;
+        return !!target?.closest?.('.extension-block-ui');
+      },
+      update: ({ oldNode, newNode, updateProps }) => {
+        if (!isInlineBlock(newNode) || languageOf(newNode) !== languageOf(oldNode)) return false;
         updateProps();
         return true;
       },
@@ -159,6 +244,7 @@ export const MermaidAwareCodeBlock = CodeBlockLowlight.extend<Options>({
 
     return (props) => {
       if (isMermaid(props.node)) return mermaidView(props);
+      if (isInlineBlock(props.node)) return inlineView(props);
       if (isExtensionBlock(props.node)) return extensionView(props);
 
       // Igual que el renderHTML por defecto: <pre><code class="language-x">.

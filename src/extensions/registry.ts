@@ -1,5 +1,6 @@
-import { Bot, CalendarDays, ClipboardList, Hourglass, MessagesSquare, NotebookPen, PenTool, Webhook, Wrench, Zap } from 'lucide-react';
+import { Bot, CalendarDays, ClipboardList, Globe, Hourglass, MessagesSquare, NotebookPen, PenTool, Webhook, Wrench, Zap } from 'lucide-react';
 import type { ExtensionDefinition, ExtensionId } from './types';
+import { httpClientSecretKeys } from './http-client/secretKeys';
 
 /** Extensiones que implementa Desktop (R4). Solo metadatos: el código de
  *  cada una se carga con `import()` cuando se activa (R16). Los textos
@@ -113,6 +114,23 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     // PM10: el contador del menú lateral.
     sidebarStatus: true,
     load: () => import('./pomodoro').then((m) => m.default),
+  },
+  {
+    id: 'http-client',
+    category: 'tool',
+    // `Globe`: no lo usa otra extensión; `Send` queda para el botón Enviar.
+    icon: Globe,
+    apps: ['desktop'],
+    // HT2: envía lo que el usuario escribe a la URL que escribe, y solo
+    // cuando pulsa Enviar. Es la excepción de R17: el host lo pone él.
+    sendsDataExternally: { to: 'URLs del usuario' },
+    settings: true,
+    // HT4: el código se edita en la nota; la extensión pone la barra y la
+    // respuesta (specs/cliente-http, design A3).
+    noteBlock: { language: 'http', inline: true, template: 'GET https://example.com\nAccept: */*\n' },
+    // HT22: una clave del llavero por variable secreta.
+    dynamicSecretKeys: httpClientSecretKeys,
+    load: () => import('./http-client').then((m) => m.default),
   },
 ];
 

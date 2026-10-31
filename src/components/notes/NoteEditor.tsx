@@ -73,6 +73,7 @@ import python from 'highlight.js/lib/languages/python';
 import sql from 'highlight.js/lib/languages/sql';
 import typescript from 'highlight.js/lib/languages/typescript';
 import yaml from 'highlight.js/lib/languages/yaml';
+import http from 'highlight.js/lib/languages/http';
 import * as Y from 'yjs';
 import {
   readPersistedUpdate, getContentText, applyTextEdit, applyEditorEdit, rebaseText, mapTextIndex,
@@ -111,7 +112,9 @@ import { formatFence, parseFencedBlocks } from '../../lib/fencedBlocks';
 // `common` de lowlight trae 37 lenguajes, la mayoría no seleccionables desde
 // la UI. Si un bloque trae un lenguaje no registrado (nota importada, etc.),
 // @tiptap/extension-code-block-lowlight cae a highlightAuto() sin romper.
-const lowlight = createLowlight({ bash, go, java, javascript, json, plaintext, python, sql, typescript, yaml });
+// `http` colorea los bloques del Cliente HTTP, con la extensión activa o
+// apagada (specs/cliente-http, design A3.6).
+const lowlight = createLowlight({ bash, go, http, java, javascript, json, plaintext, python, sql, typescript, yaml });
 const BLOCK_MENU_ESTIMATED_SIZE = { width: 220, height: 260 };
 
 type BlockMenuType =
@@ -269,7 +272,11 @@ export function NoteEditor() {
   const { enabled: enabledExtensions } = useExtensions();
   const blockExtensions = enabledExtensions.filter((def) => def.noteBlock);
   const blockLanguages: Record<string, ExtensionId> = {};
-  for (const def of blockExtensions) blockLanguages[def.noteBlock!.language] = def.id;
+  const inlineLanguages: Record<string, boolean> = {};
+  for (const def of blockExtensions) {
+    blockLanguages[def.noteBlock!.language] = def.id;
+    if (def.noteBlock!.inline) inlineLanguages[def.noteBlock!.language] = true;
+  }
   // Mermaid y estos bloques no cuentan como bloques de código normales
   // (los índices de la barra de lenguaje y del menú contextual los saltan).
   const specialFencesRef = useRef<Set<string>>(new Set(['mermaid']));
@@ -278,6 +285,8 @@ export function NoteEditor() {
   const extensionBlocksRef = useRef<ExtensionBlocks | null>(null);
   extensionBlocksRef.current = {
     byLanguage: blockLanguages,
+    inline: inlineLanguages,
+    noteId: activeNote?.id,
     edit: (language, index) => openExtensionBlockRef.current(language, index),
   };
   const codeBlockLanguages = useMemo(() => {
@@ -1654,10 +1663,41 @@ export function NoteEditor() {
     syncMarkdownToEditor(nextMarkdown);
   }, [mdContent, syncMarkdownToEditor]);
 
+  // Bloque inline nuevo (specs/cliente-http HT9): se inserta su plantilla
+  // en el cursor, sin editor aparte, y el cursor queda al final de la
+  // primera línea (la URL).
+  const insertInlineBlock = (language: string, template: string) => {
+    setShowDiagramMenu(false);
+    const text = template.replace(/^\n+|\n+$/g, '');
+    if (viewMode === 'source' || !editor) {
+      syncMarkdownToEditor(insertBlockAtSelection(mdContent, formatFence(language, text)));
+      return;
+    }
+    const from = editor.state.selection.from;
+    editor.chain().focus().insertContentAt(editor.state.selection, {
+      type: 'codeBlock', attrs: { language }, content: text ? [{ type: 'text', text }] : [],
+    }).run();
+    let target: number | null = null;
+    editor.state.doc.descendants((node, pos) => {
+      if (target !== null) return false;
+      if (node.type.name === 'codeBlock' && node.attrs.language === language && pos + node.nodeSize >= from) {
+        target = pos;
+        return false;
+      }
+      return node.type.name !== 'codeBlock';
+    });
+    if (target !== null) editor.commands.setTextSelection((target as number) + 1 + text.split('\n')[0].length);
+  };
+
   // R24: abrir el editor del bloque de una extensión (nuevo si `index` es null).
   openExtensionBlockRef.current = (language, index) => {
     const id = blockLanguages[language];
     if (!id) return;
+    const def = blockExtensions.find((d) => d.id === id);
+    if (def?.noteBlock?.inline) {
+      if (index === null) insertInlineBlock(language, def.noteBlock.template ?? '');
+      return;
+    }
     const block = index === null ? undefined : parseFencedBlocks(mdContent, language)[index];
     setShowDiagramMenu(false);
     setExtBlockEditor({ id, language, index: block ? index : null, code: block?.code ?? '' });

@@ -44,11 +44,26 @@ describe('registro de extensiones', () => {
   it('las extensiones con panel lo declaran en el registro (R21)', () => {
     // Los módulos no se cargan aquí (usan la API de Tauri): si una
     // extensión agrega o quita su `Settings`, hay que tocar también esto.
-    expect(EXTENSIONS.filter((d) => d.settings).map((d) => d.id)).toEqual(['team-chat', 'mcp', 'google-calendar', 'outgoing-webhook', 'granola', 'openproject', 'quick-capture', 'devtools', 'pomodoro']);
+    expect(EXTENSIONS.filter((d) => d.settings).map((d) => d.id)).toEqual(['team-chat', 'mcp', 'google-calendar', 'outgoing-webhook', 'granola', 'openproject', 'quick-capture', 'devtools', 'pomodoro', 'http-client']);
   });
 
   it('las extensiones con estado en el menú lateral lo declaran (R26)', () => {
     expect(EXTENSIONS.filter((d) => d.sidebarStatus).map((d) => d.id)).toEqual(['pomodoro']);
+  });
+
+  it('Cliente HTTP: herramienta con aviso, bloque inline y secretos por variable', () => {
+    const http = getExtension('http-client');
+    expect(http?.category).toBe('tool');
+    expect(http?.sendsDataExternally).toBeTruthy();
+    expect(http?.noteBlock).toMatchObject({ language: 'http', inline: true });
+    const settings = {
+      environments: [
+        { id: 'e_00000001', name: 'A', vars: [{ name: 'token', secret: true, key: 'v_0000000a', hint: '…a1b2' }, { name: 'baseUrl', secret: false, value: 'x' }] },
+        { id: 'e_00000002', name: 'B', vars: [{ name: 'token', secret: true, key: 'v_0000000b', hint: null }, { name: 'raro', secret: true, key: '../x' }] },
+      ],
+    };
+    expect(http?.dynamicSecretKeys?.(settings)).toEqual(['v_0000000a', 'v_0000000b']);
+    expect(http?.dynamicSecretKeys?.(undefined)).toEqual([]);
   });
 
   it('una id desconocida no existe', () => {

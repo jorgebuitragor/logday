@@ -79,6 +79,14 @@ export function parseExtensionsConfig(raw: unknown): ExtensionsConfig {
   return out as ExtensionsConfig;
 }
 
+/** R8: las claves del llavero que borra "Quitar configuración": las fijas
+ *  del registro y las que dependen de la configuración. Sin repetir. */
+export function secretKeysToClear(def: ExtensionDefinition | undefined, prefs: ExtensionPrefs | undefined): string[] {
+  if (!def) return [];
+  const dynamic = def.dynamicSecretKeys ? def.dynamicSecretKeys(prefs?.settings) : [];
+  return [...new Set([...(def.secretKeys ?? []), ...dynamic])];
+}
+
 export function extensionSection(id: ExtensionId): ExtensionSection {
   return `ext:${id}`;
 }

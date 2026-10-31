@@ -779,6 +779,65 @@ html.theme-animating body * {
 .prose-editor .mermaid-node-view { margin: 0.5rem 0; }
 .prose-editor .mermaid-node-source { display: none; }
 
+/* Bloque inline de una extensión (Cliente HTTP, specs/cliente-http design
+   §1.1): una tarjeta con la barra, el código editable y la respuesta. Sin
+   overflow oculto: los menús de la barra salen de la tarjeta. */
+.prose-editor .extension-node-inline {
+  margin: 0.5rem 0;
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+.prose-editor .extension-node-inline > pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0.625rem 1rem 0.75rem;
+  background: transparent;
+}
+.prose-editor .extension-node-inline:focus-within { border-color: var(--border-high); }
+/* Las islas no heredan los estilos del texto ni del código del editor
+   (hallazgo 3): `pre`, `code`, `p` y las tablas de la nota. */
+.prose-editor .extension-block-ui {
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+  caret-color: auto;
+}
+.prose-editor .extension-block-ui p { line-height: 1.5; white-space: normal; }
+.prose-editor .extension-block-ui pre {
+  padding: 0.5rem 0.75rem;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-input);
+}
+.prose-editor .extension-block-ui pre code,
+.prose-editor .extension-block-ui code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+  color: var(--text-body);
+}
+.prose-editor .extension-block-ui table {
+  table-layout: auto;
+  width: auto;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+.prose-editor .extension-block-ui th,
+.prose-editor .extension-block-ui td {
+  border: 0;
+  padding: 0.125rem 0.75rem 0.125rem 0;
+  min-width: 0;
+  font-size: inherit;
+  font-weight: normal;
+  background: transparent;
+}
+
 .code-block-lang-select-wrap {
   z-index: 15;
 }

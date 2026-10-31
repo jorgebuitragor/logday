@@ -29,3 +29,9 @@ export const TEXT_LINK = 'text-indigo-400 hover:underline focus:outline-none foc
 
 /** Una tecla dibujada como `<kbd>`, la del recorrido y la ayuda. */
 export const KBD = 'rounded-md border border-[var(--border-card)] bg-[var(--bg-surface)] px-1.5 py-0.5 font-sans text-[10px] text-[var(--text-hint)]';
+
+/** Enviar del Cliente HTTP (specs/cliente-http, Interfaz §1.2): relleno con
+ *  el acento del tema y el texto que contrasta con él (`--accent-on`), como
+ *  el botón principal de la bienvenida, así se lee en sepia y en los temas
+ *  tintados. `aria-disabled` y no `disabled`: sigue enfocable. */
+export const SEND_BTN = `flex items-center gap-1.5 rounded-lg bg-[var(--accent-solid)] px-2.5 py-1 text-xs font-medium text-[var(--accent-on)] transition hover:brightness-110 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:brightness-100 ${FOCUS_RING}`;

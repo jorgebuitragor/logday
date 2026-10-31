@@ -20,7 +20,7 @@ import type { ExtensionId, ExtensionsConfig } from '../extensions/types';
 import { EXTENSIONS, getExtension } from '../extensions/registry';
 import {
   parseExtensionsConfig, resolveSection, withExtensionEnabled, withExtensionSettings, withoutExtension,
-  extensionSection,
+  extensionSection, secretKeysToClear,
 } from '../extensions/state';
 import { clearExtensionSecret } from '../extensions/secrets';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
@@ -4106,7 +4106,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   removeExtensionConfig: async (id) => {
-    const keys = getExtension(id)?.secretKeys ?? [];
+    // Las fijas del registro y las que dependen de la configuración (HT22).
+    const keys = secretKeysToClear(getExtension(id), get().extensions[id]);
     // Primero los secretos: si el llavero falla, la configuración queda y
     // el usuario puede reintentar.
     await Promise.all(keys.map((key) => clearExtensionSecret(id, key)));

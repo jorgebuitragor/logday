@@ -17,8 +17,10 @@ import { pickMarkdownFiles } from '../../lib/invoke';
 import { stripFencedBlocks } from '../../lib/fencedBlocks';
 import { EXTENSIONS } from '../../extensions/registry';
 
-// Los bloques propios de las extensiones (R24) no van en el resumen.
-const EXTENSION_BLOCK_LANGUAGES = EXTENSIONS.flatMap((def) => (def.noteBlock ? [def.noteBlock.language] : []));
+// Los bloques propios de las extensiones (R24) no van en el resumen, salvo
+// los inline: su texto (una petición HTTP) se lee bien, a diferencia del
+// JSON de un dibujo (specs/cliente-http, design A3.5).
+const EXTENSION_BLOCK_LANGUAGES = EXTENSIONS.flatMap((def) => (def.noteBlock && !def.noteBlock.inline ? [def.noteBlock.language] : []));
 
 type CtxMenu = { note: Note; x: number; y: number } | null;
 type SubMenuAnchor = { left: number; top: number; right: number; bottom: number } | null;

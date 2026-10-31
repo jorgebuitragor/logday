@@ -124,6 +124,9 @@ export default function App() {
   useEffect(() => {
     const handler = async (e: KeyboardEvent) => {
       if (!e.metaKey && !e.ctrlKey) return;
+      // Durante la bienvenida no hay carpeta: ⌘N, ⌘T o ⌘D crearían archivos
+      // sin `basePath` (specs/onboarding OB3).
+      if (!useAppStore.getState().isConfigured) return;
       // Antes que los atajos de letras y también dentro de un campo: ⌘1 en
       // un input no hace nada en WebKit (NS15).
       const target = sectionForShortcut(e, sectionShortcutKey ? sectionShortcutKey.split(',') : []);

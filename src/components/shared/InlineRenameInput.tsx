@@ -21,6 +21,9 @@ export default function InlineRenameInput({
     <input
       autoFocus={autoFocus}
       value={draft}
+      // Todo el nombre seleccionado al abrir, como en Finder: se escribe el
+      // nuevo directamente.
+      onFocus={(e) => e.currentTarget.select()}
       onChange={(e) => setDraft(e.target.value)}
       onKeyDown={(e) => {
         if (e.key === 'Enter') onCommit(draft);

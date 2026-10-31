@@ -67,12 +67,15 @@ Estado: en progreso.
   - el tooltip quedaba flotando si su botón pasaba a "Más" o "Más" desaparecía;
   - Enter en Buscar no hacía nada: ahora va a la primera sección de "Ir a" (Buscar no tenía selección con teclado).
 
+### Prueba de Opciones → Navegación (31 oct 2026, Tauri simulado)
+
+- [x] La entrada va segunda en el grupo App; "Ordenar secciones…" la abre; Esc cierra solo el selector de la pantalla de inicio; "Vista de tareas al abrir" se guarda y Tareas abre en Kanban al reiniciar.
+
 ## Pendiente
 
 - [ ] Arrastrar en Opciones (no se pudo probar con la automatización; mover con los botones sí).
 - [ ] Probar en la app de QA (WebKit real de Tauri) y en Windows y Linux, donde los atajos son Ctrl+0…9.
 - [ ] Con más de 6 secciones de verdad (hoy solo hay 2 extensiones con vista).
-- [ ] Probar Opciones → Navegación en el navegador: "Ordenar secciones…" abre la pestaña, Esc cierra el selector de la pantalla de inicio sin cerrar Opciones, y Tareas abre en la vista elegida al reiniciar.
 
 ## Diferencias con el diseño
 

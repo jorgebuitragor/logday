@@ -1267,7 +1267,7 @@ Una clase `Secrets` da un nombre de variable por valor (`X-API-Key` → `x_api_k
 |---|---|---|
 | `aCurlPasted` | El cURL pegado ahora es una petición HTTP. Deshacer lo deja como texto. | The pasted cURL is now an HTTP request. Undo turns it back into text. |
 | `aCurlFilled` | El cURL pegado rellenó el formulario. | The pasted cURL filled in the form. |
-| `curlSecretsTitle` | Se ocultaron datos sensibles del cURL | Sensitive values hidden from the cURL |
+| `curlSecretsTitle` | Valores ocultos | Values hidden |
 | `curlSecretsBody` | {n\|Se cambió un valor por\|Se cambiaron {n} valores por} {vars}. {n\|Guárdalo como secreto\|Guárdalos como secretos} en Entornos: en la nota solo queda el nombre. | {n\|A value was replaced with\|{n} values were replaced with} {vars}. Save {n\|it as a secret\|them as secrets} in Environments: the note only keeps the name. |
 | `curlBasicHint` | En {{basic_auth}} va usuario:contraseña en Base64. | {{basic_auth}} holds username:password in Base64. |
 | `curlSecretsAction` | Abrir Entornos | Open Environments |

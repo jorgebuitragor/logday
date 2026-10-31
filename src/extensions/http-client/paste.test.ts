@@ -62,7 +62,7 @@ describe('convertPaste', () => {
     convertCurlPaste("curl -H 'Authorization: Bearer s3cr3t' -b 'sid=1' https://x.com")!.onInserted!();
     expect(app.showToast).toHaveBeenCalledTimes(1);
     const toast = app.showToast.mock.calls[0][0];
-    expect(toast.title).toBe('Se ocultaron datos sensibles del cURL');
+    expect(toast.title).toBe('Valores ocultos');
     expect(toast.description).toBe('Se cambiaron 2 valores por {{token}} y {{cookie}}. Guárdalos como secretos en Entornos: en la nota solo queda el nombre.');
     expect(JSON.stringify(toast)).not.toContain('s3cr3t');
     toast.action!.onClick();

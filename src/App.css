@@ -37,6 +37,15 @@
   --accent-inline:  #c4b5fd;
   --accent-link:    #818cf8;
   --accent-code:    #a78bfa;
+
+  /* Resaltado de código (hljs) en las notas y en DevTools. Los de siempre,
+     pensados para fondo oscuro; los temas claros los redefinen abajo. */
+  --syntax-string:   #86efac;
+  --syntax-number:   #fca5a5;
+  --syntax-comment:  #94a3b8;
+  --syntax-function: #67e8f9;
+  --syntax-property: #f5d0fe;
+  --syntax-punct:    #e2e8f0;
 }
 
 :root[data-theme="light"] {
@@ -232,6 +241,29 @@
 :root[data-theme="light"] .text-indigo-400,
 :root[data-theme="light"] .hover\:text-indigo-400:hover { color: #4f46e5; }
 :root[data-theme="light"] .text-indigo-300 { color: #4338ca; }
+
+/* Sepia: lo mismo que el tema claro. Sobre su fondo crema, el rojo, el
+   verde y el ámbar -400 quedan en 2,2, 1,5 y 1,3:1, y los usan los errores,
+   el "Copiado" y los avisos (specs/devtools, hallazgo 9.1-1). */
+:root[data-theme="sepia"] .text-amber-400 { color: #92400e; }
+:root[data-theme="sepia"] .text-red-400,
+:root[data-theme="sepia"] .hover\:text-red-400:hover { color: #b91c1c; }
+:root[data-theme="sepia"] .text-green-400,
+:root[data-theme="sepia"] .text-emerald-400 { color: #065f46; }
+
+/* Colores de sintaxis en los temas claros: los de fondo oscuro daban entre
+   1,0 y 2,5:1 sobre --bg-surface; estos, entre 5,5 y 9,8:1 (hallazgo 4). */
+:root[data-theme="light"],
+:root[data-theme="sepia"] {
+  --syntax-string:   #166534;
+  --syntax-number:   #991b1b;
+  --syntax-comment:  #475569;
+  --syntax-function: #155e75;
+  --syntax-property: #86198f;
+  --syntax-punct:    var(--text-secondary);
+}
+/* Nórdico: el comentario #94a3b8 daba 3,9:1. */
+:root[data-theme="nordic"] { --syntax-comment: var(--text-hint); }
 
 /* Repinta clases Tailwind indigo-* hardcodeadas al acento del tema activo.
    Se activa vía la clase .theme-tinted en <html>, gestionada por
@@ -784,52 +816,80 @@ html.theme-animating body * {
 }
 .prose-editor pre code { background: none; padding: 0; color: var(--accent-inline); }
 
-/* CodeBlockLowlight token colors in visual editor */
+/* Colores de los tokens de hljs: los bloques de código de las notas
+   (CodeBlockLowlight) y las salidas de DevTools (.devtools-code). */
+.devtools-code { color: var(--text-body); }
+
 .prose-editor pre code .hljs-keyword,
 .prose-editor pre code .hljs-selector-tag,
 .prose-editor pre code .hljs-literal,
 .prose-editor pre code .hljs-name,
 .prose-editor pre code .hljs-built_in,
 .prose-editor pre code .hljs-type,
-.prose-editor pre code .hljs-tag {
+.prose-editor pre code .hljs-tag,
+.devtools-code .hljs-keyword,
+.devtools-code .hljs-selector-tag,
+.devtools-code .hljs-literal,
+.devtools-code .hljs-name,
+.devtools-code .hljs-built_in,
+.devtools-code .hljs-type,
+.devtools-code .hljs-tag {
   color: var(--accent-ink);
   font-weight: 600;
 }
 
 .prose-editor pre code .hljs-string,
 .prose-editor pre code .hljs-template-string,
-.prose-editor pre code .hljs-regexp {
-  color: #86efac;
+.prose-editor pre code .hljs-regexp,
+.devtools-code .hljs-string,
+.devtools-code .hljs-template-string,
+.devtools-code .hljs-regexp {
+  color: var(--syntax-string);
 }
 
 .prose-editor pre code .hljs-number,
 .prose-editor pre code .hljs-symbol,
-.prose-editor pre code .hljs-bullet {
-  color: #fca5a5;
+.prose-editor pre code .hljs-bullet,
+.devtools-code .hljs-number,
+.devtools-code .hljs-symbol,
+.devtools-code .hljs-bullet {
+  color: var(--syntax-number);
 }
 
 .prose-editor pre code .hljs-comment,
 .prose-editor pre code .hljs-quote,
-.prose-editor pre code .hljs-meta {
-  color: #94a3b8;
+.prose-editor pre code .hljs-meta,
+.devtools-code .hljs-comment,
+.devtools-code .hljs-quote,
+.devtools-code .hljs-meta {
+  color: var(--syntax-comment);
   font-style: italic;
 }
 
 .prose-editor pre code .hljs-function .hljs-title,
-.prose-editor pre code .hljs-title.function_ {
-  color: #67e8f9;
+.prose-editor pre code .hljs-title.function_,
+.devtools-code .hljs-function .hljs-title,
+.devtools-code .hljs-title.function_ {
+  color: var(--syntax-function);
 }
 
 .prose-editor pre code .hljs-variable,
 .prose-editor pre code .hljs-attr,
 .prose-editor pre code .hljs-property,
-.prose-editor pre code .hljs-params {
-  color: #f5d0fe;
+.prose-editor pre code .hljs-params,
+.devtools-code .hljs-variable,
+.devtools-code .hljs-attr,
+.devtools-code .hljs-attribute,
+.devtools-code .hljs-property,
+.devtools-code .hljs-params {
+  color: var(--syntax-property);
 }
 
 .prose-editor pre code .hljs-operator,
-.prose-editor pre code .hljs-punctuation {
-  color: #e2e8f0;
+.prose-editor pre code .hljs-punctuation,
+.devtools-code .hljs-operator,
+.devtools-code .hljs-punctuation {
+  color: var(--syntax-punct);
 }
 
 /* Lists */

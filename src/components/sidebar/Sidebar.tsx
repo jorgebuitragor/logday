@@ -43,7 +43,7 @@ import { buildFolderTree } from '../../lib/folderTree';
 import { exportDailyMonthEntries } from '../../lib/dailyMonthExport';
 import { FolderTreeItem } from './FolderTreeItem';
 import { NoteTree } from './NoteTree';
-import { ExtensionSections } from './ExtensionSections';
+import { CollapsedExtensionSections, useExtensionSectionItems } from './ExtensionSections';
 import { ProjectTreeItem } from './ProjectTreeItem';
 import { RootDropLine } from './RootDropLine';
 import { ModalOverlay } from '../shared/ModalOverlay';
@@ -137,12 +137,17 @@ export function Sidebar() {
   const [activeSectionLabelFits, setActiveSectionLabelFits] = useState(true);
   const sectionGridRef = useRef<HTMLDivElement>(null);
   const sectionBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const extensionItems = useExtensionSectionItems();
+  const extensionCount = extensionItems.length;
 
   // Margen de aire: si el texto entra pero raspando el borde del botón
   // se ve apretado (encontrado probando con "Tareas" a 170px: entraba
   // por 3px y se veía mal) — exigir este colchón lo oculta antes de
   // llegar a ese punto, no solo cuando desborda de verdad.
   const LABEL_FIT_MARGIN_PX = 8;
+  // Cuánto puede meterse la etiqueta activa en cada vecino: bastante menos
+  // que el espacio libre junto a su ícono de 14 px, para que no se pegue.
+  const LABEL_NEIGHBOUR_OVERFLOW_PX = 6;
 
   useEffect(() => {
     const checkFit = () => {
@@ -150,7 +155,16 @@ export function Sidebar() {
       if (btns.length === 0) { setActiveSectionLabelFits(true); return; }
       const btnWidth = btns[0].clientWidth;
       const widestLabel = Math.max(...btns.map((b) => b.querySelector('span')?.scrollWidth ?? 0));
-      setActiveSectionLabelFits(widestLabel + LABEL_FIT_MARGIN_PX <= btnWidth);
+      // Solo se ve la etiqueta del botón activo, centrada bajo su ícono, y
+      // los vecinos no tienen nada a esa altura (sus íconos van arriba): la
+      // etiqueta puede ocupar el hueco entre botones y el margen libre de
+      // cada vecino a los lados de su ícono. Hace falta con 5 o 6 columnas
+      // (extensiones con vista, R11), donde cada botón mide unos 38 px y
+      // "Tareas" o "DevTools" ya no caben dentro del suyo.
+      const gap = sectionGridRef.current ? parseFloat(getComputedStyle(sectionGridRef.current).columnGap) || 0 : 0;
+      // Con las 4 fijas solas se deja como estaba: la etiqueta, dentro de su botón.
+      const neighbourRoom = extensionCount > 0 ? 2 * LABEL_NEIGHBOUR_OVERFLOW_PX + gap : 0;
+      setActiveSectionLabelFits(widestLabel + LABEL_FIT_MARGIN_PX <= btnWidth + neighbourRoom);
     };
     checkFit();
     const grid = sectionGridRef.current;
@@ -158,7 +172,7 @@ export function Sidebar() {
     const observer = new ResizeObserver(checkFit);
     observer.observe(grid);
     return () => observer.disconnect();
-  }, [sidebarLabelsVisible, language]);
+  }, [sidebarLabelsVisible, language, extensionCount]);
 
   useEffect(() => {
     if (showNewProject) setTimeout(() => newProjectInputRef.current?.focus(), 50);
@@ -560,7 +574,7 @@ export function Sidebar() {
         >
           <Timer size={18} />
         </button>
-        <ExtensionSections collapsed />
+        <CollapsedExtensionSections />
         <div className="my-1 h-px w-6 bg-[var(--border)]" />
         {activeSection === 'tasks' &&
           views.map(({ id, Icon, label }) => (
@@ -635,17 +649,24 @@ export function Sidebar() {
       </div>
 
       {/* Section toggle */}
-      <div ref={sectionGridRef} className="grid grid-cols-4 border-b border-[var(--border)] px-2 py-2 gap-1">
-        {(
-          [
+      {/* Las extensiones con vista propia van en la misma fila, después de
+          las fijas (specs/extensiones R11). Hasta 6 por fila; si hay más,
+          siguen en otra. */}
+      <div
+        ref={sectionGridRef}
+        className="grid border-b border-[var(--border)] px-2 py-2 gap-1"
+        style={{ gridTemplateColumns: `repeat(${Math.min(4 + extensionItems.length, 6)}, minmax(0, 1fr))` }}
+      >
+        {[
+          ...([
             { id: 'dailys',   Icon: CalendarDays, labelKey: 'dailys'   },
             { id: 'tasks',    Icon: CheckSquare,  labelKey: 'tasks'    },
             { id: 'notes',    Icon: Notebook,     labelKey: 'notes'    },
             { id: 'overtime', Icon: Timer,        labelKey: 'overtime' },
-          ] as const
-        ).map(({ id, Icon, labelKey }) => {
+          ] as const).map(({ id, Icon, labelKey }) => ({ id, Icon, label: t(language, 'sidebar', labelKey) })),
+          ...extensionItems,
+        ].map(({ id, Icon, label }) => {
           const isActive = activeSection === id;
-          const label = t(language, 'sidebar', labelKey);
           return (
             <button
               key={id}
@@ -672,7 +693,6 @@ export function Sidebar() {
           );
         })}
       </div>
-      <ExtensionSections collapsed={false} />
 
       {/* TASKS SECTION */}
       {activeSection === 'tasks' && (

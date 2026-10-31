@@ -1,56 +1,57 @@
 import { useShallow } from 'zustand/react/shallow';
+import type { LucideIcon } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { useExtensions } from '../../extensions/useExtensions';
 import { extensionSection } from '../../extensions/state';
 import { extensionText } from '../../extensions/text';
+import type { ExtensionSection } from '../../extensions/types';
 
-/** Secciones del menú de las extensiones activas con vista propia, después
- *  de las fijas y separadas de ellas (specs/extensiones R11). Sin ninguna,
- *  no se dibuja nada, ni la separadora. */
-export function ExtensionSections({ collapsed }: { collapsed: boolean }) {
-  const { activeSection, setSection, language } = useAppStore(
-    useShallow((s) => ({ activeSection: s.activeSection, setSection: s.setSection, language: s.language })),
+export interface ExtensionSectionItem {
+  id: ExtensionSection;
+  Icon: LucideIcon;
+  label: string;
+}
+
+/** Las secciones de las extensiones activas con vista propia, en el orden
+ *  del registro (specs/extensiones R11). El menú expandido las pone en la
+ *  misma fila que las secciones fijas, después de ellas. */
+export function useExtensionSectionItems(): ExtensionSectionItem[] {
+  const language = useAppStore((s) => s.language);
+  return useExtensions()
+    .enabled.filter((def) => def.view)
+    .map((def) => ({ id: extensionSection(def.id), Icon: def.icon, label: extensionText(language, def.id, 'name') }));
+}
+
+/** Las mismas secciones en el menú colapsado: debajo de los íconos de las
+ *  fijas, tras una separadora. Sin ninguna, no se dibuja nada. */
+export function CollapsedExtensionSections() {
+  const { activeSection, setSection } = useAppStore(
+    useShallow((s) => ({ activeSection: s.activeSection, setSection: s.setSection })),
   );
-  const withView = useExtensions().enabled.filter((def) => def.view);
-  if (withView.length === 0) return null;
-
-  const buttons = withView.map((def) => {
-    const section = extensionSection(def.id);
-    const isActive = activeSection === section;
-    const label = extensionText(language, def.id, 'name');
-    const Icon = def.icon;
-    return (
-      <button
-        key={def.id}
-        onClick={() => void setSection(section)}
-        title={label}
-        className={
-          collapsed
-            ? `rounded-lg p-2 transition ${
-                isActive
-                  ? 'text-indigo-400 bg-indigo-500/10'
-                  : 'text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
-              }`
-            : `flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition ${
-                isActive
-                  ? 'bg-indigo-500/15 text-indigo-400 font-medium'
-                  : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]'
-              }`
-        }
-      >
-        <Icon size={collapsed ? 18 : 14} className="shrink-0" />
-        {!collapsed && <span className="truncate">{label}</span>}
-      </button>
-    );
-  });
-
-  if (collapsed) {
-    return (
-      <>
-        <div className="my-1 h-px w-6 bg-[var(--border)]" />
-        {buttons}
-      </>
-    );
-  }
-  return <div className="space-y-0.5 border-b border-[var(--border)] px-2 py-2">{buttons}</div>;
+  const items = useExtensionSectionItems();
+  if (items.length === 0) return null;
+  return (
+    <>
+      <div className="my-1 h-px w-6 bg-[var(--border)]" />
+      {items.map(({ id, Icon, label }) => {
+        const isActive = activeSection === id;
+        return (
+          <button
+            key={id}
+            onClick={() => void setSection(id)}
+            title={label}
+            aria-label={label}
+            aria-current={isActive ? 'page' : undefined}
+            className={`rounded-lg p-2 transition ${
+              isActive
+                ? 'text-indigo-400 bg-indigo-500/10'
+                : 'text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+            }`}
+          >
+            <Icon size={18} />
+          </button>
+        );
+      })}
+    </>
+  );
 }

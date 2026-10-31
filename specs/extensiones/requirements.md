@@ -73,7 +73,11 @@ tengan su primera extensión.
 
 - R11. Una extensión con vista propia (por ejemplo, Agenda o DevTools)
   DEBERÁ aparecer como una sección del menú lateral solo mientras esté
-  activada, después de las secciones fijas y separada de ellas.
+  activada, junto a las secciones fijas y después de ellas: en la misma
+  fila de botones con el menú expandido (hasta 6 por fila) y en la misma
+  columna de íconos, tras una separadora, con el menú colapsado.
+  (Cambiado el 30 oct 2026 a pedido de Jorge: como lista aparte, debajo
+  de la fila, no se leía como una sección más.)
 - R12. Una extensión sin vista propia DEBERÁ aparecer solo en los puntos
   de la app donde actúa. Por ejemplo, "Enviar al chat" junto a Copiar en
   el daily.

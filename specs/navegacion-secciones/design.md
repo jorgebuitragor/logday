@@ -208,3 +208,14 @@ Al pie, "Restablecer orden" con `SECONDARY_CLS`. Se arrastra con eventos de punt
 - Ventana de 800×600 con 10 secciones: en la Barra de íconos caben unas 9 y el resto va a "Más". El colapsado, igual.
 - Idioma inglés: los nombres son más largos, y en la Lista se cortan con `truncate`.
 - 7 temas y los personalizados: solo tokens, salvo el acento indigo.
+
+## Vistas de Notas y Tareas con miniatura (31 oct 2026)
+
+Jorge no entendía a qué se refería cada opción de "Vista de notas" y "Vista de tareas al abrir": eran solo botones con el nombre. Ahora cada opción es una tarjeta con:
+- una miniatura de la vista, dibujada con los tokens del tema (`ViewPreviews.tsx`, decorativa);
+- el ícono de la vista (el mismo del menú lateral en Tareas; `Rows3` y `FolderTree` en Notas);
+- el nombre ("Lista", "Árbol", "Kanban"…);
+- una línea que la describe.
+
+La elegida se marca con el borde y el fondo del acento, y la miniatura resalta en el acento. Los nombres de Notas pasaron de "Lista (estilo Notas de Apple)" a "Lista", y la referencia a Notas de Apple u Obsidian va en la descripción.
+

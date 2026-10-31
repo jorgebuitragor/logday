@@ -35,6 +35,7 @@ const VIEWS: Record<ToolId, LazyTool> = {
   yaml: named(formats, 'YamlTool'),
   xml: named(formats, 'XmlTool'),
   convert: lazy(() => import('./views/ConvertTool')),
+  'html-preview': lazy(() => import('./views/HtmlPreviewTool')),
   base64: named(encoders, 'Base64Tool'),
   url: named(encoders, 'UrlTool'),
   html: named(encoders, 'HtmlTool'),

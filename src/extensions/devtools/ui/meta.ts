@@ -1,7 +1,7 @@
 // Metadatos de la vista por herramienta: ícono (design §4 y Adenda A),
 // quién tiene "Traer de una nota" y el mensaje de cada error.
 import {
-  Ampersand, ArrowLeftRight, Barcode, Binary, Braces, CalendarClock, Clock, CodeXml, Database, Diff, FileCode,
+  Ampersand, AppWindow, ArrowLeftRight, Barcode, Binary, Braces, CalendarClock, Clock, CodeXml, Database, Diff, FileCode,
   FingerprintPattern, GitCompareArrows, Hash, KeyRound, Link, LockKeyhole, Pilcrow, QrCode, Regex,
   type LucideIcon,
 } from 'lucide-react';
@@ -11,7 +11,7 @@ import type { DevtoolsKey } from '../../../lib/i18n';
 import type { Tr } from './text';
 
 export const TOOL_ICON: Record<ToolId, LucideIcon> = {
-  json: Braces, yaml: FileCode, xml: CodeXml, convert: ArrowLeftRight,
+  json: Braces, yaml: FileCode, xml: CodeXml, convert: ArrowLeftRight, 'html-preview': AppWindow,
   base64: Binary, url: Link, html: Ampersand, jwt: KeyRound,
   uuid: FingerprintPattern, hash: Hash, password: LockKeyhole, lorem: Pilcrow, qr: QrCode, barcode: Barcode,
   timestamp: Clock, cron: CalendarClock,
@@ -21,7 +21,7 @@ export const TOOL_ICON: Record<ToolId, LucideIcon> = {
 
 /** Las que tienen entrada de texto y aceptan un bloque de una nota (§6.2). */
 export const PICKER_TOOLS: ReadonlySet<ToolId> = new Set<ToolId>([
-  'json', 'yaml', 'xml', 'convert', 'base64', 'url', 'html', 'jwt', 'hash', 'timestamp', 'cron', 'regex', 'diff',
+  'json', 'yaml', 'xml', 'convert', 'html-preview', 'base64', 'url', 'html', 'jwt', 'hash', 'timestamp', 'cron', 'regex', 'diff',
   'qr', 'sql-list', 'list-compare',
 ]);
 
@@ -36,6 +36,7 @@ export const TOOL_HELP: Partial<Record<ToolId, DevtoolsKey[]>> = {
   qr: ['qr.help1', 'qr.help2', 'qr.help3'],
   barcode: ['barcode.help1', 'barcode.help2'],
   jwt: ['jwt.help1', 'jwt.help2'],
+  'html-preview': ['html-preview.help1', 'html-preview.help2', 'html-preview.help3'],
 };
 
 /** Los atajos de la vista (View.tsx), en el orden de la ayuda. `sep` une

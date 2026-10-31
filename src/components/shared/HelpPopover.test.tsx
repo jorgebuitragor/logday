@@ -363,8 +363,8 @@ describe('DevTools (AY16, AY25)', () => {
     }
   });
 
-  it('las 8 herramientas de "En esta herramienta", con sus textos en es y en', () => {
-    expect(Object.keys(TOOL_HELP).sort()).toEqual(['barcode', 'cron', 'diff', 'jwt', 'list-compare', 'qr', 'regex', 'sql-list']);
+  it('las 9 herramientas de "En esta herramienta", con sus textos en es y en', () => {
+    expect(Object.keys(TOOL_HELP).sort()).toEqual(['barcode', 'cron', 'diff', 'html-preview', 'jwt', 'list-compare', 'qr', 'regex', 'sql-list']);
     for (const [tool, keys] of Object.entries(TOOL_HELP)) {
       expect(keys!.length).toBeGreaterThanOrEqual(2);
       for (const key of keys!) {
@@ -453,7 +453,8 @@ describe('los textos (AY14)', () => {
     expect(sectionKeys('en', 'help').sort()).toEqual(sectionKeys('es', 'help').sort());
     expect(sectionKeys('es', 'help').length).toBe(23 + 7);
     expect(devtoolsHelp('en')).toEqual(devtoolsHelp('es'));
-    expect(devtoolsHelp('es').length).toBe(17 + 22);
+    // 17 generales y atajos y 22 de herramientas (más 3 del Visor HTML).
+    expect(devtoolsHelp('es').length).toBe(17 + 25);
     expect(pomodoroHelp('en')).toEqual(pomodoroHelp('es'));
     expect(pomodoroHelp('es').length).toBe(9);
   });

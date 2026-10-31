@@ -49,7 +49,7 @@ vi.mock('./core/api', async (orig) => {
 
 const { default: HttpNoteBlock } = await import('./ui/Block');
 const { default: Settings } = await import('./ui/Settings');
-const { ResponseView } = await import('./ui/ResponseView');
+const { ResponseView, rememberHtmlMode } = await import('./ui/ResponseView');
 const store = await import('./store');
 const { cacheKey } = await import('./core/cache');
 
@@ -281,12 +281,91 @@ describe('franja del bloque', () => {
     expect(cut).toContain('Certificado sin verificar');
   });
 
-  it('el HTML se muestra como texto, nunca como página', () => {
+  it('el HTML se ve en la vista previa aislada, nunca en la página', () => {
     const code = 'GET https://x.com';
     primeResponse(code, output({ headers: [['content-type', 'text/html']], body: { kind: 'text', text: '<script>alert(1)</script>', lossy: false } }));
     const html = block(code, 'footer');
     expect(html).not.toContain('<script>');
-    expect(html).toContain('&lt;');
+    expect(html).toContain('<iframe');
+    expect(html).toContain('sandbox=""');
+  });
+});
+
+describe('respuesta HTML (HT53)', () => {
+  const PAGE = '<!DOCTYPE html><html><head><title>Hola</title></head><body><h1>Hola</h1><script>alert(1)</script><a href="https://evil.example">x</a></body></html>';
+  const htmlOut = (over: Partial<SendOutput> = {}) =>
+    output({ headers: [['content-type', 'text/html; charset=utf-8']], body: { kind: 'text', text: PAGE, lossy: false }, bodyBytes: PAGE.length, ...over });
+  const respond = (out: SendOutput) => renderToStaticMarkup(
+    <ResponseView
+      now={Date.now()}
+      outcome={{ envName: null, sentAt: Date.now(), preview: { method: 'GET', url: 'https://x.com', headers: [], body: null }, output: out }}
+    />,
+  );
+  // El texto sin etiquetas ni los cortes del resaltado.
+  const plain = (html: string) => html.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+  const pressed = (html: string, label: string) => new RegExp(`aria-pressed="true"[^>]*>${label}<`).test(html);
+
+  beforeEach(() => rememberHtmlMode('preview'));
+
+  it('por defecto, Vista previa: iframe sin permisos, CSP sin red y enlaces neutralizados', () => {
+    const html = respond(htmlOut());
+    expect(pressed(html, 'Vista previa')).toBe(true);
+    expect(text(html)).toContain('Vista previa Código Sin formato');
+    expect(html).toContain('sandbox=""');
+    expect(html).toContain('title="Vista previa de la respuesta HTML"');
+    // El documento va en srcdoc (escapado), con la CSP primero y sin el href.
+    expect(html).toMatch(/srcDoc="[^"]*Content-Security-Policy[^"]*default-src &#x27;none&#x27;/i);
+    expect(html).not.toContain(' href=&quot;https://evil.example');
+    expect(html).toContain('data-logday-href=&quot;https://evil.example');
+    expect(html).not.toContain('<script>');
+    expect(text(html)).toContain('Vista previa aislada: sin scripts ni recursos externos.');
+    expect(text(html)).toContain('Cargar recursos externos');
+    // El interruptor empieza apagado: no se recuerda.
+    expect(html).toMatch(/role="switch"[^>]*aria-checked="false"/);
+    expect(text(html)).not.toContain('la página está incompleta');
+  });
+
+  it('Código: formateado y resaltado, sin iframe', () => {
+    rememberHtmlMode('code');
+    const html = respond(htmlOut());
+    expect(pressed(html, 'Código')).toBe(true);
+    expect(html).not.toContain('<iframe');
+    expect(html).toContain('hljs-');
+    expect(text(html)).not.toContain('Cargar recursos externos');
+    // Sangrado: el original no tiene saltos de línea; el formateado, sí.
+    expect(html).toContain('\n  ');
+  });
+
+  it('Sin formato: el cuerpo tal cual', () => {
+    rememberHtmlMode('raw');
+    const html = respond(htmlOut());
+    expect(pressed(html, 'Sin formato')).toBe(true);
+    expect(html).not.toContain('<iframe');
+    expect(plain(html)).toContain(PAGE);
+  });
+
+  it('sin content-type, si empieza por <!doctype html> también es una página', () => {
+    const html = respond(htmlOut({ headers: [] }));
+    expect(html).toContain('<iframe');
+  });
+
+  it('cortada por el tope o no UTF-8: vista previa con lo que llegó, y avisa', () => {
+    const cut = text(respond(htmlOut({ truncated: true, body: { kind: 'text', text: '<html><body><h1>Hol', lossy: true } })));
+    expect(cut).toContain('La vista previa usa solo lo que llegó: la página está incompleta.');
+    expect(cut).toContain('El cuerpo no es UTF-8 válido');
+    expect(respond(htmlOut({ truncated: true }))).toContain('<iframe');
+  });
+
+  it('JSON, texto y binario siguen como antes, sin iframe', () => {
+    const json = respond(output());
+    expect(json).not.toContain('<iframe');
+    expect(text(json)).toContain('Formateado Sin formato');
+    const plain = respond(output({ headers: [['content-type', 'text/plain']], body: { kind: 'text', text: '<html>no</html>', lossy: false } }));
+    expect(plain).not.toContain('<iframe');
+    expect(plain).toContain('&lt;html&gt;no&lt;/html&gt;');
+    const bin = respond(output({ headers: [['content-type', 'text/html']], body: { kind: 'binary', base64: 'AQID' } }));
+    expect(bin).not.toContain('<iframe');
+    expect(text(bin)).toContain('Respuesta binaria');
   });
 });
 

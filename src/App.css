@@ -9,26 +9,30 @@
 }
 
 /* ── Theme variables ───────────────────────────────────────── */
+/* Oscuro (31 oct 2026): un punto intermedio entre el negro neutro de antes
+   y un grafito con tono índigo como el nórdico, con los textos secundarios
+   más claros; Jorge lo encontraba difícil de leer. Contraste contra
+   --bg-base: texto >= 5.6:1, acento 5.9:1 (specs/temas-consistencia-visual). */
 :root {
-  --bg-base:     #121212;
-  --bg-panel:    #141414;
-  --bg-surface:  #1c1c1c;
+  --bg-base:     #17181e;
+  --bg-panel:    #1a1a22;
+  --bg-surface:  #22222a;
   --bg-secondary: var(--bg-surface);
-  --bg-hover:    #242424;
-  --bg-elevated: #181818;
-  --bg-input:    #161616;
+  --bg-hover:    #2a2b34;
+  --bg-elevated: #1e1e27;
+  --bg-input:    #1a1b23;
 
-  --border:      #2a2a2a;
-  --border-card: #333333;
-  --border-high: #4a4a4a;
+  --border:      #31323d;
+  --border-card: #3a3b46;
+  --border-high: #535562;
 
-  --text-primary:   #f2f2f2;
-  --text-body:      #e4e4e4;
-  --text-secondary: #c8c8c8;
-  --text-tertiary:  #aaaaaa;
-  --text-muted:     #888888;
-  --text-hint:      #848484;
-  --text-faint:     #7e7e7e;
+  --text-primary:   #eff0f6;
+  --text-body:      #e2e5ec;
+  --text-secondary: #caced8;
+  --text-tertiary:  #b1b4c3;
+  --text-muted:     #9ea2b0;
+  --text-hint:      #969aaa;
+  --text-faint:     #8e91a1;
 
   --accent:         #818cf8;
   --accent-strong:  #6366f1;

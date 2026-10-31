@@ -12,7 +12,7 @@ Jorge la eligió el 30 oct 2026 entre las candidatas del grupo Herramientas, con
 
 ### Vista
 
-- D0. MIENTRAS la extensión esté activa, el menú lateral DEBERÁ tener la sección "DevTools" (R11). Su vista DEBERÁ listar las herramientas por grupo y abrir una a la vez.
+- D0. MIENTRAS la extensión esté activa, el menú lateral DEBERÁ tener la sección "DevTools" (R11). Su vista DEBERÁ listar las herramientas (por grupo, o de la A a la Z según D18) y abrir una a la vez.
 
 ### Herramientas
 
@@ -50,7 +50,7 @@ Jorge la eligió el 30 oct 2026 entre las candidatas del grupo Herramientas, con
 - D9. Lo que se pega (entradas y salidas) NO DEBERÁ escribirse en disco: ni en `config.json`, ni en `localStorage`, ni en los archivos de datos.
   - Se conserva en memoria mientras la app está abierta: cambiar de sección y volver no lo borra.
   - Al desactivar la extensión, se borra.
-  - Lo único que se recuerda (en la configuración de la extensión) es la última herramienta abierta y las opciones de cada una: indentación, longitud, juegos de caracteres, unidad.
+  - Lo único que se recuerda (en la configuración de la extensión) es la última herramienta abierta, las opciones de cada una (indentación, longitud, juegos de caracteres, unidad) y cómo se muestra la lista: el orden, las ocultas, el modo y los grupos plegados (D17–D21).
 - D10. **Puente con Logday.**
   - "Guardar en una nota" DEBERÁ crear una nota nueva, en la raíz, con la salida en un bloque de código del lenguaje que corresponda, y avisar con un toast que permita abrirla.
   - "Traer de una nota" DEBERÁ dejar elegir una nota y uno de sus bloques de código, y cargarlo en la herramienta que corresponda a su lenguaje (o a su contenido, si no tiene lenguaje).
@@ -84,6 +84,29 @@ Jorge la eligió el 30 oct 2026 entre las candidatas del grupo Herramientas, con
   - Opciones: alto, ancho de barra y mostrar el texto debajo.
   - Se guarda y se copia como el QR, también en negro sobre blanco.
 
+### Lista de herramientas y opciones
+
+Pedido por Jorge el 31 oct 2026: «¿Por qué no existe un apartado de opciones para los Devtools? Sería bueno poder hacer configuraciones generales: como definir cómo y en qué orden mostrar las herramientas. También que los grupos de herramientas se puedan compactar.»
+
+- D17. MIENTRAS la extensión esté activa, Opciones DEBERÁ tener la página "DevTools", debajo de "Extensiones" (R21). La vista DEBERÁ tener un botón que la abra, junto al buscador de herramientas, también en el selector de la ventana angosta.
+- D18. La página DEBERÁ dejar elegir cómo se muestra la lista: **Por grupos** (por defecto) o **A-Z**, una sola lista ordenada por el nombre en el idioma de la app.
+- D19. **Orden.** En el modo Por grupos, la página DEBERÁ dejar ordenar los grupos y, dentro de cada grupo, sus herramientas, con el ratón (arrastrar) y con el teclado (Mover arriba y Mover abajo).
+  - Una herramienta NO DEBERÁ poder pasar a otro grupo.
+  - "Restablecer orden" DEBERÁ volver al orden por defecto y mostrar todas las herramientas.
+  - En el modo A-Z el orden es alfabético y no se puede cambiar.
+- D20. **Ocultar.** La página DEBERÁ dejar ocultar cada herramienta de la lista.
+  - Una herramienta oculta DEBERÁ seguir apareciendo al buscar, al final, en el grupo "Ocultas", y DEBERÁ poder abrirse desde una nota (D10) o como última herramienta.
+  - SI una herramienta oculta es la activa, la lista DEBERÁ mostrarla en el grupo "Ocultas".
+  - NO DEBERÁ poder ocultarse la última herramienta visible.
+  - Un grupo con todas sus herramientas ocultas no se muestra.
+- D21. **Grupos plegables.** En el modo Por grupos, cada encabezado de grupo de la lista DEBERÁ plegar y desplegar el grupo, con el ratón y con el teclado. La lista DEBERÁ recordar los grupos plegados.
+  - SI la herramienta activa está en un grupo plegado, DEBERÁ seguir viéndose bajo su encabezado, sin desplegar el grupo.
+  - MIENTRAS haya texto en el buscador, los grupos plegados NO DEBERÁN esconder resultados.
+  - La columna y el selector de la ventana angosta DEBERÁN compartir el mismo estado.
+- D22. ⌥⌘↓ y ⌥⌘↑ (Ctrl+Alt fuera de macOS) DEBERÁN recorrer las herramientas en el orden que se ve, incluidas las de los grupos plegados y sin las ocultas.
+- D23. La página DEBERÁ tener "Restablecer las opciones de las herramientas", que borra las opciones recordadas de todas (D9) y conserva lo demás. Solo DEBERÁ verse si hay opciones guardadas.
+- D24. Las preferencias de D17–D23 son locales y no se sincronizan, como el resto de la configuración de la extensión. Una herramienta o un grupo que se agregue en una versión futura DEBERÁ aparecer al final de su grupo (o de la lista de grupos), visible y desplegado.
+
 ## Decisiones (30 oct 2026)
 
 Son las que recomendó el diseño (ver `design.md`):
@@ -98,9 +121,25 @@ Son las que recomendó el diseño (ver `design.md`):
 - Hay un "Vaciar todas las herramientas" en el pie de la lista.
 - En este mismo PR se corrigen los colores de estado del tema sepia y los colores de sintaxis de los temas claros (hallazgos 1 y 4 del diseño). Los demás hallazgos quedan anotados.
 
+## Decisiones (31 oct 2026)
+
+Jorge aprobó el diseño de las opciones (D17–D24) con todas sus recomendaciones:
+
+- DevTools pasa a tener página en Opciones. Se revierte lo de "las opciones viven dentro de la vista" (design §1).
+- Hay modo A-Z, además de Por grupos. No hay "recientes" ni "favoritas": reordenarían la lista sola o repetirían lo que ya dan el orden y ocultar.
+- Una herramienta no cambia de grupo.
+- Las ocultas siguen apareciendo al buscar.
+- No hay una "herramienta al abrir" fija: se abre la última (D9).
+- La columna sigue en 200 px fijos, sin opción de ancho ni `ResizeHandle`.
+- El chevron del grupo va a la derecha del encabezado.
+- No hay "grupos plegados por defecto": la lista recuerda lo que se pliega.
+- No se centralizan las opciones de cada herramienta (la indentación, por ejemplo): cada una recuerda la suya.
+- El arrastre de la página y el arreglo del foco de "Mover arriba / abajo" (con `aria-disabled`) van en el mismo PR, también en Opciones → Navegación (`SidebarSettings.tsx`).
+
 ## Fuera de alcance (por ahora)
 
 - Verificar la firma de un JWT (pediría la clave).
 - Hashes de archivos y HMAC.
 - Un editor de código con resaltado mientras se escribe (Monaco pesa varios MB).
+- Una herramienta fija al abrir, herramientas favoritas o recientes, y el ancho de la columna (decisiones del 31 oct 2026).
 - DevTools en Web y Mobile.

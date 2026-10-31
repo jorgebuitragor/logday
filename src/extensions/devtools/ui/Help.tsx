@@ -12,7 +12,7 @@ import { DEVTOOLS_ID, readDevtoolsSettings, type ToolId } from '../model';
 import { HELP_SHORTCUTS, TOOL_HELP } from './meta';
 import { isMac, makeTr, shortcutLabel, type Tr } from './text';
 
-export const GENERAL_HELP = ['help.p1', 'help.p2', 'help.p3', 'help.p4', 'help.p5'] as const;
+export const GENERAL_HELP = ['help.p1', 'help.p2', 'help.p3', 'help.p4', 'help.p5', 'help.p6'] as const;
 
 /** La ayuda de la herramienta abierta, leída del store. */
 export default function DevtoolsHelp() {

@@ -1,25 +1,15 @@
 // Opciones → Navegación → Menú lateral (specs/navegacion-secciones NS1, NS9,
 // NS20, design §6): el estilo de las secciones y su orden y visibilidad.
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { ChevronDown, ChevronUp, GripVertical, RotateCcw } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t, type SectionNavKey } from '../../lib/i18n';
 import { interpolate } from '../../lib/interpolate';
-import { ICON_BTN, SECONDARY_CLS } from '../shared/controlClasses';
+import { ICON_BTN, SECONDARY_CLS, SOFT_DISABLED } from '../shared/controlClasses';
+import { useRowDrag } from '../shared/useRowDrag';
 import { Toggle } from '../shared/FormControls';
 import { useSectionActions, useSectionItems } from '../sidebar/sections';
 import { SidebarStylePicker } from './SidebarStylePicker';
-
-/** El índice de la fila sobre la que está el puntero al arrastrar. */
-function rowIndexAt(list: HTMLElement | null, clientY: number): number | null {
-  if (!list) return null;
-  const rows = [...list.querySelectorAll<HTMLElement>('[data-section-row]')];
-  for (let i = 0; i < rows.length; i++) {
-    const r = rows[i].getBoundingClientRect();
-    if (clientY < r.top + r.height / 2) return i;
-  }
-  return rows.length - 1;
-}
 
 export function SidebarSettings() {
   const language = useAppStore((s) => s.language);
@@ -38,28 +28,12 @@ export function SidebarSettings() {
 
   // Arrastrar con el puntero, sin librería: al soltar, la sección va a la
   // fila sobre la que quedó.
-  const listRef = useRef<HTMLUListElement>(null);
-  const [drag, setDrag] = useState<{ id: string; from: number; over: number } | null>(null);
-  const onGripDown = (e: React.PointerEvent<HTMLElement>, index: number) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.currentTarget.setPointerCapture?.(e.pointerId);
-    setDrag({ id: items[index].id, from: index, over: index });
-  };
-  const onGripMove = (e: React.PointerEvent<HTMLElement>) => {
-    if (!drag) return;
-    const over = rowIndexAt(listRef.current, e.clientY);
-    if (over !== null && over !== drag.over) setDrag({ ...drag, over });
-  };
-  const onGripUp = () => {
-    if (!drag) return;
-    const item = items[drag.from];
-    if (item && drag.over !== drag.from) {
-      actions.moveTo(item.id, drag.over);
-      setAnnouncement(tr('moved', { name: item.label, n: drag.over + 1, total }));
-    }
-    setDrag(null);
-  };
+  const { listRef, gripProps, rowClass } = useRowDrag<HTMLUListElement>('[data-section-row]', (id, to) => {
+    const item = items.find((i) => i.id === id);
+    if (!item) return;
+    actions.moveTo(item.id, to);
+    setAnnouncement(tr('moved', { name: item.label, n: to + 1, total }));
+  });
 
   return (
     <div>
@@ -78,34 +52,31 @@ export function SidebarSettings() {
           className="rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] divide-y divide-[var(--border)]"
         >
           {items.map((item, index) => {
-            const isDragged = drag?.id === item.id;
-            const isTarget = drag !== null && !isDragged && drag.over === index;
+            const first = index === 0;
+            const last = index === items.length - 1;
             return (
               <li
                 key={item.id}
                 data-section-row
-                className={`flex min-h-9 items-center gap-2 px-2 py-1 text-xs ${isDragged ? 'opacity-50' : ''} ${
-                  isTarget ? (drag.over < drag.from ? 'shadow-[inset_0_2px_0_var(--accent)]' : 'shadow-[inset_0_-2px_0_var(--accent)]') : ''
-                }`}
+                className={`flex min-h-9 items-center gap-2 px-2 py-1 text-xs ${rowClass(index, item.id)}`}
               >
                 <span
                   title={tr('drag', { name: item.label })}
                   aria-hidden
-                  onPointerDown={(e) => onGripDown(e, index)}
-                  onPointerMove={onGripMove}
-                  onPointerUp={onGripUp}
-                  onPointerCancel={() => setDrag(null)}
+                  {...gripProps(index, item.id)}
                   className="flex h-6 w-5 shrink-0 cursor-grab touch-none items-center justify-center text-[var(--text-hint)] active:cursor-grabbing"
                 >
                   <GripVertical size={14} />
                 </span>
                 <item.Icon size={14} className="shrink-0 text-[var(--text-muted)]" />
                 <span className={`min-w-0 flex-1 truncate ${item.hidden ? 'text-[var(--text-hint)]' : 'text-[var(--text-secondary)]'}`}>{item.label}</span>
+                {/* aria-disabled y no disabled: el botón que se mueve al
+                    extremo conserva el foco (design §G.3 de specs/devtools). */}
                 <button
                   type="button"
-                  className={ICON_BTN}
-                  disabled={index === 0}
-                  onClick={() => move(index, -1)}
+                  className={`${ICON_BTN} ${SOFT_DISABLED}`}
+                  aria-disabled={first || undefined}
+                  onClick={() => !first && move(index, -1)}
                   aria-label={tr('moveUpNamed', { name: item.label })}
                   title={tr('moveUp')}
                 >
@@ -113,9 +84,9 @@ export function SidebarSettings() {
                 </button>
                 <button
                   type="button"
-                  className={ICON_BTN}
-                  disabled={index === items.length - 1}
-                  onClick={() => move(index, 1)}
+                  className={`${ICON_BTN} ${SOFT_DISABLED}`}
+                  aria-disabled={last || undefined}
+                  onClick={() => !last && move(index, 1)}
                   aria-label={tr('moveDownNamed', { name: item.label })}
                   title={tr('moveDown')}
                 >

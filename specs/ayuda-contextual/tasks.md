@@ -27,7 +27,7 @@ Estado: en progreso.
 
 - [x] DevTools (AY16): `DevtoolsHelp` (`devtools/ui/Help.tsx`) en `ToolFrame`, en la fila del título y fuera del `<h2>`, así que vale para el título ancho y para el `ToolSwitcher`.
   - `TOOL_HELP` y `HELP_SHORTCUTS` en `ui/meta.ts`; las teclas con `shortcut(spec)`.
-  - Orden: "En esta herramienta" (si la tiene), `help.p1…p5` y los atajos.
+  - Orden: "En esta herramienta" (si la tiene), `help.p1…p6` y los atajos (`help.p6` llegó con las opciones de DevTools, specs/devtools D17–D24).
 - [x] Tareas (AY17): `TasksHelp` (`components/help/ScreenHelp.tsx`) en Lista, Kanban y Calendario, con "Ver todos los atajos" y "Ver el recorrido" (escena 1). Kanban y Calendario montan `TaskShortcutsSheet` con su propio estado.
 - [x] Dailys (AY18): `DailysHelp` en `DailyList`, con `{newDaily}` y `{absence}` de la config y "Ver el recorrido" (escena 0).
 - [x] Horas extra (AY19): `OvertimeHelp` en `OvertimeList`, con "Ver el recorrido" (escena 0).

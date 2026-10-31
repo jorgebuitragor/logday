@@ -4,7 +4,7 @@ Estado: en progreso.
 
 ## Arquitectura
 
-- **Módulo:** `src/extensions/devtools/`, cargado con `import()` solo con la extensión activa (R16). Exporta `View` (la sección del menú lateral, R11) y `start`, cuya función de parada borra la memoria y corta un regex en curso (D9).
+- **Módulo:** `src/extensions/devtools/`, cargado con `import()` solo con la extensión activa (R16). Exporta `View` (la sección del menú lateral, R11), `Settings` (su página en Opciones, D17) y `start`, cuya función de parada borra la memoria y corta un regex en curso (D9).
 - **Funciones puras** en `tools/`, sin React ni DOM, todas probadas en vitest:
   - `formats.ts` (JSON, YAML, XML, CSV);
   - `encoding.ts` (Base64, URL, HTML, JWT);
@@ -19,7 +19,8 @@ Estado: en progreso.
 - **QR y barras:** las librerías solo codifican (la matriz del QR, los bits de las barras). El SVG lo arma `codes.ts`, siempre negro sobre blanco, y de ese SVG salen la vista previa, el copiado y el PNG (dibujado en un canvas al guardar). Para el QR, el texto se pasa ya en bytes UTF-8, porque el modo por defecto de la librería corta cada carácter a 8 bits.
 - **Memoria (D9):**
   - Lo pegado vive en un `Map` del módulo (`model.ts`). Sobrevive a cambiar de sección y se borra al desactivar la extensión o al cerrar la app.
-  - Lo que se recuerda va en `extensions.devtools.settings`: `lastTool` y `options`.
+  - Lo que se recuerda va en `extensions.devtools.settings`: `lastTool`, `options` y cómo se muestra la lista (`layout`, `groupOrder`, `toolOrder`, `hidden`, `collapsed`; Adenda G, §G.4). Nada de lo pegado.
+- **Lista resuelta:** `resolveToolList()` (`model.ts`, pura) arma la lista que se ve a partir de `TOOL_GROUPS` y las preferencias. La usan la columna, el selector de la ventana angosta, ⌥⌘↓/↑ y la página de Opciones, para que las cuatro vean el mismo orden.
 - **Notas (D10):** `notes.ts` lee todas las notas de disco, porque el store solo tiene las de la carpeta abierta, y crea la nota con `createNoteWith` (R18).
 
 # Texto para `specs/devtools/design.md` → sección "Interfaz"
@@ -28,11 +29,11 @@ Estado: en progreso.
 
 - En `registry.ts`, una entrada nueva: `{ id: 'devtools', category: 'tool', icon: Wrench, apps: ['desktop'], view: true, load: () => import('./devtools') }`. Hay que sumar `'devtools'` a `ExtensionId`.
   - No lleva `sendsDataExternally`, porque no envía nada fuera del equipo, así que tampoco pide el aviso de R6.
-  - No lleva `settings`: las opciones viven dentro de la vista, así que no tiene entrada propia en Opciones (R21).
-- El módulo exporta solo `View`. App.tsx ya lo monta dentro de `flex flex-1 flex-col overflow-auto bg-[var(--bg-base)]` y de `ExtensionBoundary` (R15). La vista ocupa todo ese alto con `h-full min-h-0` y maneja su propio scroll, para que no haya dos barras de desplazamiento.
+  - ~~No lleva `settings`: las opciones viven dentro de la vista, así que no tiene entrada propia en Opciones (R21).~~ Revertido el 31 oct 2026 (D17): lleva `settings: true` y el módulo exporta `Settings`, así que tiene su página en Opciones, debajo de Extensiones. Ver la Adenda G.
+- El módulo exporta `View` y `Settings` (D17). App.tsx ya lo monta dentro de `flex flex-1 flex-col overflow-auto bg-[var(--bg-base)]` y de `ExtensionBoundary` (R15). La vista ocupa todo ese alto con `h-full min-h-0` y maneja su propio scroll, para que no haya dos barras de desplazamiento.
 - Persistencia:
   - Lo que el usuario pega vive en un store en memoria del módulo (por ejemplo, un `create()` de zustand dentro de `src/extensions/devtools/`). Se conserva al cambiar de sección y se pierde al cerrar la app. **Nunca** va a `localStorage`, `sessionStorage`, `config.json` ni al store principal.
-  - Lo que sí se recuerda va en `extensions.devtools.settings`, con `updateExtensionSettings` (es local y no se sincroniza): `{ lastTool, opts: { json: { indent, mode }, uuid: { version, count, upper, hyphens }, password: {...}, ... } }`.
+  - Lo que sí se recuerda va en `extensions.devtools.settings`, con `updateExtensionSettings` (es local y no se sincroniza): `{ lastTool, options: { json: { indent, mode }, uuid: { version, count, upper, noHyphens }, password: {...}, ... } }`, más las preferencias de la lista (Adenda G, §G.4).
 
 ## 2. Estructura y layout
 
@@ -62,11 +63,11 @@ La raíz de la vista es un contenedor con nombre. Las medidas se dan en rem, que
 **Columna de navegación** (desde `@xl/devtools`, unos 36rem, cerca de 612 px con letra de 17 px):
 - Contenedor: `<nav aria-label={t('devtools','navLabel')}>` con `flex w-[200px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]`. Es la misma superficie que las columnas de lista (`DailyList.tsx:243`, `NoteList.tsx:354`).
 - Ancho fijo, sin `ResizeHandle`.
-- Arriba, con `px-2 pt-3 pb-2`, un buscador:
+- Arriba, con `px-2 pt-3 pb-2`, un buscador y, a su derecha, el botón de opciones (D17, Adenda G §G.1):
   - Input: `w-full rounded-lg border border-[var(--border-card)] bg-[var(--bg-surface)] px-2.5 py-1.5 text-xs text-[var(--text-primary)] placeholder-[var(--text-hint)] focus:border-indigo-500 focus:outline-none`.
   - Lleva `Search size={13}` a la izquierda (`pl-7`, ícono `absolute left-2.5 text-[var(--text-hint)]`) y un `<kbd>` con `⌘⇧F` a la derecha, con el estilo de `SearchModal.tsx:88`: `rounded-md border border-[var(--border-card)] bg-[var(--bg-surface)] px-1.5 py-0.5 text-[10px] text-[var(--text-hint)]`.
-- Lista: `flex-1 overflow-y-auto px-2 pb-3 flex flex-col gap-5`, con un grupo por categoría.
-  - Encabezado de grupo, igual que en Opciones: `px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-hint)]`.
+- Lista: `flex-1 overflow-y-auto px-2 pb-3 flex flex-col gap-1`, con un grupo por categoría en el orden del usuario; cada grupo desplegado lleva `pb-4` (con todo desplegado, el espacio es el de antes). En el modo A-Z no hay grupos (D18).
+  - Encabezado de grupo: un botón que pliega el grupo (D21), con el chevron a la derecha. Clases, estados y teclado en la Adenda G, §G.2. Mientras se busca vuelve a ser texto: `px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-hint)]`.
   - Ítem, igual que `navItem` de `SettingsModal.tsx:162`: `flex w-full items-center gap-2 rounded-lg py-1.5 pl-2.5 pr-2.5 text-left text-xs font-medium transition`.
     - Activo: `bg-indigo-500/15 text-indigo-400` con `aria-current="page"`.
     - Inactivo: `text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]`.
@@ -340,7 +341,7 @@ Los atajos globales se comparan con `e.key` en minúscula sin mirar Shift. Por e
 | Atajo | Acción | Notas |
 |---|---|---|
 | `⌘⇧F` | Enfoca el buscador de herramientas (o abre el selector si la ventana es angosta) | Enter abre el primer resultado y enfoca su entrada. Esc limpia el buscador y, si ya está vacío, lo desenfoca. |
-| `⌥⌘↓` / `⌥⌘↑` | Herramienta siguiente / anterior | En el orden de la lista, con vuelta al principio. |
+| `⌥⌘↓` / `⌥⌘↑` | Herramienta siguiente / anterior | En el orden que se ve (el del usuario o el A-Z, de `resolveToolList`), con vuelta al principio. Recorre también las de los grupos plegados; no las ocultas (D22). |
 | `⌘↵` | Acción principal: Generar en los generadores; Procesar con entrada grande; Reintentar en regex | En las demás herramientas no hace nada (ya procesan en vivo). |
 | `⌘⇧C` | Copiar la salida principal | Funciona aunque el foco esté en la entrada. |
 | `⌘⇧S` | Guardar en una nota | Solo si la herramienta lo tiene y hay una salida válida. |
@@ -351,7 +352,7 @@ Los atajos globales se comparan con `e.key` en minúscula sin mirar Shift. Por e
 - El listener va en la raíz de la vista (`onKeyDown` del contenedor), no en `window`: solo actúa con la vista montada. Si `e.defaultPrevented`, no hace nada.
 - Caso borde: en Windows, Ctrl+Shift+C e I abren el inspector de WebView2 **solo** en las builds de desarrollo. En release no pasa, pero conviene probarlo.
 - Los atajos se ven en el `title` de cada botón ("Copiar (⌘⇧C)"). En Windows se muestran como "Ctrl+Shift+C", con `isMacPlatform()` de `quick-capture/model.ts`.
-- **Orden de foco:** buscador de herramientas → lista (un solo tab stop: roving tabindex, ↑/↓ mueve el foco, Home y End van a los extremos, Enter o Espacio abren la herramienta y el foco se queda en el ítem; el contenido está a un Tab) → "Traer de una nota" → opciones → entrada → acciones de la salida → salida (`pre tabindex=0`) → tabla de resultados → pie de la lista.
+- **Orden de foco:** buscador de herramientas → botón de opciones → lista (un solo tab stop: roving tabindex, ↑/↓ mueve el foco por encabezados de grupo e ítems, Home y End van a los extremos, Enter o Espacio abren la herramienta o pliegan el grupo y el foco se queda donde está, ← y → según la Adenda G §G.2; el contenido está a un Tab) → "Traer de una nota" → opciones → entrada → acciones de la salida → salida (`pre tabindex=0`) → tabla de resultados → pie de la lista.
 - Al abrir una herramienta con el ratón, el foco no se mueve. Con Enter desde el buscador, va a la entrada.
 - Foco visible en todo lo nuevo: `focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500`, como en `CaptureWindow.tsx:154`. El `theme-tinted` lo repinta con el acento (`App.css:253`).
 
@@ -1668,3 +1669,275 @@ Lo que la vista hace distinto de lo escrito arriba, y por qué:
 - **Ventana angosta:** la nota de privacidad y "Vaciar todas las herramientas" van al pie de la herramienta, porque la columna no se ve.
 - **Claves de i18n:** `sep.newline` en lugar de `sep.lines`, para que coincida con `ListSeparator`. Se sumaron las que la vista necesitó (`jwtCol*`, `quotesDouble`, `oneValue`, `tabCount`, `pickerLoading`, `error.barcode-invalid`…) y se quitaron las que ya no usa (`csvNotArray`, `duplicateKey`, `yamlDocuments`, `escapeQuotes`, `jsonYaml.*`, `jsonCsv.*`).
 - **Funciones sumadas en `tools/`** (con pruebas en `tools3.test.ts`): opciones del CSV, posición de los errores de Base64 y URL, `htmlEncode` con no ASCII, `lorem` sin la frase clásica, `checkBarcode` y `gs1CheckDigit`, `detectSeparator`, `findUnclosedQuote`, `duplicateCounts` y `groupNames`. `ToolErrorCode` suma `sql-unclosed-quote`.
+
+---
+
+# Adenda G de la interfaz: opciones y grupos plegables (31 oct 2026)
+
+Pedido por Jorge (D17–D24). Jorge aprobó el diseño con todas sus recomendaciones (requirements, "Decisiones (31 oct 2026)"). Esta adenda manda sobre §1, §2 y §7 donde no coincidan.
+
+Se basa en lo que ya existe:
+- la lista reordenable de Opciones → Navegación (`src/components/settings/SidebarSettings.tsx`) y su lógica pura (`src/components/sidebar/sectionOrder.ts`, `resolveSections`);
+- la página de Pomodoro (`src/extensions/pomodoro/Settings.tsx`): subtítulos, ayudas, "Restablecer" sin confirmación que solo aparece si algo cambió;
+- el botón de opciones de la vista de Pomodoro (`SlidersHorizontal` y `openExtensionSettings`);
+- el encabezado plegable de "Completadas" (`src/components/tasks/TaskList.tsx`): `ChevronRight` con `rotate-90` y el contador en `--text-faint`;
+- `Segmented` (`ui/controls.tsx`) y `Toggle` (`components/shared/FormControls.tsx`).
+
+No hay tokens ni colores nuevos. La única pieza compartida nueva es el hook de arrastre (§G.3).
+
+## G.1 Registro y entrada
+
+- `registry.ts`, entrada `devtools`: se suma `settings: true`. `index.ts` exporta `Settings` (archivo nuevo `src/extensions/devtools/Settings.tsx`).
+- La página la dibuja `ExtensionSettingsPage` (`SettingsModal.tsx`): ícono, nombre y descripción de la extensión, y debajo el panel. Se ordena con las demás extensiones activas por nombre.
+- El panel se monta **fuera** de `DevtoolsContext`: no usa `useDevtools`. Lee `language` y `extensions.devtools.settings` del store, arma `tr` con `makeTr(language)` y usa las funciones puras de `model.ts` (§G.4).
+- **Botón de opciones en la vista**, a la derecha del buscador de `ToolNav`. Como `ToolNav` también va en el selector de la ventana angosta, el botón aparece en los dos.
+  - La fila del buscador pasa a `flex items-center gap-1`; el `relative` del input queda en un `div` con `min-w-0 flex-1`.
+  - Botón: `ICON_BTN` + `min-h-7 min-w-7 justify-center`, con `SlidersHorizontal size={13} aria-hidden`.
+  - `aria-label` y `title`: `set.openTitle`.
+  - Acción: `openExtensionSettings(DEVTOOLS_ID)`. En el selector, antes cierra el popover.
+
+## G.2 Columna de herramientas (`ToolNav`)
+
+```
+[🔍 Buscar        ⌘⇧F] [⚙]
+FORMATOS               ⌄        ← desplegado (chevron rotado 90°)
+{} JSON  ◀
+▤  YAML
+CODIFICAR           4  ›        ← plegado: con el contador
+GENERADORES         6  ›
+   # Hash  ◀                    ← plegado, pero la activa se sigue viendo
+FECHAS                 ⌄
+⏱  Timestamp
+…
+```
+
+**Lista:** `flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pb-3`. Cada grupo desplegado lleva `pb-4`: con todo desplegado, el espacio entre grupos es el de antes (20 px) y los plegados quedan juntos.
+
+**Encabezado de grupo** (modo Por grupos, sin texto en el buscador):
+- `<button type="button" id="{idPrefix}-group-{group}" aria-expanded aria-controls="{idPrefix}-items-{group}">`, dentro del `div role="group" aria-labelledby` de siempre. El `id` pasa del `div` al botón. Los ítems van en `<div id="{idPrefix}-items-{group}">`.
+- Clases: `flex w-full items-center justify-between gap-1 rounded-md px-2.5 pb-1.5 pt-0.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-hint)] transition hover:text-[var(--text-secondary)] ${FOCUS_RING}`.
+- A la izquierda, el nombre (`group.*`). A la derecha, en un `span` con `flex items-center gap-1`:
+  - el contador, **solo plegado**: `font-normal tabular-nums text-[var(--text-faint)]`, con `aria-hidden`. Cuenta las herramientas visibles del grupo (sin las ocultas);
+  - el chevron: `ChevronRight size={11} aria-hidden`, con `transition-transform motion-reduce:transition-none` y `rotate-90` desplegado.
+- Para lectores de pantalla, siempre, tras el nombre: `<span className="sr-only">{groupCount}</span>` (", 4 herramientas"). Se anuncia como "Formatos, 4 herramientas, botón, contraído".
+- El chevron va a la derecha para conservar la alineación de hoy: los títulos siguen en el mismo `pl-2.5` que los ítems.
+
+**Herramienta activa en un grupo plegado:** se sigue viendo bajo su encabezado, con su estilo de activa y `aria-current="page"`. El grupo no se despliega ni cambia lo guardado. Cuando se cambia de herramienta, la anterior deja de verse. Así siempre se ve dónde se está, también tras ⌥⌘↓, "Traer de una nota" o al volver a la sección.
+
+**Herramientas ocultas (D20):**
+- Sin texto en el buscador, no se ven, salvo la activa: va al final, en el grupo "Ocultas" (`group.hidden`), con el encabezado como texto (no se pliega).
+- Con texto en el buscador, las que coinciden van al final, en "Ocultas".
+- Un grupo sin herramientas visibles no se dibuja.
+
+**Búsqueda:** filtra y no tiene en cuenta los grupos plegados.
+- Todos los grupos con coincidencias se ven desplegados, y sus encabezados vuelven a ser texto (como hoy, sin chevron ni contador).
+- Al vaciar el buscador, vuelve el estado de antes. Buscar no cambia lo guardado.
+- Enter abre el primer resultado en el orden que se ve. Las ocultas van al final, así que nunca le ganan a una visible.
+
+**Modo A-Z (D18):** sin encabezados ni grupos: una sola lista con las visibles, ordenadas por `localeCompare(nombre, language)`. "Ocultas" funciona igual, al final. El contenedor de la lista conserva el `aria-label` del `nav`.
+
+**Estado recordado:** `collapsed` (§G.4). La columna y el selector comparten el estado: plegar en uno se ve en el otro. Se escribe leyendo del store en ese momento, como `setOptions`, para que dos clics seguidos no se pisen.
+
+**Teclado** (la lista sigue siendo un solo tab stop, con roving tabindex):
+- La secuencia del roving es la de lo que se ve: encabezados de grupo (solo los que son botón) e ítems visibles. Los ítems de un grupo plegado no entran, salvo la activa que se ve.
+- ↑/↓ mueven el foco, con vuelta. Home y End van a los extremos.
+- En un encabezado:
+  - Enter o Espacio pliegan o despliegan, y el foco se queda en el encabezado;
+  - → despliega; si ya está desplegado, va al primer ítem;
+  - ← pliega; si ya está plegado, no hace nada.
+- En un ítem:
+  - Enter o Espacio abren la herramienta (como hoy);
+  - ← lleva el foco a su encabezado, sin plegar (la convención de un árbol, sin `role="tree"`).
+- ↓ desde el buscador va a la activa, o al primero de la secuencia si la activa no se ve.
+- Con texto en el buscador, los encabezados no entran en la secuencia (son texto).
+- **⌥⌘↓ / ⌥⌘↑** (`View.tsx`) usan `resolveToolList(...).order` en lugar de `ALL_TOOLS`: el orden que se ve, con las de los grupos plegados y sin las ocultas (D22). Si la activa está oculta, ⌥⌘↓ va a la primera y ⌥⌘↑ a la última.
+
+**Selector de la ventana angosta** (`ToolSwitcher`): es el mismo `ToolNav`, así que todo lo anterior vale igual dentro del popover. Con `max-h-[60vh]`, plegar ayuda más ahí.
+
+**Anuncios:** plegar y desplegar no se anuncian aparte: lo dice `aria-expanded`.
+
+## G.3 Página Opciones → Extensiones → DevTools
+
+```
+[ic] DevTools                                        ← ExtensionSettingsPage (ya existe)
+     <descripción>
+
+Lista de herramientas                                ← subtítulo
+Mostrar las herramientas  [ Por grupos | A-Z ]       ← Segmented
+Puedes plegar cada grupo en la columna.              ← ayuda (Por grupos) / set.azHint (A-Z)
+
+Orden y visibilidad
+Arrastra para ordenar. Las que ocultes siguen apareciendo al buscar.
+┌───────────────────────────────────────────────────────────┐ ← una tarjeta por grupo
+│ ⋮⋮  FORMATOS                                    [↑] [↓]   │   fila de grupo
+├───────────────────────────────────────────────────────────┤
+│     ⋮⋮ {}  JSON                    [↑] [↓]   (●) Mostrar  │   filas de herramienta
+│     ⋮⋮ ▤   YAML                    [↑] [↓]   (●) Mostrar  │
+│     ⋮⋮ </> XML                     [↑] [↓]   ( ) Mostrar  │   ← oculta: nombre en --text-hint
+│     ⋮⋮ ⇄   Convertir               [↑] [↓]   (●) Mostrar  │
+└───────────────────────────────────────────────────────────┘
+┌ CODIFICAR …                                               ┐
+                                          [↺ Restablecer orden]
+
+─────────────────────────────────────────────────────────────
+Opciones de las herramientas
+Cada herramienta recuerda sus opciones, como la indentación o la longitud.
+[↺ Restablecer las opciones de las herramientas]   ← solo si hay opciones guardadas
+```
+
+**Contenedor:** `space-y-4 text-xs`, como Pomodoro.
+- Subtítulos: `<p className="font-medium text-[var(--text-secondary)]">`.
+- Ayudas: `text-[11px] text-[var(--text-hint)]`.
+- Cada bloque: `space-y-2`. El último va con `border-t border-[var(--border)] pt-4`.
+
+**Mostrar las herramientas (D18):**
+- `Segmented` de `ui/controls.tsx` con `label={tr('set.layout')}` y las opciones `set.layoutGroups` y `set.layoutAz`. Va en una fila `flex flex-wrap items-center gap-3` con el texto `set.layout` a la izquierda (`text-[var(--text-secondary)]`).
+- Debajo, la ayuda: `set.layoutGroupsHint` en Por grupos, `set.azHint` en A-Z.
+
+**Orden y visibilidad (D19, D20):**
+- Tarjetas: `space-y-2`. Cada grupo es un `<ul>` con `rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] divide-y divide-[var(--border)]`, como `SidebarSettings`. Lleva `aria-label` con el nombre del grupo.
+- Filas: `flex min-h-9 items-center gap-2 px-2 py-1 text-xs`.
+- **Fila de grupo** (la primera del `<ul>`):
+  - asa `GripVertical size={14}`, con `aria-hidden` y `title={set.dragGroup}`, clases del asa de `SidebarSettings` (`flex h-6 w-5 shrink-0 cursor-grab touch-none items-center justify-center text-[var(--text-hint)] active:cursor-grabbing`);
+  - nombre con `PANEL_TITLE` y `min-w-0 flex-1 truncate`;
+  - `ICON_BTN` con `ChevronUp` y `ChevronDown` (14 px): `aria-label` `set.moveGroupUpNamed` / `set.moveGroupDownNamed`, `title` `set.moveUp` / `set.moveDown`;
+  - sin interruptor: un grupo con todas sus herramientas ocultas desaparece solo de la columna.
+- **Fila de herramienta:**
+  - `pl-7` (sangría bajo el grupo);
+  - asa (`title={set.drag}`), ícono de `TOOL_ICON` (14 px, `shrink-0 text-[var(--text-muted)]`) y nombre (`min-w-0 flex-1 truncate`, `text-[var(--text-secondary)]`; oculta, `text-[var(--text-hint)]`);
+  - `ICON_BTN` ↑ y ↓ dentro del grupo: `aria-label` `set.moveUpNamed` / `set.moveDownNamed`;
+  - `<span className="ml-1 shrink-0"><Toggle label={tr('set.show')} srSuffix={nombre} … /></span>`;
+  - no hay forma de pasarla a otro grupo.
+- **Última visible:** el `Toggle` de la única herramienta visible va `disabled`, y bajo las tarjetas aparece `set.lastVisible` (`text-[11px] text-[var(--text-hint)]`).
+- **Modo A-Z:** las asas y las flechas no se dibujan (no se desactivan, para no llenar la lista de controles grises). Siguen las tarjetas por grupo y los interruptores. La ayuda del bloque pasa a ser `set.azHint`.
+- **Restablecer orden:** `SECONDARY_CLS` con `RotateCcw size={12}`, en `mt-2 flex justify-end`. Borra `groupOrder`, `toolOrder` y `hidden`; no toca `layout` ni `collapsed`. Solo se ve si alguna de las tres existe. Anuncia `set.resetOrderDone`.
+
+**Arrastre** (la misma lógica de puntero de `SidebarSettings`, sin librería):
+- Los grupos se arrastran entre grupos (por el asa de su fila) y las herramientas solo dentro de su tarjeta.
+- Indicador: la fila o la tarjeta destino lleva `shadow-[inset_0_2px_0_var(--accent)]` (si sube) o `shadow-[inset_0_-2px_0_var(--accent)]` (si baja); la arrastrada, `opacity-50`.
+- **Pieza nueva:** `useRowDrag` en `src/components/shared/useRowDrag.ts`, extraída de `SidebarSettings` (`rowIndexAt`, el estado `{ id, from, over }` y los manejadores del asa), con el selector de fila como parámetro (`[data-section-row]`, `[data-group-row]`, `[data-tool-row]`). Hace falta porque la página necesita tres listas (los grupos y las herramientas de cada uno); copiar el código tres veces no es mantenible. `SidebarSettings` pasa a usarla, sin cambiar lo que hace.
+
+**Opciones de las herramientas (D23):**
+- Subtítulo `set.toolOptions` y ayuda `set.toolOptionsDesc`.
+- Botón `SECONDARY_CLS` con `RotateCcw size={13}` y `set.resetOptions`. Solo si `options` tiene alguna herramienta. Borra `options` (`update(DEVTOOLS_ID, { options: undefined })`) sin confirmación: no borra datos, solo vuelve a los valores por defecto (el mismo criterio que "Restablecer" en Pomodoro). Avisa con `showToast({ kind: 'success', title: set.resetOptionsDone })`.
+- Si la vista está abierta detrás, las herramientas toman los valores por defecto al momento (`useToolOptions` lee del store).
+
+**Estados:**
+- Por defecto: sin "Restablecer orden" ni "Restablecer las opciones".
+- Con cambios: aparecen los botones que correspondan.
+- A-Z: sin asas ni flechas, con `set.azHint`.
+- Última visible: el interruptor desactivado y `set.lastVisible`.
+- Vacío, cargando y error no aplican: los datos son locales y se leen al momento. Si guardar falla, lo dice el manejo de error de `persistConfig` que ya tiene la app.
+- Con la vista abierta detrás, la columna se actualiza al momento: las dos leen del mismo store.
+
+**Teclado y anuncios:**
+- Orden de Tab: Segmented → por tarjeta: ↑ y ↓ del grupo → por herramienta: ↑, ↓ e interruptor → Restablecer orden → Restablecer las opciones. Las asas no reciben foco (`aria-hidden`): las flechas son su alternativa.
+- **Foco al mover (arreglo de accesibilidad, también en `SidebarSettings.tsx`):** las flechas no usan `disabled` en los extremos, porque al mover la fila al primer lugar el botón se desactivaba y el foco caía al `body` (WCAG 2.4.3). Llevan `aria-disabled="true"`, el clic no hace nada y las clases imitan el desactivado: `aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent`. Las filas tienen `key` estable (el id), así que el botón movido conserva el foco.
+- Anuncios en `<p className="sr-only" aria-live="polite">`, como `SidebarSettings`: `set.moved` (herramienta, posición dentro de su grupo), `set.groupMoved`, `set.hiddenNow`, `set.shownNow` y `set.resetOrderDone`.
+- Son unos 70 tab stops (6 grupos y 20 herramientas). Es aceptable porque repite el patrón de Opciones → Navegación.
+
+## G.4 Modelo de datos
+
+En `extensions.devtools.settings` (`config.json`, con `updateExtensionSettings`). Es local y no se sincroniza (D24, vault: "Preferencias de UI siempre locales, nunca sincronizadas"). Solo se escriben las claves que difieren de lo de por defecto; un valor `undefined` en el parche borra la clave (`withExtensionSettings`).
+
+```ts
+interface DevtoolsSettings {
+  lastTool: ToolId;                                       // ya existía
+  options: Partial<Record<ToolId, Record<string, OptionValue>>>; // ya existía
+  layout: 'groups' | 'az';                                // por defecto 'groups'
+  groupOrder?: ToolGroup[];                               // orden de los grupos
+  toolOrder?: Partial<Record<ToolGroup, ToolId[]>>;       // orden dentro de cada grupo
+  hidden?: ToolId[];                                      // las que se ocultan (exclusión)
+  collapsed?: ToolGroup[];                                // los que se pliegan (exclusión)
+}
+```
+
+**Lectura** (`readDevtoolsSettings`, ampliada): se descartan los ids desconocidos y los repetidos, y en `toolOrder[g]` las herramientas que no son de `g`. Si `hidden` deja todas ocultas (una edición a mano), se ignora.
+
+**Funciones puras nuevas en `model.ts`**, con pruebas en vitest:
+- `resolveToolList(settings, nameOf: (tool: ToolId) => string, locale: string)` devuelve:
+  - `sections: { group: ToolGroup | null; tools: ToolId[] }[]`: los grupos en el orden del usuario, cada uno con sus visibles (en A-Z, una sola con `group: null`);
+  - `hidden: ToolId[]`: las ocultas, en el mismo orden;
+  - `order: ToolId[]`: el orden plano que se ve, para ⌥⌘↓/↑.
+- `moveGroup(settings, group, delta)`, `moveGroupTo(settings, group, index)`, `moveTool(settings, tool, delta)`, `moveToolTo(settings, tool, index)`, `setToolHidden(settings, tool, hidden)` y `toggleGroupCollapsed(settings, group)`: devuelven el parche a guardar.
+
+**Compatibilidad:** lo guardado hasta hoy (`{ lastTool, options }`) se lee como todo por defecto, y se ve igual que antes. No hace falta migración.
+
+**Herramientas o grupos nuevos en una versión futura** (D24, la regla de `resolveSections`):
+- una herramienta que no está en `toolOrder[g]` va al final de su grupo, en el orden de `TOOL_GROUPS`, visible (porque `hidden` es una lista de exclusión);
+- un grupo que no está en `groupOrder` va al final, desplegado (porque `collapsed` también lo es);
+- una herramienta o un grupo que ya no existe se ignora al leer y desaparece de lo guardado en la siguiente escritura.
+
+**`lastTool` oculta:** se abre igual y se ve en "Ocultas". **"Quitar configuración"**, en el catálogo de extensiones, ya lo borra todo. D9 no cambia: nada de lo pegado se guarda.
+
+## G.5 Accesibilidad
+
+- **Nombre, rol y valor (4.1.2):** los encabezados son botones con `aria-expanded` y `aria-controls`, dentro de un `role="group"` con nombre; el contador va en sr-only. Los interruptores de la página llevan el nombre de la herramienta (`srSuffix`); las flechas, `aria-label` con el nombre.
+- **Teclado (2.1.1):** todo se puede hacer sin ratón. Plegar con Enter, Espacio, ← y →; ordenar con las flechas de la página.
+- **Orden y foco (2.4.3, 2.4.7):** el foco nunca cae al `body` al mover ni al plegar (§G.3); foco visible con `FOCUS_RING`, que en `theme-tinted` toma el acento.
+- **Contraste (1.4.3, 1.4.11):** no hay combinaciones nuevas. El encabezado sigue en `--text-hint` sobre `--bg-panel`. El contador usa `--text-faint`, definido en los siete bloques de tema de `App.css`; es decorativo (`aria-hidden`) y el número lo da el sr-only.
+- **Movimiento (2.3.3):** el chevron no rota con `prefers-reduced-motion` (`motion-reduce:transition-none`).
+- **Temas:** solo tokens y el acento; nada de colores fijos. Hay que mirarlo en claro, oscuro, sepia, alto contraste y uno tintado.
+
+## G.6 Casos borde
+
+- **Ocultar la herramienta abierta:** sigue abierta y pasa a "Ocultas" en la columna.
+- **Ocultar todas las de un grupo:** el grupo desaparece de la columna. En la página sigue su tarjeta, para poder volver a mostrarlas.
+- **Plegar el grupo de la activa:** la activa sigue viéndose. Con el foco en un ítem de ese grupo, el foco ya estaba en el encabezado (solo se pliega desde ahí).
+- **Plegar todos:** la columna muestra solo encabezados (y la activa). ⌥⌘↓ sigue recorriendo todas.
+- **Cambiar a A-Z con grupos plegados:** no hay grupos que plegar; `collapsed` se conserva para cuando se vuelva a Por grupos.
+- **"Traer de una nota" a una herramienta oculta** (`toolForBlock`): se abre igual (D20).
+- **Opciones abiertas con la vista detrás:** los cambios se ven al momento en la columna. Si el selector de la ventana angosta estaba abierto, el botón de opciones lo cerró antes.
+- **Nombre largo** ("Expresiones regulares"): en la página, `truncate`; en la columna, dos líneas como hoy.
+- **Idioma:** al cambiarlo, el A-Z se reordena con los nombres del idioma nuevo.
+
+## G.7 Textos (sección `devtools` de `i18n.ts`)
+
+Nuevos:
+
+| Clave | es | en |
+|---|---|---|
+| `set.openTitle` | Abrir las opciones de DevTools | Open DevTools settings |
+| `set.list` | Lista de herramientas | Tool list |
+| `set.layout` | Mostrar las herramientas | Show tools |
+| `set.layoutGroups` | Por grupos | By group |
+| `set.layoutAz` | A-Z | A–Z |
+| `set.layoutGroupsHint` | Puedes plegar cada grupo en la columna. | You can collapse each group in the column. |
+| `set.azHint` | En la lista A-Z el orden es alfabético. Para ordenar, vuelve a Por grupos. | The A–Z list is sorted alphabetically. To reorder, switch back to By group. |
+| `set.order` | Orden y visibilidad | Order and visibility |
+| `set.orderDesc` | Arrastra para ordenar. Las que ocultes siguen apareciendo al buscar. | Drag to reorder. Hidden tools still show up when you search. |
+| `set.show` | Mostrar | Show |
+| `set.lastVisible` | Deja al menos una herramienta visible. | Keep at least one tool visible. |
+| `set.drag` | Arrastrar {name} | Drag {name} |
+| `set.dragGroup` | Arrastrar el grupo {name} | Drag the {name} group |
+| `set.moveUp` | Mover arriba | Move up |
+| `set.moveDown` | Mover abajo | Move down |
+| `set.moveUpNamed` | Mover {name} arriba | Move {name} up |
+| `set.moveDownNamed` | Mover {name} abajo | Move {name} down |
+| `set.moveGroupUpNamed` | Mover el grupo {name} arriba | Move the {name} group up |
+| `set.moveGroupDownNamed` | Mover el grupo {name} abajo | Move the {name} group down |
+| `set.moved` | {name}, posición {n} de {total} | {name}, position {n} of {total} |
+| `set.groupMoved` | Grupo {name}, posición {n} de {total} | {name} group, position {n} of {total} |
+| `set.hiddenNow` | {name} ya no aparece en la lista. | {name} is no longer in the list. |
+| `set.shownNow` | {name} vuelve a la lista. | {name} is back in the list. |
+| `set.resetOrder` | Restablecer orden | Reset order |
+| `set.resetOrderDone` | Orden restablecido. | Order reset. |
+| `set.toolOptions` | Opciones de las herramientas | Tool options |
+| `set.toolOptionsDesc` | Cada herramienta recuerda sus opciones, como la indentación o la longitud. | Each tool remembers its options, like indentation or length. |
+| `set.resetOptions` | Restablecer las opciones de las herramientas | Reset tool options |
+| `set.resetOptionsDone` | Opciones restablecidas. | Options reset. |
+| `group.hidden` | Ocultas | Hidden |
+| `groupCount` | , {n} herramientas | , {n} tools |
+| `groupCountOne` | , 1 herramienta | , 1 tool |
+| `help.p6` | Haz clic en el nombre de un grupo para plegarlo o desplegarlo. Para ordenar u ocultar herramientas, usa el botón de opciones junto al buscador. | Click a group's name to collapse or expand it. To reorder or hide tools, use the settings button next to the search box. |
+
+Cambiado:
+
+| Clave | es | en |
+|---|---|---|
+| `help.p5` | Lo que pegas solo vive en la memoria: sigue ahí al cambiar de herramienta y se borra al cerrar Logday. Solo se recuerdan la última herramienta, sus opciones y cómo ordenaste la lista. Para borrarlo antes, usa «Vaciar todas las herramientas», al pie. | What you paste lives only in memory: it stays when you switch tools and is cleared when you close Logday. Only the last tool, its options and how you arranged the list are remembered. To clear it sooner, use "Clear all tools" at the bottom. |
+
+Notas:
+- "Mover arriba", "Mover abajo" y "Restablecer orden" son las mismas palabras de `sectionNav`, para que el término sea el mismo en las dos listas.
+- En inglés, Opciones es "Settings", como `sectionNav.settings` y `optionsTitle` de Pomodoro.
+- `help.p6` va en la ayuda general, tras `help.p5` (`GENERAL_HELP` en `ui/Help.tsx`).

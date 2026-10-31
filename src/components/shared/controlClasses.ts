@@ -13,6 +13,11 @@ export const INPUT_CLS =
 
 export const ICON_BTN = `flex items-center gap-1.5 rounded-lg p-1.5 text-xs text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent ${FOCUS_RING}`;
 
+/** Para los botones de mover de una lista reordenable: en un extremo van
+ *  con `aria-disabled` y no `disabled`, porque al desactivarse el foco caía
+ *  al `body` (WCAG 2.4.3, specs/devtools design §G.3). Imita el desactivado. */
+export const SOFT_DISABLED = 'aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent aria-disabled:hover:text-[var(--text-hint)]';
+
 export const PANEL_TITLE = 'text-[10px] font-semibold uppercase tracking-widest text-[var(--text-hint)]';
 
 export const CHIP = 'rounded-full bg-[var(--bg-hover)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)]';

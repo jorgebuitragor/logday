@@ -72,9 +72,10 @@ describe('convertPaste', () => {
   });
 
   it('uno solo, en singular; con -u, la pista de Base64; en el formulario, sin "Deshacer"', () => {
-    notifyCurlConverted(['basic_auth'], 'form');
+    notifyCurlConverted(['username', 'password'], 'form');
     const toast = app.showToast.mock.calls[0][0];
-    expect(toast.description).toBe('Se cambió un valor por {{basic_auth}}. Guárdalo como secreto en Entornos: en la nota solo queda el nombre. En {{basic_auth}} va usuario:contraseña en Base64.');
+    // Ya no hay que guardar el Base64 a mano: Rust codifica la Basic (HT44).
+    expect(toast.description).toBe('Se cambiaron 2 valores por {{username}} y {{password}}. Guárdalos como secretos en Entornos: en la nota solo queda el nombre.');
     expect(announced[0]).toMatch(/^El cURL pegado rellenó el formulario\. /);
     app.language = 'en';
     notifyCurlConverted(['token']);
@@ -98,7 +99,7 @@ describe('en la URL de la pantalla', () => {
 
 describe('textos', () => {
   it('es y en con las mismas claves, y sin voseo', () => {
-    const keys = ['aCurlPasted', 'aCurlFilled', 'curlSecretsTitle', 'curlSecretsBody', 'curlBasicHint', 'curlSecretsAction'];
+    const keys = ['aCurlPasted', 'aCurlFilled', 'curlSecretsTitle', 'curlSecretsBody', 'curlSecretsAction'];
     for (const lang of ['es', 'en'] as const) for (const k of keys) expect(sectionKeys(lang, 'httpClient')).toContain(k);
     const voseo = /\b(querés|podés|tenés|guardá|pegá|abrí|usá)\b/i;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

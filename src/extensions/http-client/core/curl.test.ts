@@ -125,16 +125,24 @@ describe('fromCurl (HT39)', () => {
     expect(convert('curl -- https://x.com').code).toBe('GET https://x.com');
   });
 
-  it('-u usuario:contraseña → Authorization: Basic {{basic_auth}}, sin el valor', () => {
+  it('-u usuario:contraseña → Basic {{username}}:{{password}}, que Rust codifica al enviar (HT44)', () => {
     const { code, replaced } = convert('curl -u ana:secreto https://x.com/me');
-    expect(code).toBe('GET https://x.com/me\nAuthorization: Basic {{basic_auth}}');
-    expect(replaced).toEqual(['basic_auth']);
+    expect(code).toBe('GET https://x.com/me\nAuthorization: Basic {{username}}:{{password}}');
+    expect(replaced).toEqual(['username', 'password']);
     expect(code).not.toContain('secreto');
     expect(code).not.toContain(btoa('ana:secreto'));
-    // El usuario y la contraseña en la URL (HT23 no los admite), igual.
-    expect(convert('curl https://ana:pw@x.com/a').code).toBe('GET https://x.com/a\nAuthorization: Basic {{basic_auth}}');
+    // La contraseña puede llevar `:`; sin `:`, queda vacía (curl la pediría).
+    expect(convert('curl -u ana:a:b https://x.com').replaced).toEqual(['username', 'password']);
+    expect(convert('curl -u ana https://x.com').code).toBe('GET https://x.com\nAuthorization: Basic {{username}}:');
+    // Variables del shell: se dejan como variables.
+    expect(convert('curl -u "$USER:$PASS" https://x.com').code).toBe('GET https://x.com\nAuthorization: Basic {{USER}}:{{PASS}}');
+    // El usuario y la contraseña en la URL (HT23 no los admite), igual, decodificados.
+    const url = convert('curl https://ana:p%40ss@x.com/a');
+    expect(url.code).toBe('GET https://x.com/a\nAuthorization: Basic {{username}}:{{password}}');
     // Una cabecera Authorization escrita gana, como en curl.
     expect(convert(`curl -u a:b -H 'Authorization: Bearer {{token}}' https://x.com`).code).toBe('GET https://x.com\nAuthorization: Bearer {{token}}');
+    // Y una Basic ya en Base64 sigue en una variable, tal cual (se envía sin codificar otra vez).
+    expect(convert(`curl -H 'Authorization: Basic YTpi' https://x.com`).code).toBe('GET https://x.com\nAuthorization: Basic {{basic_auth}}');
   });
 
   it('--json pone Content-Type y Accept de JSON, y POST', () => {

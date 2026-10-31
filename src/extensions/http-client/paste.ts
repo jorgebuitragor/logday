@@ -23,8 +23,7 @@ export function notifyCurlConverted(replaced: readonly string[], where: 'note' |
     announce(done);
     return;
   }
-  const body = tr('curlSecretsBody', { n: replaced.length, vars: listVars(tr, replaced) });
-  const description = replaced.includes('basic_auth') ? `${body} ${tr('curlBasicHint')}` : body;
+  const description = tr('curlSecretsBody', { n: replaced.length, vars: listVars(tr, replaced) });
   announce(`${done} ${description}`);
   const env = activeEnvironment(readHttpSettings(app.extensions[EXTENSION_ID]?.settings));
   app.showToast({

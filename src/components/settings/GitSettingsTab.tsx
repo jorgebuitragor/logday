@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { GitCommit, RefreshCw, CheckCircle2, AlertCircle, Clock, Upload, Download, CloudOff, ArrowDown } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { GitConfig } from '../../types/git';
@@ -21,10 +21,8 @@ function timeAgo(iso: string, lang: 'es' | 'en'): string {
 
 interface GitSettingsTabProps {
   // Si la pestaña Git es la actualmente visible. El componente sigue
-  // montado (y sus efectos de sincronización en segundo plano siguen
-  // corriendo) incluso cuando active es false — igual que el resto de
-  // este módulo, el auto-commit/fetch periódico de git debe seguir
-  // funcionando aunque el usuario esté viendo otra pestaña.
+  // montado mientras Opciones está abierto, aunque se vea otra pestaña; al
+  // cerrar Opciones se desmonta (el commit automático está en App).
   active: boolean;
 }
 
@@ -46,7 +44,6 @@ export function GitSettingsTab({ active }: GitSettingsTabProps) {
   const [gitFetchBusy, setGitFetchBusy] = useState(false);
   const [gitErrorMsg, setGitErrorMsg] = useState('');
   const [gitNow, setGitNow] = useState(Date.now());
-  const gitAutoCommitRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Actualizar "hace X min" cada 30 s
   useEffect(() => {
@@ -55,18 +52,8 @@ export function GitSettingsTab({ active }: GitSettingsTabProps) {
   }, []);
   void gitNow;
 
-  // Auto-commit horario mientras la app está abierta
-  useEffect(() => {
-    if (gitAutoCommitRef.current) clearInterval(gitAutoCommitRef.current);
-    if (gitEnabled && gitAutoCommit && basePath) {
-      gitAutoCommitRef.current = setInterval(() => {
-        gitCommit().catch(() => {});
-      }, 60 * 60 * 1000);
-    }
-    return () => {
-      if (gitAutoCommitRef.current) clearInterval(gitAutoCommitRef.current);
-    };
-  }, [gitEnabled, gitAutoCommit, basePath, gitCommit]);
+  // El commit y el push automáticos viven en App (useGitAutomation): esta
+  // pestaña se desmonta al cerrar Opciones.
 
   // Sincronizar estado local con gitConfig al entrar a esta pestaña
   useEffect(() => {
@@ -264,9 +251,9 @@ export function GitSettingsTab({ active }: GitSettingsTabProps) {
           <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'extras', 'remoteRequired')}</p>
         </div>
         <ToggleSwitch
-          checked={gitAutoPush && gitEnabled && !!gitRemote.trim()}
+          checked={gitAutoPush && gitAutoCommit && gitEnabled && !!gitRemote.trim()}
           onChange={setGitAutoPush}
-          disabled={!gitEnabled || !gitRemote.trim()}
+          disabled={!gitEnabled || !gitAutoCommit || !gitRemote.trim()}
           size="sm"
         />
       </label>

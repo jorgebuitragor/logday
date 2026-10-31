@@ -20,6 +20,7 @@ import { PolicyGateModal } from './components/PolicyGateModal';
 import { OvertimeEntry } from './types/overtime';
 import type { ActiveSection } from './types/config';
 import { useEventNotifier } from './lib/eventNotifier';
+import { useGitAutomation } from './hooks/useGitAutomation';
 import { useExtensionLifecycle } from './extensions/useExtensions';
 import { ExtensionSlot } from './extensions/ExtensionSlot';
 import { extensionIdOfSection } from './extensions/state';
@@ -115,6 +116,7 @@ export default function App() {
 
   useEventNotifier();
   useExtensionLifecycle();
+  useGitAutomation();
 
   // ⌘0 va a Inicio y ⌘1…⌘9 a las secciones, en el orden de lectura del
   // menú (specs/navegacion-secciones NS15).

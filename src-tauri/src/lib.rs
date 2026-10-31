@@ -675,6 +675,8 @@ pub fn run() {
             extensions::google_calendar::google_calendar_events,
             extensions::outgoing_webhook::outgoing_webhook_validate_url,
             extensions::outgoing_webhook::outgoing_webhook_send,
+            extensions::http_client::http_client_send,
+            extensions::http_client::http_client_cancel,
             extensions::granola::granola_connect,
             extensions::granola::granola_disconnect,
             extensions::granola::granola_call,

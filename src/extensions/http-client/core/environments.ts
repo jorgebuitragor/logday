@@ -31,6 +31,9 @@ export interface HttpClientSettings {
   timeoutSec: number;
   maxResponseMb: number;
   followRedirects: boolean;
+  /** Los bloques de las notas que el usuario nunca compactó ni expandió
+   *  arrancan compactos (bloque compacto). */
+  compactOnOpen: boolean;
 }
 
 export const LIMITS = {
@@ -44,6 +47,7 @@ export const DEFAULT_SETTINGS: HttpClientSettings = {
   timeoutSec: LIMITS.timeoutSec.default,
   maxResponseMb: LIMITS.maxResponseMb.default,
   followRedirects: true,
+  compactOnOpen: false,
 };
 
 export const VAR_NAME_RE = /^[A-Za-z_][A-Za-z0-9_.-]{0,63}$/;
@@ -105,6 +109,7 @@ export function readHttpSettings(raw: Record<string, unknown> | undefined): Http
     timeoutSec: clampInt(r.timeoutSec, LIMITS.timeoutSec.min, LIMITS.timeoutSec.max, LIMITS.timeoutSec.default),
     maxResponseMb: clampInt(r.maxResponseMb, LIMITS.maxResponseMb.min, LIMITS.maxResponseMb.max, LIMITS.maxResponseMb.default),
     followRedirects: r.followRedirects !== false,
+    compactOnOpen: r.compactOnOpen === true,
   };
 }
 

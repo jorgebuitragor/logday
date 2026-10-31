@@ -43,6 +43,9 @@ describe('ajustes y entornos (HT17–HT22)', () => {
     expect(s.environments[0].extraHosts).toEqual(['api.example.com']);
     expect(s.activeEnvId).toBeNull();
     expect([s.timeoutSec, s.maxResponseMb, s.followRedirects]).toEqual([300, 1, false]);
+    expect(s.compactOnOpen).toBe(false);
+    expect(readHttpSettings({ compactOnOpen: true }).compactOnOpen).toBe(true);
+    expect(readHttpSettings({ compactOnOpen: 'sí' }).compactOnOpen).toBe(false);
   });
 
   it('nombres de entornos y variables', () => {

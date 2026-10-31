@@ -1,12 +1,12 @@
 // El bloque ```http en la nota (Interfaz §1, HT4–HT16, HT20–HT25, HT30,
-// HT36–HT38, HT60): la
+// HT36–HT38, HT60, bloque compacto): la
 // barra de encima (`part: 'header'`) y la franja de debajo (`'footer'`).
 // Son dos islas aparte dentro del NodeView; comparten el estado del store.
-import { useEffect, useMemo, useRef } from 'react';
-import { ChevronDown, CircleAlert, Send, X } from 'lucide-react';
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { ChevronDown, ChevronRight, CircleAlert, Send, X } from 'lucide-react';
 import { useAppStore } from '../../../store/appStore';
 import { CODE_LANGUAGE_OPTIONS } from '../../../lib/codeHighlight';
-import { PANEL_TITLE, SECONDARY_CLS, SEND_BTN } from '../../../components/shared/controlClasses';
+import { FOCUS_RING, PANEL_TITLE, SECONDARY_CLS, SEND_BTN } from '../../../components/shared/controlClasses';
 import { StatusItem } from '../../../components/shared/FormControls';
 import type { NoteBlockProps } from '../../types';
 import { subscribeNoteBlockRun } from '../../noteBlockEvents';
@@ -14,15 +14,16 @@ import { announce } from '../announce';
 import { activeEnvironment, EXTENSION_ID, readHttpSettings } from '../core/environments';
 import { setRequestMethod } from '../core/edit';
 import { HTTP_METHODS, hasErrors, parseHttpBlock, requestAtOffset, requestLabel, type HttpMethod } from '../core/parse';
-import { isMac, makeTr, sendShortcut } from '../core/text';
+import { formatElapsed, isMac, makeTr, sendShortcut } from '../core/text';
+import { blockSignature, compactKey, compactSummary, initialCompact, loadCompact, moveCompact, saveCompact } from '../core/compact';
 import {
-  blockKey, blockState, blockedMessage, cancelBlock, dismissResult, firstError, issueMessage, openSettings,
-  readResult, resolveWith, selectRequest, sendRequest, useHttpStore,
+  blockKey, blockState, blockedMessage, cancelBlock, dismissResult, firstError, httpApi, issueMessage, openSettings,
+  readResult, requestCompactAll, resolveWith, selectRequest, sendRequest, useHttpStore,
 } from '../store';
 import { CopyAsMenu } from './CopyAs';
 import { EnvironmentChip } from './EnvironmentChip';
 import { Menu } from './Menu';
-import { ResponseView } from './ResponseView';
+import { ResponseView, StatusChip } from './ResponseView';
 import { ConfirmBox, SendFailure, SendProgress, TEXT_LINK, useDebounced, useNow } from './SendStatus';
 
 /** Lo que comparten la barra y la franja de un bloque. */
@@ -64,6 +65,147 @@ function problemText(b: Block): string | null {
   return b.blocked;
 }
 
+// ---------- Compacto ----------
+// El bloque en una línea: la barra con el método, la URL y la última
+// respuesta. La nota oculta el código y la franja (`NoteBlockProps.compact`);
+// aquí se decide con qué arranca y se recuerda lo que el usuario elige
+// (`core/compact`).
+
+function useCompact(props: NoteBlockProps, b: Block) {
+  const { compact = false, setCompact } = props;
+  const sig = useMemo(() => blockSignature(props.code), [props.code]);
+  // La clave solo cambia con la firma, la nota o el índice: `blockCodes`
+  // recorre el documento y no hace falta en cada tecla.
+  const key = useMemo(
+    () => compactKey(b.noteId, props.code, props.blockCodes?.().slice(0, Math.max(0, b.index)) ?? []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [b.noteId, b.index, sig],
+  );
+  const latest = useRef({ key, setCompact, noteId: b.noteId });
+  latest.current = { key, setCompact, noteId: b.noteId };
+
+  // Con qué arranca: lo elegido o la opción de Opciones. Antes de pintar,
+  // para que no se vea expandido un instante. Con el cursor dentro (un
+  // bloque recién creado), expandido.
+  useLayoutEffect(() => {
+    if (!setCompact) return;
+    if (initialCompact(loadCompact(key), b.settings.compactOnOpen) && (props.cursor === null || props.cursor === undefined)) setCompact(true);
+  // Solo al montarse.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Se editó la URL de la primera petición: lo elegido sigue al bloque.
+  const prevKey = useRef(key);
+  useEffect(() => {
+    if (prevKey.current === key) return;
+    moveCompact(prevKey.current, key);
+    prevKey.current = key;
+  }, [key]);
+
+  // ⌥/Alt+clic en cualquier bloque de la nota.
+  useEffect(() => httpApi.subscribe((s, prev) => {
+    const all = s.compactAll;
+    const mine = latest.current;
+    if (!all || all === prev.compactAll || all.noteId !== mine.noteId || !mine.setCompact) return;
+    saveCompact(mine.key, all.compact);
+    mine.setCompact(all.compact);
+  }), []);
+
+  // Una confirmación sale en la franja: compacto no se vería.
+  const confirming = b.state.confirm !== null;
+  useEffect(() => {
+    if (confirming && compact) setCompact?.(false);
+  }, [confirming, compact, setCompact]);
+
+  const toggle = (all: boolean) => {
+    const next = !compact;
+    if (all) {
+      requestCompactAll(b.noteId, next);
+      return;
+    }
+    saveCompact(key, next);
+    setCompact?.(next);
+  };
+  return { compact, canCompact: !!setCompact, toggle };
+}
+
+function CompactToggle({ tr, compact, onToggle }: { tr: Block['tr']; compact: boolean; onToggle: (all: boolean) => void }) {
+  const mac = isMac();
+  const label = tr(compact ? 'expandBlock' : 'compactBlock');
+  return (
+    <button
+      type="button"
+      aria-expanded={!compact}
+      aria-label={label}
+      title={`${label} (${tr('compactAllTip', { mod: mac ? '⌥' : 'Alt' })})`}
+      onClick={(e) => onToggle(e.altKey)}
+      onKeyDown={(e) => {
+        // ⌥/Alt+Enter o Espacio: todas, también con el teclado.
+        if (e.altKey && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault();
+          e.stopPropagation();
+          onToggle(true);
+        }
+      }}
+      className={`-ml-1 rounded p-0.5 text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] ${FOCUS_RING}`}
+    >
+      <ChevronRight size={13} aria-hidden className={`transition-transform duration-150 motion-reduce:transition-none ${compact ? '' : 'rotate-90'}`} />
+    </button>
+  );
+}
+
+/** El resumen de la barra compacta: la URL (completa en `title`) y, con
+ *  varias peticiones, cuántas más. */
+const summaryOf = (b: Block) => compactSummary(b.req) ?? (b.req?.name || b.tr('requestUnnamed', { n: b.selected + 1 }));
+
+function CompactSummary({ b, withMethod }: { b: Block; withMethod: boolean }) {
+  const { tr, req, parsed } = b;
+  const summary = summaryOf(b);
+  const more = parsed.requests.length - 1;
+  return (
+    <>
+      <span className="min-w-0 truncate font-mono text-[11px] text-[var(--text-secondary)]" title={req?.url ? `${req.method} ${req.url}` : undefined}>
+        {withMethod && req && <span className="mr-1 font-semibold text-[var(--text-primary)]">{req.method}</span>}
+        {summary}
+      </span>
+      {more > 0 && (
+        <span className="shrink-0 text-[10px] text-[var(--text-hint)]">
+          <span aria-hidden>{tr('compactMore', { n: more })}</span>
+          <span className="sr-only">{tr('compactMoreAria', { n: more })}</span>
+        </span>
+      )}
+    </>
+  );
+}
+
+/** La última respuesta, el envío en curso o el problema, en una línea. */
+function CompactStatus({ b }: { b: Block }) {
+  const { tr, state, cached, language } = b;
+  if (state.inFlight) return <span className="shrink-0 text-[11px] text-[var(--text-hint)]">{tr('sending')}</span>;
+  const problem = problemText(b);
+  if (problem) {
+    return (
+      <span className="shrink-0 text-red-400" title={problem}>
+        <CircleAlert size={13} aria-hidden />
+        <span className="sr-only">{problem}</span>
+      </span>
+    );
+  }
+  const result = cached?.entry.value;
+  if (result?.error) {
+    return <span className="shrink-0 rounded-md bg-red-500/15 px-1.5 py-0.5 text-[11px] font-semibold text-[var(--text-primary)]">{tr('compactFailed')}</span>;
+  }
+  const out = result?.response?.output;
+  if (!out) return null;
+  return (
+    <span className={`flex shrink-0 items-center gap-1 text-[11px] text-[var(--text-hint)] ${cached?.stale ? 'opacity-60' : ''}`}>
+      <StatusChip status={out.status} reason={out.reason} />
+      <span>· {formatElapsed(out.elapsedMs, language)}</span>
+      {cached?.stale && <span className="sr-only">{tr('stale')}</span>}
+    </span>
+  );
+}
+
 // ---------- Barra ----------
 
 function BlockHeader(props: NoteBlockProps) {
@@ -77,6 +219,7 @@ function BlockHeader(props: NoteBlockProps) {
   const inFlight = state.inFlight !== null;
   const disabled = !!b.error || !!b.blocked || !req;
   const problemId = `http-problem-${key.replace(/[^a-zA-Z0-9]/g, '-')}`;
+  const { compact, canCompact, toggle } = useCompact(props, b);
 
   // ⌘↵ dentro del código (A3.3): cada bloque atiende el suyo.
   useEffect(() => subscribeNoteBlockRun((event) => {
@@ -144,9 +287,15 @@ function BlockHeader(props: NoteBlockProps) {
           e.preventDefault();
           cancelBlock(key);
         }
+        // ⌘↵ también desde la barra: en compacto el código no se ve.
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !inFlight) {
+          e.preventDefault();
+          send();
+        }
       }}
-      className="@container/httpblock flex items-center gap-2 border-b border-[var(--border)] px-2.5 py-1.5"
+      className={`@container/httpblock flex items-center gap-2 px-2.5 py-1.5 ${compact ? '' : 'border-b border-[var(--border)]'}`}
     >
+      {canCompact && <CompactToggle tr={tr} compact={compact} onToggle={toggle} />}
       {props.setLanguage ? (
         <Menu
           label={tr('langPicker', { name: 'HTTP' })}
@@ -184,9 +333,16 @@ function BlockHeader(props: NoteBlockProps) {
           }
         />
       )}
+      {compact && parsed.requests.length < 2 && (
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <CompactSummary b={b} withMethod={!canSetMethod} />
+          <CompactStatus b={b} />
+        </div>
+      )}
       {parsed.requests.length >= 2 && (
         <Menu
-          label={tr('requestPicker')}
+          // En compacto el botón es el resumen: que se lea.
+          label={compact ? `${tr('requestPicker')}: ${summaryOf(b)}, ${tr('compactMoreAria', { n: parsed.requests.length - 1 })}` : tr('requestPicker')}
           items={parsed.requests.map((r, i) => ({
             key: String(i),
             checked: i === b.selected,
@@ -201,14 +357,22 @@ function BlockHeader(props: NoteBlockProps) {
             onSelect: () => selectRequest(key, i),
           }))}
           button={
-            <>
-              <span className="max-w-[16rem] truncate">{req ? requestLabel(req) : tr('requestUnnamed', { n: b.selected + 1 })}</span>
-              <ChevronDown size={11} className="shrink-0" aria-hidden />
-            </>
+            compact ? (
+              <>
+                <CompactSummary b={b} withMethod={!canSetMethod} />
+                <ChevronDown size={11} className="shrink-0" aria-hidden />
+              </>
+            ) : (
+              <>
+                <span className="max-w-[16rem] truncate">{req ? requestLabel(req) : tr('requestUnnamed', { n: b.selected + 1 })}</span>
+                <ChevronDown size={11} className="shrink-0" aria-hidden />
+              </>
+            )
           }
         />
       )}
-      <div className="flex-1" />
+      {compact && parsed.requests.length >= 2 && <CompactStatus b={b} />}
+      <div className={compact && parsed.requests.length < 2 ? 'hidden' : 'flex-1'} />
       <CopyAsMenu tr={tr} req={codeReq} />
       <EnvironmentChip />
       {inFlight ? (

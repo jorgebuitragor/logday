@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { Schema } from '@tiptap/pm/model';
 import { EditorState, TextSelection } from '@tiptap/pm/state';
-import { blockIndexAt, changedRange, inlineRunTarget, setBlockCodeTr, setBlockLanguageTr } from './extensionBlockPos';
+import {
+  blockCodesOf, blockIndexAt, changedRange, inlineRunTarget, selectionOutsideTr, setBlockCodeTr, setBlockLanguageTr,
+} from './extensionBlockPos';
 import { emitNoteBlockRun, subscribeNoteBlockRun, type NoteBlockRunEvent } from '../../extensions/noteBlockEvents';
 
 // Un esquema mínimo con párrafos y bloques de código, como el de TipTap.
@@ -116,5 +118,40 @@ describe('acciones de la barra de un bloque inline (R24: setLanguage, setCode)',
     expect(next.doc.child(1).type.name).toBe('codeBlock');
     expect(next.doc.child(1).textContent).toBe('');
     expect(setBlockCodeTr(state, starts[1], 'GET https://a')).toBeNull();
+  });
+});
+
+describe('bloque compacto: la nota (blockCodes, setCompact)', () => {
+  it('blockCodesOf: el texto de los bloques de ese lenguaje, en orden', () => {
+    expect(blockCodesOf(doc, 'http')).toEqual(['GET https://a', 'GET https://b\nAccept: */*']);
+    expect(blockCodesOf(doc, 'js')).toEqual(['x()']);
+    expect(blockCodesOf(doc, 'mermaid')).toEqual([]);
+  });
+
+  it('compactar con el cursor dentro: el cursor pasa al texto de después, sin tocar el documento', () => {
+    const state = at(starts[1] + 4);
+    const tr = selectionOutsideTr(state, starts[1]);
+    expect(tr).not.toBeNull();
+    expect(tr!.docChanged).toBe(false);
+    const next = state.apply(tr!);
+    // El siguiente texto es el del bloque js (otro lenguaje, no se compacta).
+    expect(next.selection.from).toBe(starts[2] + 1);
+    expect(next.doc.eq(state.doc)).toBe(true);
+  });
+
+  it('el último bloque: el cursor va al texto de antes; con el cursor fuera, nada', () => {
+    const state = at(starts[3] + 3);
+    const next = state.apply(selectionOutsideTr(state, starts[3])!);
+    expect(next.selection.from).toBeLessThan(starts[3]);
+    expect(selectionOutsideTr(at(2), starts[1])).toBeNull();
+    expect(selectionOutsideTr(at(2), starts[0])).toBeNull();
+  });
+
+  it('un bloque solo en la nota: queda seleccionado entero (fuera de su texto)', () => {
+    const solo = schema.node('doc', null, [code('http', 'GET https://a')]);
+    const state = EditorState.create({ doc: solo, selection: TextSelection.create(solo, 3) });
+    const next = state.apply(selectionOutsideTr(state, 0)!);
+    expect(next.selection.from).toBe(0);
+    expect(next.selection.$from.parent.type.name).toBe('doc');
   });
 });

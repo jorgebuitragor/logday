@@ -788,7 +788,7 @@ html.theme-animating body * {
   border-radius: 8px;
   background: var(--bg-surface);
 }
-.prose-editor .extension-node-inline > pre {
+.prose-editor .extension-node-inline .extension-block-code {
   margin: 0;
   border: 0;
   border-radius: 0;
@@ -796,6 +796,26 @@ html.theme-animating body * {
   background: transparent;
 }
 .prose-editor .extension-node-inline:focus-within { border-color: var(--border-high); }
+/* Compacto (specs/cliente-http, bloque compacto): el código y la franja se
+   pliegan con una transición de alto (filas de 1fr a 0fr) y quedan
+   ocultos, en el documento. Sin animación con prefers-reduced-motion o con
+   las animaciones de la app apagadas (.no-animations, arriba). */
+.prose-editor .extension-block-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 160ms ease-out, visibility 160ms;
+}
+.prose-editor .extension-block-body[data-compact] {
+  grid-template-rows: 0fr;
+  visibility: hidden;
+}
+.prose-editor .extension-block-body-inner { min-height: 0; }
+.prose-editor .extension-block-body[data-compact] > .extension-block-body-inner,
+.prose-editor .extension-block-body[data-animating] > .extension-block-body-inner { overflow: hidden; }
+.prose-editor .extension-block-body[data-instant] { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .prose-editor .extension-block-body { transition: none; }
+}
 /* Las islas no heredan los estilos del texto ni del código del editor
    (hallazgo 3): `pre`, `code`, `p` y las tablas de la nota. */
 .prose-editor .extension-block-ui {

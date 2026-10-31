@@ -58,6 +58,9 @@ export interface AppConfig {
   notesViewDefault?: NotesView;
   /** Última vista usada (el botón de la barra lateral); se recuerda. */
   notesView?: NotesView;
+  /** Vista con que abre Tareas al iniciar la app (specs/navegacion-secciones
+   *  NS22). La vista actual no se guarda. */
+  tasksViewDefault?: ViewMode;
   noteSortBy?: NoteSortBy;
   noteSortDir?: NoteSortDir;
   taskSortBy?: TaskSortBy;

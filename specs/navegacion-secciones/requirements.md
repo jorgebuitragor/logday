@@ -27,7 +27,7 @@ La fila actual se retira; no queda como tercer modo.
 
 ### Modos
 
-- NS1. El menú lateral DEBERÁ tener dos estilos de secciones, elegibles en Opciones → General → Menú lateral: **Barra de íconos** (predeterminado) y **Lista con nombres**. Los dos son variantes de un mismo componente, con los mismos datos, orden, fijado, teclado, "Más" y colapsado.
+- NS1. El menú lateral DEBERÁ tener dos estilos de secciones, elegibles en Opciones → Navegación → Menú lateral (NS21): **Barra de íconos** (predeterminado) y **Lista con nombres**. Los dos son variantes de un mismo componente, con los mismos datos, orden, fijado, teclado, "Más" y colapsado.
 - NS2. **Barra de íconos:** una columna de 44 px a la izquierda, con un botón de 36×36 px por sección, y a su derecha el panel de la sección activa. El panel lleva como título el nombre de la sección activa y, a la derecha del título, sus acciones y el botón de colapsar.
 - NS3. **Lista con nombres:** arriba del panel, una fila por sección, con ícono y nombre (unos 28 px de alto cada una), con el mismo aspecto que la barra de Opciones.
 - NS4. **Colapsado:** en los dos estilos, el menú colapsado es la misma columna de íconos de la Barra de íconos, sin panel. Debajo de las secciones, como hoy, van las vistas de Tareas cuando Tareas está activa. Abajo quedan fijos el estado de las extensiones (R26), Buscar y Opciones. Las secciones se dibujan desde una sola lista, no repetidas a mano.
@@ -43,7 +43,7 @@ La fila actual se retira; no queda como tercer modo.
 
 ### Fijar, ocultar y reordenar
 
-- NS9. Opciones → General → Menú lateral DEBERÁ tener una lista "Secciones del menú" con todas las secciones (salvo Inicio), en su orden, con:
+- NS9. Opciones → Navegación → Menú lateral DEBERÁ tener una lista "Secciones del menú" con todas las secciones (salvo Inicio), en su orden, con:
   - un asa para arrastrar y, además, los botones "Mover arriba" y "Mover abajo" (arrastrar no puede ser la única forma);
   - un interruptor por sección para mostrarla en el menú u ocultarla en "Más";
   - "Restablecer orden", que vuelve al orden y la visibilidad por defecto.
@@ -77,6 +77,21 @@ La fila actual se retira; no queda como tercer modo.
   - Se anima unos 3 s al pasar el puntero, al recibir el foco y una vez al elegirla; fuera de eso queda quieta.
   - CON `prefers-reduced-motion: reduce` o las animaciones de la app apagadas, la miniatura no se mueve y muestra su fotograma final.
 
+### Opciones → Navegación
+
+- NS21. Opciones DEBERÁ tener una entrada **Navegación** ("Navigation"), con el ícono `PanelLeft`, segunda del grupo App: General, Navegación, Preferencias y Atajos. Reúne, en este orden:
+  1. **Menú lateral:** el estilo (NS20) y "Secciones del menú" (NS9);
+  2. **Pantalla de inicio**, con su selector de siempre;
+  3. **Vista de notas** (Lista o Árbol);
+  4. **Vista de tareas al abrir** (NS22).
+
+  General queda con Idioma, Tema y Tipografía; Preferencias, sin la vista de notas. "Ordenar secciones…" (en "Más") abre Opciones directamente en Navegación. En Atajos, una fila de solo lectura "Ir a una sección" muestra ⌘0…⌘9 (Ctrl+0…Ctrl+9 en Windows y Linux) (NS15).
+- NS22. Tareas DEBERÁ abrir, al iniciar la app, en la vista elegida en Opciones → Navegación → "Vista de tareas al abrir": Lista (predeterminada), Kanban o Calendario.
+  - Es una preferencia local (`tasksViewDefault` en `config.json`), no se sincroniza.
+  - Elegirla en Opciones cambia también la vista actual, como la vista de notas.
+  - Cambiar de vista mientras se usa la app no la modifica, y la vista actual no se guarda: cada inicio vuelve a la elegida.
+  - SI no hay preferencia guardada o no es una de las tres, Tareas abre en la Lista, como antes.
+
 ### Fuera de alcance (por ahora)
 
 - Cambios en Web y Mobile. Web ya es una lista con nombres. En Mobile, cuando haya extensiones con vista, la barra inferior usará una pestaña "Más".
@@ -92,3 +107,5 @@ La fila actual se retira; no queda como tercer modo.
   - "Extras" pasa a llamarse "Horas extra" en el menú (NS8);
   - también las 4 fijas se pueden ocultar en "Más" (NS11);
   - el orden de las secciones no se unifica entre plataformas por ahora.
+- Jorge aprobó la entrada Navegación en Opciones y la vista de tareas al abrir (NS21, NS22).
+  - La vista de notas sigue recordando la última usada; la de tareas no, porque Jorge pidió que Tareas abra siempre en la elegida.

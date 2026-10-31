@@ -1,10 +1,6 @@
-import { Monitor, Sun, Moon, Minus, Plus, Type, ChevronDown, AlertTriangle, Eye, BookOpen, Smartphone, Snowflake, MoreVertical, Pencil, Copy, Trash2, Palette } from 'lucide-react';
+import { Monitor, Sun, Moon, Minus, Plus, Type, AlertTriangle, Eye, BookOpen, Smartphone, Snowflake, MoreVertical, Pencil, Copy, Trash2, Palette } from 'lucide-react';
 import { useState } from 'react';
 import { Theme, CustomTheme } from '../../types/theme';
-import { StartupScreen } from '../../types/config';
-import { useExtensions } from '../../extensions/useExtensions';
-import { extensionSection } from '../../extensions/state';
-import { extensionText } from '../../extensions/text';
 import { Language } from '../../types/common';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
@@ -14,7 +10,6 @@ import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { ThemeTile } from './ThemeTile';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
 import { Z_MODAL_NESTED } from '../../lib/zIndex';
-import { SidebarSettings } from './SidebarSettings';
 
 const THEME_VALUES: { value: Theme; Icon: React.ElementType }[] = [
   { value: 'system', Icon: Monitor },
@@ -34,25 +29,17 @@ const LANGUAGE_OPTIONS: { value: Language; label: string }[] = [
   { value: 'en', label: 'English' },
 ];
 
-const STARTUP_SCREEN_VALUES: StartupScreen[] = ['dashboard', 'dailys', 'tasks', 'notes', 'overtime'];
-
-interface GeneralSettingsTabProps {
-  isStartupSelectorOpen: boolean;
-  setIsStartupSelectorOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  startupSelectorRef: React.RefObject<HTMLDivElement | null>;
-}
-
-export function GeneralSettingsTab({ isStartupSelectorOpen, setIsStartupSelectorOpen, startupSelectorRef }: GeneralSettingsTabProps) {
+// La pantalla de inicio y el menú lateral pasaron a Opciones → Navegación
+// (specs/navegacion-secciones NS21).
+export function GeneralSettingsTab() {
   const {
     language, setLanguage,
     theme, setTheme,
     customThemes, renameCustomTheme, duplicateCustomTheme, deleteCustomTheme,
-    startupScreen, setStartupScreen,
     fontSize, setFontSize,
     confirmDestructiveActions,
   } = useAppStore();
 
-  const enabledExtensions = useExtensions().enabled;
   const [editingCustomTheme, setEditingCustomTheme] = useState<CustomTheme | 'new' | null>(null);
   const [showAllCustomThemes, setShowAllCustomThemes] = useState(false);
   const [visibleCustomCount, setVisibleCustomCount] = useState(6);
@@ -60,22 +47,6 @@ export function GeneralSettingsTab({ isStartupSelectorOpen, setIsStartupSelector
   const [renamingThemeId, setRenamingThemeId] = useState<string | null>(null);
   const confirmDeleteThemeDialog = useConfirmDelete<CustomTheme>(confirmDestructiveActions);
 
-  const startupScreenOptions: { value: StartupScreen; label: string; desc: string }[] = [
-    ...STARTUP_SCREEN_VALUES.map((value) => ({
-      value,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      label: t(language, 'settings', `startup${value.charAt(0).toUpperCase() + value.slice(1)}` as any),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      desc: t(language, 'settings', `startupDesc${value.charAt(0).toUpperCase() + value.slice(1)}` as any),
-    })),
-    // Las vistas de las extensiones activas también pueden ser la pantalla
-    // de inicio (specs/extensiones R13).
-    ...enabledExtensions.filter((def) => def.view).map((def) => ({
-      value: extensionSection(def.id) as StartupScreen,
-      label: extensionText(language, def.id, 'name'),
-      desc: extensionText(language, def.id, 'description'),
-    })),
-  ];
   const themeOptions = THEME_VALUES.map(({ value, Icon }) => {
     const keySuffix = value
       .split('-')
@@ -90,7 +61,6 @@ export function GeneralSettingsTab({ isStartupSelectorOpen, setIsStartupSelector
       desc: t(language, 'settings', `themeDesc${keySuffix}` as any),
     };
   });
-  const activeStartupOption = startupScreenOptions.find((o) => o.value === startupScreen) ?? startupScreenOptions[0];
 
   const handleStartRenameTheme = (ct: CustomTheme) => {
     setOpenThemeMenuId(null);
@@ -338,74 +308,6 @@ export function GeneralSettingsTab({ isStartupSelectorOpen, setIsStartupSelector
     />
   )}
 
-  {/* Startup screen section */}
-  <div>
-    <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
-      {t(language, 'settings', 'startupScreen')}
-    </p>
-    <div className="rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] p-3">
-      <div ref={startupSelectorRef} className="relative">
-        <button
-          type="button"
-          onClick={() => setIsStartupSelectorOpen((s) => !s)}
-          className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition ${
-            isStartupSelectorOpen
-              ? 'border-indigo-500/60 bg-indigo-500/10'
-              : 'border-[var(--border-card)] bg-[var(--bg-elevated)] hover:border-[var(--border-high)] hover:bg-[var(--bg-hover)]'
-          }`}
-          aria-haspopup="listbox"
-          aria-expanded={isStartupSelectorOpen}
-        >
-          <span>
-            <span className="block text-xs font-medium text-[var(--text-secondary)]">
-              {activeStartupOption.label}
-            </span>
-            <span className="mt-0.5 block text-[10px] text-[var(--text-hint)]">
-              {activeStartupOption.desc}
-            </span>
-          </span>
-          <ChevronDown
-            size={14}
-            className={`text-[var(--text-hint)] transition-transform ${isStartupSelectorOpen ? 'rotate-180' : ''}`}
-          />
-        </button>
-
-        {isStartupSelectorOpen && (
-          <div className="absolute left-0 right-0 z-20 mt-1.5 overflow-hidden rounded-lg border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl">
-            <div role="listbox" aria-label={t(language, 'settings', 'startupOptionsAria')} className="p-1">
-              {startupScreenOptions.map(({ value, label, desc }) => {
-                const isActive = startupScreen === value;
-                return (
-                  <button
-                    key={value}
-                    type="button"
-                    role="option"
-                    aria-selected={isActive}
-                    onClick={() => {
-                      void setStartupScreen(value);
-                      setIsStartupSelectorOpen(false);
-                    }}
-                    className={`w-full rounded-md px-3 py-2 text-left transition ${
-                      isActive
-                        ? 'bg-indigo-500/10 text-indigo-400'
-                        : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-                    }`}
-                  >
-                    <span className="block text-xs font-medium">{label}</span>
-                    <span className="mt-0.5 block text-[10px] text-[var(--text-hint)]">{desc}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-    <p className="mt-2 text-center text-[10px] text-[var(--text-hint)]">
-      {t(language, 'settings', 'startupHint')}
-    </p>
-  </div>
-
   {/* Font size section */}
   <div>
     <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
@@ -454,9 +356,6 @@ export function GeneralSettingsTab({ isStartupSelectorOpen, setIsStartupSelector
       </div>
     </div>
   </div>
-
-  {/* Menú lateral (specs/navegacion-secciones) */}
-  <SidebarSettings />
 
   </>;
 }

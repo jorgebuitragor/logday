@@ -16,7 +16,7 @@ Estado: en progreso.
 
 - [x] `sidebarStyle` y `sidebarSections` en `AppConfig` y el store, con `setSidebarStyle` y `setSidebarSections` (`undefined` restablece). Locales, no se sincronizan.
 - [x] Migración (NS5): sin estilo guardado, la Barra de íconos. `sidebarLabelsVisible` ya no se lee ni se escribe: queda en el tipo por las configs viejas y desaparece de `config.json` al siguiente guardado (`persistConfig` arma la config entera).
-- [x] `openSidebarSettings` y `sidebarSettingsRequest`: "Ordenar secciones…" abre Opciones → General con "Menú lateral" a la vista.
+- [x] `openSidebarSettings` y `sidebarSettingsRequest`: "Ordenar secciones…" abre Opciones → Navegación (NS21), sin desplazarse: la pestaña empieza por el menú lateral.
 
 ### Menú lateral
 
@@ -33,11 +33,20 @@ Estado: en progreso.
 - [x] El editor de atajos de Opciones no acepta un dígito: sigue esperando otra tecla.
 - [x] Buscar: grupo "Ir a" arriba de los resultados (`SearchGoToSections.tsx`), con Inicio y las secciones que están en "Más".
 
-### Opciones → General → Menú lateral (`SidebarSettings.tsx`)
+### Opciones → Navegación → Menú lateral (`SidebarSettings.tsx`)
 
-- [x] Selector de estilo: `<fieldset>` con dos tarjetas y radios nativos, miniaturas en HTML con los tokens del tema (`SidebarStylePreview.tsx`) y la animación de unos 3 s en `App.css` (`.sbp-*`): al pasar el puntero, con el foco del teclado y una vez al elegirla. Con `prefers-reduced-motion` o `.no-animations`, el fotograma final.
+- [x] Selector de estilo (`SidebarStylePicker.tsx`, aparte para reusarlo en la bienvenida): `<fieldset>` con dos tarjetas y radios nativos, miniaturas en HTML con los tokens del tema (`SidebarStylePreview.tsx`) y la animación de unos 3 s en `App.css` (`.sbp-*`): al pasar el puntero, con el foco del teclado y una vez al elegirla. Con `prefers-reduced-motion` o `.no-animations`, el fotograma final.
 - [x] "Secciones del menú": asa para arrastrar (eventos de puntero), "Mover arriba" y "Mover abajo", "Mostrar en el menú" y "Restablecer orden", con los cambios anunciados en una región `aria-live`.
 - [x] Se quitó la tarjeta "Textos del menú lateral" y sus textos.
+
+### Opciones → Navegación (NS21, NS22)
+
+- [x] Entrada "Navegación" con `PanelLeft`, segunda del grupo App (`appTabs` en `SettingsModal.tsx`), y `NavigationSettingsTab.tsx` con el menú lateral, la pantalla de inicio (salió de General, con su selector y el cierre con Esc dentro de la sección), la vista de notas (salió de Preferencias) y la vista de tareas al abrir.
+- [x] General queda con Idioma, Tema y Tipografía. Se quitaron `SIDEBAR_SETTINGS_ID`, el `setTimeout` y el `scrollIntoView` de "Ordenar secciones…".
+- [x] `tasksViewDefault` en `AppConfig` y el store, con `setTasksViewDefault`; `initialTasksView` (`src/lib/viewDefaults.ts`) da la vista con que abre Tareas. Local, no se sincroniza.
+- [x] Atajos: fila de solo lectura "Ir a una sección" con ⌘0…⌘9 (Ctrl fuera de macOS).
+- [x] NS8: la opción de la pantalla de inicio y `sidebar.overtime` dicen "Horas extra" en vez de "Extras".
+- [x] Pruebas: `NavigationSettingsTab.test.tsx` (orden de la pestaña, General y Preferencias sin lo que salió, la vista de tareas, la fila de Atajos, la paridad de `settings`) y `viewDefaults.test.ts` (lectura de la config y la vista con que abre Tareas).
 
 ### Textos y specs
 
@@ -63,6 +72,7 @@ Estado: en progreso.
 - [ ] Arrastrar en Opciones (no se pudo probar con la automatización; mover con los botones sí).
 - [ ] Probar en la app de QA (WebKit real de Tauri) y en Windows y Linux, donde los atajos son Ctrl+0…9.
 - [ ] Con más de 6 secciones de verdad (hoy solo hay 2 extensiones con vista).
+- [ ] Probar Opciones → Navegación en el navegador: "Ordenar secciones…" abre la pestaña, Esc cierra el selector de la pantalla de inicio sin cerrar Opciones, y Tareas abre en la vista elegida al reiniciar.
 
 ## Diferencias con el diseño
 

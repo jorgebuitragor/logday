@@ -118,7 +118,7 @@ Se basa en el análisis del agente `logday-design` (31 oct 2026), sobre `Sidebar
 - **Menú:** al lado del botón (a la derecha en la columna, debajo en la Lista).
   - Clases: `rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-1 shadow-xl min-w-44`.
   - Ítems `role="menuitem"` con ícono, nombre y atajo; la activa, con `aria-current` y el estilo activo.
-  - Al final, una separadora y "Ordenar secciones…", que abre Opciones → General.
+  - Al final, una separadora y "Ordenar secciones…", que abre Opciones → Navegación.
   - Se cierra con Esc, con un clic fuera o al elegir.
 
 ### 4. Tooltip propio (Barra de íconos y colapsado)
@@ -133,11 +133,13 @@ Se basa en el análisis del agente `logday-design` (31 oct 2026), sobre `Sidebar
 
 Usa el menú contextual que ya existe en `Sidebar.tsx` (el de proyectos y vistas), con "Quitar del menú" o "Fijar en el menú", "Mover arriba" y "Mover abajo". Las que no aplican, como subir la primera, van deshabilitadas. Inicio no tiene menú.
 
-### 6. Opciones → General → Menú lateral
+### 6. Opciones → Navegación
 
-Reemplaza la tarjeta "Textos del menú lateral".
+Una entrada propia (NS21), con `PanelLeft`, segunda del grupo App (`SettingsModal.tsx`, `NavigationSettingsTab.tsx`). En orden: el menú lateral (6.1 y 6.2, en `SidebarSettings.tsx`), la pantalla de inicio (su selector, con el estado de abierto y el cierre con Esc o un clic fuera dentro de la misma sección), la vista de notas y la vista de tareas al abrir (6.3). "Ordenar secciones…" abre esta pestaña, que empieza por el menú lateral: no hace falta desplazarse hasta él.
 
-**6.1 Estilo de las secciones:** dos tarjetas en `grid grid-cols-2 gap-3`.
+El menú lateral reemplaza la tarjeta "Textos del menú lateral".
+
+**6.1 Estilo de las secciones:** dos tarjetas en `grid grid-cols-2 gap-3`, en `SidebarStylePicker.tsx` (con la animación al elegir), para que la bienvenida use el mismo selector.
 
 - **Semántica:** `<fieldset>` con `<legend>` e `<input type="radio" class="sr-only">` dentro de cada `<label>`, para tener las flechas, el anuncio de lectores y el foco nativos. `ThemeTile` es un `<button>`: se copia su estilo, no su semántica.
 - **Tarjeta:** `rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] p-3`.
@@ -163,6 +165,11 @@ Reemplaza la tarjeta "Textos del menú lateral".
 
 Al pie, "Restablecer orden" con `SECONDARY_CLS`. Se arrastra con eventos de puntero (sin librería nueva) y, al soltar, se anuncia la posición en una región `aria-live`.
 
+**6.3 Vistas al abrir:** la vista de notas (Lista, Árbol) y la de tareas (Lista, Kanban, Calendario) usan el mismo control: botones en fila (`flex gap-2`), con el elegido en `border-indigo-500/60 bg-indigo-500/10` y `aria-pressed`. Los nombres de las vistas de tareas son los del menú lateral.
+
+- `tasksViewDefault?: 'list' | 'kanban' | 'calendar'` en `AppConfig`, local. Al leer la config, `initialTasksView` (`src/lib/viewDefaults.ts`) da la preferencia y la vista con que abre Tareas (`currentView`); un valor desconocido es la Lista.
+- `setTasksViewDefault` guarda la preferencia y cambia la vista actual; `setView` no la toca (NS22).
+
 ### 7. Textos (es / en)
 
 | Clave | es | en |
@@ -187,6 +194,10 @@ Al pie, "Restablecer orden" con `SECONDARY_CLS`. Se arrastra con eventos de punt
 | home | Inicio | Home |
 | goTo | Ir a {name} | Go to {name} |
 | moved | {name}, posición {n} de {total} | {name}, position {n} of {total} |
+| settings.tabNavigation | Navegación | Navigation |
+| settings.goToSectionRow | Ir a una sección | Go to a section |
+| settings.tasksViewDefault | Vista de tareas al abrir | Tasks view on open |
+| settings.tasksViewDefaultHint | Con qué vista abre Tareas al iniciar Logday. Cambiar de vista mientras usas la app no la modifica. | The view Tasks opens with when Logday starts. Switching views while you use the app doesn’t change it. |
 
 "Horas extra" ya existe como `overtime_long`.
 

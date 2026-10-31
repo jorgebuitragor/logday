@@ -1,27 +1,39 @@
-import { useEffect, useRef, useState } from 'react';
-import { X, Settings2, SlidersHorizontal, Keyboard, FolderOpen, RefreshCw, GitBranch, Puzzle, Info } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { X, Settings2, PanelLeft, SlidersHorizontal, Keyboard, FolderOpen, RefreshCw, GitBranch, Puzzle, Info } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import { GitSettingsTab } from './GitSettingsTab';
 import { SyncSettingsTab } from './SyncSettingsTab';
 import { GeneralSettingsTab } from './GeneralSettingsTab';
+import { NavigationSettingsTab } from './NavigationSettingsTab';
 import { WorkSettingsTab } from './WorkSettingsTab';
 import { ShortcutsSettingsTab } from './ShortcutsSettingsTab';
 import { DataSettingsTab } from './DataSettingsTab';
 import { AboutSettingsTab } from './AboutSettingsTab';
 import { ExtensionsSettingsTab } from './ExtensionsSettingsTab';
-import { SIDEBAR_SETTINGS_ID } from './SidebarSettings';
 import { ModalOverlay } from '../shared/ModalOverlay';
 import { ModalPanel } from '../shared/ModalPanel';
 import { useExtensions } from '../../extensions/useExtensions';
 import { ExtensionSlot } from '../../extensions/ExtensionSlot';
 import { extensionText } from '../../extensions/text';
 import type { ExtensionDefinition, ExtensionId } from '../../extensions/types';
+import type { Language } from '../../types/common';
 
 // `ext:<id>`: el panel de una extensión activa, con su propia entrada (R21
 // de specs/extensiones).
-type SettingsTab = 'general' | 'work' | 'shortcuts' | 'data' | 'git' | 'sync' | 'extensions' | `ext:${ExtensionId}` | 'about';
+type SettingsTab = 'general' | 'navigation' | 'work' | 'shortcuts' | 'data' | 'git' | 'sync' | 'extensions' | `ext:${ExtensionId}` | 'about';
+
+/** Las entradas del grupo App. Navegación va segunda, junto a General
+ *  (specs/navegacion-secciones NS21). */
+export function appTabs(language: Language): { id: SettingsTab; label: string; icon: LucideIcon }[] {
+  return [
+    { id: 'general',    label: t(language, 'settings', 'tabGeneral'),    icon: Settings2 },
+    { id: 'navigation', label: t(language, 'settings', 'tabNavigation'), icon: PanelLeft },
+    { id: 'work',       label: t(language, 'settings', 'tabWork'),       icon: SlidersHorizontal },
+    { id: 'shortcuts',  label: t(language, 'settings', 'tabShortcuts'),  icon: Keyboard },
+  ];
+}
 
 export function SettingsModal() {
   const {
@@ -33,8 +45,6 @@ export function SettingsModal() {
     sidebarSettingsRequest, clearSidebarSettingsRequest,
   } = useAppStore();
 
-  const [isStartupSelectorOpen, setIsStartupSelectorOpen] = useState(false);
-  const startupSelectorRef = useRef<HTMLDivElement | null>(null);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
   const { enabled: enabledExtensions } = useExtensions();
   // En orden alfabético, como las tarjetas del catálogo.
@@ -51,29 +61,16 @@ export function SettingsModal() {
     if (settingsTab.startsWith('ext:') && !openExtension) setSettingsTab('extensions');
   }, [settingsTab, openExtension]);
 
-  // Cerrar con Escape
+  // Cerrar con Escape. Un menú abierto dentro (el de la pantalla de
+  // inicio) se cierra primero: escucha en captura y corta el evento.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || !isSettingsOpen) return;
-      if (isStartupSelectorOpen) {
-        setIsStartupSelectorOpen(false);
-        return;
-      }
       toggleSettings();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [isSettingsOpen, isStartupSelectorOpen, toggleSettings]);
-
-  useEffect(() => {
-    const onPointerDown = (e: MouseEvent) => {
-      if (!isStartupSelectorOpen) return;
-      if (startupSelectorRef.current?.contains(e.target as Node)) return;
-      setIsStartupSelectorOpen(false);
-    };
-    window.addEventListener('mousedown', onPointerDown);
-    return () => window.removeEventListener('mousedown', onPointerDown);
-  }, [isStartupSelectorOpen]);
+  }, [isSettingsOpen, toggleSettings]);
 
   // Navegar al tab git cuando se activa isGitOpen desde el sidebar
   useEffect(() => {
@@ -100,16 +97,12 @@ export function SettingsModal() {
     }
   }, [isSettingsOpen, settingsExtensionRequest, clearExtensionSettingsRequest]);
 
-  // "Ordenar secciones…" del menú "Más" (specs/navegacion-secciones):
-  // General, con "Menú lateral" a la vista.
+  // "Ordenar secciones…" del menú "Más" abre Navegación, que empieza por
+  // el menú lateral (specs/navegacion-secciones NS21).
   useEffect(() => {
     if (!isSettingsOpen || !sidebarSettingsRequest) return;
-    setSettingsTab('general');
+    setSettingsTab('navigation');
     clearSidebarSettingsRequest();
-    const id = window.setTimeout(() => {
-      document.getElementById(SIDEBAR_SETTINGS_ID)?.scrollIntoView({ block: 'start' });
-    }, 50);
-    return () => window.clearTimeout(id);
   }, [isSettingsOpen, sidebarSettingsRequest, clearSidebarSettingsRequest]);
 
   if (!isSettingsOpen) return null;
@@ -122,11 +115,7 @@ export function SettingsModal() {
   const NAV_GROUPS: { label?: string; items: { id: SettingsTab; label: string; icon: LucideIcon; nested?: boolean }[] }[] = [
     {
       label: t(language, 'settings', 'groupApp'),
-      items: [
-        { id: 'general',   label: t(language, 'settings', 'tabGeneral'),   icon: Settings2 },
-        { id: 'work',      label: t(language, 'settings', 'tabWork'),      icon: SlidersHorizontal },
-        { id: 'shortcuts', label: t(language, 'settings', 'tabShortcuts'), icon: Keyboard },
-      ],
+      items: appTabs(language),
     },
     {
       label: t(language, 'settings', 'groupDataConnection'),
@@ -209,16 +198,13 @@ export function SettingsModal() {
           {/* Content */}
           <div className="flex-1 min-w-0 min-h-0 overflow-y-auto px-5 py-5 space-y-6">
 
-            {/* ── GENERAL: Idioma · Tema · Fuente · Pantalla de inicio ── */}
-            {settingsTab === 'general' && (
-              <GeneralSettingsTab
-                isStartupSelectorOpen={isStartupSelectorOpen}
-                setIsStartupSelectorOpen={setIsStartupSelectorOpen}
-                startupSelectorRef={startupSelectorRef}
-              />
-            )}
+            {/* ── GENERAL: Idioma · Tema · Fuente ── */}
+            {settingsTab === 'general' && <GeneralSettingsTab />}
 
-            {/* ── WORK: Comportamiento · Vista de notas · Notificaciones · Semana laboral · Accesibilidad ── */}
+            {/* ── NAVIGATION: Menú lateral · Pantalla de inicio · Vistas de notas y tareas ── */}
+            {settingsTab === 'navigation' && <NavigationSettingsTab />}
+
+            {/* ── WORK: Comportamiento · Notificaciones · Semana laboral · Accesibilidad ── */}
             {settingsTab === 'work' && <WorkSettingsTab />}
 
             {/* ── SHORTCUTS: Atajos de teclado ── */}

@@ -1,7 +1,7 @@
 // La ayuda contextual (specs/ayuda-contextual) dibujada con react-dom/server y
 // su teclado en funciones puras. Abrirla, el foco y el popover sobre la
 // pantalla se revisan en el navegador; aquí, la estructura, el ARIA, los
-// textos y de dónde salen las teclas.
+// textos, qué ayuda va en cada sección y de dónde salen las teclas.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -12,7 +12,7 @@ const app = vi.hoisted(() => ({
   language: 'es' as 'es' | 'en',
   sidebarStyle: 'icons' as 'icons' | 'list',
   sidebarSections: undefined,
-  extensions: {} as Record<string, { enabled: boolean }>,
+  extensions: {} as Record<string, { enabled: boolean; settings?: Record<string, unknown> }>,
   animationsEnabled: true,
   helpButtonsEnabled: true,
   shortcuts: { newNote: 'n', newTask: 't', search: 'f', newDaily: 'd', markAbsence: 'a' },
@@ -30,14 +30,16 @@ vi.mock('./ModalOverlay', () => ({
   ModalOverlay: ({ children }: { children: ReactNode }) => <div data-overlay="">{children}</div>,
 }));
 
-const { HelpButton, HelpPanel, HelpSection, HelpShortcuts, HelpNote, helpFooter } = await import('./HelpButton');
+const { HelpPanel, HelpSection, HelpShortcuts, HelpNote, helpFooter } = await import('./HelpPopover');
 const { closeOnEscape, nextTrapIndex, passesToApp, scrollCloses } = await import('./helpKeyboard');
-const { ScreenHelpBody, TasksHelp, DailysHelp, OvertimeHelp, TASKS_HELP_ITEMS, DAILYS_HELP_ITEMS, OVERTIME_HELP_ITEMS } = await import('../help/ScreenHelp');
-const { tasksHelpKeys, dailysHelpKeys, modKey } = await import('../help/helpKeys');
+const {
+  ScreenHelpBody, TASKS_HELP_ITEMS, DAILYS_HELP_ITEMS, OVERTIME_HELP_ITEMS, GENERAL_HELP_ITEMS,
+} = await import('../help/ScreenHelp');
+const { tasksHelpKeys, dailysHelpKeys, generalHelpKeys, modKey } = await import('../help/helpKeys');
 const { shortcutSheet } = await import('../tasks/TaskShortcutsSheet');
 const { TourModal } = await import('../tour/TourModal');
 const { DevtoolsContext } = await import('../../extensions/devtools/ui/context');
-const { DevtoolsHelpBody, GENERAL_HELP } = await import('../../extensions/devtools/ui/Help');
+const { default: DevtoolsHelp, DevtoolsHelpBody, GENERAL_HELP } = await import('../../extensions/devtools/ui/Help');
 const { ToolFrame } = await import('../../extensions/devtools/ui/ToolFrame');
 const { TOOL_HELP, HELP_SHORTCUTS } = await import('../../extensions/devtools/ui/meta');
 const { makeTr: makeDevtoolsTr, shortcutLabel: devtoolsShortcut } = await import('../../extensions/devtools/ui/text');
@@ -45,6 +47,9 @@ const { MAX_MATCHES } = await import('../../extensions/devtools/tools/regex');
 const { REGEX_TIMEOUT_MS } = await import('../../extensions/devtools/tools/regexRunner');
 const { PomodoroHelpBody, pomodoroHelpRows } = await import('../../extensions/pomodoro/Help');
 const { makeTr: makePomodoroTr } = await import('../../extensions/pomodoro/text');
+
+const nodeFs = 'node:fs';
+const { readFileSync } = (await import(/* @vite-ignore */ nodeFs)) as { readFileSync: (path: URL, encoding: 'utf8') => string };
 
 import type { DevtoolsContextValue } from '../../extensions/devtools/ui/context';
 import type { ToolId } from '../../extensions/devtools/model';
@@ -55,63 +60,8 @@ const holes = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort
 
 beforeEach(() => {
   app.language = 'es';
+  app.extensions = {};
   app.shortcuts = { newNote: 'n', newTask: 't', search: 'f', newDaily: 'd', markAbsence: 'a' };
-});
-
-// ── El botón ────────────────────────────────────────────────
-
-describe('Opción para ocultar la ayuda (AY23)', () => {
-  it('sin dibujar con los botones de ayuda apagados', () => {
-    app.helpButtonsEnabled = false;
-    try {
-      expect(renderToStaticMarkup(<HelpButton screen="DevTools" title="Cómo funciona DevTools"><p>x</p></HelpButton>)).toBe('');
-    } finally {
-      app.helpButtonsEnabled = true;
-    }
-  });
-
-  it('los textos de la opción existen en es y en', () => {
-    for (const lang of ['es', 'en'] as const) {
-      for (const key of ['helpSection', 'helpButtonsTitle', 'helpButtonsDesc'] as const) {
-        expect(t(lang, 'settings', key)).toBeTruthy();
-      }
-    }
-  });
-});
-
-describe('HelpButton (AY1, AY2, AY11)', () => {
-  const html = () => renderToStaticMarkup(<HelpButton screen="DevTools" title="Cómo funciona DevTools"><p>x</p></HelpButton>);
-
-  it('es un botón de ícono con nombre, que anuncia un diálogo cerrado', () => {
-    const out = html();
-    expect(out).toMatch(/^<button type="button"/);
-    expect(out).toContain('aria-label="Ayuda: DevTools"');
-    expect(out).toContain('title="Ayuda: DevTools"');
-    expect(out).toContain('aria-haspopup="dialog"');
-    expect(out).toContain('aria-expanded="false"');
-    expect(out).toMatch(/aria-controls="[^"]+help"/);
-    // El ícono es CircleHelp (lucide lo marca con su clase) y no se lee.
-    expect(out).toMatch(/<svg[^>]*lucide-circle-question-mark[^>]*aria-hidden="true"|<svg[^>]*aria-hidden="true"[^>]*lucide-circle/);
-  });
-
-  it('es chico (20×20) y no se encoge, con el foco visible y sin acento', () => {
-    const cls = html().match(/class="([^"]+)"/)![1];
-    expect(cls).toContain('h-5');
-    expect(cls).toContain('w-5');
-    expect(cls).toContain('shrink-0');
-    expect(cls).toContain('focus-visible:ring-2');
-    expect(cls).toContain('aria-expanded:bg-[var(--bg-hover)]');
-    expect(cls).not.toMatch(/bg-indigo/);
-  });
-
-  it('cerrada, no dibuja la ayuda', () => {
-    expect(html()).not.toContain('role="dialog"');
-  });
-
-  it('en inglés', () => {
-    app.language = 'en';
-    expect(html()).toContain('aria-label="Help: DevTools"');
-  });
 });
 
 // ── El popover ──────────────────────────────────────────────
@@ -258,19 +208,22 @@ describe('el teclado (AY7–AY10)', () => {
     expect(other).toEqual([]);
   });
 
-  it('el desplazamiento de fuera la cierra; el del propio popover, no', () => {
-    const inside = {};
+  it('solo la cierra un desplazamiento que mueve el botón; el del popover o el de la pantalla, no', () => {
+    const trigger = {} as Node;
+    const inside = { contains: () => false };
     const popover = { contains: (n: unknown) => n === inside };
-    expect(scrollCloses({}, popover)).toBe(true);
-    expect(scrollCloses(inside, popover)).toBe(false);
-    expect(scrollCloses({}, null)).toBe(false);
+    const page = { contains: (n: unknown) => n === trigger }; // el documento: contiene el botón
+    const list = { contains: () => false }; // la lista de tareas: no lo contiene
+    expect(scrollCloses(page, popover, trigger)).toBe(true);
+    expect(scrollCloses(list, popover, trigger)).toBe(false);
+    expect(scrollCloses(inside, popover, trigger)).toBe(false);
+    expect(scrollCloses(page, null, trigger)).toBe(false);
+    expect(scrollCloses(page, popover, null)).toBe(false);
   });
 });
 
 // ── App.css ─────────────────────────────────────────────────
 
-const nodeFs = 'node:fs';
-const { readFileSync } = (await import(/* @vite-ignore */ nodeFs)) as { readFileSync: (path: URL, encoding: 'utf8') => string };
 const css = readFileSync(new URL('../../App.css', import.meta.url), 'utf8');
 
 describe('la animación (AY12)', () => {
@@ -313,6 +266,7 @@ describe('las teclas salen de la config y del sistema (AY13)', () => {
       [TASKS_HELP_ITEMS, tasksHelpKeys(shortcuts, true)],
       [DAILYS_HELP_ITEMS, dailysHelpKeys(shortcuts, true)],
       [OVERTIME_HELP_ITEMS, {}],
+      [GENERAL_HELP_ITEMS, generalHelpKeys(shortcuts, true)],
     ] as const;
     for (const lang of ['es', 'en'] as const) {
       for (const [items, keys] of cases) {
@@ -359,15 +313,26 @@ function devtools(tool: ToolId, mac = true, language: 'es' | 'en' = 'es'): Devto
 const withDevtools = (ctx: DevtoolsContextValue, node: ReactNode) =>
   renderToStaticMarkup(<DevtoolsContext.Provider value={ctx}>{node}</DevtoolsContext.Provider>);
 
-describe('DevTools (AY16)', () => {
-  it('el botón va junto al título, fuera del <h2>', () => {
-    const out = withDevtools(devtools('json'), <ToolFrame>x</ToolFrame>);
-    expect(out).toMatch(/<\/h2><button type="button" aria-label="Ayuda: DevTools"/);
-    expect(out.match(/<h2[\s\S]*?<\/h2>/)![0]).not.toContain('Ayuda');
+const body = (tool: ToolId, mac = true, language: 'es' | 'en' = 'es') =>
+  renderToStaticMarkup(<DevtoolsHelpBody tool={tool} tr={makeDevtoolsTr(language)} mac={mac} />);
+
+describe('DevTools (AY16, AY25)', () => {
+  it('la cabecera de la herramienta ya no tiene botón de ayuda', () => {
+    expect(withDevtools(devtools('json'), <ToolFrame>x</ToolFrame>)).not.toContain('Ayuda');
+  });
+
+  it('desde el menú lateral, "En esta herramienta" es la de la última herramienta abierta (lastTool)', () => {
+    app.extensions = { devtools: { enabled: true, settings: { lastTool: 'regex' } } };
+    expect(text(renderToStaticMarkup(<DevtoolsHelp />))).toContain(`En esta herramienta ${t('es', 'devtools', 'regex.help1')}`);
+    app.extensions = { devtools: { enabled: true, settings: { lastTool: 'json' } } };
+    expect(text(renderToStaticMarkup(<DevtoolsHelp />))).not.toContain('En esta herramienta');
+    // Sin nada guardado, la herramienta por defecto.
+    app.extensions = {};
+    expect(text(renderToStaticMarkup(<DevtoolsHelp />))).toContain('Atajos');
   });
 
   it('"En esta herramienta" arriba, luego lo general y los atajos', () => {
-    const out = text(withDevtools(devtools('regex'), <DevtoolsHelpBody />));
+    const out = text(body('regex'));
     const tr = makeDevtoolsTr('es');
     const inTool = out.indexOf('En esta herramienta');
     expect(inTool).toBe(0);
@@ -377,16 +342,16 @@ describe('DevTools (AY16)', () => {
   });
 
   it('sin "En esta herramienta" en las que no lo tienen', () => {
-    expect(text(withDevtools(devtools('json'), <DevtoolsHelpBody />))).not.toContain('En esta herramienta');
+    expect(text(body('json'))).not.toContain('En esta herramienta');
   });
 
   it('las teclas salen de shortcut(spec): ⇧⌘F en macOS, Ctrl+Shift+F fuera', () => {
-    const mac = withDevtools(devtools('json', true), <DevtoolsHelpBody />);
+    const mac = body('json', true);
     expect(mac).toMatch(/búscala con <kbd class="[^"]*">⇧⌘F<\/kbd>/);
     expect(mac).toMatch(/usa <kbd class="[^"]*">⌘↵<\/kbd>/);
     expect(mac).toMatch(/<kbd[^>]*>⌥⌘↓<\/kbd><span>\/<\/span><kbd[^>]*>⌥⌘↑<\/kbd>/);
     expect(mac).toMatch(/<kbd[^>]*>⌥⌘1<\/kbd><span>…<\/span><kbd[^>]*>⌥⌘4<\/kbd>/);
-    const win = withDevtools(devtools('json', false), <DevtoolsHelpBody />);
+    const win = body('json', false);
     expect(win).toMatch(/búscala con <kbd class="[^"]*">Ctrl\+Shift\+F<\/kbd>/);
     expect(win).toMatch(/<kbd[^>]*>Ctrl\+Shift\+Backspace<\/kbd>/);
     expect(win).not.toMatch(/[⌘⇧⌥]/);
@@ -436,17 +401,8 @@ describe('DevTools (AY16)', () => {
 });
 
 describe('Tareas, Dailys y Horas extra (AY17–AY19)', () => {
-  it('cada botón con el nombre de su pantalla', () => {
-    expect(renderToStaticMarkup(<TasksHelp onShowShortcuts={() => {}} />)).toContain('aria-label="Ayuda: Tareas"');
-    expect(renderToStaticMarkup(<DailysHelp />)).toContain('aria-label="Ayuda: Dailys"');
-    expect(renderToStaticMarkup(<OvertimeHelp />)).toContain('aria-label="Ayuda: Horas extra"');
-    app.language = 'en';
-    expect(renderToStaticMarkup(<TasksHelp onShowShortcuts={() => {}} />)).toContain('aria-label="Help: Tasks"');
-    expect(renderToStaticMarkup(<OvertimeHelp />)).toContain('aria-label="Help: Overtime"');
-  });
-
   it('de 2 a 5 puntos por ayuda', () => {
-    for (const items of [TASKS_HELP_ITEMS, DAILYS_HELP_ITEMS, OVERTIME_HELP_ITEMS]) {
+    for (const items of [TASKS_HELP_ITEMS, DAILYS_HELP_ITEMS, OVERTIME_HELP_ITEMS, GENERAL_HELP_ITEMS]) {
       expect(items.length).toBeGreaterThanOrEqual(2);
       expect(items.length).toBeLessThanOrEqual(5);
     }
@@ -495,7 +451,7 @@ describe('los textos (AY14)', () => {
 
   it('las mismas claves en es y en', () => {
     expect(sectionKeys('en', 'help').sort()).toEqual(sectionKeys('es', 'help').sort());
-    expect(sectionKeys('es', 'help').length).toBe(23);
+    expect(sectionKeys('es', 'help').length).toBe(23 + 7);
     expect(devtoolsHelp('en')).toEqual(devtoolsHelp('es'));
     expect(devtoolsHelp('es').length).toBe(16 + 22);
     expect(pomodoroHelp('en')).toEqual(pomodoroHelp('es'));

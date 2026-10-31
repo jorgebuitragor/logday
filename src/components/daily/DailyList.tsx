@@ -13,7 +13,6 @@ import { exportDailyMonthEntries } from '../../lib/dailyMonthExport';
 import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
 import { absenceTypeLabel } from '../../lib/absenceLabel';
-import { DailysHelp } from '../help/ScreenHelp';
 
 const ESTIMATED_DAILY_ENTRY_MENU = { width: 190, height: 96 };
 const ESTIMATED_DAILY_EMPTY_MENU = { width: 200, height: 130 };
@@ -242,14 +241,15 @@ export function DailyList() {
 
   return (<>
     <div className="flex h-full shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]" style={{ width: 'var(--logday-list-w)' }}>
-      {/* Header. Con la lista al mínimo (200 px) no caben el título, la ayuda
-          y los cuatro botones: "Hoy" queda solo con el ícono y el título se
-          recorta, pero conserva el ancho para la ayuda (sin solaparse). */}
+      {/* Header. El título se recorta y los botones no se encogen. A 288 px
+          (el ancho por defecto) caben "Fecha" y "Hoy" con su nombre; más
+          angosta, primero "Fecha" (por debajo de ~280 px) y luego "Hoy" (de
+          ~245 px) quedan solo con el ícono, y a 200 px el título se lee
+          entero. El nombre sigue para los lectores y en el title. Medido en
+          Chromium con la letra por defecto (17 px); los umbrales van en rem,
+          así que crecen con ella. */}
       <div className="@container/dlh flex items-center justify-between gap-1 border-b border-[var(--border)] px-4 py-3">
-        <div className="flex min-w-[2.75rem] items-center gap-1 overflow-hidden">
-          <h2 className="truncate text-sm font-semibold text-[var(--text-primary)]">{t(language, 'dailys', 'title')}</h2>
-          <DailysHelp />
-        </div>
+        <h2 className="min-w-0 truncate text-sm font-semibold text-[var(--text-primary)]">{t(language, 'dailys', 'title')}</h2>
         <div className="flex shrink-0 items-center gap-0.5">
           {/* Selector de fecha – dropdown con posición fija */}
           <div className="relative">
@@ -264,10 +264,7 @@ export function DailyList() {
               title={t(language, 'dailys', 'addPreviousDateTitle')}
             >
               <CalendarPlus size={13} />
-              {/* Solo el ícono: con el botón de ayuda junto al título, el texto
-                  no cabía en la lista de 288 px y se montaban (prueba del 31
-                  oct 2026). El nombre queda para los lectores y en el title. */}
-              <span className="sr-only">{t(language, 'dailys', 'dateBtn')}</span>
+              <span className="sr-only @[14.5rem]/dlh:not-sr-only">{t(language, 'dailys', 'dateBtn')}</span>
             </button>
           </div>
           {/* Dropdown renderizado con position:fixed para evitar clipping */}
@@ -310,7 +307,7 @@ export function DailyList() {
             title={t(language, 'dailys', 'createTodayTitle')}
           >
             <Plus size={14} />
-            <span className="sr-only @[15rem]/dlh:not-sr-only">{t(language, 'dailys', 'todayBtn')}</span>
+            <span className="sr-only @[12.5rem]/dlh:not-sr-only">{t(language, 'dailys', 'todayBtn')}</span>
           </button>
         </div>
       </div>

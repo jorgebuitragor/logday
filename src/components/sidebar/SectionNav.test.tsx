@@ -25,6 +25,7 @@ const app = vi.hoisted(() => ({
   notesView: 'list',
   updateStatus: 'idle',
   confirmDestructiveActions: true,
+  helpButtonsEnabled: true,
   isSearchOpen: true,
   searchQuery: '',
   searchResults: [],
@@ -69,6 +70,7 @@ beforeEach(() => {
   app.extensions = {};
   app.isSidebarCollapsed = false;
   app.searchQuery = '';
+  app.helpButtonsEnabled = true;
 });
 
 describe('Barra de íconos (NS2, NS14, NS16)', () => {
@@ -214,6 +216,52 @@ describe('el menú lateral expandido', () => {
     expect(text(html)).toContain('Horas extra');
     expect(text(html)).toContain('Opciones');
     expect(html).toContain('aria-label="Ocultar el menú"');
+  });
+});
+
+describe('el botón "Ayuda" (specs/ayuda-contextual AY24)', () => {
+  const at = (html: string, label: string) => html.indexOf(`aria-label="${label}"`);
+
+  it('Barra de íconos: un ícono encima de Buscar, en la columna', () => {
+    app.activeSection = 'notes';
+    const html = renderToStaticMarkup(<Sidebar />);
+    expect(count(html, 'aria-label="Ayuda: Notas"')).toBe(1);
+    expect(at(html, 'Ayuda: Notas')).toBeLessThan(at(html, 'Buscar'));
+    expect(at(html, 'Buscar')).toBeLessThan(at(html, 'Opciones'));
+    // Solo el ícono: el nombre lo da el tooltip de la columna.
+    expect(html.match(/aria-label="Ayuda: Notas"[^>]*>([\s\S]*?)<\/button>/)![1]).toMatch(/^<svg[^>]*width="18"[\s\S]*<\/svg>$/);
+  });
+
+  it('colapsado: el mismo ícono encima de Buscar', () => {
+    app.isSidebarCollapsed = true;
+    app.activeSection = 'dailys';
+    const html = renderToStaticMarkup(<Sidebar />);
+    expect(count(html, 'aria-label="Ayuda: Dailys"')).toBe(1);
+    expect(at(html, 'Ayuda: Dailys')).toBeLessThan(at(html, 'Buscar'));
+  });
+
+  it('Lista con nombres: una fila "Ayuda" justo encima de Opciones', () => {
+    app.sidebarStyle = 'list';
+    app.activeSection = 'tasks';
+    const html = renderToStaticMarkup(<Sidebar />);
+    expect(count(html, 'aria-label="Ayuda: Tareas"')).toBe(1);
+    const t = text(html);
+    expect(t).toMatch(/ Ayuda ⌘\/ +Opciones /);
+  });
+
+  it('se abre a la derecha del menú: el menú marca su borde', () => {
+    expect(renderToStaticMarkup(<Sidebar />)).toMatch(/^<div data-help-edge=""/);
+    app.isSidebarCollapsed = true;
+    expect(renderToStaticMarkup(<Sidebar />)).toMatch(/^<div data-help-edge=""/);
+  });
+
+  it('con la opción apagada, no está en ningún estilo', () => {
+    app.helpButtonsEnabled = false;
+    for (const [style, collapsed] of [['icons', false], ['list', false], ['icons', true]] as const) {
+      app.sidebarStyle = style;
+      app.isSidebarCollapsed = collapsed;
+      expect([style, collapsed, renderToStaticMarkup(<Sidebar />).includes('Ayuda')]).toEqual([style, collapsed, false]);
+    }
   });
 });
 

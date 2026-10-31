@@ -18,7 +18,7 @@ import { localISODate } from '../../lib/localDate';
 import { filterTasks, formatDueLabel } from '../../lib/taskListing';
 import { TaskFilterBar } from '../tasks/TaskFilterBar';
 import { TaskShortcutsSheet } from '../tasks/TaskShortcutsSheet';
-import { TasksHelp } from '../help/ScreenHelp';
+import { useTaskShortcutsRequest } from '../tasks/taskShortcutsRequest';
 import { useExternalEvents, groupByDate, type ExternalEvent } from '../../extensions/externalEvents';
 import { extensionText } from '../../extensions/text';
 import { fs } from '../../lib/invoke';
@@ -66,8 +66,10 @@ export function CalendarView() {
   // Context menu en tarea del panel lateral
   const [ctxMenu, setCtxMenu]           = useState<{ task: Task; x: number; y: number } | null>(null);
   const [emptyCtxMenu, setEmptyCtxMenu] = useState<{ x: number; y: number } | null>(null);
-  // La hoja de atajos, desde "Ver todos los atajos" de la ayuda (AY17).
+  // La hoja de atajos, desde "Ver todos los atajos" de la ayuda del menú
+  // lateral (AY17).
   const [showShortcuts, setShowShortcuts] = useState(false);
+  useTaskShortcutsRequest(currentView === 'calendar', () => setShowShortcuts(true));
   // Event editor modal
   const [eventEditor, setEventEditor] = useState<{ event: Partial<CalendarEvent> & { date: string } } | null>(null);
   // Day context menu (right-click on a specific day cell)
@@ -295,10 +297,7 @@ export function CalendarView() {
       {/* Header */}
       <div className="border-b border-[var(--border)] px-4 py-3 space-y-2.5">
       <div className="flex items-center justify-between">
-        <div className="flex min-w-0 items-center gap-1">
-          <h1 className="truncate text-lg font-semibold text-[var(--text-primary)]">{t(language, 'tasks', 'calendarTitle')}</h1>
-          <TasksHelp onShowShortcuts={() => setShowShortcuts(true)} />
-        </div>
+        <h1 className="min-w-0 truncate text-lg font-semibold text-[var(--text-primary)]">{t(language, 'tasks', 'calendarTitle')}</h1>
         <div className="flex shrink-0 items-center gap-3">
           <button
             onClick={goToday}

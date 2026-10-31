@@ -20,7 +20,6 @@ import {
   chooseTask, refreshTaskInfo, restartCycle, restartPhase, skipPhase, togglePhase, updateOptions, usePomodoro, type TaskInfo,
 } from './store';
 import { TaskPicker } from './TaskPicker';
-import { PomodoroHelp } from './Help';
 import {
   formatFocus, isMac, makeTr, phaseName, shortDate, shortcutLabel, timeOfDay, type Tr,
 } from './text';
@@ -103,7 +102,6 @@ export default function PomodoroView() {
     >
       <Header
         tr={tr}
-        mac={mac}
         o={o}
         titleRef={titleRef}
         onOptions={() => openExtensionSettings(POMODORO_ID)}
@@ -135,10 +133,9 @@ export default function PomodoroView() {
 }
 
 function Header({
-  tr, mac, o, titleRef, onOptions,
+  tr, o, titleRef, onOptions,
 }: {
   tr: Tr;
-  mac: boolean;
   o: PomodoroOptions;
   titleRef: RefObject<HTMLHeadingElement | null>;
   onOptions: () => void;
@@ -150,12 +147,9 @@ function Header({
           <Hourglass size={16} aria-hidden />
         </div>
         <div className="min-w-0">
-          <div className="flex items-center gap-1">
-            <h2 id="pomodoro-title" ref={titleRef} tabIndex={-1} className="text-sm font-semibold text-[var(--text-primary)] focus:outline-none">
-              {tr('title')}
-            </h2>
-            <PomodoroHelp tr={tr} mac={mac} />
-          </div>
+          <h2 id="pomodoro-title" ref={titleRef} tabIndex={-1} className="text-sm font-semibold text-[var(--text-primary)] focus:outline-none">
+            {tr('title')}
+          </h2>
           <p className="mt-0.5 text-[11px] tabular-nums text-[var(--text-hint)]">
             {tr('summary', { work: o.workMin, short: o.shortMin, long: o.longMin, n: o.longEvery })}
           </p>

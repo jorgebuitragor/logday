@@ -1,13 +1,14 @@
-// Ayuda contextual (specs/ayuda-contextual): un botón (?) junto al título de
-// la pantalla que abre una ayuda breve en un popover anclado. Es el único
-// componente de ayuda: lo usan las vistas de la app y las extensiones, que
-// le pasan sus textos ya traducidos.
+// Ayuda contextual (specs/ayuda-contextual): la ayuda breve de la pantalla
+// en un popover. Es la única pieza de ayuda: `useHelpPopover` le da el
+// estado, el teclado y el foco a cualquier disparador (hoy, el botón
+// "Ayuda" del menú lateral, `components/help/SidebarHelp.tsx`), y las
+// pantallas y extensiones solo ponen sus textos ya traducidos.
 import {
   Fragment, useCallback, useEffect, useId, useRef, useState,
-  type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref,
+  type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref, type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { CircleHelp, X, type LucideIcon } from 'lucide-react';
+import { X, type LucideIcon } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import { interpolate } from '../../lib/interpolate';
@@ -15,36 +16,16 @@ import { Z_MODAL_NESTED } from '../../lib/zIndex';
 import type { AnchorRect } from '../../lib/menuPosition';
 import { usePositionedMenu } from '../../hooks/usePositionedMenu';
 import { TourModal } from '../tour/TourModal';
-import { FOCUS_RING, ICON_BTN, KBD, PANEL_TITLE, TEXT_LINK } from './controlClasses';
-import { closeOnEscape, nextTrapIndex, passesToApp, scrollCloses } from './helpKeyboard';
+import { ICON_BTN, KBD, PANEL_TITLE, TEXT_LINK } from './controlClasses';
+import { closeOnEscape, helpAnchor, nextTrapIndex, passesToApp, scrollCloses } from './helpKeyboard';
 
 export interface HelpAction {
   label: string;
   onClick: () => void;
 }
 
-const FOCUSABLE = 'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
-const ESTIMATED_SIZE = { width: 320, height: 360 };
-// Debajo del botón, alineado a su borde izquierdo y hacia la derecha, a 6 px.
-// Hacia la izquierda tapaba lo que explica (la columna de herramientas de
-// DevTools, prueba del 31 oct 2026); si no cabe, menuPosition lo voltea.
-const ANCHOR_OPTIONS = { sideX: 'right' as const, gap: 0 };
-// Abierto, el fondo del hover y sin acento (design, Estados).
-// Chico (20 px, ícono de 13) y sin encogerse, pegado al título: el de 28 px
-// empujaba o tapaba los botones de las cabeceras angostas (Jorge, 31 oct
-// 2026). Con el espacio alrededor, cumple la excepción de WCAG 2.5.8.
-const BUTTON_CLS = `inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] aria-expanded:bg-[var(--bg-hover)] aria-expanded:text-[var(--text-primary)] ${FOCUS_RING}`;
-
-/** Sin dibujar si el usuario apagó los botones de ayuda en Opciones →
- *  Preferencias (AY23). Envuelve a `HelpButtonInner` para no saltarse hooks. */
-export function HelpButton(props: Parameters<typeof HelpButtonInner>[0]) {
-  const enabled = useAppStore((s) => s.helpButtonsEnabled);
-  return enabled ? <HelpButtonInner {...props} /> : null;
-}
-
-function HelpButtonInner({
-  screen, title, intro, tourScene, actions = [], children,
-}: {
+/** Lo que muestra una ayuda. */
+export interface HelpContent {
   /** El nombre de la pantalla, para "Ayuda: {screen}". */
   screen: string;
   title: string;
@@ -52,12 +33,51 @@ function HelpButtonInner({
   /** La escena de `TourModal` de "Ver el recorrido" (0 Tu día, 1 Tareas…). */
   tourScene?: number;
   actions?: HelpAction[];
-  children: ReactNode;
-}) {
+  body: ReactNode;
+}
+
+/** Lo que el disparador pone en su botón: nombre, ARIA y clic. */
+export interface HelpTriggerProps {
+  ref: RefObject<HTMLButtonElement | null>;
+  type: 'button';
+  'aria-label': string;
+  'aria-haspopup': 'dialog';
+  'aria-expanded': boolean;
+  'aria-controls': string;
+  onMouseDown: () => void;
+  onClick: () => void;
+}
+
+/** El atributo del contenedor a cuya derecha se abre la ayuda (el menú
+ *  lateral). */
+export const HELP_EDGE_ATTR = 'data-help-edge';
+
+const FOCUSABLE = 'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+const ESTIMATED_SIZE = { width: 320, height: 360 };
+// A la derecha del menú, alineada por abajo con el botón, que está al pie
+// (AY28). Si no cabe, menuPosition la voltea o la ajusta a la ventana.
+const ANCHOR_OPTIONS = { sideX: 'right' as const, alignY: 'end' as const, gap: 8 };
+
+/** Dónde abrir la ayuda de este botón: a la derecha del contenedor marcado
+ *  con `HELP_EDGE_ATTR`, o en la esquina si el botón no se ve. */
+function anchorFor(button: HTMLElement | null): AnchorRect {
+  const shown = button && button.getClientRects().length > 0 ? button.getBoundingClientRect() : null;
+  const edge = button?.closest(`[${HELP_EDGE_ATTR}]`)?.getBoundingClientRect().right ?? null;
+  return helpAnchor(shown, edge, window.innerHeight);
+}
+
+/** El estado, el teclado y el foco de una ayuda (AY3, AY5–AY10), para el
+ *  disparador que sea. Devuelve las props de su botón y el popover, que va
+ *  en un portal a `document.body` con `Z_MODAL_NESTED` para quedar por
+ *  encima de Opciones. */
+export function useHelpPopover(content: HelpContent) {
   const language = useAppStore((s) => s.language);
   const [anchor, setAnchor] = useState<AnchorRect | null>(null);
   const [tourOpen, setTourOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  // Al abrirla con el atajo (⌘/), el foco vuelve adonde estaba (un campo,
+  // una nota), no al botón del menú.
+  const returnFocus = useRef<HTMLElement | null>(null);
   // El `mousedown` del propio botón no cuenta como "fuera": si no, la ayuda
   // se cerraría y el clic la volvería a abrir.
   const pressingButton = useRef(false);
@@ -65,10 +85,17 @@ function HelpButtonInner({
   const popoverId = `${baseId}help`;
   const open = anchor !== null;
 
+  const focusBack = useCallback((options?: FocusOptions) => {
+    const target = returnFocus.current?.isConnected ? returnFocus.current : buttonRef.current;
+    returnFocus.current = null;
+    target?.focus(options);
+  }, []);
+
   const close = useCallback((refocus: boolean) => {
     setAnchor(null);
-    if (refocus) buttonRef.current?.focus();
-  }, []);
+    if (refocus) focusBack();
+    else returnFocus.current = null;
+  }, [focusBack]);
 
   const { ref: popoverRef, style, isReady } = usePositionedMenu(anchor, {
     estimatedSize: ESTIMATED_SIZE,
@@ -81,16 +108,19 @@ function HelpButtonInner({
     },
   });
 
-  // Clic fuera o desplazamiento: si el foco estaba dentro, vuelve al botón,
-  // salvo que el clic lo haya llevado a otro control. Sin desplazar: tras un
-  // scroll, el botón puede haber quedado fuera de la vista.
+  // Clic fuera o desplazamiento: si el foco estaba dentro, vuelve, salvo
+  // que el clic lo haya llevado a otro control. Sin desplazar la vista.
   const closeFromOutside = () => {
     const wasInside = !!popoverRef.current?.contains(document.activeElement);
     setAnchor(null);
-    if (!wasInside) return;
+    if (!wasInside) {
+      returnFocus.current = null;
+      return;
+    }
     window.setTimeout(() => {
       const active = document.activeElement;
-      if (!active || active === document.body) buttonRef.current?.focus({ preventScroll: true });
+      if (!active || active === document.body) focusBack({ preventScroll: true });
+      else returnFocus.current = null;
     }, 0);
   };
 
@@ -108,26 +138,28 @@ function HelpButtonInner({
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [open, close]);
 
-  // AY10: si el contenedor de la pantalla se desplaza, el popover fijo
-  // quedaría flotando lejos del botón.
+  // AY10: si lo que se desplaza mueve el botón, el popover fijo quedaría
+  // flotando lejos de él.
   useEffect(() => {
     if (!open) return;
     const onScroll = (e: Event) => {
-      if (scrollCloses(e.target, popoverRef.current)) closeFromOutside();
+      if (scrollCloses(e.target, popoverRef.current, buttonRef.current)) closeFromOutside();
     };
     window.addEventListener('scroll', onScroll, true);
     return () => window.removeEventListener('scroll', onScroll, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- closeFromOutside solo usa refs y setters
   }, [open]);
 
-  const toggle = () => {
+  /** Abre o cierra. `fromShortcut`: con ⌘/, el foco vuelve después adonde
+   *  estaba. */
+  const toggle = (fromShortcut = false) => {
     if (open) {
       close(true);
       return;
     }
-    const r = buttonRef.current?.getBoundingClientRect();
-    if (!r) return;
-    setAnchor({ left: r.left, right: r.left, top: r.bottom + 6, bottom: r.bottom + 6 });
+    const active = document.activeElement;
+    returnFocus.current = fromShortcut && active instanceof HTMLElement && active !== document.body ? active : null;
+    setAnchor(anchorFor(buttonRef.current));
   };
 
   // AY7: Tab recorre solo los controles de la ayuda.
@@ -140,62 +172,58 @@ function HelpButtonInner({
   };
 
   const footer = helpFooter(
-    actions,
-    tourScene !== undefined ? t(language, 'help', 'seeTour') : null,
+    content.actions ?? [],
+    content.tourScene !== undefined ? t(language, 'help', 'seeTour') : null,
     () => close(false),
     () => setTourOpen(true),
   );
 
   const closeTour = useCallback(() => {
     setTourOpen(false);
-    buttonRef.current?.focus();
-  }, []);
+    focusBack();
+  }, [focusBack]);
 
-  return (
-    <>
-      <button
-        ref={buttonRef}
-        type="button"
-        aria-label={interpolate(t(language, 'help', 'buttonLabel'), { screen })}
-        title={interpolate(t(language, 'help', 'buttonLabel'), { screen })}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-controls={popoverId}
-        onMouseDown={() => {
-          pressingButton.current = true;
-          window.setTimeout(() => { pressingButton.current = false; }, 0);
-        }}
-        onClick={toggle}
-        className={BUTTON_CLS}
-      >
-        <CircleHelp size={13} aria-hidden />
-      </button>
-      {(open || tourOpen) && createPortal(
-        // AY9: los eventos de un portal suben por el árbol de React hasta la
-        // pantalla de detrás. Se cortan aquí, salvo los atajos globales; el
-        // clic derecho tampoco abre el menú de la vista (Tareas, Kanban).
-        <div onKeyDown={(e) => { if (!passesToApp(e)) e.stopPropagation(); }} onContextMenu={(e) => e.stopPropagation()}>
-          {open && (
-            <HelpPanel
-              panelRef={popoverRef}
-              id={popoverId}
-              style={{ ...style, zIndex: Z_MODAL_NESTED }}
-              title={title}
-              intro={intro}
-              closeLabel={t(language, 'help', 'close')}
-              onClose={() => close(true)}
-              onKeyDown={onPopoverKeyDown}
-              footer={footer}
-            >
-              {children}
-            </HelpPanel>
-          )}
-          {tourOpen && <TourModal onClose={closeTour} initialScene={tourScene} />}
-        </div>,
-        document.body,
+  const label = interpolate(t(language, 'help', 'buttonLabel'), { screen: content.screen });
+  const triggerProps: HelpTriggerProps = {
+    ref: buttonRef,
+    type: 'button',
+    'aria-label': label,
+    'aria-haspopup': 'dialog',
+    'aria-expanded': open,
+    'aria-controls': popoverId,
+    onMouseDown: () => {
+      pressingButton.current = true;
+      window.setTimeout(() => { pressingButton.current = false; }, 0);
+    },
+    onClick: () => toggle(),
+  };
+
+  const popover = (open || tourOpen) && createPortal(
+    // AY9: los eventos de un portal suben por el árbol de React hasta la
+    // pantalla de detrás. Se cortan aquí, salvo los atajos globales; el
+    // clic derecho tampoco abre el menú de la vista (Tareas, Kanban).
+    <div onKeyDown={(e) => { if (!passesToApp(e)) e.stopPropagation(); }} onContextMenu={(e) => e.stopPropagation()}>
+      {open && (
+        <HelpPanel
+          panelRef={popoverRef}
+          id={popoverId}
+          style={{ ...style, zIndex: Z_MODAL_NESTED }}
+          title={content.title}
+          intro={content.intro}
+          closeLabel={t(language, 'help', 'close')}
+          onClose={() => close(true)}
+          onKeyDown={onPopoverKeyDown}
+          footer={footer}
+        >
+          {content.body}
+        </HelpPanel>
       )}
-    </>
+      {tourOpen && <TourModal onClose={closeTour} initialScene={content.tourScene} />}
+    </div>,
+    document.body,
   );
+
+  return { open, toggle, close, label, triggerProps, popover };
 }
 
 /** AY5: el pie, con las acciones de la pantalla y al final "Ver el

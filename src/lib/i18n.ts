@@ -121,8 +121,8 @@ const dict = {
       animationsEnabled: 'Activadas',
       animationsDisabled: 'Desactivadas',
       helpSection: 'Ayuda',
-      helpButtonsTitle: 'Botones de ayuda',
-      helpButtonsDesc: 'Muestra el botón (?) junto al título de las pantallas que explica cómo funcionan.',
+      helpButtonsTitle: 'Botón de ayuda',
+      helpButtonsDesc: 'Muestra «Ayuda» en el menú lateral, con la ayuda de la pantalla en la que estás.',
       sidebarSection: 'Menú lateral',
       // Shortcuts
       shortcutNewNote: 'Nueva nota',
@@ -131,6 +131,7 @@ const dict = {
       shortcutNewDaily: 'Daily de hoy',
       shortcutMarkAbsence: 'Marcar ausencia',
       goToSectionRow: 'Ir a una sección',
+      shortcutHelp: 'Ayuda de la pantalla',
       shortcutPress: 'Presiona una tecla…',
       shortcutHint: 'Siempre se combinan con ⌘ (Mac) o Ctrl (Windows)',
       // Backup
@@ -2322,6 +2323,14 @@ const dict = {
       overtime2: 'El desglose es automático: diurnas de 06:00 a 19:00, nocturnas de 19:00 a 06:00, y festivas los domingos y festivos de Colombia.',
       overtime3: 'Si dos horarios del mismo día se cruzan, te avisa antes de guardar.',
       overtime4: 'Abajo: la persona pone tu nombre y cédula en el reporte, el ojo muestra la vista previa y la flecha exporta a Excel el mes que estás viendo.',
+      // El botón del menú lateral y la ayuda general (AY24, AY26).
+      menuLabel: 'Ayuda',
+      generalTitle: 'Cómo funciona Logday',
+      general1: 'Muévete con el menú lateral: {home} va a Inicio y {first}…{last}, a las demás secciones, en el orden del menú.',
+      general2: '{search} abre Buscar: encuentra tareas y dailys, y en «Ir a» saltas a cualquier sección, también a las de «Más».',
+      general3: 'Clic derecho en una sección para moverla o quitarla del menú. Las que quitas, o no caben, quedan en «Más», y desde ahí se vuelven a fijar.',
+      general4: '{newTask} crea una tarea, {newNote} una nota y {newDaily} el daily de hoy, desde cualquier sección. Las letras se cambian en Opciones → Atajos.',
+      general5: '{help} abre o cierra esta ayuda. En Tareas, Dailys, Horas extra y algunas extensiones, como DevTools y Pomodoro, explica esa pantalla.',
     },
   },
   en: {
@@ -2444,8 +2453,8 @@ const dict = {
       animationsEnabled: 'Enabled',
       animationsDisabled: 'Disabled',
       helpSection: 'Help',
-      helpButtonsTitle: 'Help buttons',
-      helpButtonsDesc: 'Shows the (?) button next to screen titles that explains how they work.',
+      helpButtonsTitle: 'Help button',
+      helpButtonsDesc: 'Shows "Help" in the sidebar, with help for the screen you\'re on.',
       sidebarSection: 'Sidebar menu',
       // Shortcuts
       shortcutNewNote: 'New note',
@@ -2454,6 +2463,7 @@ const dict = {
       shortcutNewDaily: "Today's daily",
       shortcutMarkAbsence: 'Mark absence',
       goToSectionRow: 'Go to a section',
+      shortcutHelp: 'Help for this screen',
       shortcutPress: 'Press a key…',
       shortcutHint: 'Always combined with ⌘ (Mac) or Ctrl (Windows)',
       // Backup
@@ -4600,6 +4610,13 @@ const dict = {
       overtime2: 'The breakdown is automatic: daytime 06:00–19:00, night 19:00–06:00, and holiday on Sundays and Colombian holidays.',
       overtime3: 'If two entries on the same day overlap, you\'re warned before saving.',
       overtime4: 'At the bottom: the person icon sets your name and ID for the report, the eye shows a preview, and the arrow exports the month you\'re viewing to Excel.',
+      menuLabel: 'Help',
+      generalTitle: 'How Logday works',
+      general1: 'Move around with the sidebar: {home} goes to Home and {first}…{last} to the other sections, in sidebar order.',
+      general2: '{search} opens Search: it finds tasks and dailies, and under "Go to" you can jump to any section, including the ones in "More".',
+      general3: 'Right-click a section to move it or remove it from the sidebar. The ones you remove, or that don\'t fit, go into "More", where you can pin them again.',
+      general4: '{newTask} creates a task, {newNote} a note and {newDaily} today\'s daily, from any section. You can change the letters in Settings → Shortcuts.',
+      general5: '{help} opens or closes this help. In Tasks, Dailys, Overtime and some extensions, like DevTools and Pomodoro, it explains that screen.',
     },
   },
 } as const;

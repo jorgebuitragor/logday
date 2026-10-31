@@ -250,7 +250,9 @@ export function HelpPanel({
         {children}
       </div>
       {footer.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t border-[var(--border)] pt-2.5">
+        // Pegado abajo: con ventanas bajas el contenido hace scroll y los
+        // enlaces del pie ("Ver todos los atajos") quedaban fuera de vista.
+        <div className="sticky -bottom-4 -mx-4 -mb-4 mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t border-[var(--border)] bg-[var(--bg-elevated)] px-4 pb-4 pt-2.5">
           {footer.map((a) => (
             <button key={a.label} type="button" onClick={a.onClick} className={`${TEXT_LINK} text-xs`}>{a.label}</button>
           ))}

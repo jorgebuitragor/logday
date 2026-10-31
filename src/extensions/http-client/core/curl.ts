@@ -1,5 +1,5 @@
 // Un comando cURL pegado → el texto de un bloque ```http (specs/cliente-http
-// HT39, design §13). Es lo contrario de `toCurl` (edit.ts). Puro: sin React
+// HT39, design §13). Es lo contrario de `toCurl` (codegen.ts). Puro: sin React
 // ni DOM. Ante la duda no convierte (`null`): el texto se pega tal cual,
 // que es lo que pasaba antes, y nunca se pierde nada de lo pegado.
 import { HTTP_METHODS, hasErrors, parseHttpBlock } from './parse';

@@ -50,6 +50,8 @@ vi.mock('./core/api', async (orig) => {
 const { default: HttpNoteBlock } = await import('./ui/Block');
 const { default: Settings } = await import('./ui/Settings');
 const { ResponseView } = await import('./ui/ResponseView');
+const { CodePanel, copyAsItems } = await import('./ui/CopyAs');
+const { makeTr } = await import('./core/text');
 const store = await import('./store');
 const { cacheKey } = await import('./core/cache');
 
@@ -143,14 +145,16 @@ describe('barra del bloque', () => {
   });
 });
 
-describe('barra del bloque: lenguaje, método y cURL (HT36–HT38)', () => {
+describe('barra del bloque: lenguaje, método y "Copiar como…" (HT36–HT38, HT60)', () => {
   it('en una nota editable: el lenguaje (HTTP) y el método son botones de menú con su nombre', () => {
     const html = block('POST https://x.com', 'header', null, editable);
     expect(html).toContain('aria-label="Lenguaje del bloque: HTTP"');
     expect(html).toContain('aria-label="Método: POST"');
-    expect((html.match(/aria-haspopup="menu"/g) ?? []).length).toBeGreaterThanOrEqual(3); // lenguaje, método y entorno
-    expect(html).toContain('aria-label="Copiar como cURL"');
-    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*aria-label="Copiar como cURL"/);
+    expect((html.match(/aria-haspopup="menu"/g) ?? []).length).toBeGreaterThanOrEqual(4); // lenguaje, método, Copiar como… y entorno
+    // El botón de cURL pasó a ser el menú "Copiar como…".
+    expect(html).toMatch(/<button[^>]*aria-haspopup="menu"[^>]*aria-label="Copiar como…" title="Copiar como…"/);
+    expect(html).not.toMatch(/aria-label="Copiar como…"[^>]*disabled=""/);
+    expect(html).not.toContain('Copiar como cURL');
   });
 
   it('sin las acciones del editor (otra vista) la etiqueta es texto y no hay selector de método', () => {
@@ -168,13 +172,16 @@ describe('barra del bloque: lenguaje, método y cURL (HT36–HT38)', () => {
     expect(block('https://x.com', 'header', null, editable)).toContain('aria-label="Método: GET"');
   });
 
-  it('una línea que no se entiende no tiene selector de método; con errores, cURL se desactiva', () => {
+  it('una línea que no se entiende no tiene selector de método; con errores, "Copiar como…" se desactiva', () => {
+    const disabled = /aria-label="Copiar como…" title="Copiar como…" disabled=""/;
     const html = block('mal', 'header', null, editable);
     expect(html).not.toContain('aria-label="Método');
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Copiar como cURL"/);
-    expect(block('GET https://x.com\nmal', 'header', null, editable)).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Copiar como cURL"/);
-    // Una variable que falta no es un error: el comando lleva {{nombre}}.
-    expect(block('GET {{baseUrl}}', 'header', null, editable)).not.toMatch(/<button[^>]*disabled=""[^>]*aria-label="Copiar como cURL"/);
+    expect(html).toMatch(disabled);
+    expect(block('GET https://x.com\nmal', 'header', null, editable)).toMatch(disabled);
+    // Una variable que falta no es un error: el código lleva {{nombre}}.
+    expect(block('GET {{baseUrl}}', 'header', null, editable)).not.toMatch(disabled);
+    // También sin las acciones del editor (otra vista): copiar no cambia la nota.
+    expect(block('GET https://x.com', 'header')).toContain('aria-label="Copiar como…"');
   });
 
   it('en inglés, los mismos controles', () => {
@@ -183,10 +190,56 @@ describe('barra del bloque: lenguaje, método y cURL (HT36–HT38)', () => {
       const html = block('PUT https://x.com', 'header', null, editable);
       expect(html).toContain('aria-label="Block language: HTTP"');
       expect(html).toContain('aria-label="Method: PUT"');
-      expect(html).toContain('aria-label="Copy as cURL"');
+      expect(html).toContain('aria-label="Copy as…"');
     } finally {
       app.language = 'es';
     }
+  });
+});
+
+describe('"Copiar como…": las opciones y el panel "Código" (HT60, HT61)', () => {
+  const tr = makeTr('es');
+  const req = (code: string) => parseHttpBlock(code).requests[0];
+  const MULTIPART = 'POST https://x.com\nContent-Type: multipart/form-data; boundary=B\n\n--B\nContent-Disposition: form-data; name="a"\n\n1\n--B--';
+
+  it('cURL, fetch, Python, Go y Java como acciones, sin íconos de marca', () => {
+    const items = copyAsItems(tr, req('GET https://x.com'), () => {});
+    expect(items.map((i) => i.label)).toEqual(['cURL', 'JavaScript (fetch)', 'Python (requests)', 'Go (net/http)', 'Java (HttpClient)']);
+    expect(items.every((i) => i.action && !i.disabled && !i.description)).toBe(true);
+  });
+
+  it('Java con multipart: deshabilitado, con la razón; elegirlo no copia', () => {
+    const picked: string[] = [];
+    const items = copyAsItems(tr, req(MULTIPART), (l) => picked.push(l.id));
+    const java = items.find((i) => i.key === 'java')!;
+    expect(java.disabled).toBe(true);
+    expect(java.description).toBe('HttpClient de Java no trae multipart.');
+    expect(items.filter((i) => i.disabled).map((i) => i.key)).toEqual(['java']);
+    items.find((i) => i.key === 'python')!.onSelect();
+    expect(picked).toEqual(['python']);
+    expect(copyAsItems(makeTr('en'), req(MULTIPART), () => {}).find((i) => i.key === 'java')!.description).toBe('Java\'s HttpClient has no multipart support.');
+  });
+
+  it('el panel: pestañas de lenguaje con cURL elegido, el código resaltado con {{variables}} y Copiar', () => {
+    const html = renderToStaticMarkup(<CodePanel tr={tr} req={req('GET {{baseUrl}}/me\nAuthorization: Bearer {{token}}')} id="p1" />);
+    expect(html).toContain('id="p1"');
+    expect(html).toContain('role="tablist" aria-label="Lenguaje del código"');
+    expect((html.match(/role="tab"/g) ?? []).length).toBe(5);
+    expect(html).toMatch(/role="tab" aria-selected="true"[^>]*tabindex="0"[^>]*>cURL</);
+    expect(html).toContain('aria-label="Código en cURL"');
+    expect(html).toContain('hljs-');
+    const t = text(html);
+    expect(t).toContain("curl -X GET '{{baseUrl}}/me'");
+    expect(t).toContain('Authorization: Bearer {{token}}');
+    expect(t).toContain('Las variables quedan como {{nombre}}.');
+    expect(html).toContain('aria-label="Copiar el código"');
+    expect(html).not.toMatch(/disabled=""[^>]*aria-label="Copiar el código"/);
+  });
+
+  it('el panel sin petición lista lo dice, y Copiar queda deshabilitado', () => {
+    const html = renderToStaticMarkup(<CodePanel tr={tr} req={null} />);
+    expect(text(html)).toContain('El código aparece aquí cuando la petición tiene URL y no tiene errores.');
+    expect(html).toMatch(/disabled=""[^>]*aria-label="Copiar el código"/);
   });
 });
 

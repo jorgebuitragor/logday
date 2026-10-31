@@ -1163,3 +1163,16 @@ html.theme-animating body * {
 @media (prefers-reduced-motion: reduce) {
   .sbp-anim { animation: none !important; }
 }
+
+/* ── Bienvenida (specs/onboarding) ──
+   El cambio de paso: opacidad y 8 px de desplazamiento en 150 ms. Solo
+   transform y opacity; sin movimiento con prefers-reduced-motion o con las
+   animaciones de la app apagadas (.no-animations, arriba). */
+@keyframes obd-step-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: none; }
+}
+.obd-step { animation: obd-step-in 150ms ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .obd-step { animation: none !important; }
+}

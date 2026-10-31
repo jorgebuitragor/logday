@@ -99,6 +99,13 @@ describe('la entrada Navegación (NS21)', () => {
     const work = text(renderToStaticMarkup(<WorkSettingsTab />));
     expect(work).not.toContain('Vista de notas');
   });
+
+  it('los 8 temas son radios; el personalizado, un botón con aria-pressed (specs/onboarding OB10)', () => {
+    const html = renderToStaticMarkup(<GeneralSettingsTab />);
+    expect(html.split('name="theme"').length - 1).toBe(8);
+    expect(html).toMatch(/name="theme" checked=""/);
+    expect(html).toMatch(/aria-pressed="false"[^>]*>.*Personalizado/);
+  });
 });
 
 describe('vista de tareas al abrir (NS22)', () => {

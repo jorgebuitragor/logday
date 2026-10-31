@@ -1193,3 +1193,144 @@ html.theme-animating body * {
 @media (prefers-reduced-motion: reduce) {
   .obd-step { animation: none !important; }
 }
+
+/* ── Miniaturas del recorrido (specs/onboarding OB13) ──
+   Una sola pasada de 4 s que empieza 300 ms después de mostrarse la escena.
+   Cada clase pone, como estilo base, el fotograma final de su animación:
+   sin animación (prefers-reduced-motion o .no-animations) la miniatura ya
+   se ve completa. Solo transform y opacity. "Ver la animación de nuevo"
+   vuelve a montar la escena. */
+.obd-anim {
+  animation-duration: 4s;
+  animation-delay: 300ms;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: 1;
+  animation-fill-mode: both;
+}
+/* El resaltado del menú: un paso por fila (18 px con la Barra de íconos,
+   16 px con la Lista), de la fila --obd-from a la --obd-to. */
+.obd-frame-icons { --obd-step: 18px; }
+.obd-frame-list { --obd-step: 16px; }
+.obd-hl { transform: translateY(calc(var(--obd-step) * var(--obd-to))); }
+@keyframes obd-hl-early {
+  0%, 15% { transform: translateY(calc(var(--obd-step) * var(--obd-from))); }
+  25%, 100% { transform: translateY(calc(var(--obd-step) * var(--obd-to))); }
+}
+.obd-hl-early { transform: translateY(calc(var(--obd-step) * var(--obd-to))); animation-name: obd-hl-early; }
+@keyframes obd-hl-mid {
+  0%, 35% { transform: translateY(calc(var(--obd-step) * var(--obd-from))); }
+  45%, 100% { transform: translateY(calc(var(--obd-step) * var(--obd-to))); }
+}
+.obd-hl-mid { transform: translateY(calc(var(--obd-step) * var(--obd-to))); animation-name: obd-hl-mid; }
+@keyframes obd-hl-late {
+  0%, 68% { transform: translateY(calc(var(--obd-step) * var(--obd-from))); }
+  76%, 100% { transform: translateY(calc(var(--obd-step) * var(--obd-to))); }
+}
+.obd-hl-late { transform: translateY(calc(var(--obd-step) * var(--obd-to))); animation-name: obd-hl-late; }
+/* Lo que aparece o se va. */
+@keyframes obd-out-mid {
+  0%, 35% { opacity: 1; }
+  45%, 100% { opacity: 0; }
+}
+.obd-out-mid { opacity: 0; animation-name: obd-out-mid; }
+@keyframes obd-in-mid {
+  0%, 40% { opacity: 0; }
+  50%, 100% { opacity: 1; }
+}
+.obd-in-mid { opacity: 1; animation-name: obd-in-mid; }
+@keyframes obd-in-early {
+  0%, 8% { opacity: 0; }
+  16%, 100% { opacity: 1; }
+}
+.obd-in-early { opacity: 1; animation-name: obd-in-early; }
+@keyframes obd-in-late {
+  0%, 80% { opacity: 0; }
+  88%, 100% { opacity: 1; }
+}
+.obd-in-late { opacity: 1; animation-name: obd-in-late; }
+@keyframes obd-search {
+  0%, 10% { opacity: 0; }
+  18%, 55% { opacity: 1; }
+  63%, 100% { opacity: 0; }
+}
+.obd-search { opacity: 0; animation-name: obd-search; }
+/* Las líneas que se escriben. */
+.obd-grow { transform-origin: left; }
+@keyframes obd-grow-1 {
+  0%, 50% { transform: scaleX(0); }
+  62%, 100% { transform: scaleX(1); }
+}
+.obd-grow-1 { transform: scaleX(1); animation-name: obd-grow-1; }
+@keyframes obd-grow-2 {
+  0%, 60% { transform: scaleX(0); }
+  72%, 100% { transform: scaleX(1); }
+}
+.obd-grow-2 { transform: scaleX(1); animation-name: obd-grow-2; }
+@keyframes obd-grow-3 {
+  0%, 70% { transform: scaleX(0); }
+  82%, 100% { transform: scaleX(1); }
+}
+.obd-grow-3 { transform: scaleX(1); animation-name: obd-grow-3; }
+/* La tarjeta que pasa de la columna 1 a la 2 del Kanban. */
+@keyframes obd-card-move {
+  0%, 60% { transform: translateX(calc(-100% - 12px)); }
+  75%, 100% { transform: translateX(0); }
+}
+.obd-card-move { transform: translateX(0); animation-name: obd-card-move; }
+/* Las cajas del diagrama y la lista que pasa a árbol. */
+@keyframes obd-pop-1 {
+  0%, 60% { opacity: 0; transform: scale(0.8); }
+  68%, 100% { opacity: 1; transform: scale(1); }
+}
+.obd-pop-1 { opacity: 1; transform: scale(1); animation-name: obd-pop-1; }
+@keyframes obd-pop-2 {
+  0%, 66% { opacity: 0; transform: scale(0.8); }
+  74%, 100% { opacity: 1; transform: scale(1); }
+}
+.obd-pop-2 { opacity: 1; transform: scale(1); animation-name: obd-pop-2; }
+@keyframes obd-pop-3 {
+  0%, 72% { opacity: 0; transform: scale(0.8); }
+  80%, 100% { opacity: 1; transform: scale(1); }
+}
+.obd-pop-3 { opacity: 1; transform: scale(1); animation-name: obd-pop-3; }
+@keyframes obd-indent {
+  0%, 82% { transform: translateX(0); }
+  92%, 100% { transform: translateX(6px); }
+}
+.obd-indent { transform: translateX(6px); animation-name: obd-indent; }
+/* Los archivos que salen de la carpeta y lo opcional. */
+@keyframes obd-drop-1 {
+  0%, 10% { opacity: 0; transform: translateY(-6px); }
+  18%, 100% { opacity: 1; transform: translateY(0); }
+}
+.obd-drop-1 { opacity: 1; transform: translateY(0); animation-name: obd-drop-1; }
+@keyframes obd-drop-2 {
+  0%, 18% { opacity: 0; transform: translateY(-6px); }
+  26%, 100% { opacity: 1; transform: translateY(0); }
+}
+.obd-drop-2 { opacity: 1; transform: translateY(0); animation-name: obd-drop-2; }
+@keyframes obd-drop-3 {
+  0%, 26% { opacity: 0; transform: translateY(-6px); }
+  34%, 100% { opacity: 1; transform: translateY(0); }
+}
+.obd-drop-3 { opacity: 1; transform: translateY(0); animation-name: obd-drop-3; }
+@keyframes obd-chip-1 {
+  0%, 50% { opacity: 0; }
+  58%, 100% { opacity: 1; }
+}
+.obd-chip-1 { opacity: 1; animation-name: obd-chip-1; }
+@keyframes obd-chip-2 {
+  0%, 60% { opacity: 0; }
+  68%, 100% { opacity: 1; }
+}
+.obd-chip-2 { opacity: 1; animation-name: obd-chip-2; }
+@keyframes obd-chip-3 {
+  0%, 70% { opacity: 0; }
+  78%, 100% { opacity: 1; }
+}
+.obd-chip-3 { opacity: 1; animation-name: obd-chip-3; }
+.no-animations .obd-replay { display: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .obd-anim { animation: none !important; }
+  .obd-replay { display: none !important; }
+}

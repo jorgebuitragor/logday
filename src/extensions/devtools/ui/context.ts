@@ -24,6 +24,8 @@ export type { OptionValue };
 
 export interface DevtoolsContextValue {
   tool: ToolId;
+  /** `availableTools`: sin Cliente HTTP, su herramienta no está (HT27). */
+  available: readonly ToolId[];
   language: Language;
   tr: Tr;
   mac: boolean;

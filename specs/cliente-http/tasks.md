@@ -1,12 +1,12 @@
 # Cliente HTTP — Tasks
 
-Estado: PR 1 implementado (31 oct 2026), falta su prueba visual y en la app de QA; PR 2 pendiente. Rama `feature/cliente-http`, desde `develop`. Son dos PR: el primero deja la extensión completa en las notas; el segundo suma la herramienta de DevTools.
+Estado: PR 1 y PR 2 implementados (31 oct 2026); faltan sus pruebas visuales y en la app de QA. Rama `feature/cliente-http`, desde `develop`. Son dos PR: el primero deja la extensión completa en las notas; el segundo suma la herramienta de DevTools.
 
 ## Antes de empezar
 
 - [x] Enfoque aprobado por Jorge (31 oct 2026): bloque `http` en las notas, entornos locales con secretos en el llavero, envío desde Rust y herramienta en DevTools.
 - [x] Respuestas de Jorge a las decisiones de `design.md` §10: las aprobó todas como las recomienda el diseño (31 oct 2026).
-- [ ] Ver si `feature/devtools-opciones` ya entró en `develop`. Solo afecta al PR 2 (A10).
+- [x] Ver si `feature/devtools-opciones` ya entró en `develop`. Sí (PR logday#53): el PR 2 se integra con el orden, las ocultas y los grupos plegados (A10).
 
 ## PR 1: la extensión en las notas
 
@@ -108,24 +108,47 @@ Estado: PR 1 implementado (31 oct 2026), falta su prueba visual y en la app de Q
 
 ## PR 2: DevTools
 
-- [ ] `devtools/model.ts`:
-  - el grupo `network` y la herramienta `http`;
-  - `availableTools()`;
-  - `LANGUAGE_TOOL` y `OUTPUT_LANGUAGE`;
-  - integrarlo con el orden, las ocultas y los grupos plegados de `feature/devtools-opciones` si ya entró (A10, D24).
-- [ ] `ui/meta.ts` (`TOOL_ICON`, `PICKER_TOOLS`) y `View.tsx`:
-  - `VIEWS.http`;
-  - `availableTools` en la columna, el buscador, ⌥⌘↓/↑ y `lastTool`;
-  - `privacyNoteWithHttp`.
-- [ ] `views/HttpTool.tsx` (§3):
-  - el formulario y `serialize.ts`;
+Rama `feature/cliente-http-devtools`, desde `develop` (con el PR 1 y `feature/devtools-opciones` dentro).
+
+- [x] `devtools/model.ts`:
+  - el grupo `network` y la herramienta `http`, al final de `TOOL_GROUPS`;
+  - `availableTools()` (y `availableToolsIn(extensions)`), que reciben `resolveToolList`, `availableGroups`, `moveGroup(To)`, `visibleToolCount`, `setToolHidden` e `isToolHidden` (specs/devtools design §G.4);
+  - `LANGUAGE_TOOL.http` y `OUTPUT_LANGUAGE.http`;
+  - integrado con el orden, las ocultas y los grupos plegados: sin Cliente HTTP, Red no aparece y las flechas de los grupos la saltan; lo guardado de ella se conserva.
+- [x] `ui/meta.ts` (`TOOL_ICON.http = Globe`, `PICKER_TOOLS`, `TOOL_HELP.http`) y `View.tsx`:
+  - `VIEWS.http`, cargada solo al abrirla;
+  - `availableTools` en la columna, el selector, el buscador, ⌥⌘↓/↑, `lastTool` (si era `http` y no está, se abre JSON) y "Traer de una nota";
+  - `privacyNoteWithHttp` en el pie mientras está la herramienta.
+- [x] `views/HttpTool.tsx` (§3):
+  - el formulario y `core/serialize.ts`;
   - la misma resolución, confirmaciones y `ResponseView`;
-  - `ToolActions` (enviar, copiar, guardar, limpiar y las pestañas);
-  - los borradores en memoria (D9) y "Vaciar todas las herramientas".
-- [ ] "Guardar en una nota" (bloque `http`, con cerca de 4 si hace falta) y "Traer de una nota" (la primera petición del bloque) (HT28).
-- [ ] Textos de §8.8 en `devtools` y `httpClient`.
-- [ ] `specs/devtools`: D11 reescrito, el grupo Red en D1/D0 y las tareas.
-- [ ] Prueba de humo en `views.test.tsx` y prueba en el navegador: DevTools con y sin Cliente HTTP activa.
+  - `ToolActions` (enviar, copiar el cuerpo, guardar, limpiar y las pestañas);
+  - los borradores en memoria (D9) y "Vaciar todas las herramientas", que también olvida la respuesta.
+- [x] "Guardar en una nota" (bloque `http` con `formatFence`, que alarga la cerca si hace falta) y "Traer de una nota" (la primera petición del bloque, con el aviso si había más) (HT28).
+- [x] Textos de §8.8 en `devtools` y `httpClient`, es y en.
+- [x] `specs/devtools`: D11 reescrito, D0 y D25 (el grupo Red), design §G.4 y las tareas.
+- [x] Pruebas: `core/serialize.test.ts`, `devtools/httpTool.test.tsx` (aparece y desaparece, cada estado, el envío con Rust simulado y sus confirmaciones, guardar en una nota, paridad y voseo), `settings.test.ts` con y sin Cliente HTTP y la ayuda en `HelpPopover.test.tsx`.
+- [ ] Prueba en el navegador, en los temas claro, oscuro y sepia:
+  - DevTools con y sin Cliente HTTP activa: la columna, el buscador, ⌥⌘↓/↑, el pie, la ayuda y Opciones → DevTools;
+  - apagar Cliente HTTP con su herramienta abierta, y volver a encenderla;
+  - enviar con el botón, ⌘↵ y Enter en la URL; cancelar con Esc; ⌥⌘1–3; ⌘⇧C, ⌘⇧S, ⌘⇧O y ⌘⇧⌫;
+  - las confirmaciones (entorno protegido y host ajeno), "Guardar en una nota" (abrir la nota y ver el bloque) y "Traer de una nota" con un bloque de varias peticiones;
+  - la ventana angosta (las cabeceras y el cuerpo se apilan).
+
+### Diferencias con el diseño (PR 2)
+
+- **El motor, sin copiar:** la herramienta es un bloque más del store del Cliente HTTP, con la clave `devtools#0` (`DEVTOOLS_NOTE_ID`, `DEVTOOLS_KEY`). El formulario se pasa a texto con `serializeForm` y se envía con `sendRequest`, así que las confirmaciones, los límites, las cabeceras automáticas y los errores son los del bloque.
+- **La confirmación, "Enviando…" y el error con Reintentar** salieron de `ui/Block.tsx` a `ui/SendStatus.tsx` (`ConfirmBox`, `SendProgress`, `SendFailure`), que usan los dos. El bloque se ve igual.
+- **`ResponseView`** acepta `tab` y `onTabChange` para ⌥⌘1–3. En la herramienta no lleva "Cerrar la respuesta": la cierra Limpiar.
+- **La respuesta sigue a la vista al cambiar la URL**, marcada como vieja ("La petición cambió…"): la herramienta tiene una sola petición. Para eso la caché tiene `peek()` (`readDevtoolsResult`). En el bloque sigue la regla de `firstLine` (A8).
+- **`serializeForm`:** quita las líneas en blanco de las cabeceras (en el bloque, una línea en blanco empieza el cuerpo) y, con HEAD, no lleva el cuerpo. Los problemas dicen la línea de su campo (`fieldOf`), y el campo queda con `aria-invalid`.
+- **Una línea `###` en el cuerpo** partiría la petición en dos al enviarla: la herramienta no envía y lo dice (`toolBodySeparator`).
+- **"Traer de una nota"** usa el texto que ya tenía DevTools ("Abrir en Cliente HTTP" sale de `pickerOpenIn`), así que no hace falta `toolOpenIn`; un bloque que no es `http`, con Cliente HTTP abierta, va a JSON (`fallbackTool`), no al formulario. "Limpiar" es el `clear` de DevTools, sin `toolClear`.
+- **Textos nuevos que no estaban en §8.8:** `toolUrlEmpty`, `toolBodySeparator`; en `devtools`, `http.help1–3` ("En esta herramienta"), y `help.k.runHttp` y `help.k.tabsHttp`, que la ayuda usa en lugar de `help.k.run` y `help.k.tabs` solo mientras está la herramienta.
+- **El aviso fijo** va con el prop nuevo `notice` de `ToolFrame`.
+- **Apagar Cliente HTTP** también olvida lo escrito en la herramienta (`clearToolDrafts('http')`, desde su parada), además de las respuestas.
+- **`saveOutputAsNote`** usa siempre `formatFence`: la cerca lleva una comilla más que la línea más larga que empiece por comillas, en vez de 4 fijas. Vale para todas las herramientas.
+- **`toolForBlock`** abre un ```` ```http ```` en Cliente HTTP solo si está; un bloque sin lenguaje no se reconoce como petición.
 
 ## Al cerrar
 

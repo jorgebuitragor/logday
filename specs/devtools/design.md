@@ -1863,6 +1863,8 @@ interface DevtoolsSettings {
 
 **Compatibilidad:** lo guardado hasta hoy (`{ lastTool, options }`) se lee como todo por defecto, y se ve igual que antes. No hace falta migración.
 
+**Herramientas que dependen de otra extensión** (D25, specs/cliente-http A10, 31 oct 2026): `availableTools(httpEnabled)` da las que se pueden usar, y `resolveToolList`, `availableGroups`, `moveGroup`, `moveGroupTo`, `visibleToolCount`, `setToolHidden` e `isToolHidden` la reciben como último argumento. Lo que no está disponible no se ve en ningún sitio (tampoco entre las ocultas), las flechas de los grupos lo saltan y "no ocultar la última visible" cuenta solo las disponibles. Lo guardado de Cliente HTTP se conserva tal cual mientras está apagada. La usan la columna, el selector, el buscador, ⌥⌘↓/↑, `toolForBlock`, la ayuda (`ui/Help.tsx`) y la página de Opciones; la vista y la ayuda la sacan de `availableToolsIn(extensions)`.
+
 **Herramientas o grupos nuevos en una versión futura** (D24, la regla de `resolveSections`):
 - una herramienta que no está en `toolOrder[g]` va al final de su grupo, en el orden de `TOOL_GROUPS`, visible (porque `hidden` es una lista de exclusión);
 - un grupo que no está en `groupOrder` va al final, desplegado (porque `collapsed` también lo es);

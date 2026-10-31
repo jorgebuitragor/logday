@@ -1,48 +1,25 @@
 // El bloque ```http en la nota (Interfaz §1, HT4–HT16, HT20–HT25, HT30): la
 // barra de encima (`part: 'header'`) y la franja de debajo (`'footer'`).
 // Son dos islas aparte dentro del NodeView; comparten el estado del store.
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, CircleAlert, RotateCw, Send, ShieldOff, TriangleAlert, X } from 'lucide-react';
+import { useEffect, useMemo, useRef } from 'react';
+import { ChevronDown, CircleAlert, Send, X } from 'lucide-react';
 import { useAppStore } from '../../../store/appStore';
-import { FOCUS_RING, PANEL_TITLE, SECONDARY_CLS, SEND_BTN } from '../../../components/shared/controlClasses';
-import { Spinner, StatusItem } from '../../../components/shared/FormControls';
+import { PANEL_TITLE, SECONDARY_CLS, SEND_BTN } from '../../../components/shared/controlClasses';
+import { StatusItem } from '../../../components/shared/FormControls';
 import type { NoteBlockProps } from '../../types';
 import { subscribeNoteBlockRun } from '../../noteBlockEvents';
 import { announce } from '../announce';
-import { sendErrorMessage } from '../core/api';
 import { activeEnvironment, EXTENSION_ID, readHttpSettings } from '../core/environments';
 import { hasErrors, parseHttpBlock, requestAtOffset, requestLabel } from '../core/parse';
-import { isMac, listVars, makeTr, sendShortcut } from '../core/text';
+import { isMac, makeTr, sendShortcut } from '../core/text';
 import {
-  blockKey, blockState, blockedMessage, cancelBlock, dismissConfirm, dismissResult, firstError, issueMessage, openSettings,
-  readResult, resolveWith, selectRequest, sendRequest, useHttpStore, type PendingConfirm,
+  blockKey, blockState, blockedMessage, cancelBlock, dismissResult, firstError, issueMessage, openSettings,
+  readResult, resolveWith, selectRequest, sendRequest, useHttpStore,
 } from '../store';
 import { EnvironmentChip } from './EnvironmentChip';
 import { Menu } from './Menu';
 import { ResponseView } from './ResponseView';
-
-const GHOST_BTN = `rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] ${FOCUS_RING}`;
-const TEXT_LINK = `rounded text-[11px] font-medium text-[var(--text-primary)] underline decoration-[var(--border-high)] underline-offset-2 hover:decoration-[var(--text-primary)] ${FOCUS_RING}`;
-
-function useDebounced<T>(value: T, ms: number): T {
-  const [v, setV] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setV(value), ms);
-    return () => clearTimeout(id);
-  }, [value, ms]);
-  return v;
-}
-
-function useNow(ms: number, active = true): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), ms);
-    return () => clearInterval(id);
-  }, [ms, active]);
-  return now;
-}
+import { ConfirmBox, SendFailure, SendProgress, TEXT_LINK, useDebounced, useNow } from './SendStatus';
 
 /** Lo que comparten la barra y la franja de un bloque. */
 function useBlock({ code, noteId = '', index = 0, cursor = null }: NoteBlockProps) {
@@ -189,53 +166,6 @@ function BlockHeader(props: NoteBlockProps) {
 
 // ---------- Franja ----------
 
-function ConfirmBox({ b, pending, onSend }: { b: Block; pending: PendingConfirm; onSend: () => void }) {
-  const { tr } = b;
-  const dontRef = useRef<HTMLButtonElement>(null);
-  const textId = `http-confirm-${b.key.replace(/[^a-zA-Z0-9]/g, '-')}`;
-  // Al abrirse, el foco va a "No enviar", la opción segura.
-  useEffect(() => {
-    dontRef.current?.focus();
-  }, [pending]);
-  const envName = pending.envName ?? tr('envNone');
-  const protectedReason = pending.reasons.find((r) => r.kind === 'protected');
-  const untrusted = pending.reasons.find((r) => r.kind === 'untrusted_host');
-  return (
-    <div
-      role="group"
-      aria-labelledby={textId}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          e.stopPropagation();
-          dismissConfirm(b.key);
-        }
-      }}
-      className="flex flex-col gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-[var(--text-primary)]"
-    >
-      <div id={textId} className="flex items-start gap-1.5">
-        <TriangleAlert size={12} className="mt-0.5 shrink-0 text-amber-400" aria-hidden />
-        <div className="space-y-0.5">
-          {protectedReason && <p>{tr('confirmProtected', { method: pending.method, env: envName })}</p>}
-          {untrusted && untrusted.kind === 'untrusted_host' && (
-            <p>
-              {untrusted.vars.length > 0
-                ? tr('confirmUntrusted', { vars: listVars(tr, untrusted.vars), host: untrusted.host, env: envName })
-                : tr('confirmUntrustedSecret', { host: untrusted.host, env: envName })}
-            </p>
-          )}
-        </div>
-      </div>
-      <div className="flex justify-end gap-2">
-        <button ref={dontRef} type="button" onClick={() => dismissConfirm(b.key)} className={GHOST_BTN}>{tr('confirmDont')}</button>
-        <button type="button" onClick={onSend} className={`${SECONDARY_CLS} border-amber-500/50 text-[var(--text-primary)]`}>
-          {untrusted ? tr('confirmSendAnyway') : tr('confirmSendTo', { env: envName })}
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function BlockFooter(props: NoteBlockProps) {
   const b = useBlock(props);
   const { tr, state, req, cached, key } = b;
@@ -283,7 +213,8 @@ function BlockFooter(props: NoteBlockProps) {
       )}
       {pending && (
         <ConfirmBox
-          b={b}
+          tr={tr}
+          blockId={b.key}
           pending={pending}
           onSend={() => void sendRequest({
             noteId: b.noteId,
@@ -296,33 +227,8 @@ function BlockFooter(props: NoteBlockProps) {
           })}
         />
       )}
-      {inFlight && (
-        <p className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
-          <Spinner />
-          {now - inFlight.startedAt >= 1000
-            ? tr('sendingFor', { s: Math.floor((now - inFlight.startedAt) / 1000) })
-            : tr('sending')}
-        </p>
-      )}
-      {error && !inFlight && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <StatusItem kind="error">
-            {sendErrorMessage(tr, error.error, { envName: error.envName ?? tr('envNone'), timeoutSec: error.timeoutSec })}
-          </StatusItem>
-          <div className="flex gap-2">
-            <button type="button" onClick={() => resend()} className={SECONDARY_CLS}>
-              <RotateCw size={13} aria-hidden />
-              {tr('retry')}
-            </button>
-            {error.error.code === 'tls' && !b.env?.insecureTls && (
-              <button type="button" onClick={() => resend({ insecureOnce: true })} className={SECONDARY_CLS}>
-                <ShieldOff size={13} aria-hidden />
-                {tr('err.tlsRetry')}
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+      {inFlight && <SendProgress tr={tr} startedAt={inFlight.startedAt} now={now} />}
+      {error && !inFlight && <SendFailure tr={tr} error={error} insecureEnv={!!b.env?.insecureTls} onRetry={resend} />}
       {result?.cancelled && !inFlight && <StatusItem kind="info">{tr('err.cancelled')}</StatusItem>}
       {warnings.map((w) => <StatusItem key={w.code} kind="info">{issueMessage(tr, w)}</StatusItem>)}
       {response && (

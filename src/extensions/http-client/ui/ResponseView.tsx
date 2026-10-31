@@ -166,7 +166,7 @@ function RequestPanel({ o, tr }: { o: ResponseOutcome; tr: Tr }) {
 }
 
 export function ResponseView({
-  outcome, stale = false, dim = false, previous = false, onDismiss, now, initialTab = 'body',
+  outcome, stale = false, dim = false, previous = false, onDismiss, now, initialTab = 'body', tab: tabProp, onTabChange,
 }: {
   outcome: ResponseOutcome;
   /** La petición cambió después de esta respuesta. */
@@ -178,11 +178,19 @@ export function ResponseView({
   onDismiss?: () => void;
   now: number;
   initialTab?: Tab;
+  /** La pestaña, si la lleva quien la dibuja (⌥⌘1–3 de DevTools). */
+  tab?: Tab;
+  onTabChange?: (tab: Tab) => void;
 }) {
   const language = useAppStore((s) => s.language);
   const showToast = useAppStore((s) => s.showToast);
   const tr = makeTr(language);
-  const [tab, setTab] = useState<Tab>(initialTab);
+  const [ownTab, setOwnTab] = useState<Tab>(initialTab);
+  const tab = tabProp ?? ownTab;
+  const setTab = (next: Tab) => {
+    setOwnTab(next);
+    onTabChange?.(next);
+  };
   const [pretty, setPretty] = useState(true);
   const [copied, flash] = useFlash();
   const tabRefs = useRef<Record<Tab, HTMLButtonElement | null>>({ body: null, headers: null, request: null });

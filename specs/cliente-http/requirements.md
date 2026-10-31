@@ -1,6 +1,6 @@
 # Cliente HTTP — Requirements
 
-Estado: en curso. El enfoque y las decisiones del diseño los aprobó Jorge el 31 oct 2026. El PR 1 (la extensión en las notas) está implementado; falta el PR 2 (la herramienta de DevTools).
+Estado: en curso. El enfoque y las decisiones del diseño los aprobó Jorge el 31 oct 2026. Los dos PR están implementados: el 1 (la extensión en las notas) y el 2 (la herramienta de DevTools). Faltan las pruebas en el navegador y en la app de QA.
 
 ## Contexto
 

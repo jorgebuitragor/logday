@@ -221,11 +221,18 @@ Las teclas salen de `shortcut(spec)`. En macOS se ven como ⇧⌘F, ⌥⌘↓…
 | help.k.clear | `mod+shift+backspace` | Limpiar la entrada | Clear the input |
 | help.k.tabs | `alt+mod+1` … `alt+mod+4` | Cambiar de pestaña en Comparar listas | Switch tabs in Compare lists |
 
+Con la herramienta Cliente HTTP disponible (specs/cliente-http HT27), dos filas cambian de texto (`withHttp` en `HELP_SHORTCUTS`), porque esa herramienta también envía con ⌘↵ y tiene pestañas en la respuesta:
+
+| Clave | En lugar de | es | en |
+|---|---|---|---|
+| help.k.runHttp | help.k.run | Procesar, generar o enviar la petición | Process, generate or send the request |
+| help.k.tabsHttp | help.k.tabs | Cambiar de pestaña en Comparar listas y en la respuesta de Cliente HTTP | Switch tabs in Compare lists and in the HTTP client response |
+
 Base: `devtools/View.tsx:197-235`, `ui/OutputPanel.tsx:46,53`, `ui/CodeImage.tsx:84`, `views/ListCompareTool.tsx:95`.
 
 **DevTools: "En esta herramienta"** (`TOOL_HELP`)
 
-Solo estas 8 herramientas lo tienen. En las demás, la descripción bajo el título basta.
+Solo estas 9 herramientas lo tienen. En las demás, la descripción bajo el título basta. La de Cliente HTTP solo se ve con esa extensión activa.
 
 | Clave | es | en |
 |---|---|---|
@@ -251,6 +258,9 @@ Solo estas 8 herramientas lo tienen. En las demás, la descripción bajo el tít
 | barcode.help2 | En EAN, UPC e ITF-14 puedes omitir el dígito de control: se calcula y se agrega al final. | In EAN, UPC and ITF-14 you can leave out the check digit: it's calculated and added at the end. |
 | jwt.help1 | Pega el token; el prefijo «Bearer» se quita solo. | Paste the token; the "Bearer" prefix is removed. |
 | jwt.help2 | Se decodifica, pero la firma no se verifica: decodificarlo no prueba que sea auténtico. | It's decoded, but the signature isn't verified: decoding doesn't prove it's authentic. |
+| http.help1 | Escribe las cabeceras una por línea, como Nombre: valor. Las variables van como {{baseUrl}} y salen del entorno activo, que eliges arriba a la derecha. | Write one header per line, as Name: value. Variables go as {{baseUrl}} and come from the active environment, which you pick at the top right. |
+| http.help2 | Con un entorno protegido, POST, PUT, PATCH y DELETE piden confirmación antes de enviarse. También se pide si un secreto va a un host que no es de confianza. | With a protected environment, POST, PUT, PATCH and DELETE ask for confirmation before they are sent. So does a secret going to a host that isn't trusted. |
+| http.help3 | «Guardar en una nota» crea una nota con la petición en un bloque http, con los nombres de las variables y nunca sus valores. Lo que escribes aquí y la respuesta solo viven en la memoria. | "Save to a note" creates a note with the request in an http block, with the variable names and never their values. What you type here and the response only live in memory. |
 
 Base: `tools/regex.ts:28` y `MAX_MATCHES`, `tools/regexRunner.ts:7` (`REGEX_TIMEOUT_MS`), `tools/cron.ts:76-90`, `tools/lists.ts:14-16,103-125`, e `i18n.ts` (`devtools`: `diffEol`, `qrMarginLow`, `barcodeCheckDigit`, `jwtNotVerified`, `jwtBearerRemoved`).
 

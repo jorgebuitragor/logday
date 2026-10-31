@@ -28,12 +28,12 @@ export async function readAllNotes(): Promise<Note[]> {
   return lists.flat().sort((a, b) => (b.updated || b.created).localeCompare(a.updated || a.created));
 }
 
-/** Crea una nota en la raíz con la salida en un bloque de código. */
+/** Crea una nota en la raíz con la salida en un bloque de código. Una
+ *  línea que empiece por comillas invertidas cerraría la cerca, así que
+ *  lleva una más que la más larga (`formatFence`): un cuerpo http con ```
+ *  queda en una de 4 (specs/cliente-http, Interfaz §3). */
 export function saveOutputAsNote(title: string, language: string, output: string): Promise<Note> {
-  // Una línea que empiece por ``` cerraría la cerca: se usa una más larga.
-  const fence = /^```/m.test(output) ? '````' : '```';
-  const content = fence === '```' ? formatFence(language, output) : `${fence}${language}\n${output}\n${fence}`;
-  return useAppStore.getState().createNoteWith({ title, content });
+  return useAppStore.getState().createNoteWith({ title, content: formatFence(language, output) });
 }
 
 export async function openNote(note: Note) {

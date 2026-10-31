@@ -1,6 +1,6 @@
 # Cliente HTTP — Design
 
-Estado: aprobado (31 oct 2026); el PR 1 está implementado. Lo que está marcado como **nuevo** no existía en `develop` (9213ed2) cuando se escribió; todo lo demás se comprobó contra esa versión. Lo que la implementación hizo distinto está en `tasks.md`, "Diferencias con el diseño".
+Estado: aprobado (31 oct 2026); los PR 1 y 2 están implementados. Lo que está marcado como **nuevo** no existía en `develop` (9213ed2) cuando se escribió; todo lo demás se comprobó contra esa versión. Lo que la implementación hizo distinto está en `tasks.md`, "Diferencias con el diseño".
 
 ## Arquitectura
 

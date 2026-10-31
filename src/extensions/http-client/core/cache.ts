@@ -54,6 +54,13 @@ export class ResponseCache<T> {
     return { entry, stale: entry.source !== source };
   }
 
+  /** La última respuesta de esa clave, sea de la petición que sea, sin
+   *  marcarla como reciente. La usa DevTools, que tiene una sola petición:
+   *  al cambiar la URL, la respuesta anterior se sigue viendo como vieja. */
+  peek(key: string): CacheEntry<T> | null {
+    return this.map.get(key) ?? null;
+  }
+
   set(key: string, entry: CacheEntry<T>): void {
     this.delete(key);
     this.map.set(key, entry);

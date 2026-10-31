@@ -146,3 +146,7 @@ Además, del diseño:
 - HTTP/2 y el proxy del sistema en macOS. Sí se respetan `HTTP_PROXY` y `HTTPS_PROXY`.
 - Historial de peticiones enviadas.
 - Enviar desde Web o Mobile. Allí el bloque se ve como código (HT8).
+
+## Cambio del 31 oct 2026
+
+- HT31. SI la respuesta trae el valor de un secreto (en las cabeceras o en un cuerpo de texto; por ejemplo, un servidor de eco), Rust DEBERÁ cambiarlo por su marca `{{$secret:<clave>}}` antes de devolverla, para que nunca llegue al webview ni se muestre. Lo pidió Jorge tras probar con httpbin.

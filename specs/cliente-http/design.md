@@ -303,7 +303,7 @@ pub fn http_client_cancel(request_id: String) -> bool;
    - Sin `Content-Type`, es `Text` si es UTF-8 válido y no tiene bytes NUL.
    - El texto se decodifica con `from_utf8_lossy`, y `lossy` dice si hubo reemplazos.
    - Lo demás es `Binary` (base64). HEAD, 204 y 304 dan `Empty`.
-7. **Enmascarar:** cada valor de secreto que aparezca en `final_url` o en un `Location` vuelve a su marca. El cuerpo no se toca: vive solo en memoria (HT11).
+7. **Enmascarar:** cada valor de secreto que aparezca en `final_url`, en un `Location`, en las cabeceras de la respuesta o en un cuerpo de texto vuelve a su marca (`mask_response`). Un cuerpo binario no se toca. (Cambio del 31 oct 2026: al principio el cuerpo no se tocaba; con httpbin, que devuelve lo recibido, el token aparecía en pantalla y Jorge pidió ocultarlo también ahí.)
 8. **Cancelar:**
    - El trabajo corre en `tauri::async_runtime::spawn`. Su `JoinHandle` se guarda en un `Mutex<HashMap<String, JoinHandle>>` por `request_id`, y `http_client_cancel` lo aborta.
    - Al abortarse se suelta la conexión, y el comando responde `cancelled`.
@@ -374,7 +374,7 @@ La herramienta vive en DevTools porque usa su marco (`ToolFrame`, el contexto, l
 | Mandar a producción por error | Entorno protegido (HT20), y el chip del entorno siempre a la vista en la barra. |
 | Que una nota creada por un agente o pegada de otro lado se lleve un token | Confirmación de secretos a un host ajeno (HT21), en el webview y en Rust. Los secretos no se siguen en redirecciones a otro host (HT24). |
 | Secretos en la nota o en el sync | Solo los nombres van en la nota. Los valores no secretos están en `config.json` (local), y los secretos en el llavero (HT18). |
-| Secretos en la interfaz | El webview nunca tiene el valor. La petición enviada muestra la pista (`••••…a1b2`), y `final_url` vuelve a enmascararse en Rust. |
+| Secretos en la interfaz | El webview nunca tiene el valor. La petición enviada muestra la pista (`••••…a1b2`), y `final_url`, las cabeceras y el cuerpo de texto de la respuesta vuelven a enmascararse en Rust. |
 | Secretos en los errores o en los logs | Los errores llevan solo un código y el host (HT26). |
 | HTML o SVG malicioso en la respuesta | El HTML se muestra como texto. Las imágenes van en `<img>`, que no ejecuta scripts. Nada pasa por `dangerouslySetInnerHTML`. |
 | Respuestas enormes | Tope en Rust (HT24) y en lo que se dibuja (HT12). |

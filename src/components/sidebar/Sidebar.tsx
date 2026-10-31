@@ -44,6 +44,7 @@ import { FolderTreeItem } from './FolderTreeItem';
 import { NoteTree } from './NoteTree';
 import { SidebarStatusSlots } from './ExtensionSections';
 import { SectionNav } from './SectionNav';
+import { SidebarHelpButton } from '../help/SidebarHelp';
 import { useSectionItems } from './sections';
 import { ProjectTreeItem } from './ProjectTreeItem';
 import { RootDropLine } from './RootDropLine';
@@ -461,11 +462,14 @@ export function Sidebar() {
     { id: 'calendar', label: t(language, 'sidebar', 'viewCalendar'), Icon: Calendar },
   ];
 
+  const footerRow = 'relative flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]';
   const updateDot = (updateStatus === 'available' || updateStatus === 'downloading' || updateStatus === 'ready');
   const columnBtn = 'rounded-lg p-2 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500';
-  // Buscar y Opciones, fijos al pie de la columna (NS4, design §1).
+  // Ayuda, Buscar y Opciones, fijos al pie de la columna (NS4, design §1;
+  // specs/ayuda-contextual AY24).
   const columnFooter = (
     <>
+      <SidebarHelpButton variant="column" className={columnBtn} />
       <button onClick={toggleSearch} className={columnBtn} title={t(language, 'sidebar', 'search')} aria-label={t(language, 'sectionNav', 'search')}>
         <Search size={18} />
       </button>
@@ -480,8 +484,10 @@ export function Sidebar() {
     // NS4: en los dos estilos, la columna de íconos sola. Las secciones salen
     // de la misma lista que el menú expandido; las vistas de Tareas van
     // debajo, dentro del mismo scroll, y lo que no cabe pasa a "Más".
+    // `data-help-edge` (HELP_EDGE_ATTR): la ayuda se abre a la derecha de
+    // este borde, fuera del menú (specs/ayuda-contextual AY28).
     return (
-      <div className="flex h-full w-12 flex-col items-center gap-2 border-r border-[var(--border)] bg-[var(--bg-panel)] py-3">
+      <div data-help-edge="" className="flex h-full w-12 flex-col items-center gap-2 border-r border-[var(--border)] bg-[var(--bg-panel)] py-3">
         <button
           onClick={toggleSidebar}
           className={columnBtn}
@@ -534,7 +540,7 @@ export function Sidebar() {
   );
 
   return (
-    <div className="flex h-full shrink-0 border-r border-[var(--border)] bg-[var(--bg-panel)] text-xs" style={{ width: 'var(--logday-sidebar-w)' }}>
+    <div data-help-edge="" className="flex h-full shrink-0 border-r border-[var(--border)] bg-[var(--bg-panel)] text-xs" style={{ width: 'var(--logday-sidebar-w)' }}>
       {/* Barra de íconos (NS2): la columna de 44 px con Inicio, las
           secciones y, al pie, Buscar y Opciones. */}
       {isIconBar && (
@@ -1297,11 +1303,12 @@ export function Sidebar() {
       <div className="mt-auto border-t border-[var(--border)] px-2 py-2 space-y-0.5">
         {/* R26: el estado de las extensiones (el contador del Pomodoro). */}
         <SidebarStatusSlots collapsed={false} />
-        {/* En la Barra de íconos, Opciones está en la columna. */}
+        {/* En la Barra de íconos, Ayuda y Opciones están en la columna. */}
+        {!isIconBar && <SidebarHelpButton variant="row" className={footerRow} />}
         {!isIconBar && (
           <button
             onClick={toggleSettings}
-            className="relative flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+            className={footerRow}
           >
             <span className="relative">
               <Settings size={14} />

@@ -70,7 +70,7 @@ Anchos reales, con la ventana mínima de 800×600 (`tauri.conf.json`):
 │             ╭───────────╮                    │ de foco                     │
 │            │   18:42     │   anillo 16rem     │ ─────────────────────────── │
 │             ╰───────────╯                    │ 09:10  25 min  Informe Q3   │
-│        Bloque 2 de 4  ● ● ○ ○                │ 09:40  25 min  Sin tarea    │
+│  Bloque 2 de 4 ● ● ○ ○ [≡ Reiniciar el ciclo]│ 09:40  25 min  Sin tarea    │
 │                                              │ 10:15  25 min  Informe Q3   │
 │    [ ‖ Pausar ]  [⏭ Saltar]  [↺]             │ …                           │
 │                                              │                             │
@@ -80,7 +80,7 @@ Anchos reales, con la ventana mínima de 800×600 (`tauri.conf.json`):
 │  │ Trabajo · En curso                   │    │                             │
 │  └──────────────────────────────────────┘    │                             │
 │  ✓ Terminó el pomodoro. Toca un descanso…    │                             │
-│                                              │ Reiniciar el ciclo          │
+│                                              │                             │
 └──────────────────────────────────────────────┴─────────────────────────────┘
 ```
 
@@ -141,7 +141,8 @@ Va debajo del anillo: `flex items-center gap-2 text-xs text-[var(--text-secondar
   - pendiente: `bg-[var(--phase-track)]`.
   Con 10 bloques caben de sobra (unos 112 px).
 - Después del último bloque antes del largo, el `title` del texto dice "Después de este bloque toca el descanso largo".
-- "Reiniciar el ciclo" va como botón de texto `text-[11px] text-[var(--text-hint)] hover:text-[var(--text-primary)] rounded px-1 ${FOCUS_RING}`. En el layout ancho, al pie de "Hoy"; en el angosto, al final de la fila de ciclo. Sin confirmación: no borra el historial, solo pone el contador de bloques en cero.
+- "Reiniciar el ciclo" va al final de la fila de ciclo, en todos los anchos y una sola vez: `flex items-center gap-1 rounded-md border border-[var(--border-card)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] ${FOCUS_RING}`, con `ListRestart size={12}`. Sin confirmación: no borra el historial, solo pone el contador de bloques en cero.
+  - *Cambio del 31 oct 2026:* antes era texto gris sin borde y, en el layout ancho, se iba al pie de "Hoy"; Jorge no lo encontró al probar la app de QA (PM2).
 
 #### 2.6 Controles
 
@@ -250,18 +251,30 @@ Aviso
       Dos tonos cortos: bajan al terminar el trabajo y suben al terminar el descanso.
   Las notificaciones del sistema siguen la opción de Opciones → General.
 
+Dónde se ve
+  (◉) Mostrar el tiempo en la barra de menús      (Windows y Linux: "en la bandeja del sistema")
+      Aunque lo apagues, el menú del ícono sigue con Pausar, Reanudar y Saltar.
+  (◉) Mostrar el contador en el menú lateral
+
 [Restablecer valores]   (solo si algo difiere de los valores por defecto)
+─────────────────────────────────────────────
+Restablecer
+  Detiene el temporizador, devuelve estas opciones a los valores por defecto
+  y borra el historial de pomodoros de este equipo.
+  [↺ Restablecer el Pomodoro]                      (texto rojo)
 ```
 
 - Los números usan `NumberField` (`w-16`, `tabular-nums`), que ajusta al rango al salir del campo. El `aria-label` es la etiqueta completa ("Trabajo, en minutos").
 - Los interruptores usan `Toggle` (`ToggleSwitch size="sm"` dentro de `<label>`).
 - Los subtítulos ("Duraciones", "Arranque", "Aviso") van en `text-[var(--text-secondary)] font-medium`, como "Atajo de teclado" en Captura rápida.
 - "Probar" es `SECONDARY_CLS` con `Volume2 size={13}`. Toca el sonido de fin de trabajo y se deshabilita con el sonido apagado.
-- "Restablecer valores" es `SECONDARY_CLS`. Sin confirmación: son cuatro números y dos interruptores.
+- "Restablecer valores" es `SECONDARY_CLS`. Sin confirmación: son cuatro números y unos interruptores.
+- **Dónde se ve (PM15, 31 oct 2026):** dos `Toggle`. El texto del primero depende de la plataforma (`isMac`): en macOS el tiempo va en la barra de menús; en Windows (tooltip) y Linux (etiqueta del AppIndicator), "en la bandeja del sistema".
+- **Restablecer (PM16, 31 oct 2026):** separado con `border-t`, con el subtítulo, una línea de ayuda y el botón con `RotateCcw size={13}` en texto `red-400` sobre borde normal, como "Quitar configuración" de Opciones → Extensiones. Abre `ConfirmDeleteModal` (`zIndex={Z_MODAL_NESTED}`, encima de Opciones) con `useConfirmDelete(confirmDestructiveActions)`: con la confirmación global apagada, restablece directo. La confirmación dice qué pasa y qué se borra: "Se detiene el temporizador y vuelve a Listo: bloque 1 de trabajo, sin tarea. Todas las opciones del Pomodoro vuelven a sus valores por defecto y se borra el historial de pomodoros (los últimos 14 días, guardados solo en este equipo). Tus tareas y el daily no cambian." Al terminar, un toast "Pomodoro restablecido." (o el error).
 
 ### 3. Contador del menú lateral (PM10)
 
-**Cuándo se ve:** mientras haya una fase corriendo o en pausa (PM10) y, además, en el estado **Terminado**, hasta que se inicie o se salte la siguiente fase (ver decisión D1). En el estado Listo inicial no se ve. Al desactivar la extensión desaparece (PM13).
+**Cuándo se ve:** mientras haya una fase corriendo o en pausa (PM10) y, además, en el estado **Terminado**, hasta que se inicie o se salte la siguiente fase (ver decisión D1). En el estado Listo inicial no se ve. Al desactivar la extensión desaparece (PM13). Con "Mostrar el contador en el menú lateral" apagado (PM15) no se ve nunca, y no ocupa sitio.
 
 **Dónde:** abajo, **justo encima de "Opciones"**, tanto expandido como colapsado.
 - **Por qué abajo:** el menú crece hacia arriba desde un borde fijo. Nada de lo de arriba se mueve: ni la fila de secciones ni el árbol de proyectos. Solo el área con scroll del medio pierde unos 40 px. "Opciones" y la ruta de la carpeta quedan donde estaban, pegados al pie.
@@ -342,7 +355,10 @@ Como el fin lo vigila Rust (PM5), Rust también actualiza el título y el toolti
 | Linux | `set_title` (la etiqueta del AppIndicator, que solo algunos escritorios muestran) y, además, la entrada de estado del menú (4.2) | Igual, con `‖` | Nada |
 
 - **Sin emoji 🍅 en el título** (decisión D3): la barra de menús de macOS es monocroma, el ícono ya dice que es Logday y un emoji de color llama más la atención que cualquier otro elemento de la barra. Solo números, y `‖` para la pausa.
-- En Windows y Linux el tooltip cambia cada segundo; en macOS, el título también. En macOS los dígitos de la barra son proporcionales, así que el título puede moverse 1 o 2 px. Es aceptable; la alternativa es la D4.
+- En Windows y Linux el tooltip cambia cada segundo; en macOS, el título también.
+- **Ancho fijo (31 oct 2026, PM11):** la fuente de la barra de menús tiene dígitos proporcionales, y el título movía el ícono cada segundo (a Jorge le distraía). Al crear la bandeja, `use_fixed_digits` pone en el botón la fuente del sistema con dígitos de ancho fijo (`NSFont monospacedDigitSystemFontOfSize:weight:`, regular, del tamaño que tenía); `setTitle:` la conserva. Además, los minutos se rellenan con U+2007 (espacio de cifra) hasta las cifras con que empezó la fase (`minuteDigits`): en una fase de 25 min, `10:00` → ` 9:59` no estrecha el título. Pasar a pausa (`‖ `) sí lo cambia, una vez.
+- Sin fase en curso, en macOS se pone un título vacío: tray-icon 0.21 ignora `None` y dejaba el último tiempo.
+- Con "Mostrar el tiempo en la barra de menús" apagado (PM15), el frontend manda `showTime: false` y Rust no pone título y deja el tooltip en "Logday". La entrada de estado del menú sigue.
 - El tooltip de Windows tiene 128 caracteres como máximo: con el formato de arriba no se llega.
 
 #### 4.2 Menú
@@ -464,13 +480,12 @@ En claro, `--text-hint` da 4,4: igual que en DevTools, va solo en textos secunda
 - **Orden de foco:**
   1. sonido;
   2. Opciones;
-  3. botón principal;
-  4. Saltar;
-  5. Reiniciar la fase;
-  6. tarea (elegir, o abrir, cambiar y quitar);
-  7. "Reiniciar el ciclo";
+  3. "Reiniciar el ciclo" (en la fila de ciclo, desde el 31 oct 2026);
+  4. botón principal;
+  5. Saltar;
+  6. Reiniciar la fase;
+  7. tarea (elegir, o abrir, cambiar y quitar);
   8. la lista de "Hoy" (no tiene elementos con foco).
-  En el layout ancho, "Reiniciar el ciclo" está en la columna de la derecha, pero en el DOM va después de la tarea, para que el orden visual y el de foco coincidan de arriba abajo y de izquierda a derecha.
 - **Foco visible** en todo: `FOCUS_RING` (`focus-visible:ring-2 ring-indigo-500`), que `.theme-tinted` repinta con el acento.
 - **Menú lateral:** el contador son dos botones normales en el orden de tabulación, justo antes de Opciones. En el colapsado, antes de Buscar.
 
@@ -639,6 +654,22 @@ pomodoro: {
   setSoundTest: 'Probar',
   setNotifHint: 'Las notificaciones del sistema siguen la opción de Opciones → General.',
   setReset: 'Restablecer valores',
+  // Dónde se ve (PM15)
+  setShowIn: 'Dónde se ve',
+  setTrayTimeMac: 'Mostrar el tiempo en la barra de menús',
+  setTrayTime: 'Mostrar el tiempo en la bandeja del sistema',
+  setTrayTimeHint: 'Aunque lo apagues, el menú del ícono sigue con Pausar, Reanudar y Saltar.',
+  setSidebarCounter: 'Mostrar el contador en el menú lateral',
+  // Restablecer (PM16)
+  setResetSection: 'Restablecer',
+  setResetAllDesc: 'Detiene el temporizador, devuelve estas opciones a los valores por defecto y borra el historial de pomodoros de este equipo.',
+  setResetAll: 'Restablecer el Pomodoro',
+  resetTitle: '¿Restablecer el Pomodoro?',
+  resetMessage: 'Se detiene el temporizador y vuelve a Listo: bloque 1 de trabajo, sin tarea. Todas las opciones del Pomodoro vuelven a sus valores por defecto y se borra el historial de pomodoros (los últimos 14 días, guardados solo en este equipo). Tus tareas y el daily no cambian.',
+  resetConfirm: 'Restablecer',
+  resetCancel: 'Cancelar',
+  resetDone: 'Pomodoro restablecido.',
+  resetError: 'No se pudo restablecer el Pomodoro.',
   // Menú lateral
   sidebarOpen: '{phase}, quedan {min} min. Abrir Pomodoro.',
   sidebarOpenLessThanMin: '{phase}, queda menos de 1 min. Abrir Pomodoro.',
@@ -779,6 +810,20 @@ pomodoro: {
   setSoundTest: 'Play',
   setNotifHint: 'System notifications follow the setting in Settings → General.',
   setReset: 'Reset to defaults',
+  setShowIn: 'Where it shows',
+  setTrayTimeMac: 'Show the time in the menu bar',
+  setTrayTime: 'Show the time in the system tray',
+  setTrayTimeHint: 'Even when it’s off, the icon’s menu still has Pause, Resume and Skip.',
+  setSidebarCounter: 'Show the counter in the sidebar',
+  setResetSection: 'Reset',
+  setResetAllDesc: 'Stops the timer, sets these options back to their defaults and deletes the pomodoro history on this computer.',
+  setResetAll: 'Reset Pomodoro',
+  resetTitle: 'Reset Pomodoro?',
+  resetMessage: 'The timer stops and goes back to Ready: focus block 1, with no task. All Pomodoro options go back to their defaults and the pomodoro history is deleted (the last 14 days, stored only on this computer). Your tasks and daily don’t change.',
+  resetConfirm: 'Reset',
+  resetCancel: 'Cancel',
+  resetDone: 'Pomodoro reset.',
+  resetError: 'Couldn’t reset Pomodoro.',
   sidebarOpen: '{phase}, {min} min left. Open Pomodoro.',
   sidebarOpenLessThanMin: '{phase}, less than 1 min left. Open Pomodoro.',
   sidebarOpenPaused: '{phase} paused, {time} left. Open Pomodoro.',
@@ -890,7 +935,7 @@ Notas para traducir y armar:
 | D1 | ¿El contador del menú sigue visible tras el fin de una fase, mientras la siguiente espera a que la inicies? PM10 dice "en curso o en pausa". | **Sí**, en estado Terminado, con "Descanso listo" y el botón de iniciar. Si desaparece justo al terminar, el menú salta en el momento en que más se mira, y se pierde el acceso rápido a "Iniciar el descanso". Desaparece al saltar, al reiniciar el ciclo o al desactivar. |
 | D2 | ¿La bandeja ofrece "Iniciar un pomodoro" sin nada en curso? PM11 dice "sin fase en curso, no se muestra nada". | **Sí, solo esa entrada** (sin estado ni título). Arrancar desde la bandeja sin abrir la ventana es el uso más común. El título y el tooltip sí quedan vacíos, como dice PM11. |
 | D3 | ¿Emoji 🍅 en el título de macOS? | **No.** Solo números, y `‖` en pausa. La barra de menús es monocroma y el ícono ya identifica a Logday. |
-| D4 | ¿El título de macOS cambia cada segundo (`18:42`) o cada minuto (`18 min`)? | **Cada segundo**, como pide PM11 y como hace cualquier pomodoro. El costo es que el título baila 1 o 2 px por los dígitos proporcionales. Si molesta, se cambia a minutos sin tocar nada más. |
+| D4 | ¿El título de macOS cambia cada segundo (`18:42`) o cada minuto (`18 min`)? | **Cada segundo**, como pide PM11 y como hace cualquier pomodoro. El costo es que el título baila 1 o 2 px por los dígitos proporcionales. Si molesta, se cambia a minutos sin tocar nada más. *Resuelto el 31 oct 2026:* molestaba; sigue cada segundo, pero con dígitos de ancho fijo (§4.1). |
 | D5 | Fin con la app cerrada: ¿cuenta el bloque y se avisa? | **Cuenta siempre. Se avisa solo si el fin fue hace menos de 5 min**; si no, solo la línea en la vista. La siguiente fase nunca arranca sola al recuperar. |
 | D6 | ¿El ciclo (2 de 4) se reinicia al cambiar de día? | **Sí, si no hay nada corriendo ni en pausa** al abrir Logday o al cruzar la medianoche. Un descanso largo que toca a primera hora por los bloques de ayer no tiene sentido. |
 | D7 | Tarea completada a mitad de bloque: ¿el siguiente bloque sigue con ella? | **No, pasa a "Sin tarea"**, con la ayuda en la tarjeta. Seguir sumando bloques a una tarea hecha ensucia el historial. El selector solo ofrece pendientes y en curso. |

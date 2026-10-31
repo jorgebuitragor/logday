@@ -98,6 +98,8 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     apps: ['desktop'],
     // D11: todo corre en el equipo, así que no lleva el aviso de R6.
     view: true,
+    // D17: la página con el orden y la visibilidad de las herramientas.
+    settings: true,
     load: () => import('./devtools').then((m) => m.default),
   },
   {

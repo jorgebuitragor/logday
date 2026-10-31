@@ -13,9 +13,22 @@ export const INPUT_CLS =
 
 export const ICON_BTN = `flex items-center gap-1.5 rounded-lg p-1.5 text-xs text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent ${FOCUS_RING}`;
 
+/** Para los botones de mover de una lista reordenable: en un extremo van
+ *  con `aria-disabled` y no `disabled`, porque al desactivarse el foco caía
+ *  al `body` (WCAG 2.4.3, specs/devtools design §G.3). Imita el desactivado. */
+export const SOFT_DISABLED = 'aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent aria-disabled:hover:text-[var(--text-hint)]';
+
 export const PANEL_TITLE = 'text-[10px] font-semibold uppercase tracking-widest text-[var(--text-hint)]';
 
 export const CHIP = 'rounded-full bg-[var(--bg-hover)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)]';
+
+/** Un enlace en línea: el acento de los enlaces de la app. En los temas
+ *  tintados `text-indigo-400` se repinta a `--accent` (App.css) y en el
+ *  claro se oscurece. Antes vivía en DevTools; la ayuda también lo usa. */
+export const TEXT_LINK = 'text-indigo-400 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded';
+
+/** Una tecla dibujada como `<kbd>`, la del recorrido y la ayuda. */
+export const KBD = 'rounded-md border border-[var(--border-card)] bg-[var(--bg-surface)] px-1.5 py-0.5 font-sans text-[10px] text-[var(--text-hint)]';
 
 /** Enviar del Cliente HTTP (specs/cliente-http, Interfaz §1.2): relleno con
  *  el acento del tema y el texto que contrasta con él (`--accent-on`), como

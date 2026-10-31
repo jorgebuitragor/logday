@@ -9,13 +9,13 @@ import { useAppStore } from '../../store/appStore';
 import type { Note } from '../../types/note';
 import { ConfirmDeleteModal } from '../../components/shared/ConfirmDeleteModal';
 import {
-  ALL_TOOLS, DEVTOOLS_ID, clearDrafts, queueLoad, readDevtoolsSettings, takePendingLoad, toolForBlock,
-  type NoteCodeBlock, type ToolId,
+  DEVTOOLS_ID, clearDrafts, queueLoad, readDevtoolsSettings, resolveToolList, takePendingLoad, toolForBlock,
+  type DevtoolsSettings, type DevtoolsSettingsPatch, type NoteCodeBlock, type ToolId,
 } from './model';
 import { openNote as openNoteInApp, saveOutputAsNote } from './notes';
 import { cancelRegex } from './tools/regexRunner';
 import { DevtoolsContext, type DevtoolsContextValue, type FocusTarget, type OptionValue, type ToolActions } from './ui/context';
-import { isMac, makeTr, shortDateTime, shortcutLabel, toolKey } from './ui/text';
+import { isMac, localeOf, makeTr, shortDateTime, shortcutLabel, toolKey } from './ui/text';
 import { PICKER_TOOLS } from './ui/meta';
 import { Spinner } from './ui/controls';
 import { ToolNav } from './ui/ToolNav';
@@ -54,12 +54,13 @@ const VIEWS: Record<ToolId, LazyTool> = {
 };
 
 export default function DevtoolsView() {
-  const { language, raw, update, showToast } = useAppStore(
+  const { language, raw, update, showToast, openExtensionSettings } = useAppStore(
     useShallow((s) => ({
       language: s.language,
       raw: s.extensions[DEVTOOLS_ID]?.settings,
       update: s.updateExtensionSettings,
       showToast: s.showToast,
+      openExtensionSettings: s.openExtensionSettings,
     })),
   );
   const settings = useMemo(() => readDevtoolsSettings(raw), [raw]);
@@ -97,14 +98,25 @@ export default function DevtoolsView() {
     [tool, update],
   );
 
-  const setOptions = useCallback(
-    (target: ToolId, patch: Record<string, OptionValue>) => {
+  const updateSettings = useCallback(
+    (make: (current: DevtoolsSettings) => DevtoolsSettingsPatch) => {
       // Se lee del store en el momento: dos cambios seguidos no se pisan.
-      const current = readDevtoolsSettings(useAppStore.getState().extensions[DEVTOOLS_ID]?.settings);
-      void update(DEVTOOLS_ID, { options: { ...current.options, [target]: { ...current.options[target], ...patch } } });
+      const patch = make(readDevtoolsSettings(useAppStore.getState().extensions[DEVTOOLS_ID]?.settings));
+      if (Object.keys(patch).length) void update(DEVTOOLS_ID, patch);
     },
     [update],
   );
+
+  const setOptions = useCallback(
+    (target: ToolId, patch: Record<string, OptionValue>) =>
+      updateSettings((current) => ({ options: { ...current.options, [target]: { ...current.options[target], ...patch } } })),
+    [updateSettings],
+  );
+
+  const openSettings = useCallback(() => {
+    setSwitcherOpen(false);
+    openExtensionSettings(DEVTOOLS_ID);
+  }, [openExtensionSettings]);
 
   const copyText = useCallback(
     async (text: string) => {
@@ -176,6 +188,8 @@ export default function DevtoolsView() {
       mac,
       settings,
       setOptions,
+      updateSettings,
+      openSettings,
       announce,
       copyText,
       saveNote,
@@ -196,7 +210,7 @@ export default function DevtoolsView() {
       switcherOpen,
       setSwitcherOpen,
     }),
-    [tool, language, tr, mac, settings, setOptions, announce, copyText, saveNote, openNote, loaded, goTo, switcherOpen],
+    [tool, language, tr, mac, settings, setOptions, updateSettings, openSettings, announce, copyText, saveNote, openNote, loaded, goTo, switcherOpen],
   );
 
   // Atajos (design §7): todos con ⌘⇧ (Ctrl+Shift) para no chocar con los
@@ -208,9 +222,13 @@ export default function DevtoolsView() {
     const key = e.key.toLowerCase();
     let action: (() => void) | undefined;
     if (e.altKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
-      const i = ALL_TOOLS.indexOf(tool);
-      const step = e.key === 'ArrowDown' ? 1 : -1;
-      action = () => goTo(ALL_TOOLS[(i + step + ALL_TOOLS.length) % ALL_TOOLS.length]);
+      // D22: en el orden que se ve, con las de los grupos plegados y sin
+      // las ocultas. Si la activa está oculta, ↓ va a la primera y ↑ a la última.
+      const { order } = resolveToolList(settings, (t) => tr(toolKey(t, 'name')), localeOf(language));
+      const i = order.indexOf(tool);
+      const down = e.key === 'ArrowDown';
+      const next = i < 0 ? order[down ? 0 : order.length - 1] : order[(i + (down ? 1 : -1) + order.length) % order.length];
+      action = () => goTo(next);
     } else if (e.altKey && /^Digit[1-4]$/.test(e.code) && a.tab) {
       const index = Number(e.code.slice(5)) - 1;
       action = () => a.tab?.(index);

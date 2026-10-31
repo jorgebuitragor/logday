@@ -30,8 +30,10 @@ export interface TooltipHandlers {
 }
 
 /** NS16: el tooltip de los botones de la columna. Con el puntero, a los
- *  300 ms; con el foco del teclado, enseguida. Se va al salir o con Esc. */
-export function useNavTooltip(enabled: boolean) {
+ *  300 ms; con el foco del teclado, enseguida. Se va al salir o con Esc.
+ *  `tooltipId`: otro id para un tooltip que puede verse a la vez que el de
+ *  las secciones (el de "Ayuda", al pie de la columna). */
+export function useNavTooltip(enabled: boolean, tooltipId: string = SECTION_TOOLTIP_ID) {
   const [tip, setTip] = useState<TooltipState | null>(null);
   const timer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -46,7 +48,7 @@ export function useNavTooltip(enabled: boolean) {
   const bind = (item: { id: string; label: string; shortcut?: string }): TooltipHandlers => {
     if (!enabled) return {};
     return {
-      'aria-describedby': tip?.id === item.id ? SECTION_TOOLTIP_ID : undefined,
+      'aria-describedby': tip?.id === item.id ? tooltipId : undefined,
       onPointerEnter: (e: React.PointerEvent<HTMLElement>) => {
         const el = e.currentTarget;
         window.clearTimeout(timer.current);
@@ -63,11 +65,11 @@ export function useNavTooltip(enabled: boolean) {
   return { tip, hide, bind };
 }
 
-export function NavTooltip({ tip }: { tip: TooltipState | null }) {
+export function NavTooltip({ tip, id = SECTION_TOOLTIP_ID }: { tip: TooltipState | null; id?: string }) {
   if (!tip) return null;
   return (
     <div
-      id={SECTION_TOOLTIP_ID}
+      id={id}
       role="tooltip"
       className="pointer-events-none fixed z-50 flex items-center gap-2 whitespace-nowrap rounded-md border border-[var(--border-card)] bg-[var(--bg-elevated)] px-2 py-1 text-[11px] text-[var(--text-primary)] shadow-lg"
       style={{ left: tip.rect.right + 8, top: (tip.rect.top + tip.rect.bottom) / 2, transform: 'translateY(-50%)' }}

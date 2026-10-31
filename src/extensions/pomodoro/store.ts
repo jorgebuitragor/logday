@@ -12,7 +12,7 @@ import { readAllTasks } from '../../lib/allTasks';
 import type { Task } from '../../types/task';
 import {
   POMODORO_ID, finish, finishKey, initialTimer, milestoneCrossed, phaseMinutes, pause as pauseTimer,
-  pruneHistory, readHistory, readOptions, readTimer, remainingOf, restartCycle as restartCycleTimer,
+  pruneHistory, readHistory, readOptions, readTimer, remainingOf, resetSettings, restartCycle as restartCycleTimer,
   restartPhase as restartPhaseTimer, roundedMinutes, rolloverDay, setTask as setTaskTimer, skip as skipTimer,
   start as startTimer, type HistoryEntry, type PomodoroOptions, type TaskRef, type TimerState,
 } from './model';
@@ -207,6 +207,28 @@ export function chooseTask(task: TaskRef | null) {
   const tr = currentTr();
   announce(task ? tr('liveTask', { title: task.title }) : tr('liveTaskCleared'));
   void refreshTaskInfo();
+}
+
+/** Restablecer el Pomodoro (PM16), desde Opciones y tras confirmar: para
+ *  el temporizador (vuelve a Listo, en trabajo, con el ciclo en cero y sin
+ *  tarea), devuelve las opciones a los valores por defecto y borra el
+ *  historial. La vista, el contador y la bandeja se ponen al día enseguida.
+ *  Rechaza si no se pudo guardar, para que Opciones lo avise. */
+export async function resetPomodoro(): Promise<void> {
+  const now = Date.now();
+  const next = resetSettings(now);
+  // Una lectura de la tarea en curso ya no aplica.
+  taskSeq++;
+  usePomodoro.setState({
+    timer: next.timer, history: next.history, now, today: localISODate(new Date(now)), notice: null, taskInfo: { state: 'none' },
+  });
+  // `updateExtensionSettings` cambia el store de la app antes de escribir
+  // config.json, así que `syncNative` ya manda la bandeja con las opciones
+  // por defecto (Listo: sin título, "Iniciar un pomodoro").
+  const saved = useAppStore.getState().updateExtensionSettings(POMODORO_ID, next);
+  syncNative();
+  if (usePomodoro.getState().active) announce(currentTr()('resetDone'));
+  await saved;
 }
 
 export function updateOptions(patch: Partial<PomodoroOptions>) {

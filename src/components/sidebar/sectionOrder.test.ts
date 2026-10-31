@@ -202,13 +202,15 @@ describe('Buscar: "Ir a…" (NS19)', () => {
 });
 
 describe('config y migración (NS5)', () => {
-  it('sin estilo guardado, la Barra de íconos, aunque venga sidebarLabelsVisible', () => {
+  it('sin estilo guardado, la Lista; con los textos del menú apagados, la Barra de íconos', () => {
     const oldOn = { basePath: '/x', sidebarLabelsVisible: true } as Record<string, unknown>;
     const oldOff = { basePath: '/x', sidebarLabelsVisible: false } as Record<string, unknown>;
-    expect(parseSidebarStyle(oldOn.sidebarStyle)).toBe('icons');
-    expect(parseSidebarStyle(oldOff.sidebarStyle)).toBe('icons');
-    expect(parseSidebarStyle('list')).toBe('list');
-    expect(parseSidebarStyle('fila')).toBe('icons');
+    expect(parseSidebarStyle(undefined)).toBe('list');
+    expect(parseSidebarStyle(oldOn.sidebarStyle, oldOn.sidebarLabelsVisible)).toBe('list');
+    expect(parseSidebarStyle(oldOff.sidebarStyle, oldOff.sidebarLabelsVisible)).toBe('icons');
+    expect(parseSidebarStyle('icons', true)).toBe('icons');
+    expect(parseSidebarStyle('list', false)).toBe('list');
+    expect(parseSidebarStyle('fila')).toBe('list');
   });
 
   it('la lista guardada: descarta lo mal formado, Inicio y los repetidos', () => {

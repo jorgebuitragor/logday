@@ -25,6 +25,33 @@ export const PICKER_TOOLS: ReadonlySet<ToolId> = new Set<ToolId>([
   'qr', 'sql-list', 'list-compare',
 ]);
 
+/** "En esta herramienta" de la ayuda (specs/ayuda-contextual AY16): solo
+ *  las que tienen algo que la descripción bajo el título no dice. */
+export const TOOL_HELP: Partial<Record<ToolId, DevtoolsKey[]>> = {
+  regex: ['regex.help1', 'regex.help2', 'regex.help3'],
+  cron: ['cron.help1', 'cron.help2', 'cron.help3'],
+  'sql-list': ['sql-list.help1', 'sql-list.help2', 'sql-list.help3'],
+  'list-compare': ['list-compare.help1', 'list-compare.help2', 'list-compare.help3'],
+  diff: ['diff.help1', 'diff.help2', 'diff.help3'],
+  qr: ['qr.help1', 'qr.help2', 'qr.help3'],
+  barcode: ['barcode.help1', 'barcode.help2'],
+  jwt: ['jwt.help1', 'jwt.help2'],
+};
+
+/** Los atajos de la vista (View.tsx), en el orden de la ayuda. `sep` une
+ *  las teclas: "/" para una u otra, "…" para un rango. */
+export const HELP_SHORTCUTS: readonly { keys: string[]; label: DevtoolsKey; sep?: string }[] = [
+  { keys: ['mod+shift+F'], label: 'help.k.search' },
+  { keys: ['alt+mod+down', 'alt+mod+up'], label: 'help.k.move', sep: '/' },
+  { keys: ['mod+enter'], label: 'help.k.run' },
+  { keys: ['mod+shift+C'], label: 'help.k.copy' },
+  { keys: ['mod+shift+S'], label: 'help.k.save' },
+  { keys: ['mod+shift+O'], label: 'help.k.open' },
+  { keys: ['mod+shift+X'], label: 'help.k.swap' },
+  { keys: ['mod+shift+backspace'], label: 'help.k.clear' },
+  { keys: ['alt+mod+1', 'alt+mod+4'], label: 'help.k.tabs', sep: '…' },
+];
+
 /** El mensaje de un error de `ToolResult`, con su línea y columna si las
  *  trae ("Línea 3, columna 14: …"). */
 export function errorText(tr: Tr, error: ToolError, vars: Record<string, string | number> = {}): string {

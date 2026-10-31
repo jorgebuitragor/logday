@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import {
-  Bell, BellOff, CircleCheck, ExternalLink, Hourglass, ListTodo, Pause, Play, Replace, RotateCcw, ShieldCheck,
+  Bell, BellOff, CircleCheck, ExternalLink, Hourglass, ListRestart, ListTodo, Pause, Play, Replace, RotateCcw, ShieldCheck,
   SkipForward, SlidersHorizontal, TriangleAlert, X,
 } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
@@ -83,13 +83,17 @@ export default function PomodoroView() {
   };
 
   const busy = timer.status === 'running' || timer.status === 'paused';
-  const restartCycleBtn = (cls: string) => (
+  // Un solo "Reiniciar el ciclo", junto al ciclo y con borde, en todos los
+  // anchos: antes era texto gris de 11 px que, en el layout ancho, se iba al
+  // pie de "Hoy", y Jorge no lo encontró al probar la app de QA.
+  const restartCycleBtn = (
     <button
       type="button"
       onClick={restartCycle}
       title={tr('restartCycleTitle')}
-      className={`${cls} rounded px-1 text-[11px] text-[var(--text-hint)] hover:text-[var(--text-primary)] ${FOCUS_RING}`}
+      className={`flex items-center gap-1 rounded-md border border-[var(--border-card)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] ${FOCUS_RING}`}
     >
+      <ListRestart size={12} aria-hidden />
       {tr('restartCycle')}
     </button>
   );
@@ -109,7 +113,7 @@ export default function PomodoroView() {
       <div className="grid flex-1 content-start gap-6 px-5 py-6 @4xl/pomodoro:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="flex flex-col items-center gap-5">
           <Ring timer={timer} now={now} o={o} tr={tr} language={language} today={today} />
-          <CycleRow timer={timer} o={o} tr={tr} extra={restartCycleBtn('@4xl/pomodoro:hidden')} />
+          <CycleRow timer={timer} o={o} tr={tr} extra={restartCycleBtn} />
           <Controls timer={timer} tr={tr} mac={mac} busy={busy} />
           <TaskCard
             tr={tr}
@@ -123,7 +127,7 @@ export default function PomodoroView() {
           />
           <StateLine timer={timer} o={o} tr={tr} language={language} notice={notice} />
         </div>
-        <Today tr={tr} history={history} today={today} language={language} footer={restartCycleBtn('hidden @4xl/pomodoro:inline-flex')} />
+        <Today tr={tr} history={history} today={today} language={language} />
       </div>
       <div className="sr-only" aria-live="polite" aria-atomic="true">
         <span key={live.seq}>{live.text}</span>
@@ -438,13 +442,12 @@ function StateLine({
 }
 
 function Today({
-  tr, history, today, language, footer,
+  tr, history, today, language,
 }: {
   tr: Tr;
   history: HistoryEntry[];
   today: string;
   language: Language;
-  footer: ReactNode;
 }) {
   const entries = useMemo(() => todayEntries(history, today), [history, today]);
   const total = focusMinutes(entries);
@@ -478,7 +481,6 @@ function Today({
         <ShieldCheck size={11} className="mt-px shrink-0" aria-hidden />
         {tr('historyNote')}
       </p>
-      <div className="mt-2">{footer}</div>
     </section>
   );
 }

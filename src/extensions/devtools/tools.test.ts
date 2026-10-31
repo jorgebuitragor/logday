@@ -275,7 +275,7 @@ describe('bloques de las notas', () => {
   });
 
   it('las preferencias guardadas inválidas vuelven a las de siempre', () => {
-    expect(readDevtoolsSettings({ lastTool: 'nada', options: 'x' })).toEqual({ lastTool: 'json', options: {} });
+    expect(readDevtoolsSettings({ lastTool: 'nada', options: 'x' })).toEqual({ lastTool: 'json', options: {}, layout: 'groups' });
     expect(readDevtoolsSettings({ lastTool: 'jwt' }).lastTool).toBe('jwt');
   });
 });

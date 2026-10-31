@@ -32,7 +32,7 @@ const STALE_MS: i64 = 5 * 60 * 1000;
 
 /// Textos de la bandeja, ya traducidos (design §4). Pueden llevar `{min}`
 /// (minutos enteros que faltan) y `{time}` (`m:ss`), que se rellenan aquí.
-#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TrayTexts {
     /// Entrada de estado, deshabilitada. `None`: sin entrada (Listo).
@@ -45,6 +45,18 @@ pub struct TrayTexts {
     pub skip: Option<String>,
     /// Tooltip de Windows. `None`: "Logday".
     pub tooltip: Option<String>,
+    /// La opción "Mostrar el tiempo en la barra de menús" (PM15). Apagada,
+    /// el ícono queda sin título y el tooltip es "Logday"; el menú sigue.
+    #[serde(default = "yes")]
+    pub show_time: bool,
+    /// Cifras de los minutos al empezar la fase (2 con 25:00). El título se
+    /// rellena hasta ellas para no cambiar de ancho a mitad de fase.
+    #[serde(default)]
+    pub minute_digits: usize,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// Lo que se avisa al llegar al fin.
@@ -121,6 +133,17 @@ pub fn format_clock(ms: i64) -> String {
     format!("{}:{:02}", secs / 60, secs % 60)
 }
 
+/// El tiempo del título de la bandeja: `format_clock` con los minutos
+/// rellenos por delante con espacios de cifra (U+2007, el ancho de un
+/// dígito) hasta `digits`. Así, en una fase de 25 min, `10:00` → `9:59` no
+/// estrecha el título; con los dígitos de ancho fijo (`use_fixed_digits`),
+/// el ancho queda igual toda la fase.
+pub fn format_title_clock(ms: i64, digits: usize) -> String {
+    let clock = format_clock(ms);
+    let minute_len = clock.find(':').unwrap_or(0);
+    format!("{}{}", "\u{2007}".repeat(digits.saturating_sub(minute_len)), clock)
+}
+
 /// Minutos enteros que faltan ("18 min" con 18:42).
 pub fn whole_minutes(ms: i64) -> i64 {
     ms.max(0) / 60_000
@@ -146,7 +169,14 @@ struct TrayView {
 }
 
 fn tray_view(mode: &Mode, tray: Option<&TrayTexts>, now: i64) -> TrayView {
-    let tooltip_of = |ms: i64| tray.and_then(|t| t.tooltip.as_deref()).map(|t| fill(t, ms)).unwrap_or_else(|| "Logday".into());
+    // Con la opción apagada (PM15) no hay tiempo junto al ícono ni en el
+    // tooltip; la entrada de estado del menú sí sigue.
+    let show_time = tray.map_or(true, |t| t.show_time);
+    let digits = tray.map_or(0, |t| t.minute_digits);
+    let title_of = |ms: i64| show_time.then(|| format_title_clock(ms, digits));
+    let tooltip_of = |ms: i64| {
+        tray.filter(|_| show_time).and_then(|t| t.tooltip.as_deref()).map(|t| fill(t, ms)).unwrap_or_else(|| "Logday".into())
+    };
     match mode {
         Mode::Running { end_at_ms, .. } => {
             let ms = remaining_ms(*end_at_ms, now);
@@ -154,11 +184,11 @@ fn tray_view(mode: &Mode, tray: Option<&TrayTexts>, now: i64) -> TrayView {
                 let template = if whole_minutes(ms) == 0 { t.status_less_than_min.as_ref().or(t.status.as_ref()) } else { t.status.as_ref() };
                 template.map(|s| fill(s, ms))
             });
-            TrayView { title: Some(format_clock(ms)), tooltip: tooltip_of(ms), status }
+            TrayView { title: title_of(ms), tooltip: tooltip_of(ms), status }
         }
         Mode::Paused { remaining_ms } => TrayView {
             // U+2016: un glifo de texto, no un emoji (D3).
-            title: Some(format!("\u{2016} {}", format_clock(*remaining_ms))),
+            title: title_of(*remaining_ms).map(|clock| format!("\u{2016} {clock}")),
             tooltip: tooltip_of(*remaining_ms),
             status: tray.and_then(|t| t.status.as_ref()).map(|s| fill(s, *remaining_ms)),
         },
@@ -220,6 +250,10 @@ fn apply_tray(app: &AppHandle) {
     if let Some(title) = title {
         // macOS: junto al ícono. Linux: la etiqueta del AppIndicator, que
         // solo algunos escritorios muestran. Windows no tiene título.
+        // En macOS, tray-icon 0.21 ignora `None` (deja el último título):
+        // para quitarlo hay que poner un título vacío.
+        #[cfg(target_os = "macos")]
+        let title = Some(title.unwrap_or_default());
         let _ = tray.set_title(title.as_deref());
     }
     #[cfg(not(target_os = "macos"))]
@@ -232,6 +266,38 @@ fn apply_tray(app: &AppHandle) {
         let _ = item.set_text(text);
     }
 }
+
+/// macOS: pone en el botón de la bandeja la fuente del sistema con dígitos
+/// de ancho fijo (`monospacedDigitSystemFontOfSize:weight:`), del mismo
+/// tamaño que la que tenía. La fuente normal de la barra de menús tiene
+/// dígitos proporcionales (el 1 es más estrecho que el 4), así que el
+/// título cambiaba de ancho cada segundo y el ícono se movía. tray-icon
+/// pone el título con `setTitle:`, que conserva la fuente del botón, así
+/// que basta con hacerlo una vez, al crear la bandeja.
+#[cfg(target_os = "macos")]
+pub fn use_fixed_digits(tray: &tauri::tray::TrayIcon) {
+    let _ = tray.with_inner_tray_icon(|inner| {
+        use objc2::MainThreadMarker;
+        use objc2_app_kit::{NSFont, NSFontWeightRegular};
+        // `with_inner_tray_icon` corre en el hilo principal.
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let Some(button) = inner.ns_status_item().and_then(|item| item.button(mtm)) else {
+            return;
+        };
+        let size = button.font().map(|f| f.pointSize()).unwrap_or_else(|| NSFont::menuBarFontOfSize(0.0).pointSize());
+        // SAFETY: es una constante de AppKit (0.0), solo se lee.
+        let regular = unsafe { NSFontWeightRegular };
+        let font = NSFont::monospacedDigitSystemFontOfSize_weight(size, regular);
+        button.setFont(Some(&font));
+    });
+}
+
+/// Fuera de macOS no hay título junto al ícono (Windows) o lo dibuja el
+/// escritorio (Linux).
+#[cfg(not(target_os = "macos"))]
+pub fn use_fixed_digits(_tray: &tauri::tray::TrayIcon) {}
 
 /// El fin llegó: avisa (si toca) y le pasa el fin al frontend, que arma la
 /// fase siguiente. Rust deja de vigilar hasta que llegue el nuevo estado.
@@ -380,6 +446,8 @@ mod tests {
             toggle: "Pausar".into(),
             skip: Some("Saltar".into()),
             tooltip: Some("Logday · Trabajo · {time}".into()),
+            show_time: true,
+            minute_digits: 2,
         }
     }
 
@@ -397,6 +465,45 @@ mod tests {
         // Redondeo hacia arriba: 0,2 s es todavía el último segundo.
         assert_eq!(format_clock(200), "0:01");
         assert_eq!(format_clock(59_001), "1:00");
+    }
+
+    #[test]
+    fn el_titulo_no_cambia_de_ancho_a_mitad_de_fase() {
+        // Fase de 25 min (2 cifras): bajo 10:00 se rellena con U+2007.
+        assert_eq!(format_title_clock(25 * 60_000, 2), "25:00");
+        assert_eq!(format_title_clock(10 * 60_000, 2), "10:00");
+        assert_eq!(format_title_clock(10 * 60_000 - 1_000, 2), "\u{2007}9:59");
+        assert_eq!(format_title_clock(299_000, 2), "\u{2007}4:59");
+        // Mismo número de caracteres en toda la fase (y, con dígitos de
+        // ancho fijo, el mismo ancho).
+        let lens: Vec<usize> = [25 * 60_000, 600_000, 599_000, 1_000].iter().map(|&ms| format_title_clock(ms, 2).chars().count()).collect();
+        assert!(lens.iter().all(|&n| n == 5), "{lens:?}");
+        // Un descanso de 5 min (1 cifra) no lleva relleno.
+        assert_eq!(format_title_clock(299_000, 1), "4:59");
+        // Fase de 120 min (3 cifras).
+        assert_eq!(format_title_clock(120 * 60_000 - 1_000, 3), "119:59");
+        assert_eq!(format_title_clock(599_000, 3), "\u{2007}\u{2007}9:59");
+        // Sin dato (0), como antes.
+        assert_eq!(format_title_clock(299_000, 0), "4:59");
+    }
+
+    #[test]
+    fn sin_tiempo_en_la_barra_si_la_opcion_esta_apagada() {
+        let t = TrayTexts { show_time: false, ..texts() };
+        let running = Mode::Running { end_at_ms: 1_122_000, key: "work:1".into(), alert: alert() };
+        // Ni título ni tiempo en el tooltip; la entrada de estado sigue.
+        assert_eq!(
+            tray_view(&running, Some(&t), 0),
+            TrayView { title: None, tooltip: "Logday".into(), status: Some("Trabajo · 18 min".into()) }
+        );
+        let paused = tray_view(&Mode::Paused { remaining_ms: 1_122_000 }, Some(&t), 0);
+        assert_eq!(paused.title, None);
+        assert_eq!(paused.tooltip, "Logday");
+        // Sin el campo (frontend viejo), se muestra.
+        let json = r#"{"status":null,"statusLessThanMin":null,"toggle":"Pausar","skip":null,"tooltip":null}"#;
+        let parsed: TrayTexts = serde_json::from_str(json).unwrap();
+        assert!(parsed.show_time);
+        assert_eq!(parsed.minute_digits, 0);
     }
 
     #[test]
@@ -438,6 +545,8 @@ mod tests {
         let pt = TrayTexts { status: Some("Trabajo · en pausa · {time}".into()), ..texts() };
         let view = tray_view(&paused, Some(&pt), 999_999);
         assert_eq!(view.title.as_deref(), Some("\u{2016} 18:42"));
+        let short = tray_view(&Mode::Paused { remaining_ms: 299_000 }, Some(&pt), 0);
+        assert_eq!(short.title.as_deref(), Some("\u{2016} \u{2007}4:59"));
         assert_eq!(view.status.as_deref(), Some("Trabajo · en pausa · 18:42"));
         let idle = tray_view(&Mode::Idle, Some(&TrayTexts { status: None, ..texts() }), 0);
         assert_eq!(idle, TrayView { title: None, tooltip: "Logday".into(), status: None });

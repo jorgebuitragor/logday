@@ -4,7 +4,7 @@
 // textos son puras; `sendNative` nunca lanza.
 import { invoke } from '@tauri-apps/api/core';
 import {
-  breakAfter, finishKey, phaseMinutes, type PomodoroOptions, type TimerState,
+  breakAfter, durationOf, finishKey, minuteDigits, phaseMinutes, type PomodoroOptions, type TimerState,
 } from './model';
 import { clipTitle, phaseName, type Tr } from './text';
 
@@ -14,6 +14,10 @@ export interface TrayTexts {
   toggle: string;
   skip: string | null;
   tooltip: string | null;
+  /** PM15: sin tiempo junto al ícono ni en el tooltip. */
+  showTime: boolean;
+  /** Cifras de los minutos al empezar la fase, para el ancho del título. */
+  minuteDigits: number;
 }
 
 export interface FinishAlert {
@@ -47,6 +51,10 @@ export function finishTexts(t: TimerState, o: PomodoroOptions, tr: Tr): { title:
 
 /** Los textos de la bandeja para el estado (design §4). */
 export function trayTexts(t: TimerState, o: PomodoroOptions, tr: Tr): TrayTexts {
+  return { ...trayMenuTexts(t, o, tr), showTime: o.showTrayTime, minuteDigits: minuteDigits(durationOf(t, o)) };
+}
+
+function trayMenuTexts(t: TimerState, o: PomodoroOptions, tr: Tr): Omit<TrayTexts, 'showTime' | 'minuteDigits'> {
   const phase = phaseName(tr, t.phase);
   switch (t.status) {
     case 'running':

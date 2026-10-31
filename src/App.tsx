@@ -20,12 +20,15 @@ import { PolicyGateModal } from './components/PolicyGateModal';
 import { OvertimeEntry } from './types/overtime';
 import type { ActiveSection } from './types/config';
 import { useEventNotifier } from './lib/eventNotifier';
+import { useGitAutomation } from './hooks/useGitAutomation';
 import { useExtensionLifecycle } from './extensions/useExtensions';
 import { ExtensionSlot } from './extensions/ExtensionSlot';
 import { extensionIdOfSection } from './extensions/state';
 import { getExtension } from './extensions/registry';
 import { clampSidebarWidth, MAX_SIDEBAR_WIDTH, sectionForShortcut, shortcutOrder, sidebarMinWidth } from './components/sidebar/sectionOrder';
 import { useSectionItems } from './components/sidebar/sections';
+import { isHelpShortcut } from './components/shared/helpKeyboard';
+import { requestHelpToggle } from './components/help/SidebarHelp';
 
 const KanbanBoard   = lazy(() => import('./components/tasks/KanbanBoard').then(m => ({ default: m.KanbanBoard })));
 const CalendarView  = lazy(() => import('./components/calendar/CalendarView').then(m => ({ default: m.CalendarView })));
@@ -115,6 +118,7 @@ export default function App() {
 
   useEventNotifier();
   useExtensionLifecycle();
+  useGitAutomation();
 
   // ⌘0 va a Inicio y ⌘1…⌘9 a las secciones, en el orden de lectura del
   // menú (specs/navegacion-secciones NS15).
@@ -127,6 +131,16 @@ export default function App() {
       // Durante la bienvenida no hay carpeta: ⌘N, ⌘T o ⌘D crearían archivos
       // sin `basePath` (specs/onboarding OB3).
       if (!useAppStore.getState().isConfigured) return;
+      // ⌘/ abre o cierra la ayuda de la pantalla, como el botón "Ayuda" del
+      // menú lateral; también dentro de un campo (specs/ayuda-contextual
+      // AY27). Si el editor ya usó la tecla (en el teclado en español, "/" es
+      // ⇧7, que en las notas hace una lista numerada), no.
+      if (isHelpShortcut(e)) {
+        if (e.defaultPrevented || !useAppStore.getState().helpButtonsEnabled) return;
+        e.preventDefault();
+        requestHelpToggle();
+        return;
+      }
       // Antes que los atajos de letras y también dentro de un campo: ⌘1 en
       // un input no hace nada en WebKit (NS15).
       const target = sectionForShortcut(e, sectionShortcutKey ? sectionShortcutKey.split(',') : []);

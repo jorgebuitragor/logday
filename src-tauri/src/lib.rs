@@ -556,7 +556,7 @@ pub fn run() {
 
             let menu = build_tray_menu(app.handle())?;
 
-            TrayIconBuilder::with_id(TRAY_ID)
+            let tray = TrayIconBuilder::with_id(TRAY_ID)
                 .icon(tauri::include_image!("icons/tray-icon.png"))
                 .tooltip("Logday")
                 .menu(&menu)
@@ -597,6 +597,9 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+            // El tiempo del Pomodoro junto al ícono, con dígitos de ancho
+            // fijo para que no se mueva cada segundo (macOS).
+            extensions::pomodoro::use_fixed_digits(&tray);
 
             // Vigila el fin del Pomodoro aunque la ventana esté oculta.
             extensions::pomodoro::spawn_watcher(app.handle());

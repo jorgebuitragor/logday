@@ -44,6 +44,8 @@ export interface AppConfig {
   workWeekDays?: 5 | 6;
   holidaysAsNonWork?: boolean;
   animationsEnabled?: boolean;
+  /** El botón (?) de ayuda junto al título de las pantallas (specs/ayuda-contextual AY23). */
+  helpButtonsEnabled?: boolean;
   trashAutoPurgeEnabled?: boolean;
   /** Antes de specs/navegacion-secciones: los textos de la fila de
    *  secciones. Ya no se lee ni se escribe (NS5); queda en el tipo porque

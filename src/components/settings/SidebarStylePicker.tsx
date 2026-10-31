@@ -9,8 +9,8 @@ import type { SidebarStyle } from '../sidebar/sectionOrder';
 import { SidebarStylePreview } from './SidebarStylePreview';
 
 const STYLES: { value: SidebarStyle; name: 'icons' | 'list'; desc: 'iconsDesc' | 'listDesc' }[] = [
-  { value: 'icons', name: 'icons', desc: 'iconsDesc' },
   { value: 'list', name: 'list', desc: 'listDesc' },
+  { value: 'icons', name: 'icons', desc: 'iconsDesc' },
 ];
 
 export function SidebarStylePicker() {

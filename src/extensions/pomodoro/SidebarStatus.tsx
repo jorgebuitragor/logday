@@ -1,7 +1,8 @@
 // Contador del menú lateral (PM10, design §3): la fase, el tiempo y un
 // control de pausa, encima de "Opciones". Se ve corriendo, en pausa y,
 // tras un fin, hasta que se inicia o se salta la siguiente (D1). No tiene
-// región viva: está en todas las secciones (design §8).
+// región viva: está en todas las secciones (design §8). Con la opción
+// "Mostrar el contador en el menú lateral" apagada no se dibuja (PM15).
 import type { MouseEvent } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Pause, Play } from 'lucide-react';
@@ -23,8 +24,8 @@ export default function PomodoroSidebarStatus({ collapsed }: SidebarStatusProps)
       setSection: s.setSection,
     })),
   );
-  if (!active || !showsCounter(timer)) return null;
   const o = readOptions(raw);
+  if (!active || !o.showSidebarCounter || !showsCounter(timer)) return null;
   const tr = makeTr(language);
   const paused = timer.status === 'paused';
   const finished = timer.status === 'finished';

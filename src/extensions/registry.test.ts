@@ -44,7 +44,7 @@ describe('registro de extensiones', () => {
   it('las extensiones con panel lo declaran en el registro (R21)', () => {
     // Los módulos no se cargan aquí (usan la API de Tauri): si una
     // extensión agrega o quita su `Settings`, hay que tocar también esto.
-    expect(EXTENSIONS.filter((d) => d.settings).map((d) => d.id)).toEqual(['team-chat', 'mcp', 'google-calendar', 'outgoing-webhook', 'granola', 'openproject', 'quick-capture', 'pomodoro', 'http-client']);
+    expect(EXTENSIONS.filter((d) => d.settings).map((d) => d.id)).toEqual(['team-chat', 'mcp', 'google-calendar', 'outgoing-webhook', 'granola', 'openproject', 'quick-capture', 'devtools', 'pomodoro', 'http-client']);
   });
 
   it('las extensiones con estado en el menú lateral lo declaran (R26)', () => {

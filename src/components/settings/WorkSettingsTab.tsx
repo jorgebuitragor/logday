@@ -13,6 +13,7 @@ export function WorkSettingsTab() {
     workWeekDays, setWorkWeekDays,
     holidaysAsNonWork, setHolidaysAsNonWork,
     animationsEnabled, setAnimationsEnabled,
+    helpButtonsEnabled, setHelpButtonsEnabled,
   } = useAppStore();
 
   const [isReminderMenuOpen, setIsReminderMenuOpen] = useState(false);
@@ -184,6 +185,32 @@ export function WorkSettingsTab() {
             : t(language, 'settings', 'animationsDisabled')}
         </span>
         <ToggleSwitch checked={animationsEnabled} onChange={setAnimationsEnabled} size="lg" />
+      </div>
+    </div>
+  </div>
+
+  {/* Ayuda (specs/ayuda-contextual AY23) */}
+  <div>
+    <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
+      {t(language, 'settings', 'helpSection')}
+    </p>
+    <div
+      onClick={() => void setHelpButtonsEnabled(!helpButtonsEnabled)}
+      className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 text-left transition hover:bg-[var(--bg-hover)] cursor-pointer"
+    >
+      <div>
+        <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'helpButtonsTitle')}</p>
+        <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'helpButtonsDesc')}</p>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className={`text-[10px] font-semibold uppercase tracking-wider ${
+          helpButtonsEnabled ? 'text-[var(--accent)]' : 'text-[var(--text-hint)]'
+        }`}>
+          {helpButtonsEnabled
+            ? t(language, 'settings', 'animationsEnabled')
+            : t(language, 'settings', 'animationsDisabled')}
+        </span>
+        <ToggleSwitch checked={helpButtonsEnabled} onChange={setHelpButtonsEnabled} size="lg" />
       </div>
     </div>
   </div>

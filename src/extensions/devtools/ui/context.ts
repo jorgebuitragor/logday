@@ -4,7 +4,7 @@
 import { createContext, useContext, type MutableRefObject } from 'react';
 import type { Note } from '../../../types/note';
 import type { Language } from '../../../lib/i18n';
-import type { DevtoolsSettings, ToolId } from '../model';
+import type { DevtoolsSettings, DevtoolsSettingsPatch, OptionValue, ToolId } from '../model';
 import type { Tr } from './text';
 
 /** Lo que cada herramienta ofrece a los atajos de la vista (design §7). */
@@ -20,7 +20,7 @@ export interface ToolActions {
 }
 
 export type FocusTarget = 'input' | 'title';
-export type OptionValue = string | number | boolean;
+export type { OptionValue };
 
 export interface DevtoolsContextValue {
   tool: ToolId;
@@ -29,6 +29,11 @@ export interface DevtoolsContextValue {
   mac: boolean;
   settings: DevtoolsSettings;
   setOptions: (tool: ToolId, patch: Record<string, OptionValue>) => void;
+  /** Guarda un parche armado con lo guardado en ese momento (no con lo de
+   *  este render): dos clics seguidos no se pisan (design §G.2). */
+  updateSettings: (make: (current: DevtoolsSettings) => DevtoolsSettingsPatch) => void;
+  /** Abre Opciones → DevTools (D17); antes cierra el selector. */
+  openSettings: () => void;
   /** Escribe en la región `aria-live` de la vista. */
   announce: (message: string) => void;
   copyText: (text: string) => Promise<boolean>;

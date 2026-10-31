@@ -9,6 +9,7 @@ import { PICKER_TOOLS, TOOL_ICON } from './meta';
 import { toolKey } from './text';
 import { FOCUS_RING, SECONDARY_CLS } from './classes';
 import { ToolNav } from './ToolNav';
+import { DevtoolsHelp } from './Help';
 
 export function ToolFrame({
   options, children, status, headerExtra, bodyClass = 'grid gap-4 px-5 py-4 @3xl/tool:grid-cols-2',
@@ -32,10 +33,15 @@ export function ToolFrame({
             <Icon size={16} aria-hidden />
           </div>
           <div className="min-w-0">
-            <h2 id="devtools-tool-title" ref={titleRef} tabIndex={-1} className="text-sm font-semibold text-[var(--text-primary)] focus:outline-none">
-              <span className="hidden @xl/devtools:inline">{name}</span>
-              <ToolSwitcher name={name} />
-            </h2>
+            {/* La ayuda va junto al título, fuera del <h2> para no sumarse a
+                su nombre (specs/ayuda-contextual AY2). */}
+            <div className="flex items-center gap-1">
+              <h2 id="devtools-tool-title" ref={titleRef} tabIndex={-1} className="text-sm font-semibold text-[var(--text-primary)] focus:outline-none">
+                <span className="hidden @xl/devtools:inline">{name}</span>
+                <ToolSwitcher name={name} />
+              </h2>
+              <DevtoolsHelp />
+            </div>
             <p className="mt-0.5 text-[11px] text-[var(--text-hint)]">{tr(toolKey(tool, 'desc'))}</p>
           </div>
         </div>

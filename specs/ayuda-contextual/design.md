@@ -78,7 +78,7 @@ Se basa en el diseño del agente `logday-design` (31 oct 2026).
   - Se logra con un `AnchorRect` sintético: `{ left: r.right, right: r.right, top: r.bottom + 6, bottom: r.bottom + 6 }`, con `anchorOptions: { sideX: 'left', gap: 0 }`.
   - Si no cabe, `placeMenuNearAnchor` lo voltea o lo ajusta a la ventana (`lib/menuPosition.ts:60`).
 - **Contenedor:** `w-[320px] max-w-[calc(100vw-16px)] max-h-[min(70vh,440px)] overflow-y-auto rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-4 shadow-2xl`, como `DatePickerPopover`. A 800×600 caben unos 420 px de alto.
-- **Animación:** `animate-fade-in`. Se apaga con `prefers-reduced-motion` y `.no-animations`.
+- **Animación:** `animate-fade-in`. Se apaga con `.no-animations` y, con la clase `help-popover`, con `prefers-reduced-motion` (`App.css`).
 - **Cabecera:**
   - título `<h2 id>`, en `text-sm font-semibold text-[var(--text-primary)]`;
   - a la derecha, Cerrar: `ICON_BTN` con `X` de 14 px y `aria-label` = `help.close`;
@@ -129,7 +129,7 @@ Se basa en el diseño del agente `logday-design` (31 oct 2026).
 | Cerrar | Igual que Esc. |
 | Clic fuera | Cierra. Si el foco estaba dentro, vuelve al botón. |
 | Clic en el botón con la ayuda abierta | La cierra. El `mousedown` del botón no cuenta como "fuera"; si no, se cerraría y se volvería a abrir con el mismo clic. |
-| Cualquier tecla dentro | El contenedor corta la propagación de React (`onKeyDown={(e) => e.stopPropagation()}`), porque los eventos de un portal suben por el árbol de React (AY9). Sin esto, Espacio arrancaría el Pomodoro (`pomodoro/View.tsx:67`) y ⌘⇧C copiaría en DevTools (`devtools/View.tsx:212`). Los atajos globales escuchan en `window` y siguen funcionando. |
+| Cualquier tecla dentro | La raíz del portal corta la propagación de React, porque los eventos de un portal suben por el árbol de React (AY9). Sin esto, Espacio arrancaría el Pomodoro (`pomodoro/View.tsx:67`) y ⌘⇧C copiaría en DevTools (`devtools/View.tsx:212`). React escucha el portal en `document.body`, así que cortar también para el evento antes de `window`: por eso pasan ⌘ o Ctrl con una sola tecla, sin ⇧ ni ⌥ (`passesToApp`), que son los atajos globales de `App.tsx`. La misma raíz envuelve el `TourModal` de "Ver el recorrido" y corta el `contextmenu`, que en Tareas abriría el menú de la vista. |
 
 Los atajos de una tecla de la lista de tareas ya se apagan solos con la ayuda abierta, porque hay un `[role="dialog"]` en la página (`TaskList.tsx:211`).
 
@@ -233,7 +233,7 @@ Solo estas 8 herramientas lo tienen. En las demás, la descripción bajo el tít
 | cron.help2 | Las próximas ejecuciones van en tu hora local. | Next runs are in your local time. |
 | cron.help3 | Las expresiones con L, W o # se explican, pero sus próximas ejecuciones no se calculan. | Expressions with L, W or # are explained, but their next runs aren't calculated. |
 | sql-list.help1 | Pega los valores uno por línea o separados por comas, punto y coma o tabs: el separador se detecta solo. | Paste values one per line or separated by commas, semicolons or tabs: the separator is detected. |
-| sql-list.help2 | Escribe la columna para obtener columna IN (…). Con más de 1000 valores, usa «Partir en grupos de»: Oracle no acepta más. | Type the column to get column IN (…). With more than 1000 values, use "Split into groups of": Oracle doesn't accept more. |
+| sql-list.help2 | En «Más opciones», escribe la columna para obtener columna IN (…). Con más de 1000 valores, usa «Partir en grupos de»: Oracle no acepta más. | In "More options", type the column to get column IN (…). With more than 1000 values, use "Split into groups of": Oracle doesn't accept more. |
 | sql-list.help3 | Cambia a «SQL → lista» para sacar los valores de un IN. | Switch to "SQL → list" to get the values out of an IN. |
 | list-compare.help1 | Pega una lista en A y otra en B, un valor por línea. | Paste one list in A and another in B, one value per line. |
 | list-compare.help2 | Las pestañas muestran lo que está solo en A, solo en B, en las dos o en cualquiera (Unión). | The tabs show what's only in A, only in B, in both, or in either (Union). |

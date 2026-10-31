@@ -3,7 +3,7 @@
 // editor de tareas, en mono. No se usa PRIMARY_CLS: en sepia y en los
 // temas tintados su texto blanco no se lee (design §8, hallazgo 9.1-2).
 
-export { FOCUS_RING, SECONDARY_CLS, INPUT_CLS, ICON_BTN, PANEL_TITLE, CHIP } from '../../../components/shared/controlClasses';
+export { FOCUS_RING, SECONDARY_CLS, INPUT_CLS, ICON_BTN, PANEL_TITLE, CHIP, TEXT_LINK } from '../../../components/shared/controlClasses';
 
 const FIELD_BASE =
   'w-full rounded-lg border bg-[var(--bg-input)] px-3 py-2 font-mono text-xs leading-relaxed text-[var(--text-body)] placeholder:text-[var(--text-hint)] select-text focus:outline-none focus:ring-2 focus:ring-indigo-500/40';
@@ -18,8 +18,6 @@ export const lineInputCls = (invalid = false) =>
 
 export const PRE_CLS =
   'min-h-[12rem] max-h-[60vh] overflow-auto rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2 font-mono text-xs leading-relaxed text-[var(--text-body)] select-text';
-
-export const TEXT_LINK = 'text-indigo-400 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded';
 
 /** Los campos de texto no corrigen nada: WebKit cambia comillas y guiones
  *  y rompería un JSON o un token (design §3). */

@@ -17,6 +17,8 @@ import { EVENT_COLOR_DOT, EVENT_COLORS, REMINDER_OPTIONS, reminderLabel } from '
 import { localISODate } from '../../lib/localDate';
 import { filterTasks, formatDueLabel } from '../../lib/taskListing';
 import { TaskFilterBar } from '../tasks/TaskFilterBar';
+import { TaskShortcutsSheet } from '../tasks/TaskShortcutsSheet';
+import { TasksHelp } from '../help/ScreenHelp';
 import { useExternalEvents, groupByDate, type ExternalEvent } from '../../extensions/externalEvents';
 import { extensionText } from '../../extensions/text';
 import { fs } from '../../lib/invoke';
@@ -64,6 +66,8 @@ export function CalendarView() {
   // Context menu en tarea del panel lateral
   const [ctxMenu, setCtxMenu]           = useState<{ task: Task; x: number; y: number } | null>(null);
   const [emptyCtxMenu, setEmptyCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  // La hoja de atajos, desde "Ver todos los atajos" de la ayuda (AY17).
+  const [showShortcuts, setShowShortcuts] = useState(false);
   // Event editor modal
   const [eventEditor, setEventEditor] = useState<{ event: Partial<CalendarEvent> & { date: string } } | null>(null);
   // Day context menu (right-click on a specific day cell)
@@ -291,7 +295,10 @@ export function CalendarView() {
       {/* Header */}
       <div className="border-b border-[var(--border)] px-4 py-3 space-y-2.5">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-[var(--text-primary)]">{t(language, 'tasks', 'calendarTitle')}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-lg font-semibold text-[var(--text-primary)]">{t(language, 'tasks', 'calendarTitle')}</h1>
+          <TasksHelp onShowShortcuts={() => setShowShortcuts(true)} />
+        </div>
         <div className="flex items-center gap-3">
           <button
             onClick={goToday}
@@ -918,6 +925,7 @@ export function CalendarView() {
           onClose={() => setEventEditor(null)}
         />
       )}
+      {showShortcuts && <TaskShortcutsSheet onClose={() => setShowShortcuts(false)} />}
     </div>
   );
 }

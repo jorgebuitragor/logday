@@ -444,6 +444,12 @@ html.theme-animating body * {
 .animate-fade-in {
   animation: fade-in 200ms ease-out both;
 }
+/* La ayuda contextual se queda quieta con prefers-reduced-motion; con las
+   animaciones de la app apagadas ya la para .no-animations
+   (specs/ayuda-contextual AY12). */
+@media (prefers-reduced-motion: reduce) {
+  .help-popover { animation: none; }
+}
 .animate-out {
   animation: fade-out-down 200ms ease-in both;
   pointer-events: none;

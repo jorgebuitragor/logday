@@ -16,3 +16,11 @@ export const ICON_BTN = `flex items-center gap-1.5 rounded-lg p-1.5 text-xs text
 export const PANEL_TITLE = 'text-[10px] font-semibold uppercase tracking-widest text-[var(--text-hint)]';
 
 export const CHIP = 'rounded-full bg-[var(--bg-hover)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)]';
+
+/** Un enlace en línea: el acento de los enlaces de la app. En los temas
+ *  tintados `text-indigo-400` se repinta a `--accent` (App.css) y en el
+ *  claro se oscurece. Antes vivía en DevTools; la ayuda también lo usa. */
+export const TEXT_LINK = 'text-indigo-400 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded';
+
+/** Una tecla dibujada como `<kbd>`, la del recorrido y la ayuda. */
+export const KBD = 'rounded-md border border-[var(--border-card)] bg-[var(--bg-surface)] px-1.5 py-0.5 font-sans text-[10px] text-[var(--text-hint)]';

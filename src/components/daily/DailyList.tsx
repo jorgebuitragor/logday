@@ -13,6 +13,7 @@ import { exportDailyMonthEntries } from '../../lib/dailyMonthExport';
 import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
 import { absenceTypeLabel } from '../../lib/absenceLabel';
+import { DailysHelp } from '../help/ScreenHelp';
 
 const ESTIMATED_DAILY_ENTRY_MENU = { width: 190, height: 96 };
 const ESTIMATED_DAILY_EMPTY_MENU = { width: 200, height: 130 };
@@ -243,7 +244,10 @@ export function DailyList() {
     <div className="flex h-full shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]" style={{ width: 'var(--logday-list-w)' }}>
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
-        <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'dailys', 'title')}</h2>
+        <div className="flex min-w-0 items-center gap-1">
+          <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'dailys', 'title')}</h2>
+          <DailysHelp />
+        </div>
         <div className="flex items-center gap-1">
           {/* Selector de fecha – dropdown con posición fija */}
           <div className="relative">

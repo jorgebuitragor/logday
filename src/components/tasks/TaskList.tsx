@@ -11,6 +11,7 @@ import { TaskFilterBar } from './TaskFilterBar';
 import { TaskSelectionBar } from './TaskSelectionBar';
 import { DatePickerPopover } from './DatePickerPopover';
 import { TaskShortcutsSheet } from './TaskShortcutsSheet';
+import { TasksHelp } from '../help/ScreenHelp';
 import type { AnchorRect } from '../../lib/menuPosition';
 import type { QuickCaptureResult } from '../../lib/quickCapture';
 import { t } from '../../lib/i18n';
@@ -257,7 +258,10 @@ export function TaskList() {
       <div className="border-b border-[var(--border)] px-4 py-3">
         <div className="mx-auto w-full max-w-3xl">
         <div className="flex items-center justify-between mb-3">
-          <h1 className="text-lg font-semibold text-[var(--text-primary)] capitalize">{title}</h1>
+          <div className="flex min-w-0 items-center gap-1">
+            <h1 className="text-lg font-semibold text-[var(--text-primary)] capitalize">{title}</h1>
+            <TasksHelp onShowShortcuts={() => setShowShortcuts(true)} />
+          </div>
           <button
             onClick={() => setNewTaskDraft({})}
             className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white transition hover:bg-indigo-500"

@@ -8,6 +8,7 @@ import { OvertimePreviewModal } from './OvertimePreviewModal';
 import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
 import { usePositionedMenu } from '../../hooks/usePositionedMenu';
+import { OvertimeHelp } from '../help/ScreenHelp';
 
 const ESTIMATED_OVERTIME_CTX_MENU = { width: 180, height: 44 };
 const ESTIMATED_OVERTIME_ENTRY_MENU = { width: 180, height: 90 };
@@ -103,7 +104,10 @@ export function OvertimeList({ onEdit, activeEntryId }: Props) {
     <div className="flex h-full shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]" style={{ width: 'var(--logday-list-w)' }}>
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
-        <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'overtime', 'title')}</h2>
+        <div className="flex min-w-0 items-center gap-1">
+          <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'overtime', 'title')}</h2>
+          <OvertimeHelp />
+        </div>
         <button
           onClick={() => onEdit(null)}
           className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-indigo-400 transition hover:bg-indigo-500/10"

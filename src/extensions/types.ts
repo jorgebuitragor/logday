@@ -2,7 +2,7 @@ import type { ComponentType } from 'react';
 import type { LucideIcon } from 'lucide-react';
 
 /** Mismo id en Desktop, Web y Mobile (specs/extensiones/design.md). */
-export type ExtensionId = 'team-chat' | 'mcp' | 'google-calendar' | 'outgoing-webhook' | 'granola' | 'openproject' | 'excalidraw' | 'quick-capture' | 'devtools' | 'pomodoro';
+export type ExtensionId = 'team-chat' | 'mcp' | 'google-calendar' | 'outgoing-webhook' | 'granola' | 'openproject' | 'excalidraw' | 'quick-capture' | 'devtools' | 'pomodoro' | 'http-client';
 
 export type ExtensionCategory = 'integration' | 'tool';
 export type LogdayApp = 'desktop' | 'web' | 'mobile';
@@ -32,6 +32,16 @@ export interface NoteBlockProps {
   /** El contenido del bloque (lo que va dentro de la cerca de código). */
   code: string;
   onEdit: () => void;
+  /** Solo en el modo inline (`noteBlock.inline`): la isla que se dibuja,
+   *  la barra de encima o la franja de debajo del código. */
+  part?: 'header' | 'footer';
+  /** La nota abierta (`activeNote.id`). */
+  noteId?: string;
+  /** El n-ésimo bloque de ese lenguaje en la nota. */
+  index?: number;
+  /** Solo en el modo inline: la posición del cursor dentro del texto del
+   *  bloque, o `null` si el cursor está fuera. */
+  cursor?: number | null;
 }
 
 /** Props del editor de ese bloque, que se abre al crearlo o editarlo. */
@@ -87,7 +97,15 @@ export interface ExtensionDefinition {
   /** R24: el lenguaje de su bloque en las notas (```<language>). Es
    *  metadato para que el editor sepa qué bloques son de la extensión sin
    *  cargar su código. */
-  noteBlock?: { language: string };
+  noteBlock?: {
+    language: string;
+    /** Modo inline: el código se ve y se edita en la nota, y la extensión
+     *  dibuja una barra encima y una franja debajo (`part`). Sin editor
+     *  aparte (specs/cliente-http, design A3). */
+    inline?: boolean;
+    /** Lo que inserta "Nuevo bloque" en el modo inline. */
+    template?: string;
+  };
   /** R26: si tiene `SidebarStatus`. Es metadato para que el menú lateral
    *  no cargue el módulo solo para saberlo (R16). */
   sidebarStatus?: boolean;
@@ -95,6 +113,10 @@ export interface ExtensionDefinition {
    *  llavero no se puede listar, así que "Quitar configuración" (R8)
    *  borra estas. */
   secretKeys?: string[];
+  /** Claves que dependen de su configuración (p. ej. una por variable
+   *  secreta). "Quitar configuración" borra también estas. Es una función
+   *  pura del registro, que no carga el módulo (R16). */
+  dynamicSecretKeys?: (settings?: Record<string, unknown>) => string[];
   load: () => Promise<ExtensionModule>;
 }
 

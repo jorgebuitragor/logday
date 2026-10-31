@@ -29,6 +29,9 @@ export const CODE_LANGUAGE_OPTIONS: CodeLanguageOption[] = [
   { value: 'yaml', label: 'YAML' },
   { value: 'java', label: 'Java' },
   { value: 'go', label: 'Go' },
+  // Peticiones del Cliente HTTP (specs/cliente-http); se colorea también
+  // con la extensión apagada.
+  { value: 'http', label: 'HTTP' },
 ];
 
 const LANGUAGE_ALIASES: Record<string, string> = {

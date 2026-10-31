@@ -238,16 +238,31 @@ Diseño en design §14; requisitos en requirements, "Cliente HTTP v2". Jorge apr
 
 ### PR A1: editor de petición (rama `feature/http-v2-a1`, desde `feature/http-pantalla-propia`)
 
-- [ ] `core/parse.ts` v2: zona de la query con comentarios y `# &k=v`; cabeceras desactivadas; `urlLine`, `query`, `headerRows`, `disabledHeaders`, las líneas de cada zona y `bodyKind`; la URL final unida con `?`/`&`; `variablesOf` sin las filas desactivadas. Con pruebas.
-- [ ] Ediciones puras de la línea de la petición, las filas de la query y de las cabeceras (editar, activar, agregar, quitar, mover) y de Auth (leer y escribir Bearer, Basic, API key, Otra y Ninguna). Pruebas de ida y vuelta con filas desactivadas, duplicadas, el orden, comentarios, varias peticiones con `###`, variables, params en la URL y en líneas `?`/`&`.
-- [ ] Rust: Basic (HT44) en `prepare`, con `cargo test`. `resolve.ts`: la marca "Codificada por Logday" en la vista previa.
-- [ ] Store: el borrador de texto por petición (`code`, `loadedCode`, `loadedSource`) en vez del formulario de campos; los cambios sin guardar por petición.
-- [ ] Pantalla: pestañas Params, Cabeceras, Auth, Cuerpo (el `textarea` de hoy hasta A2) y Texto; `KeyValueTable` y `VariableCombobox`; "Guardar como secreto"; las cabeceras de Logday en solo lectura; la tabla de solo lectura con "Ir al texto" si la zona tiene un error.
-- [ ] Guardar en la nota (HT50): ⌘S, "● Cambios sin guardar", el conflicto con "Reemplazar en la nota" y "Guardar como petición nueva", y la escritura de la nota desde fuera del editor. "Guardar en una nota" pasa a "Nueva nota".
-- [ ] Barra del bloque: "Editar en Cliente HTTP".
-- [ ] Pegar un cURL: `-u` y el usuario de la URL dan `Basic {{username}}:{{password}}`; fuera `curlBasicHint` (design §14.14).
-- [ ] Textos es y en (§14.12, A1) y la ayuda (HT35).
-- [ ] Prueba en el navegador (mock de Tauri): tablas ↔ texto y URL, el teclado de las tablas y de las pestañas, Auth con un literal y "Guardar como secreto", Guardar en la nota con y sin conflicto, ⌘S, los 7 temas.
+- [x] `core/parse.ts` v2: zona de la query con comentarios y `# &k=v`; cabeceras desactivadas; `urlLine`, `query`, `headerRows`, `disabledHeaders`, `headerStart`/`headerEnd` y `bodyKind`; la URL final unida con `?`/`&`; `variablesOf` sin las filas desactivadas. Con pruebas.
+- [x] `core/requestEdit.ts`: ediciones puras de la línea de la petición, las filas de la query y de las cabeceras (editar, activar, agregar, quitar, mover), el cuerpo y Auth (leer y escribir Bearer, Basic, API key, Otra y Ninguna). `requestEdit.test.ts`: ida y vuelta con filas desactivadas, duplicadas, el orden, comentarios, varias peticiones con `###`, variables, params en la URL y en líneas `?`/`&`.
+- [x] Rust: Basic (HT44) en `prepare` (`encode_basic`), con `cargo test`; su Base64 también se oculta en la respuesta. `resolve.ts`: la marca "Codificada por Logday" (`basicEncodedByLogday`).
+- [x] Store: el borrador de texto por petición (`drafts`, con `code`, `loadedCode`, `loadedSource`, `name`, `apiKey` y `conflict`) en vez del formulario de campos. `serialize.ts` queda con `formIssues` y `draftSplitsRequest`.
+- [x] Pantalla: pestañas Params, Cabeceras, Auth, Cuerpo (el `textarea` de hoy) y Texto (`ui/RequestTabs.tsx`, `ui/RequestParts.tsx`); `KeyValueTable` y `VariableCombobox`; "Guardar como secreto" (`ui/AuthPanel.tsx`); las cabeceras de Logday en solo lectura; la tabla de solo lectura con "Ir al texto" si la zona tiene un error.
+- [x] Guardar en la nota (HT50): `core/noteSave.ts` (puro) y `lib/noteExternalEdit.ts` (escribe como el editor: `.md` y `Y.Text`); ⌘S, "● Cambios sin guardar", el punto en la columna, el conflicto con "Reemplazar en la nota" y "Guardar como petición nueva". "Guardar en una nota" pasa a "Nueva nota".
+- [x] Barra del bloque: "Editar en Cliente HTTP".
+- [x] Pegar un cURL: `-u` y el usuario de la URL dan `Basic {{username}}:{{password}}`; fuera `curlBasicHint` (design §14.14).
+- [x] Textos es y en (§14.12, A1) y la ayuda (HT35: `help2`, `help3`, `help5`, y ⌘S y ⌥⇧↑/↓ en los atajos).
+- [ ] Prueba en el navegador (mock de Tauri): tablas ↔ texto y URL, el teclado de las tablas y de las pestañas, Auth con un literal y "Guardar como secreto", Guardar en la nota con y sin conflicto, ⌘S, "Editar en Cliente HTTP" desde una nota, los 7 temas.
+
+#### Diferencias con el diseño (A1)
+
+- **Las ediciones van en `core/requestEdit.ts`**, no en `core/edit.ts`: el PR D1 saca `toCurl` de `edit.ts` y así no chocan.
+- **`ParsedRequest.body` sigue siendo un texto** (lo usan el envío y cURL); el tipo va en `bodyKind`, y las líneas de cada zona en `headerStart` y `headerEnd`. Las filas de la query llevan `pos` (su lugar entre los pares de la línea) para reescribir solo ese par.
+- **El campo URL muestra la URL de la línea de la petición**, sin las líneas `?`/`&` aparte, que están en la tabla con "en una línea aparte". Así editar la URL nunca toca esas líneas.
+- **Una fila nueva se escribe en el texto cuando tiene nombre** (y, en Cabeceras, un nombre válido): una cabecera sin nombre sería un error y dejaría la tabla de solo lectura. Hasta entonces vive en la tabla.
+- **Al activar o desactivar un parámetro**, la primera línea activa pasa a `?` si la URL no tiene uno, y las demás a `&`: REST Client pega las líneas tal cual, y sin eso la URL le quedaría rota.
+- **El Tipo de Auth es el `Menu` de la app** y no un `<select>`, como pidió Jorge para todo el Cliente HTTP. El usuario de Basic no avisa de "valor literal": no es un secreto.
+- **La API key recién elegida se reconoce aunque su valor aún no sea una variable**: el borrador recuerda la fila que escribió Auth (`apiKey`). Sin eso, la pestaña volvía a "Ninguna" al elegir API key.
+- **"Guardar como secreto" con una variable que ya existe** la pasa a secreta con el valor nuevo; sin entornos, crea "Entorno 1" y lo deja activo.
+- **"Guardar como petición nueva"** nombra la sección "{nombre} (2)" (o `###` sin nombre) y la pantalla pasa a ella. Si el bloque ya no está o tiene 20 peticiones, crea una nota nueva con el título de "Nueva nota".
+- **Si la nota está abierta en el editor**, "Guardar en la nota" no escribe y lo dice. Hoy no puede pasar: la pantalla y el editor no se muestran a la vez.
+- **La pestaña Cuerpo no lleva resumen del tipo** ("Cuerpo · JSON"): llega con el selector de A2.
+- **El panel "Código" y "Copiar como…"** son de D1; la pantalla sigue sin "Copiar como cURL".
 
 ### PR D1: Copiar como… y Código
 

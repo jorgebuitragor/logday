@@ -2,7 +2,7 @@
 
 Estado: en curso. El enfoque y las decisiones del diseño los aprobó Jorge el 31 oct 2026. Están implementados el PR 1 (la extensión en las notas), el PR 2 (la herramienta de DevTools) el cambio que la reemplaza por una pantalla propia (HT33–HT35, rama `feature/http-pantalla-propia`), la barra del bloque con lenguaje, método y cURL (HT36–HT38) y pegar un cURL (HT39–HT39c), en la misma rama. Faltan las pruebas en el navegador y en la app de QA.
 
-El **Cliente HTTP v2** (HT40–HT69: editor de petición en pestañas, respuesta con árbol, historial, importar y generar código) lo aprobó Jorge el 31 oct 2026 con las ocho decisiones tal como las recomienda su diseño (design §14). Se hace en ocho PR, en el orden de `tasks.md`.
+El **Cliente HTTP v2** (HT40–HT69: editor de petición en pestañas, respuesta con árbol, historial, importar y generar código) lo aprobó Jorge el 31 oct 2026 con las ocho decisiones tal como las recomienda su diseño (design §14). Se hace en ocho PR, en el orden de `tasks.md`. Está implementado el PR A1 (HT40–HT44 y HT50, rama `feature/http-v2-a1`), sin la prueba en el navegador.
 
 ## Contexto
 

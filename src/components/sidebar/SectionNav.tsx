@@ -90,6 +90,12 @@ export function SectionNav({ variant, collapsed = false, after, initialCapacity 
   const btnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const tooltip = useNavTooltip(isColumn);
+  // Si el botón del tooltip deja de dibujarse (al achicar la ventana pasa a
+  // "Más", o "Más" desaparece), el tooltip no puede quedarse flotando.
+  const keysKey = keys.join(',');
+  useEffect(() => {
+    if (tooltip.tip && !keysKey.split(',').includes(tooltip.tip.id)) tooltip.hide();
+  }, [keysKey, tooltip.tip]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onNavKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') tooltip.hide();

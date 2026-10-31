@@ -48,9 +48,21 @@ Estado: en progreso.
 
 - [x] Con `react-dom/server`, como el resto del repo: los dos estilos, el colapsado (también el `Sidebar` entero), "Más" (ocultas, lo que no cabe, la activa dentro, las 4 fijas ocultas), un solo tab stop y `aria-current`, el orden del usuario y la separadora, inglés, Opciones, "Ir a…" y la paridad de textos.
 
+### Prueba en el navegador (31 oct 2026, Tauri simulado)
+
+- [x] 800×600 con las 6 secciones, en los dos estilos y en el colapsado; sepia e inglés.
+- [x] Lo que no cabe pasa a "Más" al bajar el alto, y "Más" se ve activo con la sección activa dentro.
+- [x] Teclado: flechas, Fin, Enter, un solo tab stop, anillo de foco; "Más" se cierra con Esc y devuelve el foco.
+- [x] Tooltip con nombre y atajo; ⌘0…⌘6; clic derecho (quitar y fijar); "Ir a…" en Buscar; selector con la animación; "Mover arriba" con su anuncio.
+- [x] Arreglado en la prueba:
+  - el tooltip quedaba flotando si su botón pasaba a "Más" o "Más" desaparecía;
+  - Enter en Buscar no hacía nada: ahora va a la primera sección de "Ir a" (Buscar no tenía selección con teclado).
+
 ## Pendiente
 
-- [ ] Prueba visual en el navegador: 800×600 con 4, 6 y 10 secciones, los dos estilos, el colapsado, sepia y oscuro, inglés y las animaciones apagadas. Revisar también el teclado (flechas, "Más" con ↓/Esc), el tooltip, el clic derecho, arrastrar en Opciones y que lo que no cabe pase a "Más" al achicar la ventana.
+- [ ] Arrastrar en Opciones (no se pudo probar con la automatización; mover con los botones sí).
+- [ ] Probar en la app de QA (WebKit real de Tauri) y en Windows y Linux, donde los atajos son Ctrl+0…9.
+- [ ] Con más de 6 secciones de verdad (hoy solo hay 2 extensiones con vista).
 
 ## Diferencias con el diseño
 

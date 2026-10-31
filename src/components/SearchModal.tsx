@@ -87,6 +87,14 @@ export function SearchModal() {
             ref={inputRef}
             value={searchQuery}
             onChange={(e) => runSearch(e.target.value)}
+            // Enter va a la primera sección de "Ir a", para llegar sin ratón
+            // a las que están en "Más" (specs/navegacion-secciones NS19).
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && sectionHits.length > 0) {
+                e.preventDefault();
+                handleGoTo(sectionHits[0].id);
+              }
+            }}
             placeholder={t(language, 'extras', 'searchPlaceholder')}
             className="flex-1 bg-transparent text-sm text-[var(--text-primary)] outline-none placeholder-[var(--text-hint)]"
           />

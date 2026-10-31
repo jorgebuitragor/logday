@@ -242,9 +242,11 @@ export function DailyList() {
 
   return (<>
     <div className="flex h-full shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]" style={{ width: 'var(--logday-list-w)' }}>
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
-        <div className="flex min-w-0 items-center gap-1">
+      {/* Header. Con la lista al mínimo (200 px) no caben el título, la ayuda
+          y los cuatro botones: "Hoy" queda solo con el ícono y el título se
+          recorta, pero conserva el ancho para la ayuda (sin solaparse). */}
+      <div className="@container/dlh flex items-center justify-between gap-1 border-b border-[var(--border)] px-4 py-3">
+        <div className="flex min-w-[3.25rem] items-center gap-1 overflow-hidden">
           <h2 className="truncate text-sm font-semibold text-[var(--text-primary)]">{t(language, 'dailys', 'title')}</h2>
           <DailysHelp />
         </div>
@@ -308,7 +310,7 @@ export function DailyList() {
             title={t(language, 'dailys', 'createTodayTitle')}
           >
             <Plus size={14} />
-            {t(language, 'dailys', 'todayBtn')}
+            <span className="sr-only @[15rem]/dlh:not-sr-only">{t(language, 'dailys', 'todayBtn')}</span>
           </button>
         </div>
       </div>

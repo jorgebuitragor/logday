@@ -5,7 +5,7 @@ import './App.css';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from './store/appStore';
 import { t } from './lib/i18n';
-import { Onboarding } from './pages/Onboarding';
+import { Onboarding } from './pages/onboarding/Onboarding';
 import { Sidebar } from './components/sidebar/Sidebar';
 import { ResizeHandle } from './components/ResizeHandle';
 import { DashboardView } from './components/dashboard/DashboardView';
@@ -124,6 +124,9 @@ export default function App() {
   useEffect(() => {
     const handler = async (e: KeyboardEvent) => {
       if (!e.metaKey && !e.ctrlKey) return;
+      // Durante la bienvenida no hay carpeta: ⌘N, ⌘T o ⌘D crearían archivos
+      // sin `basePath` (specs/onboarding OB3).
+      if (!useAppStore.getState().isConfigured) return;
       // Antes que los atajos de letras y también dentro de un campo: ⌘1 en
       // un input no hace nada en WebKit (NS15).
       const target = sectionForShortcut(e, sectionShortcutKey ? sectionShortcutKey.split(',') : []);

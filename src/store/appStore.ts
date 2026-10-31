@@ -67,6 +67,7 @@ import {
 } from '../lib/entityStamps';
 import { EMPTY_TASK_FILTER, type TaskFilter } from '../lib/taskListing';
 import { initialTasksView } from '../lib/viewDefaults';
+import { createBaseFolders, initialLanguage, inspectFolder, type PickedFolder } from '../lib/onboarding';
 import {
   toISO,
   getPreviousWorkingDay,
@@ -212,7 +213,14 @@ export interface AppState {
   // ── Actions ──────────────────────────────────────────────────
 
   init: () => Promise<void>;
-  setupBasePath: () => Promise<void>;
+  /** Bienvenida, paso 2 (specs/onboarding OB6–OB8): abre el diálogo y
+   *  comprueba la carpeta, sin tocar `isConfigured` ni la config. `null` si
+   *  se cancela. */
+  pickBaseFolder: () => Promise<PickedFolder | null>;
+  /** OB3, OB9: crea las carpetas, guarda la config (con lo elegido en la
+   *  bienvenida), abre la app y carga los datos. Si no puede preparar la
+   *  carpeta, lanza el error y la bienvenida sigue abierta. */
+  completeOnboarding: (path: string) => Promise<void>;
   changeBasePath: () => Promise<void>;
   checkForUpdates: () => Promise<boolean>;
   installUpdate: () => Promise<void>;
@@ -2297,7 +2305,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   noteSortDir: 'desc',
   taskSortBy: 'due',
   taskFilter: EMPTY_TASK_FILTER,
-  language: (localStorage.getItem('language') as Language) || 'es',
+  // Sin idioma guardado, el del sistema (specs/onboarding OB5); con carpeta
+  // configurada, `init` lo cambia por el de config.json.
+  language: initialLanguage(localStorage.getItem('language'), typeof navigator !== 'undefined' ? navigator.language : undefined),
   fontSize: Number(localStorage.getItem('fontSize')) || 17,
   isSettingsOpen: false,
   shortcuts: (() => {
@@ -2506,22 +2516,45 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  setupBasePath: async () => {
+  pickBaseFolder: async () => {
     const picked = await pickFolder();
-    if (!picked) return;
+    if (!picked) return null;
+    return inspectFolder(picked, fs.exists);
+  },
 
-    const basePath = picked;
+  completeOnboarding: async (basePath) => {
+    await createBaseFolders(basePath, fs.createDir);
 
-    await fs.createDir(`${basePath}/projects/inbox`);
-    await fs.createDir(`${basePath}/notes`);
-    await fs.createDir(`${basePath}/dailys`);
+    // `persistConfig` no escribe sin `basePath`: el estilo del menú y la
+    // pantalla de inicio elegidos en la bienvenida esperaban en el store y
+    // se guardan ahora. Si no se puede escribir la config, la bienvenida
+    // sigue abierta (OB9).
+    set({ basePath });
+    try {
+      await persistConfig(get);
+    } catch (e) {
+      set({ basePath: null });
+      throw e;
+    }
 
-    set({ basePath, isConfigured: true });
-    await persistConfig(get);
-    await get().loadProjects();
-    await get().loadNoteFolders();
-    await get().loadTasks(null);
-    await get().loadNotes(null);
+    const startupScreen = resolveSection(get().startupScreen, get().extensions, EXTENSIONS);
+    set({ isConfigured: true, startupScreen, activeSection: startupScreen });
+
+    // La carpeta puede traer datos (OB8): se carga lo mismo que en `init`.
+    try {
+      await Promise.all([get().loadProjects(), get().loadNoteFolders()]);
+      await Promise.all([
+        get().loadTasks(null),
+        get().loadNotes(null),
+        get().loadDailyMonths(),
+        get().loadOvertimeMonths(),
+        get().loadCalendarEvents(),
+        get().loadAbsenceDays(),
+      ]);
+    } catch (e) {
+      console.error('Onboarding load error:', e);
+    }
+    if (get().trashAutoPurgeEnabled) startTrashPurgeInterval(get);
   },
 
   changeBasePath: async () => {

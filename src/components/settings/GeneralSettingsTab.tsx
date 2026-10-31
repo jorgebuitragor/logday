@@ -1,6 +1,6 @@
-import { Monitor, Sun, Moon, Minus, Plus, Type, AlertTriangle, Eye, BookOpen, Smartphone, Snowflake, MoreVertical, Pencil, Copy, Trash2, Palette } from 'lucide-react';
+import { Minus, Plus, Type, MoreVertical, Pencil, Copy, Trash2, Palette } from 'lucide-react';
 import { useState } from 'react';
-import { Theme, CustomTheme } from '../../types/theme';
+import { CustomTheme } from '../../types/theme';
 import { Language } from '../../types/common';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
@@ -8,19 +8,9 @@ import { CustomThemeEditor } from './CustomThemeEditor';
 import InlineRenameInput from '../shared/InlineRenameInput';
 import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { ThemeTile } from './ThemeTile';
+import { themeOptions as themeOptionsFor } from './themeOptions';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
 import { Z_MODAL_NESTED } from '../../lib/zIndex';
-
-const THEME_VALUES: { value: Theme; Icon: React.ElementType }[] = [
-  { value: 'system', Icon: Monitor },
-  { value: 'light', Icon: Sun },
-  { value: 'dark', Icon: Moon },
-  { value: 'high-contrast', Icon: AlertTriangle },
-  { value: 'visual-rest', Icon: Eye },
-  { value: 'sepia', Icon: BookOpen },
-  { value: 'oled', Icon: Smartphone },
-  { value: 'nordic', Icon: Snowflake },
-];
 
 const FONT_SIZES = [11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
 
@@ -47,20 +37,7 @@ export function GeneralSettingsTab() {
   const [renamingThemeId, setRenamingThemeId] = useState<string | null>(null);
   const confirmDeleteThemeDialog = useConfirmDelete<CustomTheme>(confirmDestructiveActions);
 
-  const themeOptions = THEME_VALUES.map(({ value, Icon }) => {
-    const keySuffix = value
-      .split('-')
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join('');
-    return {
-      value,
-      Icon,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      label: t(language, 'settings', `theme${keySuffix}` as any),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      desc: t(language, 'settings', `themeDesc${keySuffix}` as any),
-    };
-  });
+  const themeOptions = themeOptionsFor(language);
 
   const handleStartRenameTheme = (ct: CustomTheme) => {
     setOpenThemeMenuId(null);
@@ -111,10 +88,13 @@ export function GeneralSettingsTab() {
     <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
       {t(language, 'settings', 'theme')}
     </p>
+    {/* Los 8 temas son radios del grupo "theme"; el personalizado, un botón
+        con aria-pressed (specs/onboarding OB10). */}
     <div className="grid grid-cols-3 gap-2">
       {themeOptions.map(({ value, label, Icon, desc }) => (
         <ThemeTile
           key={value}
+          name="theme"
           active={theme === value}
           onClick={() => setTheme(value)}
           icon={<Icon size={20} />}
@@ -265,6 +245,7 @@ export function GeneralSettingsTab() {
         <ThemeTile
           active={false}
           dashed
+          action
           onClick={() => setEditingCustomTheme('new')}
           icon={<Plus size={20} />}
           label={t(language, 'settings', 'customThemeCreate')}

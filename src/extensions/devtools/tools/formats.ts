@@ -195,15 +195,33 @@ export function yamlToJson(text: string, indent: Indent): ToolResult {
 
 // ── CSV ───────────────────────────────────────────────────────────────
 
-const csvCell = (value: unknown): string => {
+export type CsvSeparator = ',' | ';' | '\t';
+
+export interface CsvOptions {
+  separator: CsvSeparator;
+  /** La primera fila con los nombres de las columnas. */
+  headers: boolean;
+}
+
+const DEFAULT_CSV: CsvOptions = { separator: ',', headers: true };
+
+const csvCell = (value: unknown, separator: CsvSeparator): string => {
   if (value === null || value === undefined) return '';
   const s = typeof value === 'object' ? JSON.stringify(value) : String(value);
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  // RFC 4180: entre comillas si lleva el separador, comillas o saltos.
+  return s.includes(separator) || /["\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
+export interface CsvTable {
+  csv: string;
+  rows: number;
+  columns: number;
+}
+
 /** Un arreglo de objetos a CSV. Las columnas son la unión de las claves,
- *  en el orden en que aparecen; un valor anidado va como JSON. */
-export function jsonToCsv(text: string): ToolResult {
+ *  en el orden en que aparecen; un valor anidado va como JSON. El punto y
+ *  coma es el separador que espera Excel en es-CO. */
+export function jsonToCsvTable(text: string, opts: CsvOptions = DEFAULT_CSV): ToolResult<CsvTable> {
   const parsed = parseJson(text);
   if (!parsed.ok) return parsed;
   const rows = parsed.value;
@@ -219,9 +237,15 @@ export function jsonToCsv(text: string): ToolResult {
       }
     }
   }
-  const lines = [columns.map(csvCell).join(',')];
-  for (const row of rows as Record<string, unknown>[]) lines.push(columns.map((c) => csvCell(row[c])).join(','));
-  return ok(lines.join('\n'));
+  const cell = (v: unknown) => csvCell(v, opts.separator);
+  const lines = opts.headers ? [columns.map(cell).join(opts.separator)] : [];
+  for (const row of rows as Record<string, unknown>[]) lines.push(columns.map((c) => cell(row[c])).join(opts.separator));
+  return ok({ csv: lines.join('\n'), rows: rows.length, columns: columns.length });
+}
+
+export function jsonToCsv(text: string, opts: CsvOptions = DEFAULT_CSV): ToolResult {
+  const table = jsonToCsvTable(text, opts);
+  return table.ok ? ok(table.value.csv) : table;
 }
 
 // ── XML ───────────────────────────────────────────────────────────────

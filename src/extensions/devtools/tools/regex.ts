@@ -67,3 +67,34 @@ export function segments(text: string, matches: RegexMatch[]): Segment[] {
   if (pos < text.length) out.push({ text: text.slice(pos), match: null });
   return out;
 }
+
+/** El nombre de cada grupo de captura, en el orden en que JavaScript los
+ *  numera (`null` si no tiene nombre). Salta escapes, clases `[…]`, grupos
+ *  sin captura `(?:…)` y las aserciones `(?=…)`, `(?<=…)`. */
+export function groupNames(pattern: string): (string | null)[] {
+  const out: (string | null)[] = [];
+  let inClass = false;
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i];
+    if (ch === '\\') {
+      i++;
+      continue;
+    }
+    if (inClass) {
+      if (ch === ']') inClass = false;
+      continue;
+    }
+    if (ch === '[') {
+      inClass = true;
+      continue;
+    }
+    if (ch !== '(') continue;
+    if (pattern[i + 1] !== '?') {
+      out.push(null);
+      continue;
+    }
+    const named = /^\?<([A-Za-z_$][\w$]*)>/.exec(pattern.slice(i + 1));
+    if (named) out.push(named[1]);
+  }
+  return out;
+}

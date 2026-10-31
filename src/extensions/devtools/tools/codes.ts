@@ -129,3 +129,74 @@ export function barcodeSvg(code: EncodedBarcode, opts: BarcodeSvgOptions): strin
     `<rect width="${width}" height="${height}" fill="#ffffff"/><g fill="#000000">${rects}${text}</g></svg>`
   );
 }
+
+// ── Validación previa de los códigos de barras ───────────────────────
+// JsBarcode solo dice "no es válido". Antes de codificar, la vista mira
+// qué falla para dar un mensaje propio: el carácter que sobra, la
+// longitud o el dígito de control (specs/devtools design, B.3).
+
+export const BARCODE_LABEL: Record<BarcodeFormat, string> = {
+  CODE128: 'CODE128', CODE39: 'CODE39', EAN13: 'EAN-13', EAN8: 'EAN-8', UPC: 'UPC-A', ITF14: 'ITF-14', codabar: 'Codabar',
+};
+
+/** Largo sin y con el dígito de control de los formatos numéricos (GS1). */
+const GS1_LENGTH: Partial<Record<BarcodeFormat, readonly [number, number]>> = {
+  EAN13: [12, 13], EAN8: [7, 8], UPC: [11, 12], ITF14: [13, 14],
+};
+
+/** Dígito de control GS1 (EAN, UPC, ITF-14): desde la derecha, pesos 3 y 1. */
+export function gs1CheckDigit(digits: string): number {
+  let sum = 0;
+  for (let i = 0; i < digits.length; i++) {
+    const weight = (digits.length - i) % 2 === 1 ? 3 : 1;
+    sum += Number(digits[i]) * weight;
+  }
+  return (10 - (sum % 10)) % 10;
+}
+
+export type BarcodeCheck =
+  | { ok: true; value: string; checkDigit?: number; uppercased?: boolean }
+  | { ok: false; kind: 'chars'; char: string; pos: number }
+  | { ok: false; kind: 'length'; expected: readonly [number, number]; actual: number }
+  | { ok: false; kind: 'check-digit'; expected: number; actual: number };
+
+const firstInvalid = (value: string, allowed: RegExp): { char: string; pos: number } | null => {
+  let pos = 0;
+  for (const ch of value) {
+    pos++;
+    if (!allowed.test(ch)) return { char: ch, pos };
+  }
+  return null;
+};
+
+export function checkBarcode(input: string, format: BarcodeFormat): BarcodeCheck {
+  const lengths = GS1_LENGTH[format];
+  if (lengths) {
+    const bad = firstInvalid(input, /[0-9]/);
+    if (bad) return { ok: false, kind: 'chars', ...bad };
+    const [short, full] = lengths;
+    if (input.length === short) return { ok: true, value: input, checkDigit: gs1CheckDigit(input) };
+    if (input.length !== full) return { ok: false, kind: 'length', expected: lengths, actual: input.length };
+    const expected = gs1CheckDigit(input.slice(0, -1));
+    const actual = Number(input[input.length - 1]);
+    return expected === actual ? { ok: true, value: input } : { ok: false, kind: 'check-digit', expected, actual };
+  }
+  if (format === 'CODE39') {
+    const value = input.toUpperCase();
+    const bad = firstInvalid(value, /[0-9A-Z\-. $/+%]/);
+    if (bad) return { ok: false, kind: 'chars', char: [...input][bad.pos - 1], pos: bad.pos };
+    return { ok: true, value, uppercased: value !== input };
+  }
+  if (format === 'codabar') {
+    // Con inicio y fin (A–D), o sin ninguno: JsBarcode pone A…A.
+    const value = input.replace(/^[a-d]/, (c) => c.toUpperCase()).replace(/[a-d]$/, (c) => c.toUpperCase());
+    const framed = /^[A-D].*[A-D]$/.test(value) && value.length >= 3;
+    const body = framed ? value.slice(1, -1) : value;
+    const bad = firstInvalid(body, /[0-9\-$:/.+]/);
+    if (bad) return { ok: false, kind: 'chars', char: bad.char, pos: bad.pos + (framed ? 1 : 0) };
+    return { ok: true, value };
+  }
+  // CODE128: ASCII imprimible. Una tilde, una eñe o un emoji no caben.
+  const bad = firstInvalid(input, /[\x20-\x7e]/);
+  return bad ? { ok: false, kind: 'chars', ...bad } : { ok: true, value: input };
+}

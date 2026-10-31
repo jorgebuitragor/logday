@@ -30,6 +30,15 @@ export function splitValues(text: string, separator: ListSeparator = 'auto'): st
   }
 }
 
+/** El separador que usa `splitValues` en `auto`, para decírselo al usuario. */
+export function detectSeparator(text: string): Exclude<ListSeparator, 'auto'> {
+  const t = text.replace(/\r\n?/g, '\n');
+  if (t.includes('\n')) return 'newline';
+  if (t.includes('\t')) return 'tab';
+  if (t.includes(';')) return 'semicolon';
+  return 'comma';
+}
+
 export function cleanValues(values: string[], opts: CleanOptions): string[] {
   let out = opts.trim ? values.map((v) => v.trim()) : values;
   if (opts.skipEmpty) out = out.filter((v) => v.trim() !== '');
@@ -67,9 +76,17 @@ export interface SqlListOptions extends CleanOptions {
 }
 
 const NUMBER = /^-?\d+(\.\d+)?$/;
+/** `007` o `0123`: parecen números, pero sin comillas perderían los ceros. */
+const LEADING_ZERO = /^-?0\d/;
+
+/** Si un valor va sin comillas con "Números sin comillas": los números
+ *  sin ceros a la izquierda y `NULL` tal cual (en mayúsculas). */
+export const isUnquotedValue = (v: string) => v === 'NULL' || (NUMBER.test(v) && !LEADING_ZERO.test(v));
+/** Valores que parecen números pero van como texto por sus ceros. */
+export const hasLeadingZero = (v: string) => NUMBER.test(v) && LEADING_ZERO.test(v);
 
 function quoteValue(v: string, opts: Pick<SqlListOptions, 'quote' | 'numbersUnquoted'>): string {
-  if (opts.quote === 'none' || (opts.numbersUnquoted && NUMBER.test(v))) return v;
+  if (opts.quote === 'none' || (opts.numbersUnquoted && isUnquotedValue(v))) return v;
   // El escape estándar de SQL: la comilla se dobla (O'Brien → 'O''Brien').
   if (opts.quote === 'single') return `'${v.replace(/'/g, "''")}'`;
   return `"${v.replace(/"/g, '""')}"`;
@@ -162,6 +179,32 @@ export function fromSqlList(text: string): string[] {
   return out;
 }
 
+/** Posición (desde 1) de una comilla que abre un valor y no se cierra, o
+ *  `null`. Una comilla doblada (`''`) dentro del valor no lo cierra. */
+export function findUnclosedQuote(text: string): number | null {
+  let i = 0;
+  while (i < text.length) {
+    const q = text[i];
+    if (q !== "'" && q !== '"') {
+      i++;
+      continue;
+    }
+    const start = i;
+    i++;
+    let closed = false;
+    while (i < text.length) {
+      if (text[i] === q && text[i + 1] === q) i += 2;
+      else if (text[i] === q) {
+        closed = true;
+        i++;
+        break;
+      } else i++;
+    }
+    if (!closed) return start + 1;
+  }
+  return null;
+}
+
 // ── Comparar dos listas ──────────────────────────────────────────────
 
 export interface ListComparison {
@@ -213,4 +256,19 @@ export function compareLists(a: string[], b: string[], opts: CompareOptions): Li
     countA: A.first.size,
     countB: B.first.size,
   };
+}
+
+/** Cuántas veces aparece cada valor repetido de una lista, con la forma de
+ *  la primera vez, en el orden de aparición. Para "▸ 3 duplicados". */
+export function duplicateCounts(list: string[], opts: CompareOptions): { value: string; times: number }[] {
+  const counts = new Map<string, { value: string; times: number }>();
+  for (const raw of list) {
+    const v = opts.trim ? raw.trim() : raw;
+    if (!v.trim()) continue;
+    const k = opts.ignoreCase ? v.toLowerCase() : v;
+    const entry = counts.get(k);
+    if (entry) entry.times++;
+    else counts.set(k, { value: v, times: 1 });
+  }
+  return [...counts.values()].filter((e) => e.times > 1);
 }

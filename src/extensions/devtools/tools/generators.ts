@@ -101,10 +101,16 @@ const randomWords = (n: number) => Array.from({ length: n }, () => WORDS[randomB
 const sentence = () => `${capitalize(randomWords(6 + randomBelow(9)).join(' '))}.`;
 const paragraph = () => Array.from({ length: 3 + randomBelow(4) }, sentence).join(' ');
 
-/** Empieza siempre por "Lorem ipsum dolor sit amet", como se espera. */
-export function lorem(unit: LoremUnit, count: number): string {
+/** Empieza por "Lorem ipsum dolor sit amet", como se espera, salvo que
+ *  `classic` sea `false`. */
+export function lorem(unit: LoremUnit, count: number, classic = true): string {
   const n = Math.min(LOREM_LIMITS.max, Math.max(LOREM_LIMITS.min, Math.round(count)));
   const opening = 'Lorem ipsum dolor sit amet';
+  if (!classic) {
+    if (unit === 'words') return capitalize(randomWords(n).join(' '));
+    if (unit === 'sentences') return Array.from({ length: n }, sentence).join(' ');
+    return Array.from({ length: n }, paragraph).join('\n\n');
+  }
   if (unit === 'words') {
     const words = [...opening.toLowerCase().split(' '), ...randomWords(Math.max(0, n - 5))].slice(0, n);
     return capitalize(words.join(' '));

@@ -21,7 +21,8 @@ export type ToolErrorCode =
   | 'cron-invalid'
   | 'regex-invalid'
   | 'qr-too-long'
-  | 'barcode-invalid';
+  | 'barcode-invalid'
+  | 'sql-unclosed-quote';
 
 export interface ToolError {
   code: ToolErrorCode;

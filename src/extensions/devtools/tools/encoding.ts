@@ -34,6 +34,25 @@ export function base64DecodeBytes(input: string): Uint8Array | null {
   }
 }
 
+/** El primer carácter que no es del alfabeto de Base64 (ni de base64url),
+ *  con su posición desde 1 en el texto tal como se pegó. `null` si todos
+ *  son válidos (el error es entonces de longitud o de relleno). */
+export function base64InvalidAt(input: string): { char: string; pos: number } | null {
+  let pos = 0;
+  let padding = false;
+  for (const ch of input) {
+    pos++;
+    if (/\s/.test(ch)) continue;
+    if (ch === '=') {
+      padding = true;
+      continue;
+    }
+    // Después del relleno ya no puede venir nada más.
+    if (padding || !/[A-Za-z0-9+/_-]/.test(ch)) return { char: ch, pos };
+  }
+  return null;
+}
+
 export function base64Decode(input: string): ToolResult {
   const bytes = base64DecodeBytes(input);
   if (!bytes) return fail('base64-invalid');
@@ -58,6 +77,25 @@ export function urlDecode(text: string): ToolResult {
   }
 }
 
+/** Dónde empieza la primera secuencia `%` mal formada (desde 1): un `%`
+ *  sin dos cifras hexadecimales detrás, o bytes que no son UTF-8. */
+export function urlInvalidAt(text: string): number | null {
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== '%') continue;
+    if (!/^[0-9a-fA-F]{2}$/.test(text.slice(i + 1, i + 3))) return i + 1;
+    // Una secuencia de bytes seguidos (%C3%B1) tiene que ser UTF-8 válido.
+    let j = i;
+    while (text[j] === '%' && /^[0-9a-fA-F]{2}$/.test(text.slice(j + 1, j + 3))) j += 3;
+    try {
+      decodeURIComponent(text.slice(i, j));
+    } catch {
+      return i + 1;
+    }
+    i = j - 1;
+  }
+  return null;
+}
+
 // ── Entidades HTML ───────────────────────────────────────────────────
 
 const HTML_ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -68,7 +106,18 @@ const NAMED: Record<string, string> = {
   Oacute: 'Ó', Uacute: 'Ú', Ntilde: 'Ñ', uuml: 'ü', iexcl: '¡', iquest: '¿', deg: '°',
 };
 
-export const htmlEncode = (text: string) => text.replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
+/** Los cinco caracteres especiales; con `nonAscii`, también todo lo que
+ *  no es ASCII, como entidad numérica (`é` → `&#233;`). */
+export function htmlEncode(text: string, nonAscii = false): string {
+  const basic = text.replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
+  if (!nonAscii) return basic;
+  let out = '';
+  for (const ch of basic) {
+    const code = ch.codePointAt(0)!;
+    out += code > 0x7e ? `&#${code};` : ch;
+  }
+  return out;
+}
 
 /** Las entidades numéricas y las con nombre más comunes. Una desconocida
  *  se deja como está. */

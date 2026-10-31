@@ -1,4 +1,4 @@
-import { Bot, CalendarDays, ClipboardList, MessagesSquare, NotebookPen, PenTool, Webhook, Zap } from 'lucide-react';
+import { Bot, CalendarDays, ClipboardList, MessagesSquare, NotebookPen, PenTool, Webhook, Wrench, Zap } from 'lucide-react';
 import type { ExtensionDefinition, ExtensionId } from './types';
 
 /** Extensiones que implementa Desktop (R4). Solo metadatos: el código de
@@ -89,6 +89,15 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     // C19: no envía nada fuera del equipo, así que no lleva el aviso de R6.
     settings: true,
     load: () => import('./quick-capture').then((m) => m.default),
+  },
+  {
+    id: 'devtools',
+    category: 'tool',
+    icon: Wrench,
+    apps: ['desktop'],
+    // D11: todo corre en el equipo, así que no lleva el aviso de R6.
+    view: true,
+    load: () => import('./devtools').then((m) => m.default),
   },
 ];
 

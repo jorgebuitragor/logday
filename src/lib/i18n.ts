@@ -1079,6 +1079,8 @@ const dict = {
       'excalidraw.consent': 'Los dibujos se guardan dentro de la nota, como el resto de su contenido. No se envía nada fuera de Logday.',
       'quick-capture.name': 'Captura rápida',
       'quick-capture.description': 'Un atajo de teclado abre una ventanita encima de cualquier app para anotar una tarea o una nota sin salir de lo que estás haciendo.',
+      'devtools.name': 'DevTools',
+      'devtools.description': 'Formatea JSON, YAML y XML, decodifica JWT y Base64, genera UUID, hashes y contraseñas, convierte timestamps y prueba expresiones regulares. Todo sin salir del equipo.',
       'quick-capture.consent': 'Lo que anotas se guarda en Logday, como cualquier tarea o nota. No se envía nada fuera de este equipo.',
     },
     // Extensión "Captura rápida" (quick-capture).
@@ -2603,6 +2605,8 @@ const dict = {
       'excalidraw.consent': 'Drawings are saved inside the note, like the rest of its content. Nothing is sent outside Logday.',
       'quick-capture.name': 'Quick capture',
       'quick-capture.description': 'A keyboard shortcut opens a small window on top of any app to jot down a task or a note without leaving what you are doing.',
+      'devtools.name': 'DevTools',
+      'devtools.description': 'Format JSON, YAML and XML, decode JWT and Base64, generate UUIDs, hashes and passwords, convert timestamps and test regular expressions. All without leaving your computer.',
       'quick-capture.consent': 'What you jot down is saved in Logday, like any task or note. Nothing is sent outside this computer.',
     },
     // "Quick capture" extension (quick-capture).

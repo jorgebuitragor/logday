@@ -29,7 +29,7 @@ export default function UuidTool() {
     .map((u) => (opts.noHyphens ? u.replace(/-/g, '') : u))
     .map((u) => (opts.upper ? u.toUpperCase() : u))
     .join('\n');
-  const saver = useSaveToNote('text', output || null);
+  const saver = useSaveToNote('plaintext', output || null);
   useToolActions({
     copy: () => void copyText(output),
     save: () => void saver.save(),

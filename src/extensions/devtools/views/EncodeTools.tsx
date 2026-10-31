@@ -36,7 +36,7 @@ function EncodeTool({
       example={examples[direction]}
       inputLabel={encoding ? tr('paneText') : tr('paneEncoded')}
       outputLabel={encoding ? tr('paneEncoded') : tr('paneText')}
-      noteLanguage="text"
+      noteLanguage="plaintext"
       wrap
       swap={{ flip: () => setOpts({ direction: encoding ? 'decode' : 'encode' }) }}
       options={

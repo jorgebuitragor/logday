@@ -42,7 +42,7 @@ export default function HashTool() {
   const current = input && hashes && (manual ? hashes.text === runText : true) ? hashes.values : null;
   const fmt = (h: string) => (opts.upper ? h.toUpperCase() : h);
   const output = current ? HASH_ALGORITHMS.map((alg) => `${alg.padEnd(8)}${fmt(current[alg])}`).join('\n') : null;
-  const saver = useSaveToNote('text', output);
+  const saver = useSaveToNote('plaintext', output);
   const run = () => setRunText(input);
   useToolActions({
     copy: output ? () => void copyText(output) : undefined,

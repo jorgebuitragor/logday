@@ -72,7 +72,7 @@ export default function TimestampTool() {
     : null;
   const label = (key: RowKey) => (key === 'tsLocal' ? tr('tsLocal', { zone }) : tr(key));
   const output = rows ? rows.map(([k, v]) => `${label(k)}: ${v}`).join('\n') : null;
-  const saver = useSaveToNote('text', output);
+  const saver = useSaveToNote('plaintext', output);
   const error = parsed && !parsed.ok ? tr(parsed.outOfRange ? 'tsOutOfRange' : 'tsInvalid') : null;
   useAnnounceError(error);
 

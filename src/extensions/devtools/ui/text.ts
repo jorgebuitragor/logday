@@ -13,7 +13,12 @@ export function makeTr(language: Language): Tr {
   return (key, vars) => {
     const text = t(language, 'devtools', key);
     if (!vars) return text;
-    return text.replace(/\{(\w+)\}/g, (whole, name: string) => {
+    // `{n|singular|plural}`: la forma según la cantidad ("1 valor", "2 valores").
+    const plural = text.replace(/\{(\w+)\|([^|}]*)\|([^}]*)\}/g, (whole, name: string, one: string, many: string) => {
+      const v = vars[name];
+      return typeof v === 'number' ? (v === 1 ? one : many) : whole;
+    });
+    return plural.replace(/\{(\w+)\}/g, (whole, name: string) => {
       const v = vars[name];
       if (v === undefined) return whole;
       return typeof v === 'number' ? num.format(v) : v;

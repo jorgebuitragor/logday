@@ -50,7 +50,7 @@ export default function ListCompareTool() {
   const tab: Tab = stored ?? (cmp ? (TABS.find((t) => cmp[t].length) ?? 'onlyA') : 'onlyA');
   const values = cmp ? cmp[tab] : [];
   const text = values.join('\n');
-  const saver = useSaveToNote('text', text || null);
+  const saver = useSaveToNote('plaintext', text || null);
 
   // Anuncia el conteo de la pestaña cuando deja de cambiar (Adenda E).
   const count = values.length;

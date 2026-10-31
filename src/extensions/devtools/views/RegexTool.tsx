@@ -100,7 +100,7 @@ export default function RegexTool() {
   const noteText = matchRun
     ? `/${pattern}/${flags}\n\n${matchRun.matches.map((m, i) => `${i + 1}\t${m.index}\t${m.text}`).join('\n')}`
     : null;
-  const saver = useSaveToNote('text', noteText);
+  const saver = useSaveToNote('plaintext', noteText);
 
   useToolActions({
     copy: output ? () => void copyText(output) : undefined,

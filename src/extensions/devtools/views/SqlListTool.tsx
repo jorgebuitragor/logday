@@ -111,7 +111,7 @@ export default function SqlListTool() {
       placeholder={tr(toSql ? toolKey('sql-list', 'placeholder') : ('sql-list.placeholderReverse' as DevtoolsKey))}
       example={EXAMPLES[toSql ? 'toSql' : 'toList']}
       language={toSql ? 'sql' : null}
-      noteLanguage={toSql ? 'sql' : 'text'}
+      noteLanguage={toSql ? 'sql' : 'plaintext'}
       swap={{ flip: () => setOpts({ direction: toSql ? 'toList' : 'toSql' }) }}
       inputExtra={(input) =>
         toSql && (

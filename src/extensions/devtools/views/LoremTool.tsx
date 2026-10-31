@@ -18,7 +18,7 @@ export default function LoremTool() {
   const count = Math.min(LOREM_LIMITS.max, Math.max(LOREM_LIMITS.min, opts.count));
   const make = useCallback(() => lorem(opts.unit as LoremUnit, count, opts.classic), [opts.unit, count, opts.classic]);
   const [text, generate] = useGenerated('lorem', make, `${opts.unit}|${count}|${opts.classic}`);
-  const saver = useSaveToNote('text', text || null);
+  const saver = useSaveToNote('plaintext', text || null);
   useToolActions({
     copy: () => void copyText(text),
     save: () => void saver.save(),

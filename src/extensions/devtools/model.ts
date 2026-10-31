@@ -97,7 +97,7 @@ export function toolForBlock(block: Pick<NoteCodeBlock, 'language' | 'code'>): T
 
 /** El lenguaje de la cerca al guardar una salida en una nota. */
 export const OUTPUT_LANGUAGE: Partial<Record<ToolId, string>> = {
-  json: 'json', yaml: 'yaml', xml: 'xml', jwt: 'json', regex: 'text', diff: 'diff', cron: 'text',
+  json: 'json', yaml: 'yaml', xml: 'xml', jwt: 'json', regex: 'plaintext', diff: 'diff', cron: 'plaintext',
 };
 
 // ── Memoria de la sesión (D9) ────────────────────────────────────────

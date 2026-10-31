@@ -85,7 +85,7 @@ describe('vista de DevTools: cada herramienta se dibuja', () => {
     setDraft(draftKey('convert'), '[{"id":1,"n":"a;b"}]');
     const csv = text(render('convert', ConvertTool, { conversion: 'json-csv', separator: 'semicolon' }));
     expect(csv).toContain('id;n');
-    expect(csv).toContain('1 filas · 2 columnas');
+    expect(csv).toContain('1 fila · 2 columnas');
   });
 
   it('codificación', () => {
@@ -142,13 +142,13 @@ describe('vista de DevTools: cada herramienta se dibuja', () => {
     setDraft(draftKey('sql-list'), "1\nO'Brien\n1");
     const sql = text(render('sql-list', SqlListTool));
     expect(sql).toContain("IN ('1', 'O''Brien')");
-    expect(sql).toContain('2 valores · 1 duplicados quitados');
+    expect(sql).toContain('2 valores · 1 duplicado quitado');
     setDraft(draftKey('sql-list'), "'a', 'b");
     expect(text(render('sql-list', SqlListTool, { direction: 'toList' }))).toContain('comilla sin cerrar en la posición 6');
     setDraft(draftKey('list-compare'), 'a\nb\na');
     setDraft(draftKey('list-compare', 'b'), 'b\nc');
     const lc = text(render('list-compare', ListCompareTool));
     expect(lc).toContain('A 2 · B 2 · en las dos 1');
-    expect(lc).toContain('1 duplicados');
+    expect(lc).toContain('1 duplicado');
   });
 });

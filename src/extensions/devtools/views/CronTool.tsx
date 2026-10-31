@@ -39,7 +39,7 @@ export default function CronTool() {
   const output = d?.ok
     ? [expr, d.value, ...(data?.runs ?? []).map((ms) => formatInZone(ms, zone, locale))].join('\n')
     : null;
-  const saver = useSaveToNote('text', output);
+  const saver = useSaveToNote('plaintext', output);
   useAnnounceError(error);
 
   useToolActions({

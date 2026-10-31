@@ -244,7 +244,7 @@ export function DailyList() {
     <div className="flex h-full shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]" style={{ width: 'var(--logday-list-w)' }}>
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
-        <div className="flex min-w-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'dailys', 'title')}</h2>
           <DailysHelp />
         </div>
@@ -262,7 +262,10 @@ export function DailyList() {
               title={t(language, 'dailys', 'addPreviousDateTitle')}
             >
               <CalendarPlus size={13} />
-              {t(language, 'dailys', 'dateBtn')}
+              {/* Solo el ícono: con el botón de ayuda junto al título, el texto
+                  no cabía en la lista de 288 px y se montaban (prueba del 31
+                  oct 2026). El nombre queda para los lectores y en el title. */}
+              <span className="sr-only">{t(language, 'dailys', 'dateBtn')}</span>
             </button>
           </div>
           {/* Dropdown renderizado con position:fixed para evitar clipping */}

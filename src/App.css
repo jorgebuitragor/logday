@@ -265,6 +265,35 @@
 /* Nórdico: el comentario #94a3b8 daba 3,9:1. */
 :root[data-theme="nordic"] { --syntax-comment: var(--text-hint); }
 
+/* Colores de fase del Pomodoro (specs/pomodoro, design §5). Solo pintan
+   gráficos (anillo, barra, puntos e íconos), nunca texto. El trabajo es el
+   acento del tema, así sigue también a los personalizados; los descansos
+   tienen un tono fijo por tema que no se parece al acento. Todos pasan de
+   3:1 sobre la base, el menú y el riel. */
+:root {
+  --phase-work:  var(--accent);
+  --phase-short: #34d399;
+  --phase-long:  #38bdf8;
+  --phase-track: var(--border);
+}
+:root[data-theme="light"]         { --phase-short: #047857; --phase-long: #0369a1; }
+/* Alto contraste: el riel --border solo le sacaba 2,2:1 al acento. */
+:root[data-theme="high-contrast"] { --phase-short: #6ee7b7; --phase-long: #7dd3fc; --phase-track: var(--bg-hover); }
+/* Descanso visual: el acento es verde, así que el corto va en celeste. */
+:root[data-theme="visual-rest"]   { --phase-short: #7dd3fc; --phase-long: #c4b5fd; }
+/* Sepia: el acento #b5652f daba 2,7:1 contra el riel; mismo tono, más oscuro. */
+:root[data-theme="sepia"]         { --phase-work: #9a4f1f; --phase-short: #065f46; --phase-long: #1e40af; }
+/* OLED: el acento es celeste, así que el largo va en violeta. */
+:root[data-theme="oled"]          { --phase-long: #c4b5fd; }
+/* Nórdico: nord14 y nord15 (aclarado), de su propia paleta. */
+:root[data-theme="nordic"]        { --phase-short: #a3be8c; --phase-long: #c4a5c1; }
+
+/* El contador del menú y las filas de "Hoy" del Pomodoro aparecen con
+   opacidad, nunca con altura (design §3.3). */
+@keyframes pomodoro-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.pomodoro-fade-in { animation: pomodoro-fade-in 150ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .pomodoro-fade-in { animation: none; } }
+
 /* Repinta clases Tailwind indigo-* hardcodeadas al acento del tema activo.
    Se activa vía la clase .theme-tinted en <html>, gestionada por
    applyThemeToDOM() para cualquier tema (predefinido o personalizado) cuyo

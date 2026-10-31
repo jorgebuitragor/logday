@@ -487,10 +487,12 @@ fn open_in_system(path: String) -> Result<(), String> {
     Ok(())
 }
 
-const TRAY_ID: &str = "main";
+pub(crate) const TRAY_ID: &str = "main";
 
 /// Menú de la bandeja. "Captura rápida" aparece solo con la extensión
-/// activa (specs/captura-rapida C4), por eso se rearma con `refresh_tray`.
+/// activa (specs/captura-rapida C4), y el bloque del Pomodoro, entre
+/// "Nueva tarea" y "Salir" con su separador (specs/pomodoro, design §4.2),
+/// por eso se rearma con `refresh_tray`.
 fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let show_item = MenuItem::with_id(app, "show", "Mostrar Logday", true, None::<&str>)?;
     let capture_item = match app.state::<extensions::quick_capture::QuickCaptureState>().tray_label() {
@@ -500,12 +502,19 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let new_note_item = MenuItem::with_id(app, "new_note", "Nueva nota", true, None::<&str>)?;
     let new_task_item = MenuItem::with_id(app, "new_task", "Nueva tarea", true, None::<&str>)?;
     let sep = tauri::menu::PredefinedMenuItem::separator(app)?;
+    let pomodoro_items = extensions::pomodoro::tray_items(app)?;
+    let pomodoro_sep = tauri::menu::PredefinedMenuItem::separator(app)?;
     let quit_item = MenuItem::with_id(app, "quit", "Salir", true, None::<&str>)?;
     let mut items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![&show_item];
     if let Some(item) = &capture_item {
         items.push(item);
     }
-    items.extend([&new_note_item as &dyn IsMenuItem<tauri::Wry>, &new_task_item, &sep, &quit_item]);
+    items.extend([&new_note_item as &dyn IsMenuItem<tauri::Wry>, &new_task_item, &sep]);
+    if !pomodoro_items.is_empty() {
+        items.extend(pomodoro_items.iter().map(|i| i as &dyn IsMenuItem<tauri::Wry>));
+        items.push(&pomodoro_sep);
+    }
+    items.push(&quit_item);
     Menu::with_items(app, &items)
 }
 
@@ -520,6 +529,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(extensions::mcp::McpState::default())
         .manage(extensions::quick_capture::QuickCaptureState::default())
+        .manage(extensions::pomodoro::PomodoroState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -574,7 +584,8 @@ pub fn run() {
                         }
                     }
                     "quit" => app.exit(0),
-                    _ => {}
+                    // Pausar, Reanudar, Iniciar y Saltar: sin mostrar la ventana.
+                    id => extensions::pomodoro::on_menu(app, id),
                 })
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click { button: MouseButton::Left, .. } = event {
@@ -586,6 +597,9 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+
+            // Vigila el fin del Pomodoro aunque la ventana esté oculta.
+            extensions::pomodoro::spawn_watcher(app.handle());
 
             #[cfg(windows)]
             {
@@ -680,6 +694,10 @@ pub fn run() {
             extensions::quick_capture::quick_capture_hide,
             extensions::quick_capture::quick_capture_focus,
             extensions::quick_capture::quick_capture_open_main,
+            extensions::pomodoro::pomodoro_schedule,
+            extensions::pomodoro::pomodoro_pause,
+            extensions::pomodoro::pomodoro_idle,
+            extensions::pomodoro::pomodoro_clear,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

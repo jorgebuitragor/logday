@@ -384,6 +384,11 @@ export interface AppState {
   gitFetch: () => Promise<void>;
   toggleGit: () => void;
   openSettingsGitTab: () => void;
+  /** Abre Opciones en la página de una extensión (R21). La señal la
+   *  consume `SettingsModal`, como `isGitOpen`. */
+  settingsExtensionRequest: ExtensionId | null;
+  openExtensionSettings: (id: ExtensionId) => void;
+  clearExtensionSettingsRequest: () => void;
 
   // Sync (logday-server)
   syncConnect: (serverUrl: string, email: string, password: string) => Promise<void>;
@@ -2295,6 +2300,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   gitRemoteStatus: 'unknown' as GitRemoteStatus,
   lastCommitTime: null,
   isGitOpen: false,
+  settingsExtensionRequest: null,
   syncConfig: (() => {
     try {
       return {
@@ -4180,6 +4186,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   toggleGit: () => set((s) => ({ isGitOpen: !s.isGitOpen })),
   openSettingsGitTab: () => set({ isGitOpen: true, isSettingsOpen: true }),
+  openExtensionSettings: (id) => set({ settingsExtensionRequest: id, isSettingsOpen: true }),
+  clearExtensionSettingsRequest: () => set({ settingsExtensionRequest: null }),
 
   // ── Sync (logday-server) ──────────────────────────────────────
 

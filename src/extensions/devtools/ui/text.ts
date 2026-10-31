@@ -2,6 +2,7 @@
 // interpolación `{x}` (como `tasks.nTasks`), y los números, tamaños y
 // fechas en el idioma de la app.
 import { t, type DevtoolsKey, type Language } from '../../../lib/i18n';
+import { interpolate } from '../../../lib/interpolate';
 import type { ToolId } from '../model';
 
 export type Tr = (key: DevtoolsKey, vars?: Record<string, string | number>) => string;
@@ -10,20 +11,7 @@ export const localeOf = (language: Language) => (language === 'es' ? 'es-CO' : '
 
 export function makeTr(language: Language): Tr {
   const num = new Intl.NumberFormat(localeOf(language));
-  return (key, vars) => {
-    const text = t(language, 'devtools', key);
-    if (!vars) return text;
-    // `{n|singular|plural}`: la forma según la cantidad ("1 valor", "2 valores").
-    const plural = text.replace(/\{(\w+)\|([^|}]*)\|([^}]*)\}/g, (whole, name: string, one: string, many: string) => {
-      const v = vars[name];
-      return typeof v === 'number' ? (v === 1 ? one : many) : whole;
-    });
-    return plural.replace(/\{(\w+)\}/g, (whole, name: string) => {
-      const v = vars[name];
-      if (v === undefined) return whole;
-      return typeof v === 'number' ? num.format(v) : v;
-    });
-  };
+  return (key, vars) => interpolate(t(language, 'devtools', key), vars, (v) => num.format(v));
 }
 
 /** Las claves que se arman con el id de la herramienta (Adenda A). */

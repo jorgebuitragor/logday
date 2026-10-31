@@ -50,4 +50,14 @@ Rama `feature/cliente-http-devtools`, desde `develop` (con `feature/devtools-opc
 - [x] El pie de la lista con `privacyNoteWithHttp` mientras está Cliente HTTP (D11).
 - [x] `views/HttpTool.tsx` (la herramienta: specs/cliente-http Interfaz §3).
 - [x] Pruebas: `settings.test.ts` (con y sin Cliente HTTP), `httpTool.test.tsx` y la ayuda (`HelpPopover.test.tsx`).
-- [ ] Prueba en el navegador: DevTools con y sin Cliente HTTP activa (ver `specs/cliente-http/tasks.md`, PR 2).
+- [x] ~~Prueba en el navegador: DevTools con y sin Cliente HTTP activa.~~ Ya no aplica: la herramienta se quitó (ver abajo).
+
+## Quitar Cliente HTTP de DevTools (31 oct 2026, specs/cliente-http HT33)
+
+Rama `feature/http-pantalla-propia`, desde `develop`. Pedido por Jorge: el Cliente HTTP tiene su propia pantalla, y DevTools vuelve a como estaba antes del PR 2.
+
+- [x] `model.ts`, `View.tsx`, `Settings.tsx`, `ui/Help.tsx`, `ui/NotePicker.tsx`, `ui/ToolFrame.tsx`, `ui/ToolNav.tsx`, `ui/context.ts` y `ui/meta.ts` vuelven a su versión de antes del PR 2: sin el grupo `network`, la herramienta `http`, `availableTools`, `availableToolsIn`, `HTTP_CLIENT_ID`, `fallbackTool`, `onClearDrafts`, `clearToolDrafts`, el prop `notice` de `ToolFrame` ni `withHttp` en los atajos de la ayuda.
+- [x] Se queda lo que no era del Cliente HTTP: `saveOutputAsNote` con `formatFence` (la cerca se alarga sola). `readAllNotes` pasa a `lib/allNotes.ts`, que también usa el Cliente HTTP; `notes.ts` la reexporta.
+- [x] Textos: fuera `privacyNoteWithHttp`, `group.network`, `http.name`, `http.desc`, `http.placeholder`, `http.keywords`, `http.help1`–`3`, `help.k.runHttp` y `help.k.tabsHttp` (es y en). D11 restaurado y D25 retirado en `requirements.md`.
+- [x] Pruebas: lo guardado con `lastTool: 'http'`, `network` y `http` en el orden, las ocultas y los plegados se lee sin romper y se ignora (`settings.test.ts`); la vista y Opciones → DevTools, sin Red con Cliente HTTP activa (`views.test.tsx`); la ayuda vuelve a sus 8 herramientas (`HelpPopover.test.tsx`).
+- [ ] Prueba en el navegador: DevTools con Cliente HTTP activa no muestra Red; una config vieja con `lastTool: 'http'` abre JSON.

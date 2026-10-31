@@ -270,7 +270,7 @@ describe('bloques de las notas', () => {
       ['', 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.x'],
       ['yaml', 'b: 2'],
     ]);
-    expect(blocks.map((b) => toolForBlock(b))).toEqual(['json', 'jwt', 'yaml']);
+    expect(blocks.map(toolForBlock)).toEqual(['json', 'jwt', 'yaml']);
     expect(toolForBlock({ language: 'python', code: 'print(1)' })).toBeNull();
   });
 

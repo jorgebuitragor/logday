@@ -17,6 +17,8 @@ import {
 } from '../core/environments';
 import { makeTr } from '../core/text';
 import { peekSettingsEnvRequest, takeSettingsEnvRequest } from '../store';
+import { extensionSection } from '../../state';
+import { TEXT_LINK } from './SendStatus';
 import { EnvironmentPanel, fresh } from './EnvironmentPanel';
 
 type Pending =
@@ -25,18 +27,24 @@ type Pending =
   | { kind: 'unsecret'; envId: string; index: number; v: HttpVariable & { secret: true } };
 
 export default function HttpClientSettingsPanel() {
-  const { language, raw, update, confirmDestructiveActions, devtoolsOn, showToast } = useAppStore(
+  const { language, raw, update, confirmDestructiveActions, showToast } = useAppStore(
     useShallow((s) => ({
       language: s.language,
       raw: s.extensions[EXTENSION_ID]?.settings,
       update: s.updateExtensionSettings,
       confirmDestructiveActions: s.confirmDestructiveActions,
-      devtoolsOn: s.extensions.devtools?.enabled === true,
       showToast: s.showToast,
     })),
   );
   const tr = makeTr(language);
   const settings = readHttpSettings(raw);
+  // El pie lleva a la pantalla del Cliente HTTP (HT33): cierra Opciones y
+  // abre la sección.
+  const openView = () => {
+    const s = useAppStore.getState();
+    if (s.isSettingsOpen) s.toggleSettings();
+    void s.setSection(extensionSection(EXTENSION_ID));
+  };
   const envs = settings.environments;
   // "Definir en Opciones" abre con ese entorno elegido. Se lee en el primer
   // dibujo y se consume después (en modo estricto el inicializador corre dos veces).
@@ -225,9 +233,10 @@ export default function HttpClientSettingsPanel() {
         )}
       </section>
 
-      <p className="flex items-center gap-1.5 text-[11px] text-[var(--text-hint)]">
+      <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-[var(--text-hint)]">
         <Info size={12} aria-hidden />
-        {tr(devtoolsOn ? 'devtoolsHint' : 'devtoolsOffHint')}
+        {tr('viewHint')}
+        <button type="button" onClick={openView} className={TEXT_LINK}>{tr('viewHintOpen')}</button>
       </p>
 
       {pending && modal && (

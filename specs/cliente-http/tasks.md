@@ -1,6 +1,6 @@
 # Cliente HTTP — Tasks
 
-Estado: PR 1 y PR 2 implementados (31 oct 2026); faltan sus pruebas visuales y en la app de QA. Rama `feature/cliente-http`, desde `develop`. Son dos PR: el primero deja la extensión completa en las notas; el segundo suma la herramienta de DevTools.
+Estado: PR 1 y PR 2 implementados (31 oct 2026), y la herramienta de DevTools del PR 2 reemplazada por una pantalla propia (rama `feature/http-pantalla-propia`); faltan sus pruebas visuales y en la app de QA. Rama `feature/cliente-http`, desde `develop`. Son dos PR: el primero deja la extensión completa en las notas; el segundo sumaba la herramienta de DevTools, que ahora es la pantalla (abajo).
 
 ## Antes de empezar
 
@@ -150,6 +150,37 @@ Rama `feature/cliente-http-devtools`, desde `develop` (con el PR 1 y `feature/de
 - **Apagar Cliente HTTP** también olvida lo escrito en la herramienta (`clearToolDrafts('http')`, desde su parada), además de las respuestas.
 - **`saveOutputAsNote`** usa siempre `formatFence`: la cerca lleva una comilla más que la línea más larga que empiece por comillas, en vez de 4 fijas. Vale para todas las herramientas.
 - **`toolForBlock`** abre un ```` ```http ```` en Cliente HTTP solo si está; un bloque sin lenguaje no se reconoce como petición.
+
+## Pantalla propia (31 oct 2026, HT33–HT35)
+
+Rama `feature/http-pantalla-propia`, desde `develop`. Pedido por Jorge (requirements, "Cambio del 31 oct 2026: pantalla propia"; design §11).
+
+- [x] Registro: `view: true` (HT33). `index.ts` aporta `View`; su parada ya no toca los borradores de DevTools.
+- [x] `core/noteRequests.ts` (puro): `collectNoteRequests`, `filterNoteRequests`, `shortUrl`, `requestTitle`, `countRequests`, con `noteRequests.test.ts` (varios bloques, `###`, mal formados, vacíos, notas sin bloques, cercas de 4, más de 20, el buscador).
+- [x] `core/serialize.ts`: `formFromBlock(code, index)` carga cualquier petición del bloque; una línea que no se entiende (o un método no admitido) va entera a la URL.
+- [x] `store.ts`: `form` y `origin` en memoria, `formNoteId`/`formKey` (`view:<nota>:<bloque>:<petición>` y `view:new`), `readFormResult`, `setFormField`, `loadForm`, `newForm`. Fuera `DEVTOOLS_NOTE_ID`, `DEVTOOLS_KEY`, `readDevtoolsResult` y `resetDevtoolsSlot`.
+- [x] `ui/RequestForm.tsx` (lo que era `devtools/views/HttpTool.tsx`, sin el marco de DevTools), `ui/View.tsx` (la columna y la pantalla) y `ui/Help.tsx`.
+- [x] `lib/allNotes.ts`: `readAllNotes` sale de `devtools/notes.ts` para compartirla.
+- [x] Ayuda: `helpTopics.ts` y `ScreenHelp.tsx` (specs/ayuda-contextual AY30).
+- [x] Opciones → Cliente HTTP: el pie apunta a la pantalla, con "Abrir Cliente HTTP". El aviso de R6 y la descripción de la extensión nombran la pantalla.
+- [x] DevTools vuelve a antes del PR 2 (specs/devtools, tareas "Quitar Cliente HTTP de DevTools").
+- [x] Textos es y en con las mismas claves; fuera `devtoolsHint`, `devtoolsOffHint` y `toolLoadedMulti`.
+- [x] Pruebas: `view.test.tsx` (la vista registrada y su sección, la columna en cada estado, cargar una petición, el formulario en cada estado, el envío con Rust simulado y sus confirmaciones, una respuesta por petición, "Nueva petición", la parada, "Guardar en una nota", la ayuda, paridad y voseo), `serialize.test.ts`, `ui.test.tsx` (el pie de Opciones) y `SidebarHelp.test.tsx` (el tema y el título de la ayuda).
+- [ ] Prueba en el navegador y en la app de QA, en los temas claro, oscuro y sepia:
+  - activar la extensión: aparece la sección con `Globe`; apagarla con la pantalla abierta lleva a Inicio;
+  - la columna con notas de varias carpetas, un bloque con `###`, uno mal escrito, el buscador, "Actualizar", y que se actualice tras editar una nota y volver;
+  - elegir una petición, "Abrir la nota", "Nueva petición", "Guardar en una nota" (aparece en la columna);
+  - enviar con el botón, ⌘↵ y Enter en la URL; cancelar con Esc; las confirmaciones; ir de una petición a otra y volver (cada una con su respuesta);
+  - la ventana angosta (la columna arriba, el formulario debajo) y el foco con el teclado;
+  - la ayuda de la sección y el enlace de Opciones.
+
+### Diferencias con el pedido
+
+- **"Traer de una nota" no está:** lo reemplaza la columna, que ya muestra todos los bloques `http`.
+- **Sin "Limpiar"** en el formulario: "Nueva petición" hace lo mismo y además deja de apuntar a la nota.
+- **Atajos:** solo ⌘↵, Enter en la URL y Esc. Los ⌘⇧C, ⌘⇧S, ⌘⇧⌫ y ⌥⌘1–3 eran convenciones de DevTools y no se trajeron; las pestañas de la respuesta se recorren con ←/→ (roving tabindex).
+- **"Guardar en una nota" crea siempre una nota nueva**, también si la petición vino de una nota: no reescribe el bloque original. La petición sigue en el formulario como antes (sin pasar a "venir" de la nota nueva), para que su respuesta no se pierda.
+- **Una respuesta por petición:** cada petición de la columna tiene su clave en la caché (§11.2), en vez de una sola respuesta para todo el formulario.
 
 ## Al cerrar
 

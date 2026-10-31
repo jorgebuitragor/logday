@@ -1,7 +1,8 @@
 // Estado del Cliente HTTP en memoria: qué petición está elegida en cada
-// bloque, lo que está en curso, las confirmaciones pendientes y las
-// respuestas (en la caché de A8). Nada de esto va a disco (HT11). La
-// barra y la franja de un bloque son dos islas aparte: comparten esto.
+// bloque, lo que está en curso, las confirmaciones pendientes, las
+// respuestas (en la caché de A8) y el formulario de la pantalla propia
+// (HT33). Nada de esto va a disco (HT11). La barra y la franja de un
+// bloque son dos islas aparte: comparten esto.
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 import { useAppStore } from '../../store/appStore';
@@ -12,6 +13,7 @@ import { ResponseCache, cacheKey } from './core/cache';
 import { activeEnvironment, EXTENSION_ID, readHttpSettings, type HttpClientSettings, type HttpEnvironment } from './core/environments';
 import { hasErrors, parseHttpBlock, type ParsedRequest, type ParseIssue } from './core/parse';
 import { resolveRequest, type ConfirmReason, type Resolved, type SentPreview } from './core/resolve';
+import { EMPTY_FORM, type HttpForm } from './core/serialize';
 import { formatElapsed, listVars, makeTr, type Tr } from './core/text';
 import type { HttpClientKey } from '../../lib/i18n';
 
@@ -62,15 +64,30 @@ export interface BlockState {
   confirm: PendingConfirm | null;
 }
 
+/** De qué nota viene lo que hay en el formulario de la pantalla (HT34). */
+export interface FormOrigin {
+  noteId: string;
+  title: string;
+  filePath: string;
+  /** El n-ésimo bloque ```http de la nota y la petición dentro de él. */
+  blockIndex: number;
+  requestIndex: number;
+  /** Lo que se ve en la columna: el nombre de `###` o "MÉTODO ruta". */
+  label: string;
+}
+
 interface HttpStore {
   blocks: Record<string, BlockState>;
   /** Sube con cada cambio de la caché, para volver a dibujar. */
   rev: number;
   /** Opciones → Cliente HTTP abre con este entorno elegido. */
   settingsEnvRequest: string | null;
+  /** El formulario de la pantalla y de dónde salió (HT33, HT34). */
+  form: HttpForm;
+  origin: FormOrigin | null;
 }
 
-const initial = (): HttpStore => ({ blocks: {}, rev: 0, settingsEnvRequest: null });
+const initial = (): HttpStore => ({ blocks: {}, rev: 0, settingsEnvRequest: null, form: EMPTY_FORM, origin: null });
 
 export const httpApi = createStore<HttpStore>(() => initial());
 
@@ -288,31 +305,54 @@ export function readResult(noteId: string, blockIndex: number, requestIndex: num
   return cache.get(cacheKey(noteId, blockIndex, requestIndex), req.firstLine, req.source);
 }
 
-// ---------- DevTools (A10) ----------
-// La herramienta "Cliente HTTP" de DevTools es un bloque más, con una sola
-// petición y una clave propia: `devtools#0`, y en la caché `devtools#0#0`.
+// ---------- La pantalla propia (HT33–HT35) ----------
+// El formulario es un bloque más, con una sola petición. Cada petición de
+// una nota tiene su propia clave (`view:<nota>:<bloque>:<petición>`), y la
+// nueva, `view:new`: al ir de una a otra, cada una conserva su respuesta y
+// lo que esté en curso. La nota no se toca: la clave no es la del bloque.
 
-export const DEVTOOLS_NOTE_ID = 'devtools';
-export const DEVTOOLS_KEY = blockKey(DEVTOOLS_NOTE_ID, 0);
+export function formNoteId(origin: FormOrigin | null): string {
+  return origin ? `view:${origin.noteId}:${origin.blockIndex}:${origin.requestIndex}` : 'view:new';
+}
 
-/** La última respuesta de la herramienta, aunque la URL haya cambiado
- *  (entonces se ve como vieja): solo hay una petición. */
-export function readDevtoolsResult(source: string | null): { entry: CachedResult; stale: boolean } | null {
-  const entry = cache.peek(cacheKey(DEVTOOLS_NOTE_ID, 0, 0));
+export const formKey = (origin: FormOrigin | null) => blockKey(formNoteId(origin), 0);
+
+/** La última respuesta del formulario, aunque la petición haya cambiado
+ *  (entonces se ve como vieja): hay una sola petición. */
+export function readFormResult(origin: FormOrigin | null, source: string | null): { entry: CachedResult; stale: boolean } | null {
+  const entry = cache.peek(cacheKey(formNoteId(origin), 0, 0));
   if (!entry) return null;
   return { entry: entry.value, stale: entry.source !== source };
 }
 
-/** "Limpiar", "Vaciar todas las herramientas" o la parada de DevTools:
- *  cancela lo que esté en curso y olvida la respuesta y la confirmación. */
-export function resetDevtoolsSlot() {
+/** Cancela lo que esté en curso en esa clave y olvida su respuesta y su
+ *  confirmación. */
+function resetSlot(origin: FormOrigin | null) {
   const s = httpApi.getState();
-  const b = s.blocks[DEVTOOLS_KEY];
+  const key = formKey(origin);
+  const b = s.blocks[key];
   if (b?.inFlight) void cancelHttp(b.inFlight.requestId);
-  cache.delete(cacheKey(DEVTOOLS_NOTE_ID, 0, 0));
+  cache.delete(cacheKey(formNoteId(origin), 0, 0));
   const blocks = { ...s.blocks };
-  delete blocks[DEVTOOLS_KEY];
+  delete blocks[key];
   httpApi.setState({ blocks, rev: s.rev + 1 });
+}
+
+export function setFormField<K extends keyof HttpForm>(field: K, value: HttpForm[K]) {
+  httpApi.setState((s) => ({ form: { ...s.form, [field]: value } }));
+}
+
+/** Elegir una petición de la columna: el formulario pasa a ser ella. Lo
+ *  que se escribió en el anterior se olvida; las respuestas, no. */
+export function loadForm(form: HttpForm, origin: FormOrigin) {
+  httpApi.setState({ form, origin });
+}
+
+/** "Nueva petición": el formulario vacío, sin nota, y sin la respuesta de
+ *  la petición nueva anterior. */
+export function newForm() {
+  resetSlot(null);
+  httpApi.setState({ form: EMPTY_FORM, origin: null });
 }
 
 /** El entorno activo para todas las peticiones (HT19). */

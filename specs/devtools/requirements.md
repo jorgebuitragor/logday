@@ -12,7 +12,7 @@ Jorge la eligió el 30 oct 2026 entre las candidatas del grupo Herramientas, con
 
 ### Vista
 
-- D0. MIENTRAS la extensión esté activa, el menú lateral DEBERÁ tener la sección "DevTools" (R11). Su vista DEBERÁ listar las herramientas (por grupo, o de la A a la Z según D18) y abrir una a la vez. Los grupos son Formatos, Codificar, Generadores, Fechas, Texto, Listas y, con la extensión Cliente HTTP activa, Red (D25).
+- D0. MIENTRAS la extensión esté activa, el menú lateral DEBERÁ tener la sección "DevTools" (R11). Su vista DEBERÁ listar las herramientas (por grupo, o de la A a la Z según D18) y abrir una a la vez. Los grupos son Formatos, Codificar, Generadores, Fechas, Texto y Listas.
 
 ### Herramientas
 
@@ -54,9 +54,8 @@ Jorge la eligió el 30 oct 2026 entre las candidatas del grupo Herramientas, con
 - D10. **Puente con Logday.**
   - "Guardar en una nota" DEBERÁ crear una nota nueva, en la raíz, con la salida en un bloque de código del lenguaje que corresponda, y avisar con un toast que permita abrirla.
   - "Traer de una nota" DEBERÁ dejar elegir una nota y uno de sus bloques de código, y cargarlo en la herramienta que corresponda a su lenguaje (o a su contenido, si no tiene lenguaje).
-- D11. DevTools NO DEBERÁ enviar nada fuera del equipo. Por eso no lleva el aviso de R6.
-  - La herramienta Cliente HTTP (D25) es de la extensión Cliente HTTP, que lleva su propio aviso de R6, y solo aparece con las dos activas. Envía una petición solo cuando el usuario pulsa Enviar (specs/cliente-http HT3).
-  - El pie de la lista DEBERÁ decirlo: "Todo se procesa en este equipo" sin Cliente HTTP, y "Todo se procesa en este equipo, salvo Cliente HTTP, que envía tus peticiones cuando pulsas Enviar" con ella.
+- D11. DevTools NO DEBERÁ enviar nada fuera del equipo, sin excepción. Por eso no lleva el aviso de R6, y el pie de la lista dice "Todo se procesa en este equipo".
+  - Restaurado el 31 oct 2026: entre el PR 2 del Cliente HTTP y este cambio tuvo la excepción de la herramienta Cliente HTTP (D25, retirado). Pedido por Jorge.
 - D12. Su código DEBERÁ cargarse solo cuando está activa (R16). Las dependencias nuevas DEBERÁN ser mínimas:
   - `cronstrue`, con el español cargado aparte;
   - `qrcode-generator`;
@@ -109,12 +108,11 @@ Pedido por Jorge el 31 oct 2026: «¿Por qué no existe un apartado de opciones 
 - D23. La página DEBERÁ tener "Restablecer las opciones de las herramientas", que borra las opciones recordadas de todas (D9) y conserva lo demás. Solo DEBERÁ verse si hay opciones guardadas.
 - D24. Las preferencias de D17–D23 son locales y no se sincronizan, como el resto de la configuración de la extensión. Una herramienta o un grupo que se agregue en una versión futura DEBERÁ aparecer al final de su grupo (o de la lista de grupos), visible y desplegado.
 
-### Red (specs/cliente-http)
+### Red (retirado el 31 oct 2026)
 
-- D25. MIENTRAS las extensiones DevTools y Cliente HTTP estén activas, la lista DEBERÁ tener el grupo "Red", al final (D24), con la herramienta "Cliente HTTP" (specs/cliente-http HT27 y HT28).
-  - Con Cliente HTTP apagada, la herramienta y su grupo NO DEBERÁN aparecer en la columna, el selector de la ventana angosta, la búsqueda, ⌥⌘↓/↑, la ayuda ni Opciones → DevTools, y un bloque ```` ```http ```` de "Traer de una nota" no se abre en ella. Lo guardado de ella (orden, oculta, plegado) se conserva para cuando vuelva.
-  - SI la última herramienta abierta era Cliente HTTP y ya no está, DevTools DEBERÁ abrir la de por defecto (JSON) sin cambiar lo guardado.
-  - Lo que se escribe en ella y su respuesta viven en memoria (D9): "Vaciar todas las herramientas" y desactivar DevTools o Cliente HTTP lo borran.
+- ~~D25. El grupo "Red", con la herramienta "Cliente HTTP" mientras DevTools y Cliente HTTP estuvieran activas.~~ **Retirado el 31 oct 2026, pedido por Jorge:** no la encontraba (no tenía Cliente HTTP activa) y le pareció confuso que una extensión con su propia opción en Extensiones viviera dentro de otra. El Cliente HTTP tiene ahora su propia pantalla (specs/cliente-http HT33–HT35), y DevTools vuelve a sus seis grupos y a D11 sin excepción.
+  - Lo guardado de entonces se lee sin romper y se ignora: `lastTool: 'http'` abre la herramienta por defecto (JSON), y `http` o `network` en `groupOrder`, `toolOrder`, `hidden` y `collapsed` se descartan al leer (`readDevtoolsSettings`) y desaparecen del archivo la próxima vez que se guardan esas listas.
+  - Un bloque ```` ```http ```` de "Traer de una nota" se trata como uno sin herramienta propia: se carga en la abierta, o en JSON.
 
 ## Decisiones (30 oct 2026)
 

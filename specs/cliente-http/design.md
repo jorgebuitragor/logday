@@ -1,6 +1,6 @@
 # Cliente HTTP — Design
 
-Estado: aprobado (31 oct 2026); los PR 1 y 2 están implementados. Lo que está marcado como **nuevo** no existía en `develop` (9213ed2) cuando se escribió; todo lo demás se comprobó contra esa versión. Lo que la implementación hizo distinto está en `tasks.md`, "Diferencias con el diseño".
+Estado: aprobado (31 oct 2026); los PR 1 y 2 están implementados, y la herramienta de DevTools del PR 2 se reemplazó por una pantalla propia (§11, HT33–HT35). Lo que está marcado como **nuevo** no existía en `develop` (9213ed2) cuando se escribió; todo lo demás se comprobó contra esa versión. Lo que la implementación hizo distinto está en `tasks.md`, "Diferencias con el diseño".
 
 ## Arquitectura
 
@@ -13,7 +13,8 @@ src/extensions/http-client/
     parse.ts            el bloque http → peticiones + problemas (HT5–HT7)
     resolve.ts          variables y entorno → petición para Rust + vista enmascarada (HT15–HT16, HT21)
     environments.ts     leer y validar los ajustes, hosts de confianza, claves de secretos (HT17–HT22)
-    serialize.ts        formulario de DevTools ↔ texto http (HT28)
+    serialize.ts        formulario de la pantalla ↔ texto http (HT33)
+    noteRequests.ts     la columna "Peticiones": las peticiones de los textos de las notas (HT34)
     body.ts             qué vista lleva una respuesta: JSON, XML, texto, imagen o binario (HT10, HT12)
     cache.ts            respuestas en memoria con tope (HT11)
     api.ts              invoke('http_client_send' | 'http_client_cancel'); traduce los errores
@@ -22,10 +23,13 @@ src/extensions/http-client/
   ui/
     BlockHeader.tsx     barra del bloque
     BlockFooter.tsx     problemas, confirmación y respuesta del bloque
-    ResponseView.tsx    la respuesta, compartida con DevTools
-    EnvironmentChip.tsx selector del entorno activo, compartido con DevTools
+    ResponseView.tsx    la respuesta, compartida con la pantalla
+    EnvironmentChip.tsx selector del entorno activo, compartido con la pantalla
     Settings.tsx        Opciones → Cliente HTTP
-src/extensions/devtools/views/HttpTool.tsx      la herramienta de DevTools (HT27)
+    View.tsx            la pantalla: la columna "Peticiones" y el formulario (HT33, HT34)
+    RequestForm.tsx     el formulario (antes devtools/views/HttpTool.tsx)
+    Help.tsx            su ayuda contextual (HT35)
+src/lib/allNotes.ts                             las notas de todas las carpetas (también la usa DevTools)
 src-tauri/src/extensions/http_client.rs         el envío (HT23–HT26)
 ```
 
@@ -52,7 +56,7 @@ En `registry.ts`, y sumando `'http-client'` a `ExtensionId`:
 
 - `httpClientSecretKeys` va en `src/extensions/http-client/secretKeys.ts`: una función pura de unas 10 líneas, sin dependencias. El registro la puede importar sin cargar el módulo (R16).
 - El ícono es `Globe`, que no usa otra extensión. `Send` se reserva para el botón Enviar.
-- No lleva `view`: no tiene sección propia en el menú lateral. Aparece en las notas, en Opciones y, con DevTools activa, como herramienta de DevTools.
+- ~~No lleva `view`: no tiene sección propia en el menú lateral.~~ **Desde el 31 oct 2026 lleva `view: true`** (HT33): su sección aparece en el menú al activarla, con el ícono `Globe`, y sigue las reglas de las demás (specs/extensiones R11 y R13, specs/navegacion-secciones NS7). Ver §11.
 
 ### A3. Cambios en la base de extensiones (nuevo)
 
@@ -348,9 +352,11 @@ pub fn http_client_cancel(request_id: String) -> bool;
 - Por encima de `HIGHLIGHT_LIMIT` (200 KB) va sin colores. Por encima de 2 MB se muestran solo los primeros 2 MB.
 - Guardar como archivo usa `save()` de `@tauri-apps/plugin-dialog` y `fs.writeBinary` o `fs.writeFile` (`lib/invoke.ts`), como `useImageSaver` en `devtools/ui/CodeImage.tsx`. El nombre por defecto sale del último segmento de la ruta, o "respuesta", con la extensión del tipo.
 
-### A10. DevTools
+### A10. DevTools (retirado el 31 oct 2026)
 
-La herramienta vive en DevTools porque usa su marco (`ToolFrame`, el contexto, los atajos, "Guardar en una nota" y "Traer de una nota"). El motor y la vista de la respuesta los importa de `http-client`.
+> **Retirado, pedido por Jorge (31 oct 2026):** la herramienta pasó a la pantalla propia (§11). DevTools volvió a su versión de antes del PR 2 (specs/devtools D11 y D25). Se deja lo de abajo como registro de lo que hubo.
+
+La herramienta vivía en DevTools porque usa su marco (`ToolFrame`, el contexto, los atajos, "Guardar en una nota" y "Traer de una nota"). El motor y la vista de la respuesta los importa de `http-client`.
 
 - **`devtools/model.ts`:**
   - `ToolGroup` suma `'network'`, `ToolId` suma `'http'`, y `TOOL_GROUPS` suma `{ group: 'network', tools: ['http'] }` al final;
@@ -638,7 +644,9 @@ El texto del chip va siempre en `--text-primary`, y el número y el texto del es
   - `Download` → "Guardar como archivo". Siempre en binarios; en texto, desde el menú `MoreHorizontal`.
   - `X` → "Cerrar la respuesta". Solo en el bloque; la borra de la caché.
 
-### 3. Herramienta "Cliente HTTP" en DevTools
+### 3. Herramienta "Cliente HTTP" en DevTools (reemplazada por §11)
+
+> El formulario es el mismo, pero vive en la pantalla propia (§11). Lo que dice esta sección de `ToolFrame`, el contexto de DevTools, "Traer de una nota" y sus atajos ⌘⇧ ya no aplica.
 
 Usa `ToolFrame` con `bodyClass="flex flex-col gap-4 px-5 py-4"` y `headerExtra={<EnvironmentChip />}`.
 
@@ -749,7 +757,7 @@ De 1 a 300 segundos; de 1 a 50 MB.
   - Los agregados son `CHIP` con un botón `X` (`aria-label="Quitar {host}"`).
   - El campo valida que sea solo un host (sin esquema, ruta ni espacios) y lo guarda en minúsculas.
 - **Peticiones:** `NumberField` (`w-16 tabular-nums`) y `Toggle`, en el grid `grid-cols-[auto_auto_1fr]` del Pomodoro. "Restablecer valores" es `SECONDARY_CLS`, sin confirmar.
-- **Pie:** si DevTools está apagada, dice "Activa DevTools para probar una petición sin guardarla.".
+- **Pie:** ~~si DevTools está apagada, dice "Activa DevTools para probar una petición sin guardarla."~~ Desde el 31 oct 2026 dice "Para probar una petición sin guardarla, usa la pantalla Cliente HTTP del menú lateral." con el enlace "Abrir Cliente HTTP", que cierra Opciones y abre la sección.
 - **Errores del llavero:** un toast `error`, "No se pudo guardar en el llavero", y el campo conserva lo escrito.
 - **Vacío** (sin entornos):
   ```
@@ -767,10 +775,9 @@ De 1 a 300 segundos; de 1 a 50 MB.
 | Barra o respuesta | `Esc` mientras se envía | Cancela. |
 | Menús (petición, entorno) | ↑/↓, Home/End, Enter/Espacio, Esc | Patrón de menú. Esc devuelve el foco al botón. |
 | Pestañas de la respuesta y de los entornos | ←/→, Home/End | Roving tabindex. |
-| DevTools | `⌘↵` | Enviar (`ToolActions.primary`). |
-| DevTools | `⌘⇧C` · `⌘⇧S` · `⌘⇧O` · `⌘⇧⌫` | Copiar el cuerpo · Guardar la petición en una nota · Traer de una nota · Limpiar (los de DevTools §7). |
-| DevTools | `⌥⌘1` a `⌥⌘3` | Pestañas de la respuesta (`ToolActions.tab`). |
-| DevTools, URL | Enter | Enviar. |
+| Pantalla, formulario | `⌘↵` (Ctrl+Enter) | Enviar, desde cualquier campo. |
+| Pantalla, URL | Enter | Enviar. |
+| Pantalla, formulario | `Esc` mientras se envía | Cancela. |
 
 - **Orden de foco en el bloque:** barra (selector de petición → chip del entorno → Enviar) → código → franja (enlaces del problema → confirmación → pestañas → acciones → `<pre>`).
   - Las islas son `contentEditable={false}` dentro del editor, como los botones de Mermaid.
@@ -839,8 +846,8 @@ Todos con tú y sin voseo. Las variables `{x}` y los plurales `{n|uno|varios}` s
 | Clave | es | en |
 |---|---|---|
 | `http-client.name` | Cliente HTTP | HTTP client |
-| `http-client.description` | Prueba APIs desde tus notas: escribe la petición en un bloque http, pulsa Enviar y mira la respuesta debajo. Con entornos y variables, y los secretos en el llavero. | Test APIs from your notes: write the request in an http block, press Send and see the response below. With environments and variables, and secrets in the keychain. |
-| `http-client.consent` | Con esta extensión, Logday envía peticiones HTTP a las direcciones que escribas en tus notas o en DevTools, con las cabeceras y el cuerpo que pongas, incluidos los valores de tus variables y secretos. Solo se envía cuando pulsas Enviar, desde este equipo. Qué pasa después con esos datos depende del servicio que los recibe. Las peticiones se guardan en tus notas y se sincronizan con ellas; las respuestas no se guardan. Los secretos van al llavero del sistema y nunca se escriben en la nota. | With this extension, Logday sends HTTP requests to the addresses you write in your notes or in DevTools, with the headers and body you add, including the values of your variables and secrets. It only sends when you press Send, from this computer. What happens to that data afterwards depends on the service that receives it. Requests are saved in your notes and sync with them; responses are not saved. Secrets go to the system keychain and are never written in the note. |
+| `http-client.description` | Prueba APIs desde tus notas: escribe la petición en un bloque http, pulsa Enviar y mira la respuesta debajo. Con su propia pantalla para reunir y enviar las peticiones de todas tus notas, entornos y variables, y los secretos en el llavero. | Test APIs from your notes: write the request in an http block, press Send and see the response below. With its own screen that gathers and sends the requests from all your notes, environments and variables, and secrets in the keychain. |
+| `http-client.consent` | Con esta extensión, Logday envía peticiones HTTP a las direcciones que escribas en tus notas o en la pantalla Cliente HTTP, con las cabeceras y el cuerpo que pongas, incluidos los valores de tus variables y secretos. Solo se envía cuando pulsas Enviar, desde este equipo. Qué pasa después con esos datos depende del servicio que los recibe. Las peticiones se guardan en tus notas y se sincronizan con ellas; las respuestas no se guardan. Los secretos van al llavero del sistema y nunca se escriben en la nota. | With this extension, Logday sends HTTP requests to the addresses you write in your notes or on the HTTP client screen, with the headers and body you add, including the values of your variables and secrets. It only sends when you press Send, from this computer. What happens to that data afterwards depends on the service that receives it. Requests are saved in your notes and sync with them; responses are not saved. Secrets go to the system keychain and are never written in the note. |
 
 #### 8.2 Sección `httpClient`: bloque y respuesta
 
@@ -1036,10 +1043,12 @@ Todos con tú y sin voseo. Las variables `{x}` y los plurales `{n|uno|varios}` s
 | `rangesHelp` | De 1 a 300 segundos; de 1 a 50 MB. | From 1 to 300 seconds; from 1 to 50 MB. |
 | `resetValues` | Restablecer valores | Reset values |
 | `keychainSaveError` | No se pudo guardar en el llavero | Couldn't save to the keychain |
-| `devtoolsHint` | Para probar una petición sin guardarla, usa Cliente HTTP en DevTools. | To try a request without saving it, use HTTP client in DevTools. |
-| `devtoolsOffHint` | Activa DevTools para probar una petición sin guardarla. | Turn on DevTools to try a request without saving it. |
+| `viewHint` | Para probar una petición sin guardarla, usa la pantalla Cliente HTTP del menú lateral. | To try a request without saving it, use the HTTP client screen in the sidebar. |
+| `viewHintOpen` | Abrir Cliente HTTP | Open HTTP client |
 
-#### 8.8 DevTools (sección `devtools`, claves de herramienta)
+#### 8.8 DevTools (sección `devtools`, claves de herramienta) — quitadas el 31 oct 2026
+
+> Las claves de `devtools` de esta tabla se quitaron con la herramienta. Las de `httpClient` siguen, para el formulario de la pantalla, menos `toolLoadedMulti`; `toolNotice` cambió a "Enviar manda la petición a la URL que escribas, desde este equipo." y se sumó `toolUrlPlaceholder`. Los textos de la pantalla están en §11.
 
 | Clave | es | en |
 |---|---|---|
@@ -1097,9 +1106,92 @@ Jorge las aprobó todas el 31 oct 2026, tal como las recomienda el diseño (`req
 2. **Entorno activo global** o uno por nota. Recomendado: **global**, con el chip en cada bloque y los entornos protegidos. Uno por nota tendría que guardarse en la nota (y viajar por el sync) o en un mapa local por nota que nadie ve.
 3. **Confirmar los secretos que van a un host ajeno (HT21).** Recomendado: **sí**. Si no, una nota creada por el agente de MCP, o pegada de otro lado, podría mandar `{{token}}` adonde quiera con un clic.
 4. **Entorno protegido: qué métodos confirma.** Recomendado: **solo POST, PUT, PATCH y DELETE**. Confirmar también los GET acostumbra a pulsar "Enviar" sin leer.
-5. **Grupo "Red" nuevo en DevTools** o meter la herramienta en uno existente. Recomendado: **"Red"**, al final. Ningún grupo actual encaja, y deja sitio para lo que venga (de cURL a petición, analizar una URL).
+5. **Grupo "Red" nuevo en DevTools** o meter la herramienta en uno existente. Recomendado: **"Red"**, al final. Ningún grupo actual encaja, y deja sitio para lo que venga (de cURL a petición, analizar una URL). *Enmendada el 31 oct 2026, pedido por Jorge: ni grupo ni herramienta en DevTools; el Cliente HTTP tiene su pantalla (§11).*
 6. **`Content-Type: application/json` automático** para un cuerpo JSON. Recomendado: **sí**, marcado como "Agregada por Logday".
 7. **Variables del sistema** (`$uuid`, `$timestamp`, `$isoTimestamp`). Recomendado: **sí**. Son tres funciones, y sin ellas muchas pruebas de POST se escriben a mano cada vez.
 8. **Vista previa de imágenes.** Recomendado: **sí**, hasta 5 MB.
 9. **Resaltado `http` en todas las notas**, aunque la extensión esté apagada. Recomendado: **sí** (≈1 KB).
 10. **HTTP/2.** Recomendado: **no en la primera versión**. Suma la feature `http2` de reqwest (y `h2`), y casi todas las APIs hablan HTTP/1.1.
+
+### 11. La pantalla propia (31 oct 2026, HT33–HT35)
+
+Pedida por Jorge: el Cliente HTTP de DevTools no se encontraba (con la extensión apagada no aparecía) y era confuso que una extensión con su propia opción en Extensiones viviera dentro de otra.
+
+#### 11.1 Anatomía
+
+```
+┌ menú ─┬ PETICIONES · 4 peticiones   [⟳] ┬ [🌐] Crear                                      ⛁ Staging ▾
+│ …     │ [ + Nueva petición            ]  │      De «API de usuarios» · Abrir la nota
+│ 🌐    │ [ 🔍 Buscar peticiones        ]  │      🌐 Enviar manda la petición a la URL que escribas, desde este equipo.
+│Cliente│                                  ├──────────────────────────────────────────────────────────────────
+│ HTTP  │ 📄 API de usuarios               │ PETICIÓN                                   [📄+ Guardar en una nota]
+│       │ ▌POST  Crear                     │ [POST ▾] [ {{baseUrl}}/users                         ] [➤ Enviar ⌘↵]
+│       │        {{baseUrl}}/users         │ CABECERAS                         │ CUERPO
+│       │  GET   Listar                    │ ┌───────────────────────────────┐ │ ┌───────────────────────────────┐
+│       │        api.example.com/users?p…  │ │Content-Type: application/json │ │ │{"name":"Ana"}                 │
+│       │  DELETE api.example.com/users/1  │ └───────────────────────────────┘ │ └───────────────────────────────┘
+│       │ 📄 Sin título                    │ ⓘ En la nota, esta petición tiene un error: …   (solo si lo tiene)
+│       │  GET   x.com              ⊘      │
+│       │                                  │ RESPUESTA
+│       │                                  │ [✓ 200 OK]  143 ms · 1,2 KB …           (la misma ResponseView)
+└───────┴──────────────────────────────────┴──────────────────────────────────────────────────────────────────
+```
+
+- **Contenedor:** `@container/httpview`, en fila desde `@2xl` (≈672 px de la zona de contenido). Más angosto, la columna va arriba con `max-h-[40vh]` y el formulario debajo.
+- **Columna** (`RequestsColumn`, `<aside aria-labelledby>`): 260 px, `bg-[var(--bg-panel)]` y borde a la derecha, como la de DevTools.
+  - Encabezado `PANEL_TITLE` "Peticiones", con el total ("· 4 peticiones") y "Actualizar la lista" (`ICON_BTN` con `RotateCw`, que gira mientras lee).
+  - "Nueva petición" (`SECONDARY_CLS` con `Plus`) y el buscador (`INPUT_CLS` con `Search`).
+  - La lista va en un `<nav aria-label="Peticiones de tus notas">`. Cada nota es un `<section aria-label>` con su título (`FileText`); cada petición, un botón de ancho completo con el método en mono (`w-12`), el nombre o la URL sin el esquema (`truncate`), la URL debajo si tiene nombre, y `CircleAlert` rojo con el sr "con errores" si tiene un error. El `title` lleva el método y la URL entera.
+  - La elegida lleva `aria-current="true"` y el resaltado del segmentado (`bg-indigo-500/10 ring-1 ring-indigo-500/40`).
+  - Estados: "Leyendo tus notas…" con `Spinner` la primera vez; el vacío (borde punteado, "Todavía no hay peticiones en tus notas" y cómo crear una); "Ninguna petición coincide con «…»."; "No se pudieron leer tus notas." si falla la primera lectura.
+- **Formulario** (`RequestForm`, `<section aria-labelledby="http-view-title" class="@container/tool">`): el de §3, sin `ToolFrame`.
+  - La cabecera lleva `Globe`, el título (el de la fila elegida, o "Petición nueva, sin guardar"), "De «nota» · Abrir la nota" si viene de una, el aviso fijo y el `EnvironmentChip`.
+  - "Guardar en una nota" es un `ICON_BTN` con `FilePlus` y el texto desde `@sm/tool`. Al guardar: toast "Nota creada" con "Abrir", la línea "Nota creada: «…» · Abrir la nota" mientras no cambie lo escrito, y la columna se vuelve a leer.
+  - Sin "Limpiar" ni "Traer de una nota": los reemplazan "Nueva petición" y la columna.
+
+#### 11.2 Cómo funciona
+
+- **Lectura de las notas:** `readAllNotes()` (`lib/allNotes.ts`, la que ya usaba "Traer de una nota" de DevTools, movida a `lib/` para compartirla) lee las notas de la raíz y de cada carpeta de disco, porque el store solo tiene las de la carpeta abierta. `collectNoteRequests` (puro, `core/noteRequests.ts`) usa `parseFencedBlocks(content, 'http')` y `parseHttpBlock`: el `blockIndex` es el mismo índice que el editor da a cada bloque `http` (R24), y cada sección `###` es una petición. Un bloque vacío no aporta; uno con más de 20, las 20 primeras (HT6).
+- **Cuándo se vuelve a leer:** al montar la vista (al volver a la sección), con "Actualizar", tras "Guardar en una nota" y, con una pausa de 800 ms, cuando cambian `notes`, `noteFolders` o `basePath` en el store (editar, crear, sincronizar). Si dos lecturas se cruzan, gana la última. No hay vigilancia del disco: un cambio hecho fuera de Logday se ve al volver a la sección o con "Actualizar".
+- **Cargar una petición:** `formFromBlock(code, requestIndex)` la pasa al formulario. Si la línea de la petición no se entiende o su método no es uno de los admitidos, va entera a la URL: así se ve lo que dice la nota y no se envía un GET que no está escrito. El aviso "En la nota, esta petición tiene un error: …" sale del primer error de esa petición en la nota.
+- **Estado (en el store del Cliente HTTP, en memoria):** `form` y `origin` (la nota, el bloque, la petición, su título y su ruta). `resetAll()` al desactivar la extensión los olvida con todo lo demás.
+- **Claves del motor:** el formulario es un bloque de una sola petición, con la clave `view:<nota>:<bloque>:<petición>` para la que viene de una nota y `view:new` para la nueva (`formNoteId`). Así, al ir de una petición a otra, cada una conserva su respuesta y lo que tenga en curso, y nunca se mezcla con la respuesta del bloque en la nota (que usa `<nota>#<bloque>`). "Nueva petición" cancela y olvida lo de `view:new`.
+- **Abrir la nota:** se vuelve a leer de disco por su ruta (o se busca por id entre todas, si se movió) y se abre con `setActiveNote` y `setSection('notes')`, como DevTools. Si ya no existe, un toast "No se encontró la nota…" y la lista se vuelve a leer.
+- **Opciones → Cliente HTTP:** el pie dice cómo llegar a la pantalla, con un enlace que cierra Opciones y abre `ext:http-client`.
+
+#### 11.3 Teclado y accesibilidad
+
+- ⌘↵ (Ctrl+Enter) envía desde cualquier campo del formulario; Enter en la URL, también; Esc cancela lo que está en curso. La confirmación (HT20, HT21) es la de §1.4.
+- Elegir una petición no mueve el foco: se anuncia "Cargada: {petición}, de «{nota}»" en la región viva de la extensión. "Nueva petición" anuncia "Petición nueva".
+- Los campos con error llevan `aria-invalid` y `aria-describedby` hacia el problema, como en §3.
+
+#### 11.4 Textos nuevos (`httpClient`)
+
+| Clave | es | en |
+|---|---|---|
+| `viewRequests` | Peticiones | Requests |
+| `viewRequestsAria` | Peticiones de tus notas | Requests in your notes |
+| `viewSearch` | Buscar peticiones | Search requests |
+| `viewRefresh` | Actualizar la lista | Refresh the list |
+| `viewNew` | Nueva petición | New request |
+| `viewLoading` | Leyendo tus notas… | Reading your notes… |
+| `viewReadError` | No se pudieron leer tus notas. | Couldn't read your notes. |
+| `viewEmptyTitle` | Todavía no hay peticiones en tus notas | No requests in your notes yet |
+| `viewEmpty` | Escribe un bloque ```http en cualquier nota, por ejemplo con GET https://example.com, y aparece aquí. También puedes empezar con «Nueva petición» y guardarla en una nota. | Write an ```http block in any note, for example with GET https://example.com, and it shows up here. You can also start with "New request" and save it to a note. |
+| `viewNoMatches` | Ninguna petición coincide con «{query}». | No request matches "{query}". |
+| `viewUntitled` | Sin título | Untitled |
+| `viewCount` | {n\|1 petición\|{n} peticiones} | {n\|1 request\|{n} requests} |
+| `viewFrom` | De «{title}» | From "{title}" |
+| `viewNewRequest` | Petición nueva, sin guardar | New request, not saved |
+| `viewOpenNote` | Abrir la nota | Open the note |
+| `viewOpenNoteError` | No se encontró la nota: puede que la hayas borrado o movido. | The note wasn't found: you may have deleted or moved it. |
+| `viewLoadedErrors` | En la nota, esta petición tiene un error: {message} | In the note, this request has an error: {message} |
+| `aLoaded` | Cargada: {label}, de «{title}» | Loaded: {label}, from "{title}" |
+| `aNew` | Petición nueva | New request |
+| `saveToNote` | Guardar en una nota | Save to a note |
+| `noteTitle` | Cliente HTTP — {date} | HTTP client — {date} |
+| `noteCreated` · `noteCreatedLive` · `noteCreateError` · `noteOpen` | Nota creada · Nota creada: «{title}» · No se pudo crear la nota · Abrir | Note created · Note created: "{title}" · Couldn't create the note · Open |
+| `toolUrlPlaceholder` | https://api.example.com/users | https://api.example.com/users |
+| `viewHint` · `viewHintOpen` | ver §8.7 | see §8.7 |
+
+Los de la ayuda (`helpTitle`, `help1`–`help6`, `helpKeySend`, `helpKeyUrl`, `helpKeyCancel`) están en specs/ayuda-contextual, design, "la ayuda del Cliente HTTP".

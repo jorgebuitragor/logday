@@ -13,7 +13,6 @@ const app = vi.hoisted(() => ({
   language: 'es',
   extensions: {
     'http-client': { enabled: true, settings: {} as Record<string, unknown> },
-    devtools: { enabled: false },
   } as Record<string, { enabled: boolean; settings?: Record<string, unknown> }>,
   confirmDestructiveActions: true,
   updateExtensionSettings: async (id: string, patch: Record<string, unknown>) => {
@@ -357,7 +356,10 @@ describe('Opciones → Cliente HTTP', () => {
     const html = text(renderToStaticMarkup(<Settings />));
     expect(html).toContain('Todavía no tienes entornos.');
     expect(html).toContain('Crear un entorno');
-    expect(html).toContain('Activa DevTools para probar una petición sin guardarla.');
+    // El pie lleva a la pantalla propia, no a DevTools (HT33).
+    expect(html).toContain('Para probar una petición sin guardarla, usa la pantalla Cliente HTTP del menú lateral.');
+    expect(html).toContain('Abrir Cliente HTTP');
+    expect(html).not.toContain('DevTools');
     expect(html).toContain('Tiempo límite');
   });
 

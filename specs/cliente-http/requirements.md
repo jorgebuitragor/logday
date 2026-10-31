@@ -1,6 +1,6 @@
 # Cliente HTTP — Requirements
 
-Estado: en curso. El enfoque y las decisiones del diseño los aprobó Jorge el 31 oct 2026. Los dos PR están implementados: el 1 (la extensión en las notas) y el 2 (la herramienta de DevTools). Faltan las pruebas en el navegador y en la app de QA.
+Estado: en curso. El enfoque y las decisiones del diseño los aprobó Jorge el 31 oct 2026. Están implementados el PR 1 (la extensión en las notas), el PR 2 (la herramienta de DevTools) y el cambio que la reemplaza por una pantalla propia (HT33–HT35, rama `feature/http-pantalla-propia`). Faltan las pruebas en el navegador y en la app de QA.
 
 ## Contexto
 
@@ -8,7 +8,7 @@ Jorge preguntó si tenía sentido un cliente HTTP "tipo Postman" en Logday para 
 
 Las peticiones son texto de la nota, así que se guardan, se versionan y se sincronizan con ella sin nada aparte. Lo que no debe viajar con la nota (los valores de las variables, los secretos y las respuestas) se queda en este equipo.
 
-Para las pruebas rápidas que no hace falta guardar, DevTools tiene una herramienta "Cliente HTTP" que usa el mismo motor.
+Para las pruebas rápidas que no hace falta guardar, y para tener a mano todas las peticiones de las notas, la extensión tiene su propia pantalla en el menú lateral (HT33–HT35), con el mismo motor. Hasta el 31 oct 2026 eso era una herramienta de DevTools (HT27 y HT28, enmendados).
 
 Es la primera extensión del grupo Herramientas que envía datos fuera del equipo, así que lleva el aviso de R6 (`specs/extensiones`).
 
@@ -65,7 +65,7 @@ Es la primera extensión del grupo Herramientas que envía datos fuera del equip
   - El webview lo escribe una vez y no lo vuelve a leer: el comando Rust lo pone en la petición al enviarla.
   - NUNCA DEBERÁ ir en la nota, en `config.json`, en `localStorage`, en los backups de configuración, en el sync ni en los logs.
   - En la interfaz, un secreto se muestra solo con su pista (`••••…a1b2`), también en la petición enviada.
-- HT19. Hay un solo **entorno activo** para todas las peticiones. DEBERÁ poder cambiarse desde Opciones, desde la barra de cada bloque y desde la herramienta de DevTools, y se recuerda en este equipo. "Sin entorno" es una opción válida: las peticiones sin variables se envían igual.
+- HT19. Hay un solo **entorno activo** para todas las peticiones. DEBERÁ poder cambiarse desde Opciones, desde la barra de cada bloque y desde la pantalla Cliente HTTP (HT33), y se recuerda en este equipo. "Sin entorno" es una opción válida: las peticiones sin variables se envían igual.
 - HT20. **Entorno protegido.** Un entorno PODRÁ marcarse como "Pedir confirmación antes de enviar". MIENTRAS esté activo, enviar un POST, PUT, PATCH o DELETE DEBERÁ pedir una confirmación en el mismo bloque, con el método y el nombre del entorno. GET, HEAD y OPTIONS se envían sin preguntar.
 - HT21. **Secretos a un host ajeno.** Cada entorno tiene sus hosts de confianza: los de sus variables cuyo valor es una URL, más los que el usuario agregue.
   - SI una petición lleva un secreto y su host no está en esa lista, DEBERÁ pedirse una confirmación en el bloque. La confirmación nombra las variables secretas y el host.
@@ -92,12 +92,10 @@ Es la primera extensión del grupo Herramientas que envía datos fuera del equip
   En los dos casos, la respuesta DEBERÁ mostrar que el certificado no se verificó.
 - HT26. Los errores DEBERÁN llegar al webview como un código que se traduce, con el host como único detalle. NUNCA DEBERÁN llevar la URL completa, las cabeceras, el cuerpo ni un secreto. La extensión no escribe nada en los logs.
 
-### DevTools
+### DevTools (enmendado el 31 oct 2026)
 
-- HT27. MIENTRAS Cliente HTTP y DevTools estén activas, DevTools DEBERÁ tener la herramienta "Cliente HTTP" en un grupo nuevo, "Red". Tiene un formulario (método, URL, cabeceras y cuerpo), "Enviar" y la misma vista de respuesta que los bloques. Con Cliente HTTP apagada, la herramienta no aparece, y D11 de DevTools ("no envía nada fuera del equipo") sigue valiendo para todas sus herramientas.
-- HT28. Lo que se escribe en esa herramienta, y su respuesta, viven en memoria, como el resto de DevTools (D9).
-  - "Guardar en una nota" DEBERÁ crear una nota con la petición en un bloque `http`.
-  - "Traer de una nota" DEBERÁ cargar un bloque `http` en el formulario.
+- ~~HT27. MIENTRAS Cliente HTTP y DevTools estén activas, DevTools DEBERÁ tener la herramienta "Cliente HTTP" en un grupo nuevo, "Red".~~ **Enmendado el 31 oct 2026, pedido por Jorge:** el formulario pasa a la pantalla propia de la extensión (HT33). DevTools ya no tiene el grupo "Red" ni la herramienta, y su D11 ("no envía nada fuera del equipo") vuelve a valer sin excepción (specs/devtools D11 y D25).
+- ~~HT28. Lo que se escribe en esa herramienta, y su respuesta, viven en memoria, como el resto de DevTools (D9).~~ **Enmendado el 31 oct 2026:** lo mismo vale para el formulario de la pantalla (HT33). "Guardar en una nota" sigue; "Traer de una nota" lo reemplaza la columna "Peticiones" (HT34).
 
 ### Textos, teclado y accesibilidad
 
@@ -112,7 +110,7 @@ Es la primera extensión del grupo Herramientas que envía datos fuera del equip
 - Las peticiones van dentro de las notas, como bloque ```` ```http ```` con sintaxis de REST Client o Bruno, y usan el punto de extensión de bloques (R24), como Excalidraw.
 - Las peticiones se sincronizan porque son notas. La respuesta no se guarda en la nota.
 - Las variables y los entornos se guardan solo en este equipo, y los secretos en el llavero.
-- Hay una herramienta "Cliente HTTP" en DevTools para las pruebas sin guardar, con "Guardar en una nota".
+- Hay una herramienta "Cliente HTTP" en DevTools para las pruebas sin guardar, con "Guardar en una nota". *Enmendada el 31 oct 2026: es una pantalla propia (HT33).*
 - Las peticiones salen desde Rust (por CORS y por R17), y la extensión lleva el aviso de R6.
 - Quedan fuera de la primera versión: scripts pre y post, OAuth guiado, WebSockets y gRPC, importar colecciones de Postman y los tests automáticos.
 
@@ -122,7 +120,7 @@ Es la primera extensión del grupo Herramientas que envía datos fuera del equip
 2. **Un entorno activo global**, no uno por nota, con selector en cada bloque. Para no enviar a producción sin querer están los entornos protegidos (HT20).
 3. **Confirmación de secretos a un host ajeno (HT21).** No estaba en el pedido, pero cierra un riesgo real: una nota creada por el agente de MCP, o pegada de otro lado, podría mandar `{{token}}` a cualquier sitio.
 4. **Entorno protegido:** confirma solo POST, PUT, PATCH y DELETE. Confirmar también los GET acostumbra a pulsar "Enviar" sin leer.
-5. **"Red" es un grupo nuevo de DevTools**, al final de la lista (D24), con una sola herramienta por ahora.
+5. ~~**"Red" es un grupo nuevo de DevTools**, al final de la lista (D24), con una sola herramienta por ahora.~~ **Enmendada el 31 oct 2026, pedido por Jorge:** no encontraba la herramienta (no tenía Cliente HTTP activa) y le pareció confuso que una extensión con su propia opción en Extensiones viviera dentro de otra. El Cliente HTTP tiene su propia pantalla (HT33) y DevTools vuelve a sus seis grupos.
 6. **`Content-Type: application/json` automático** cuando el cuerpo es JSON válido y la petición no trae `Content-Type`. Se marca como "Agregada por Logday" en la petición enviada.
 7. **Variables del sistema:** `{{$uuid}}`, `{{$timestamp}}` y `{{$isoTimestamp}}`.
 8. **Vista previa de las imágenes** PNG, JPEG, GIF y WebP de hasta 5 MB.
@@ -150,3 +148,23 @@ Además, del diseño:
 ## Cambio del 31 oct 2026
 
 - HT31. SI la respuesta trae el valor de un secreto (en las cabeceras o en un cuerpo de texto; por ejemplo, un servidor de eco), Rust DEBERÁ cambiarlo por su marca `{{$secret:<clave>}}` antes de devolverla, para que nunca llegue al webview ni se muestre. Lo pidió Jorge tras probar con httpbin.
+
+## Cambio del 31 oct 2026: pantalla propia
+
+Pedido por Jorge: no encontraba el Cliente HTTP de DevTools (no tenía la extensión activa) y le pareció confuso que una extensión con su propia opción en Extensiones viviera dentro de otra. Decidió darle su pantalla, completa. Reemplaza HT27 y HT28 (enmendados arriba) y la decisión 5.
+
+- HT33. **Pantalla propia.** MIENTRAS la extensión esté activa, el menú lateral DEBERÁ tener la sección "Cliente HTTP", con el ícono `Globe` (`view: true` en el registro; specs/extensiones R11 y R13, specs/navegacion-secciones NS7). La pantalla tiene, a la derecha, el formulario que antes estaba en DevTools:
+  - método, URL, cabeceras y cuerpo, el entorno activo (HT19), Enviar (⌘↵, Ctrl+Enter fuera de macOS, o Enter en la URL) y Cancelar (o Esc) mientras se envía;
+  - la misma vista de respuesta que los bloques (HT10–HT14), y las mismas confirmaciones, límites y errores, porque se envía con el mismo motor (HT3, HT20, HT21, HT24);
+  - "Guardar en una nota", que crea una nota con la petición en un bloque `http`, con los nombres de las variables y nunca sus valores (HT18);
+  - lo que se escribe y la respuesta viven en memoria y se olvidan al desactivar la extensión (HT11); nada se escribe en la nota de la que vino la petición.
+- HT34. **Columna "Peticiones".** A la izquierda, la pantalla DEBERÁ listar las peticiones de los bloques `http` de todas las notas, de todas las carpetas, agrupadas por nota:
+  - cada nota con su título ("Sin título" si no tiene), y dentro, cada petición con su método y su URL sin el esquema; un bloque con varias peticiones separadas por `###` muestra cada una, con su nombre si lo tiene;
+  - un bloque mal escrito NO DEBERÁ romper la lista: sus peticiones se ven marcadas "con errores"; un bloque vacío no aporta ninguna;
+  - un buscador que filtra por el título de la nota, el nombre, el método o la URL, sin distinguir tildes ni mayúsculas;
+  - al elegir una, se carga en el formulario y la pantalla dice de qué nota viene, con "Abrir la nota". Si tiene un error en la nota, el formulario lo avisa;
+  - "Nueva petición" vacía el formulario;
+  - sin peticiones, DEBERÁ explicar cómo crear una: escribir un bloque ```` ```http ```` en una nota, o "Nueva petición" y guardarla;
+  - la lista se lee de disco al abrir la pantalla, con "Actualizar", y al cambiar las notas en la app (crear, editar, sincronizar). No vigila el disco.
+- HT35. **Ayuda.** La sección DEBERÁ tener su ayuda contextual propia (specs/ayuda-contextual AY30): la columna, el formulario, los entornos y secretos, ⌘↵, y que los bloques `http` de las notas también se envían desde la nota.
+- Opciones → Cliente HTTP, al pie, DEBERÁ apuntar a la pantalla ("Abrir Cliente HTTP"), no a DevTools. El aviso de R6 y la descripción de la extensión nombran la pantalla en vez de DevTools.

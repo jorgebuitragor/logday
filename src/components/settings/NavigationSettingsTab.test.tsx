@@ -114,8 +114,12 @@ describe('vista de tareas al abrir (NS22)', () => {
     const html = renderToStaticMarkup(<NavigationSettingsTab />);
     const group = html.slice(html.indexOf('aria-label="Vista de tareas al abrir"'));
     expect(text(group)).toMatch(/Lista.*Kanban.*Calendario/);
-    expect(group).toMatch(/aria-pressed="true"[^>]*>Kanban</);
+    // La tarjeta elegida es la de Kanban (cada tarjeta lleva miniatura,
+    // ícono, nombre y descripción).
+    const pressed = group.slice(group.indexOf('aria-pressed="true"'));
+    expect(text(pressed.slice(0, pressed.indexOf('</button>')))).toContain('Kanban');
     expect(group.split('aria-pressed="false"').length - 1).toBe(2);
+    expect(text(group)).toContain('Columnas por estado');
   });
 
   it('en inglés', () => {

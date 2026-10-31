@@ -2,7 +2,7 @@
 // la app. El menú lateral, la pantalla de inicio y las vistas con que abren
 // Notas y Tareas; antes estaban repartidos entre General y Preferencias.
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { Calendar, ChevronDown, FolderTree, Layout, List, Rows3, type LucideIcon } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
@@ -12,6 +12,7 @@ import { useExtensions } from '../../extensions/useExtensions';
 import { extensionSection } from '../../extensions/state';
 import { extensionText } from '../../extensions/text';
 import { SidebarSettings } from './SidebarSettings';
+import { ViewPreview, type ViewPreviewKind } from './ViewPreviews';
 
 const STARTUP_SCREEN_VALUES: StartupScreen[] = ['dashboard', 'dailys', 'tasks', 'notes', 'overtime'];
 
@@ -130,33 +131,51 @@ function StartupScreenSettings() {
 }
 
 /** Botones de una vista por defecto, el mismo control para Notas y Tareas. */
+interface ViewOption<V extends string> {
+  value: V;
+  label: string;
+  desc: string;
+  Icon: LucideIcon;
+  preview: ViewPreviewKind;
+}
+
+/** Una tarjeta por vista, con su miniatura, ícono, nombre y una línea que
+ *  dice cómo es (antes solo el nombre, y no se entendía a qué se refería). */
 function ViewChoice<V extends string>({ title, hint, value, options, onChange }: {
   title: string;
   hint: string;
   value: V;
-  options: readonly { value: V; label: string }[];
+  options: readonly ViewOption<V>[];
   onChange: (value: V) => void;
 }) {
   return (
     <div role="group" aria-label={title}>
       <p className="mb-1 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">{title}</p>
       <p className="mb-3 text-[11px] text-[var(--text-hint)]">{hint}</p>
-      <div className="flex gap-2">
-        {options.map((opt) => (
-          <button
-            key={opt.value}
-            type="button"
-            aria-pressed={value === opt.value}
-            onClick={() => onChange(opt.value)}
-            className={`flex-1 rounded-xl border px-4 py-3 text-sm font-medium transition ${
-              value === opt.value
-                ? 'border-indigo-500/60 bg-indigo-500/10 text-indigo-400'
-                : 'border-[var(--border-card)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:border-[var(--border-high)] hover:text-[var(--text-secondary)]'
-            }`}
-          >
-            {opt.label}
-          </button>
-        ))}
+      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+        {options.map((opt) => {
+          const selected = value === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => onChange(opt.value)}
+              className={`flex flex-col gap-2 rounded-xl border p-2.5 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+                selected
+                  ? 'border-indigo-500/60 bg-indigo-500/10'
+                  : 'border-[var(--border-card)] bg-[var(--bg-surface)] hover:border-[var(--border-high)]'
+              }`}
+            >
+              <ViewPreview kind={opt.preview} active={selected} />
+              <span className={`flex items-center gap-1.5 text-xs font-medium ${selected ? 'text-indigo-400' : 'text-[var(--text-secondary)]'}`}>
+                <opt.Icon size={13} aria-hidden="true" className="shrink-0" />
+                {opt.label}
+              </span>
+              <span className="text-[10px] leading-snug text-[var(--text-hint)]">{opt.desc}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -172,8 +191,8 @@ function NotesViewSettings() {
       hint={t(language, 'settings', 'notesViewDefaultHint')}
       value={notesViewDefault}
       options={[
-        { value: 'list', label: t(language, 'settings', 'notesViewOptionList') },
-        { value: 'tree', label: t(language, 'settings', 'notesViewOptionTree') },
+        { value: 'list', label: t(language, 'settings', 'notesViewOptionList'), desc: t(language, 'settings', 'notesViewOptionListDesc'), Icon: Rows3, preview: 'notes-list' },
+        { value: 'tree', label: t(language, 'settings', 'notesViewOptionTree'), desc: t(language, 'settings', 'notesViewOptionTreeDesc'), Icon: FolderTree, preview: 'notes-tree' },
       ]}
       onChange={setNotesViewDefault}
     />
@@ -185,18 +204,18 @@ function TasksViewSettings() {
   const { language, tasksViewDefault, setTasksViewDefault } = useAppStore(
     useShallow((s) => ({ language: s.language, tasksViewDefault: s.tasksViewDefault, setTasksViewDefault: s.setTasksViewDefault })),
   );
-  // Los mismos nombres que las vistas del menú lateral.
-  const labels = {
-    list: t(language, 'sidebar', 'viewList'),
-    kanban: t(language, 'sidebar', 'viewKanban'),
-    calendar: t(language, 'sidebar', 'viewCalendar'),
+  // Los mismos nombres e íconos que las vistas del menú lateral.
+  const meta = {
+    list: { label: t(language, 'sidebar', 'viewList'), desc: t(language, 'settings', 'tasksViewListDesc'), Icon: List, preview: 'tasks-list' },
+    kanban: { label: t(language, 'sidebar', 'viewKanban'), desc: t(language, 'settings', 'tasksViewKanbanDesc'), Icon: Layout, preview: 'tasks-kanban' },
+    calendar: { label: t(language, 'sidebar', 'viewCalendar'), desc: t(language, 'settings', 'tasksViewCalendarDesc'), Icon: Calendar, preview: 'tasks-calendar' },
   } as const;
   return (
     <ViewChoice
       title={t(language, 'settings', 'tasksViewDefault')}
       hint={t(language, 'settings', 'tasksViewDefaultHint')}
       value={tasksViewDefault}
-      options={TASK_VIEW_MODES.map((value) => ({ value, label: labels[value] }))}
+      options={TASK_VIEW_MODES.map((value) => ({ value, ...meta[value] }))}
       onChange={setTasksViewDefault}
     />
   );

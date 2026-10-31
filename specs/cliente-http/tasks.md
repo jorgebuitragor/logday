@@ -72,7 +72,8 @@ Estado: PR 1 implementado (31 oct 2026), falta su prueba visual y en la app de Q
 ### Verificación del PR 1
 
 - [x] `pnpm test` (54 archivos, 537 pruebas), `pnpm build`, `pnpm lint` (21 warnings, los de base), `cargo check` y `cargo test` (68 pruebas; 14 del Cliente HTTP, con un servidor local de `tiny_http`).
-- [ ] Build de producción en el navegador con Tauri simulado (`send` simulado), en los temas claro, oscuro y sepia. Probar:
+- [x] Primera prueba en el navegador (31 oct 2026, Tauri simulado, tema oscuro): una nota con un bloque `http` muestra la barra (entorno y Enviar); Enviar llama a `http_client_send` con el método, la URL y las cabeceras (más `User-Agent`), y la respuesta aparece debajo (200 OK, tiempo, tamaño, JSON formateado, pestañas Cuerpo/Cabeceras/Petición) sin escribirse en la nota; el selector de entorno ofrece "Crear un entorno…", que abre Opciones → Cliente HTTP y crea "Entorno 1" con sus opciones.
+- [ ] Resto de la prueba en el navegador, en los temas claro, oscuro y sepia:
   - escribir un bloque, ⌘↵, varias peticiones, errores, variables que faltan;
   - confirmar con un entorno protegido y con un host ajeno;
   - cancelar, una respuesta grande y una binaria;

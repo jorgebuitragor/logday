@@ -9,26 +9,30 @@
 }
 
 /* ── Theme variables ───────────────────────────────────────── */
+/* Oscuro (31 oct 2026): grafito con un leve tono índigo, más cerca del
+   nórdico que del negro de antes, y textos secundarios más claros; Jorge lo
+   encontraba difícil de leer. Contraste contra --bg-base: texto >= 5.7:1,
+   acento 5.6:1 (specs/temas-consistencia-visual). */
 :root {
-  --bg-base:     #121212;
-  --bg-panel:    #141414;
-  --bg-surface:  #1c1c1c;
+  --bg-base:     #1c1d2a;
+  --bg-panel:    #1f2030;
+  --bg-surface:  #272939;
   --bg-secondary: var(--bg-surface);
-  --bg-hover:    #242424;
-  --bg-elevated: #181818;
-  --bg-input:    #161616;
+  --bg-hover:    #303244;
+  --bg-elevated: #242536;
+  --bg-input:    #1f2030;
 
-  --border:      #2a2a2a;
-  --border-card: #333333;
-  --border-high: #4a4a4a;
+  --border:      #383b50;
+  --border-card: #40435a;
+  --border-high: #5c6079;
 
-  --text-primary:   #f2f2f2;
-  --text-body:      #e4e4e4;
-  --text-secondary: #c8c8c8;
-  --text-tertiary:  #aaaaaa;
-  --text-muted:     #888888;
-  --text-hint:      #848484;
-  --text-faint:     #7e7e7e;
+  --text-primary:   #eef0f8;
+  --text-body:      #e2e5ef;
+  --text-secondary: #cbd0de;
+  --text-tertiary:  #b3b8cb;
+  --text-muted:     #a5aabe;
+  --text-hint:      #9ca1b6;
+  --text-faint:     #9397ad;
 
   --accent:         #818cf8;
   --accent-strong:  #6366f1;
@@ -40,7 +44,7 @@
   --accent-solid:   #4f46e5;
   --accent-on:      #ffffff;
   --accent-inline:  #c4b5fd;
-  --accent-link:    #818cf8;
+  --accent-link:    #929bfa;
   --accent-code:    #a78bfa;
 
   /* Resaltado de código (hljs) en las notas y en DevTools. Los de siempre,
@@ -250,6 +254,12 @@
 /* Tema claro: los tonos -400 de Tailwind están pensados para fondo oscuro.
    Sobre blanco el ámbar de "Hoy" o "En progreso" queda en ~1,7:1 y el rojo
    de "Vencidas" en ~2,8:1. Se oscurecen a sus tonos 600/700. */
+/* Oscuro: el texto índigo fijo (activo del menú, pestañas, enlaces) un poco
+   más claro, porque sobre los fondos nuevos con el resaltado del activo
+   (bg-indigo-500/15) indigo-400 quedaba en ~4.1:1; así pasa de 4.5:1. */
+:root[data-theme="dark"] .text-indigo-400,
+:root[data-theme="dark"] .hover\:text-indigo-400:hover { color: #929bfa; }
+
 :root[data-theme="light"] .text-amber-400 { color: #b45309; }
 :root[data-theme="light"] .text-red-400,
 :root[data-theme="light"] .hover\:text-red-400:hover { color: #dc2626; }

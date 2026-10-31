@@ -131,3 +131,16 @@ mejor en cada uno).
   patrón establecido en este mismo archivo (el propio hack lo usa), más
   simple, y con buen soporte en el WebView de Tauri (WebKit moderno en
   macOS/Windows).
+
+## Oscuro más legible (31 oct 2026)
+
+Jorge encontraba el Oscuro difícil de leer y pidió acercarlo al Nórdico sin perder el índigo de Logday.
+
+- **Fondos:** pasan de negro neutro (#121212) a grafito con un leve tono índigo: `--bg-base` #1c1d2a, `--bg-panel` #1f2030, `--bg-surface` #272939, `--bg-hover` #303244, `--bg-elevated` #242536 y `--bg-input` #1f2030.
+- **Bordes:** #383b50, #40435a y #5c6079.
+- **Textos:** más claros y con el mismo tinte. `--text-muted` es #a5aabe y `--text-hint` #9ca1b6.
+- **Contraste contra `--bg-base`:**
+  - texto: entre 5,8:1 (`--text-faint`) y 14,7:1;
+  - acento #818cf8: 5,6:1.
+- **Texto índigo fijo:** `text-indigo-400` pasa a #929bfa en este tema, con el resaltado del activo (`bg-indigo-500/15`) incluido. Con #818cf8 quedaba en ~4,1:1; ahora pasa de 4,5:1. `--accent-link` también es #929bfa.
+- **Temas personalizados:** siguen derivándose de la escala del Oscuro anterior (`DARK_BG_REF` en `src/lib/themeColor.ts`), para que no cambien los que ya existen.

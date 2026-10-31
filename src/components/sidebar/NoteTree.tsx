@@ -1,12 +1,11 @@
-import { useMemo, useState } from 'react';
-import { FilePlus, FileText, Pin, PinOff, Plus, Trash2 } from 'lucide-react';
+import { useMemo } from 'react';
+import { FileText, Pin, Plus } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import { buildFolderTree } from '../../lib/folderTree';
 import { sortNotes } from '../../lib/noteSort';
-import { useConfirmDelete } from '../../hooks/useConfirmDelete';
-import { usePositionedMenu } from '../../hooks/usePositionedMenu';
-import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
+import InlineRenameInput from '../shared/InlineRenameInput';
+import { useNoteContextMenu } from '../notes/NoteContextMenu';
 import { FolderTreeItem } from './FolderTreeItem';
 import type { Note } from '../../types/note';
 
@@ -30,18 +29,24 @@ type FolderTreeProps = Pick<
   | 'moveNoteFolder'
 >;
 
-const ESTIMATED_NOTE_MENU = { width: 180, height: 90 };
-
 export function NoteTree(props: FolderTreeProps) {
   const {
     language, notes, noteFolders, activeNote, activeNoteFolder, noteSortBy, noteSortDir,
-    confirmDestructiveActions, setActiveNote, deleteNote, toggleNotePin, selectNoteFolder, setTreeNoteFolder, createNote,
+    setActiveNote, deleteNote, selectNoteFolder, setTreeNoteFolder, createNote,
   } = useAppStore();
-  const confirmDelete = useConfirmDelete<Note>(confirmDestructiveActions);
-  const [menu, setMenu] = useState<{ x: number; y: number; note: Note } | null>(null);
-  const menuLayout = usePositionedMenu(menu ? { x: menu.x, y: menu.y } : null, {
-    estimatedSize: ESTIMATED_NOTE_MENU,
-    onClose: () => setMenu(null),
+  const { setExpandedFolders } = props;
+  // El mismo menú que la lista (NoteContextMenu). Una nota creada desde él
+  // abre su carpeta (y las de arriba) para que se vea en el árbol.
+  const noteMenu = useNoteContextMenu({
+    onNoteCreated: (note) => {
+      if (!note.folder) return;
+      setExpandedFolders((prev) => {
+        const next = new Set(prev);
+        const parts = note.folder.split('/');
+        for (let i = 1; i <= parts.length; i += 1) next.add(parts.slice(0, i).join('/'));
+        return next;
+      });
+    },
   });
 
   const notesByFolder = useMemo(() => {
@@ -68,22 +73,33 @@ export function NoteTree(props: FolderTreeProps) {
 
   const renderNote = (note: Note, depth: number) => {
     const isActive = activeNote?.id === note.id;
+    const indent = { paddingLeft: `${28 + depth * 12}px` };
+    // Renombrar es en la misma fila, como las carpetas del árbol y la lista.
+    if (noteMenu.renamingNoteId === note.id) {
+      return (
+        <div key={note.id} data-tree-note={note.id} className="flex items-center gap-1.5 py-1 pr-2" style={indent}>
+          <FileText size={12} className="shrink-0 opacity-70" />
+          <InlineRenameInput
+            value={note.title}
+            onCommit={noteMenu.commitRename}
+            onCancel={noteMenu.cancelRename}
+            className="min-w-0 flex-1 rounded border border-indigo-500/40 bg-[var(--bg-surface)] px-1 py-0.5 text-xs text-[var(--text-primary)] outline-none"
+          />
+        </div>
+      );
+    }
     return (
       <button
         key={note.id}
         data-tree-note={note.id}
         onClick={() => openNote(note)}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setMenu({ x: e.clientX, y: e.clientY, note });
-        }}
+        onContextMenu={(e) => noteMenu.open(e, note)}
         className={`flex w-full items-center gap-1.5 rounded-lg py-1.5 pr-2 text-left text-xs transition ${
           isActive
             ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]'
             : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]'
         }`}
-        style={{ paddingLeft: `${28 + depth * 12}px` }}
+        style={indent}
         title={note.title || t(language, 'notes', 'untitled')}
       >
         <FileText size={12} className="shrink-0 opacity-70" />
@@ -130,62 +146,7 @@ export function NoteTree(props: FolderTreeProps) {
         </div>
       )}
 
-      {menu && (
-        <>
-          <div className="fixed inset-0 z-40" onMouseDown={() => setMenu(null)} />
-          <div
-            ref={menuLayout.ref}
-            className="fixed z-50 min-w-[160px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-xl"
-            style={menuLayout.style}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => { const folder = menu.note.folder; setMenu(null); void createNote(folder); }}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
-            >
-              <FilePlus size={13} />
-              {t(language, 'sidebar', 'newNoteInFolder')}
-            </button>
-            <button
-              onClick={() => { void toggleNotePin(menu.note); setMenu(null); }}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
-            >
-              {menu.note.pinned ? <PinOff size={13} /> : <Pin size={13} />}
-              {menu.note.pinned ? t(language, 'notes', 'unpin') : t(language, 'notes', 'pin')}
-            </button>
-            <button
-              onClick={() => {
-                const note = menu.note;
-                setMenu(null);
-                confirmDelete.request(note, (n) => void deleteNote(n));
-              }}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-red-400 transition hover:bg-red-500/10"
-            >
-              <Trash2 size={13} />
-              {t(language, 'notes', 'delete')}
-            </button>
-          </div>
-        </>
-      )}
-
-      {confirmDelete.isOpen && confirmDelete.pending && (
-        <ConfirmDeleteModal
-          title={t(language, 'notes', 'confirmDeleteTitle')}
-          message={
-            <>
-              {t(language, 'notes', 'confirmDeleteMsg')}{' '}
-              <span className="font-medium text-[var(--text-primary)]">
-                &quot;{confirmDelete.pending.title || t(language, 'notes', 'untitled')}&quot;
-              </span>
-              ? {t(language, 'notes', 'confirmDeleteDesc')}
-            </>
-          }
-          cancelLabel={t(language, 'notes', 'cancel')}
-          confirmLabel={t(language, 'notes', 'delete')}
-          onCancel={confirmDelete.cancel}
-          onConfirm={() => { void deleteNote(confirmDelete.pending!); confirmDelete.cancel(); }}
-        />
-      )}
+      {noteMenu.element}
     </div>
   );
 }

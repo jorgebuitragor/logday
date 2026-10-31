@@ -43,6 +43,8 @@ export interface ExtensionDefinition {
   sendsDataExternally?: { to: string };   // dispara el aviso de R6
   view?: boolean;                         // si tiene vista: sección en el menú (R11)
   secretKeys?: string[];                  // claves en el llavero, para R8
+  dynamicSecretKeys?: (settings?) => string[]; // las que dependen de la configuración, para R8
+  noteBlock?: { language: string; inline?: boolean; template?: string }; // R24
   load: () => Promise<ExtensionModule>;   // import() dinámico
 }
 ```
@@ -53,7 +55,10 @@ export interface ExtensionDefinition {
   menú es el nombre de la extensión.
 - **`secretKeys`:** el llavero no se puede listar, así que cada
   extensión declara las claves de sus secretos y "Quitar configuración"
-  borra esas.
+  borra esas. Si las claves dependen de su configuración (una por
+  variable secreta del Cliente HTTP), declara además
+  `dynamicSecretKeys(settings)`, una función pura que el registro importa
+  sin cargar el módulo (R16).
 - Una extensión solo está en el registro de Desktop si Desktop la
   implementa (R4).
 
@@ -136,8 +141,9 @@ extensions?: Partial<Record<ExtensionId, {
   - No hay un `get` hacia el webview: quien usa el secreto es el comando
     Rust de la extensión (R10, R17).
 - **Quitar configuración** (R8): borra los secretos
-  `ext:<id>:<clave>` de cada clave de `secretKeys` y después
-  `extensions[id]`. Si el llavero falla, la configuración queda y se
+  `ext:<id>:<clave>` de cada clave de `secretKeys` y de
+  `dynamicSecretKeys(settings)` (`secretKeysToClear` en `state.ts`), y
+  después `extensions[id]`. Si el llavero falla, la configuración queda y se
   puede reintentar.
 
 ## Menú lateral
@@ -217,11 +223,35 @@ escribir en disco. El primer oyente es el webhook saliente
 los dibujan y los editan como a Mermaid. La primera es Excalidraw
 (`specs/excalidraw/`).
 
+**Modo inline** (`noteBlock: { language, inline: true, template }`, el
+del Cliente HTTP, `specs/cliente-http/` design A3):
+
+- El NodeView deja el código visible y editable en un `<pre>`, entre dos
+  islas `contentEditable={false}` (`.extension-block-ui`). En cada una va
+  el `NoteBlock` de la extensión con `part: 'header'` o `'footer'`, además
+  de `noteId`, `index` (el n-ésimo bloque de ese lenguaje) y `cursor` (la
+  posición del cursor dentro del bloque, o `null`). El índice y el cursor
+  se recalculan con cada transacción del editor.
+- ProseMirror no maneja los eventos de las islas (`stopEvent`); el código
+  sí es suyo. Excalidraw sigue con su NodeView de siempre.
+- "Nuevo bloque" inserta `template` en el cursor, sin editor aparte, y
+  deja el cursor al final de la primera línea.
+- ⌘↵ (Ctrl+Enter) con el cursor dentro de un bloque inline se avisa por
+  el bus `src/extensions/noteBlockEvents.ts`, con el elemento del NodeView
+  para que cada bloque reconozca el suyo. Fuera, Mod-Enter hace lo de
+  siempre.
+- El resumen de la lista de notas no quita los bloques inline: su texto
+  se lee bien.
+- `parseFencedBlocks` compara el lenguaje exacto y acepta cercas de 3 o
+  más comillas invertidas; `formatFence` alarga la cerca si el contenido
+  trae una línea con comillas invertidas.
+
 ## Red (R17)
 
 - Cada extensión que habla con un servicio tiene sus comandos en
   `src-tauri/src/extensions/<id>.rs`.
 - La lista de hosts permitidos está en el código Rust de esa extensión.
+  La excepción es el Cliente HTTP (R17): el host lo escribe el usuario.
 - Se usa `reqwest` (ya es dependencia) con timeout y sin redirecciones,
   salvo que el spec de la extensión diga otra cosa.
 - El webview nunca hace `fetch` a esos servicios.

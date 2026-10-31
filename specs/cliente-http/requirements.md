@@ -1,6 +1,6 @@
 # Cliente HTTP — Requirements
 
-Estado: propuesto. El enfoque lo aprobó Jorge el 31 oct 2026; falta implementarlo.
+Estado: en curso. El enfoque y las decisiones del diseño los aprobó Jorge el 31 oct 2026. El PR 1 (la extensión en las notas) está implementado; falta el PR 2 (la herramienta de DevTools).
 
 ## Contexto
 
@@ -116,16 +116,23 @@ Es la primera extensión del grupo Herramientas que envía datos fuera del equip
 - Las peticiones salen desde Rust (por CORS y por R17), y la extensión lleva el aviso de R6.
 - Quedan fuera de la primera versión: scripts pre y post, OAuth guiado, WebSockets y gRPC, importar colecciones de Postman y los tests automáticos.
 
-### Propuestas por el diseño (para confirmar con Jorge; ver `design.md`, Interfaz §10)
+### Aprobadas por Jorge (31 oct 2026): las 10 de `design.md`, Interfaz §10, tal como las recomienda el diseño
 
-- **Edición en la nota, no en un modal.** El código del bloque `http` se ve y se edita como un bloque de código normal, y la extensión le pone una barra encima y la respuesta debajo. Hace falta un modo nuevo del punto de extensión: `noteBlock.inline` (design §A3). Excalidraw sigue con su editor aparte.
-- **Un entorno activo global**, no uno por nota, con selector en cada bloque. Para no enviar a producción sin querer están los entornos protegidos (HT20).
-- **Confirmación de secretos a un host ajeno (HT21).** No está en el pedido, pero cierra un riesgo real: una nota creada por el agente de MCP, o pegada de otro lado, podría mandar `{{token}}` a cualquier sitio.
+1. **Edición en la nota, no en un modal.** El código del bloque `http` se ve y se edita como un bloque de código normal, y la extensión le pone una barra encima y la respuesta debajo. Hace falta un modo nuevo del punto de extensión: `noteBlock.inline` (design §A3). Excalidraw sigue con su editor aparte.
+2. **Un entorno activo global**, no uno por nota, con selector en cada bloque. Para no enviar a producción sin querer están los entornos protegidos (HT20).
+3. **Confirmación de secretos a un host ajeno (HT21).** No estaba en el pedido, pero cierra un riesgo real: una nota creada por el agente de MCP, o pegada de otro lado, podría mandar `{{token}}` a cualquier sitio.
+4. **Entorno protegido:** confirma solo POST, PUT, PATCH y DELETE. Confirmar también los GET acostumbra a pulsar "Enviar" sin leer.
+5. **"Red" es un grupo nuevo de DevTools**, al final de la lista (D24), con una sola herramienta por ahora.
+6. **`Content-Type: application/json` automático** cuando el cuerpo es JSON válido y la petición no trae `Content-Type`. Se marca como "Agregada por Logday" en la petición enviada.
+7. **Variables del sistema:** `{{$uuid}}`, `{{$timestamp}}` y `{{$isoTimestamp}}`.
+8. **Vista previa de las imágenes** PNG, JPEG, GIF y WebP de hasta 5 MB.
+9. **Resaltado `http` en todas las notas**, aunque la extensión esté apagada (≈1 KB).
+10. **Solo HTTP/1.1** en la primera versión: `reqwest` está compilado sin la feature `http2`.
+
+Además, del diseño:
+
 - **R17:** el host de cada petición lo pone el usuario, y solo se contacta cuando él lo pide. Se documenta como excepción en `specs/extensiones`.
-- **"Red" es un grupo nuevo de DevTools**, al final de la lista (D24), con una sola herramienta por ahora.
 - **Sin variables dentro de la nota** (`@baseUrl = …` de REST Client) en la primera versión. Sería cómodo, pero invita a escribir tokens en la nota, que se sincroniza en texto plano.
-- **`Content-Type: application/json` automático** cuando el cuerpo es JSON válido y la petición no trae `Content-Type`. Se marca como "Agregada por Logday" en la petición enviada.
-- **Solo HTTP/1.1** en la primera versión: `reqwest` está compilado sin la feature `http2`.
 
 ## Fuera de alcance (por ahora)
 

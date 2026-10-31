@@ -1,6 +1,6 @@
 # Cliente HTTP — Design
 
-Estado: propuesto (31 oct 2026). Lo que está marcado como **nuevo** no existe hoy en el código; todo lo demás se comprobó contra `develop` (9213ed2).
+Estado: aprobado (31 oct 2026); el PR 1 está implementado. Lo que está marcado como **nuevo** no existía en `develop` (9213ed2) cuando se escribió; todo lo demás se comprobó contra esa versión. Lo que la implementación hizo distinto está en `tasks.md`, "Diferencias con el diseño".
 
 ## Arquitectura
 
@@ -1091,7 +1091,7 @@ Notas para quien traduzca:
 
 ### 10. Decisiones para Jorge
 
-Las recomendaciones van primero. Si las aprueba todas, el spec queda como está.
+Jorge las aprobó todas el 31 oct 2026, tal como las recomienda el diseño (`requirements.md`, Decisiones). Las recomendaciones van primero.
 
 1. **Edición en la nota (inline)** o editor en un modal como Excalidraw. Recomendado: **inline**. Es texto, y abrir un modal cada vez para cambiar un parámetro sería fricción. Cuesta el modo nuevo del punto de extensión (A3).
 2. **Entorno activo global** o uno por nota. Recomendado: **global**, con el chip en cada bloque y los entornos protegidos. Uno por nota tendría que guardarse en la nota (y viajar por el sync) o en un mapa local por nota que nadie ve.

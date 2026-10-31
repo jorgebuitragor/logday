@@ -58,7 +58,9 @@ tengan su primera extensión.
   configuración DEBERÁ conservarse, para que al reactivarla siga igual.
 - R8. Cada extensión con configuración DEBERÁ ofrecer "Quitar
   configuración", que borra su configuración y sus secretos, previa
-  confirmación.
+  confirmación. Los secretos son los de claves fijas y también los que
+  dependen de su configuración (por ejemplo, uno por variable secreta en
+  el Cliente HTTP).
 - R9. La activación y la configuración no secreta DEBERÁN guardarse en
   las preferencias locales del equipo y NO DEBERÁN sincronizarse. Es el
   mismo criterio de "Preferencias de UI siempre locales". Una extensión
@@ -115,7 +117,10 @@ tengan su primera extensión.
 - R24. Una extensión DEBERÁ poder tener su propio tipo de bloque en las
   notas (un bloque de código con su lenguaje, como ```excalidraw), que
   ella dibuja y edita. Con la extensión apagada, el bloque se ve como un
-  bloque de código normal y no se pierde nada.
+  bloque de código normal y no se pierde nada. Hay dos modos: el bloque
+  que la extensión dibuja entero y edita en un editor aparte (Excalidraw),
+  y el modo inline, en el que el código se ve y se edita en la nota y la
+  extensión le pone una barra encima y una franja debajo (Cliente HTTP).
 - R25. Una extensión DEBERÁ poder registrar un atajo de teclado global y
   tener su propia ventana (por ejemplo, la captura rápida). La ventana se
   crea al activarla y se destruye al desactivarla, y NO DEBERÁ escribir
@@ -132,7 +137,9 @@ tengan su primera extensión.
   abrir la app.
 - R17. Las peticiones de red de una extensión DEBERÁN salir desde Rust,
   solo a los hosts que la extensión declara. Nunca desde el webview a
-  hosts arbitrarios.
+  hosts arbitrarios. Excepción: el Cliente HTTP (`specs/cliente-http`)
+  envía a la URL que escribe el usuario, y solo cuando él pulsa Enviar;
+  sigue saliendo desde Rust, solo por http y https y con sus límites.
 
 ### Datos
 

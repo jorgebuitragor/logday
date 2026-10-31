@@ -9,11 +9,19 @@ import { INPUT_CLS } from './controlClasses';
 
 /** `ToggleSwitch` dentro de un `<label>`: el texto le da el nombre al
  *  interruptor y también lo activa al pulsarlo. */
-export function Toggle({ label, checked, onChange, disabled }: { label: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+export function Toggle({ label, checked, onChange, disabled, srSuffix }: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+  /** Solo para lectores de pantalla, tras la etiqueta: distingue varios
+   *  interruptores iguales en una lista ("Mostrar en el menú: Tareas"). */
+  srSuffix?: string;
+}) {
   return (
     <label className={`flex items-center gap-2 text-[var(--text-secondary)] ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
       <ToggleSwitch size="sm" checked={checked} onChange={onChange} disabled={disabled} />
-      <span>{label}</span>
+      <span>{label}{srSuffix && <span className="sr-only">: {srSuffix}</span>}</span>
     </label>
   );
 }

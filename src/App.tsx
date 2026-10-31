@@ -18,11 +18,14 @@ import { UpdateAvailableBanner } from './components/UpdateAvailableBanner';
 import { ReleaseNotesModal } from './components/ReleaseNotesModal';
 import { PolicyGateModal } from './components/PolicyGateModal';
 import { OvertimeEntry } from './types/overtime';
+import type { ActiveSection } from './types/config';
 import { useEventNotifier } from './lib/eventNotifier';
 import { useExtensionLifecycle } from './extensions/useExtensions';
 import { ExtensionSlot } from './extensions/ExtensionSlot';
 import { extensionIdOfSection } from './extensions/state';
 import { getExtension } from './extensions/registry';
+import { clampSidebarWidth, MAX_SIDEBAR_WIDTH, sectionForShortcut, shortcutOrder, sidebarMinWidth } from './components/sidebar/sectionOrder';
+import { useSectionItems } from './components/sidebar/sections';
 
 const KanbanBoard   = lazy(() => import('./components/tasks/KanbanBoard').then(m => ({ default: m.KanbanBoard })));
 const CalendarView  = lazy(() => import('./components/calendar/CalendarView').then(m => ({ default: m.CalendarView })));
@@ -35,7 +38,7 @@ const OvertimeList  = lazy(() => import('./components/overtime/OvertimeList').th
 const OvertimeEditor = lazy(() => import('./components/overtime/OvertimeEditor').then(m => ({ default: m.OvertimeEditor })));
 
 export default function App() {
-  const { init, isLoading, isConfigured, activeTask, activeNoteId, activeSection, createNote, createTodayDaily, setSection, shortcuts, overtimeMonth, language, isSidebarCollapsed, notesView } = useAppStore(
+  const { init, isLoading, isConfigured, activeTask, activeNoteId, activeSection, createNote, createTodayDaily, setSection, shortcuts, overtimeMonth, language, isSidebarCollapsed, notesView, sidebarStyle } = useAppStore(
     useShallow((s) => ({
       init: s.init,
       isLoading: s.isLoading,
@@ -51,6 +54,7 @@ export default function App() {
       language: s.language,
       isSidebarCollapsed: s.isSidebarCollapsed,
       notesView: s.notesView,
+      sidebarStyle: s.sidebarStyle,
     }))
   );
   const [editingEntry, setEditingEntry] = useState<OvertimeEntry | null | undefined>(undefined);
@@ -68,13 +72,18 @@ export default function App() {
     Number(localStorage.getItem(LIST_W_KEY) || DEFAULT_LIST_W)
   );
 
+  // El ancho es el del menú entero en los dos estilos; con la Barra de
+  // íconos el mínimo sube 44 px para que el panel no baje de 160. Un ancho
+  // guardado más chico se sube al leerlo, sin reescribirlo
+  // (specs/navegacion-secciones, design Ancho).
+  const effectiveSidebarWidth = clampSidebarWidth(sidebarWidth, sidebarStyle);
   const handleSidebarResize = useCallback((delta: number) => {
     setSidebarWidth((w) => {
-      const next = Math.max(160, Math.min(420, w + delta));
+      const next = Math.max(sidebarMinWidth(sidebarStyle), Math.min(MAX_SIDEBAR_WIDTH, clampSidebarWidth(w, sidebarStyle) + delta));
       localStorage.setItem(SIDEBAR_W_KEY, String(next));
       return next;
     });
-  }, []);
+  }, [sidebarStyle]);
 
   const handleListResize = useCallback((delta: number) => {
     setListPanelWidth((w) => {
@@ -107,9 +116,22 @@ export default function App() {
   useEventNotifier();
   useExtensionLifecycle();
 
+  // ⌘0 va a Inicio y ⌘1…⌘9 a las secciones, en el orden de lectura del
+  // menú (specs/navegacion-secciones NS15).
+  const { items: sectionItems } = useSectionItems();
+  const sectionShortcutKey = shortcutOrder(sectionItems).join(',');
+
   useEffect(() => {
     const handler = async (e: KeyboardEvent) => {
       if (!e.metaKey && !e.ctrlKey) return;
+      // Antes que los atajos de letras y también dentro de un campo: ⌘1 en
+      // un input no hace nada en WebKit (NS15).
+      const target = sectionForShortcut(e, sectionShortcutKey ? sectionShortcutKey.split(',') : []);
+      if (target) {
+        e.preventDefault();
+        void setSection(target as ActiveSection);
+        return;
+      }
       const tag = (e.target as HTMLElement).tagName;
       const isEditable = (e.target as HTMLElement).isContentEditable;
       const inField = tag === 'INPUT' || tag === 'TEXTAREA' || isEditable;
@@ -144,7 +166,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [createNote, createTodayDaily, setSection, shortcuts]);
+  }, [createNote, createTodayDaily, setSection, shortcuts, sectionShortcutKey]);
 
   useEffect(() => {
     const unNote = listen('tray:new-note', async () => {
@@ -180,7 +202,7 @@ export default function App() {
     <div
       className="flex h-screen w-full overflow-hidden bg-[var(--bg-base)]"
       style={{
-        '--logday-sidebar-w': `${sidebarWidth}px`,
+        '--logday-sidebar-w': `${effectiveSidebarWidth}px`,
         '--logday-list-w': `${listPanelWidth}px`,
       } as React.CSSProperties}
     >

@@ -58,6 +58,7 @@ import { applyIncomingDailyContentState, applyDailyEditorEdit, deleteDailyConten
 import { parseFrontmatter, serializeTask, parseNote, serializeNote } from '../lib/markdown';
 import { withNormalizedProgress } from '../lib/taskProgress';
 import { t } from '../lib/i18n';
+import { DEFAULT_SIDEBAR_STYLE, parseSidebarSections, parseSidebarStyle, type SavedSection, type SidebarStyle } from '../components/sidebar/sectionOrder';
 import { emitAppEvent } from '../lib/appEvents';
 import { appUpdatedAt, fetchRelease, recordAppUpdatedAt } from '../lib/releases';
 import { localISODate, localISOMonth, nowInstant, stampSortKey } from '../lib/localDate';
@@ -65,6 +66,7 @@ import {
   NoteUpdatedThrottle, applyUndoRestore, newNoteStamps, newTaskStamps, stampNoteSave, undoRestore, withCompletedAt,
 } from '../lib/entityStamps';
 import { EMPTY_TASK_FILTER, type TaskFilter } from '../lib/taskListing';
+import { initialTasksView } from '../lib/viewDefaults';
 import {
   toISO,
   getPreviousWorkingDay,
@@ -145,8 +147,10 @@ export interface AppState {
   // Accesibilidad
   animationsEnabled: boolean;
 
-  // Menú lateral
-  sidebarLabelsVisible: boolean;
+  // Menú lateral (specs/navegacion-secciones)
+  sidebarStyle: SidebarStyle;
+  /** `undefined`: el orden por defecto. */
+  sidebarSections: SavedSection[] | undefined;
 
   // Papelera de reciclaje
   trashAutoPurgeEnabled: boolean;
@@ -159,6 +163,8 @@ export interface AppState {
   extensions: ExtensionsConfig;
   notesView: NotesView;
   notesViewDefault: NotesView;
+  /** Vista con que abre Tareas (NS22); `currentView` no se guarda. */
+  tasksViewDefault: ViewMode;
   noteSortBy: NoteSortBy;
   noteSortDir: NoteSortDir;
   taskSortBy: TaskSortBy;
@@ -259,6 +265,7 @@ export interface AppState {
   selectNoteFolder: (folder: string | null) => Promise<void>;
   setNotesView: (view: NotesView) => void;
   setNotesViewDefault: (view: NotesView) => void;
+  setTasksViewDefault: (view: ViewMode) => void;
   setNoteSort: (by: NoteSortBy, dir: NoteSortDir) => void;
   setTaskSort: (by: TaskSortBy) => void;
   setTaskFilter: (patch: Partial<TaskFilter>) => void;
@@ -345,7 +352,14 @@ export interface AppState {
   setWorkWeekDays: (days: 5 | 6) => Promise<void>;
   setHolidaysAsNonWork: (enabled: boolean) => Promise<void>;
   setAnimationsEnabled: (enabled: boolean) => Promise<void>;
-  setSidebarLabelsVisible: (visible: boolean) => Promise<void>;
+  setSidebarStyle: (style: SidebarStyle) => Promise<void>;
+  /** `undefined` vuelve al orden y la visibilidad por defecto. */
+  setSidebarSections: (sections: SavedSection[] | undefined) => Promise<void>;
+  /** Abre Opciones en Navegación ("Ordenar secciones…"). */
+  openSidebarSettings: () => void;
+  /** Señal para que Opciones abra la pestaña Navegación. */
+  sidebarSettingsRequest: boolean;
+  clearSidebarSettingsRequest: () => void;
   setTrashAutoPurgeEnabled: (enabled: boolean) => Promise<void>;
   listTrash: () => Promise<trash.TrashListItem[]>;
   /** `silent`: sin aviso (al deshacer un borrado de varias tareas, que avisa una vez). */
@@ -465,8 +479,8 @@ async function persistConfig(get: SyncGet): Promise<void> {
   const {
     configDir, basePath, startupScreen, language, confirmDestructiveActions,
     notificationsEnabled, defaultReminderMinutes, workWeekDays, holidaysAsNonWork,
-    animationsEnabled, trashAutoPurgeEnabled, sidebarLabelsVisible, activeProject, activeNoteFolder,
-    notesView, notesViewDefault, noteSortBy, noteSortDir, taskSortBy, extensions,
+    animationsEnabled, trashAutoPurgeEnabled, sidebarStyle, sidebarSections, activeProject, activeNoteFolder,
+    notesView, notesViewDefault, tasksViewDefault, noteSortBy, noteSortDir, taskSortBy, extensions,
   } = get();
   if (!configDir || !basePath) return;
   await saveConfig(configDir, {
@@ -480,11 +494,14 @@ async function persistConfig(get: SyncGet): Promise<void> {
     holidaysAsNonWork,
     animationsEnabled,
     trashAutoPurgeEnabled,
-    sidebarLabelsVisible,
+    // `sidebarLabelsVisible` ya no se escribe (NS5): al guardar se cae.
+    sidebarStyle,
+    sidebarSections,
     lastOpenedProject: activeProject ?? undefined,
     lastOpenedNoteFolder: activeNoteFolder ?? undefined,
     notesView,
     notesViewDefault,
+    tasksViewDefault,
     noteSortBy,
     noteSortDir,
     taskSortBy,
@@ -2255,7 +2272,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   holidaysAsNonWork: true,
   animationsEnabled: true,
   trashAutoPurgeEnabled: true,
-  sidebarLabelsVisible: true,
+  sidebarStyle: DEFAULT_SIDEBAR_STYLE,
+  sidebarSections: undefined,
+  sidebarSettingsRequest: false,
   theme: (localStorage.getItem('theme') as Theme) || 'system',
   customThemes: (() => {
     try {
@@ -2273,6 +2292,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   extensions: {},
   notesView: 'list',
   notesViewDefault: 'list',
+  tasksViewDefault: 'list',
   noteSortBy: 'updated',
   noteSortDir: 'desc',
   taskSortBy: 'due',
@@ -2406,10 +2426,16 @@ export const useAppStore = create<AppState>((set, get) => ({
             holidaysAsNonWork: cfg.holidaysAsNonWork ?? true,
             animationsEnabled: cfg.animationsEnabled ?? true,
             trashAutoPurgeEnabled: cfg.trashAutoPurgeEnabled ?? true,
-            sidebarLabelsVisible: cfg.sidebarLabelsVisible ?? true,
+            // NS5: una config con `sidebarLabelsVisible` y sin estilo
+            // abre con la Barra de íconos, la predeterminada.
+            sidebarStyle: parseSidebarStyle(cfg.sidebarStyle),
+            sidebarSections: parseSidebarSections(cfg.sidebarSections),
             // La vista de Opciones se usa la primera vez; después, la última usada.
             notesViewDefault: cfg.notesViewDefault ?? 'list',
             notesView: cfg.notesView ?? cfg.notesViewDefault ?? 'list',
+            // Tareas abre en la vista de Opciones; la última usada no se
+            // recuerda (NS22).
+            ...initialTasksView(cfg),
             noteSortBy: cfg.noteSortBy ?? 'updated',
             noteSortDir: cfg.noteSortDir ?? 'desc',
             taskSortBy: cfg.taskSortBy ?? 'due',
@@ -3034,6 +3060,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   setNotesViewDefault: (view) => {
     set({ notesViewDefault: view });
     get().setNotesView(view);
+    persistConfig(get).catch(() => {});
+  },
+
+  // Como la de notas, se aplica también ahora. `setView` no la toca.
+  setTasksViewDefault: (view) => {
+    set({ tasksViewDefault: view, currentView: view });
     persistConfig(get).catch(() => {});
   },
 
@@ -3993,10 +4025,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     await persistConfig(get);
   },
 
-  setSidebarLabelsVisible: async (visible) => {
-    set({ sidebarLabelsVisible: visible });
+  setSidebarStyle: async (style) => {
+    set({ sidebarStyle: style });
     await persistConfig(get);
   },
+
+  setSidebarSections: async (sections) => {
+    set({ sidebarSections: sections });
+    await persistConfig(get);
+  },
+
+  openSidebarSettings: () => set({ isSettingsOpen: true, sidebarSettingsRequest: true }),
+  clearSidebarSettingsRequest: () => set({ sidebarSettingsRequest: false }),
 
   setTrashAutoPurgeEnabled: async (enabled) => {
     set({ trashAutoPurgeEnabled: enabled });

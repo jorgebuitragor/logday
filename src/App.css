@@ -1124,3 +1124,42 @@ html.theme-animating body * {
     transform: scaleX(1.02);
   }
 }
+
+/* ── Miniaturas del estilo del menú (specs/navegacion-secciones NS20) ──
+   Quietas muestran el fotograma final. Corren al pasar el puntero o con
+   el foco del teclado en la tarjeta (en bucle) y una vez al elegirla
+   (`.sbp-run`). Solo transform y opacity. */
+.sbp-hl { --sbp-step: 13px; transform: translateY(calc(var(--sbp-step) * 2)); }
+.sbp-hl-list { --sbp-step: 11px; }
+@keyframes sbp-move {
+  0%, 28% { transform: translateY(0); }
+  34%, 61% { transform: translateY(var(--sbp-step)); }
+  67%, 100% { transform: translateY(calc(var(--sbp-step) * 2)); }
+}
+@keyframes sbp-fade {
+  0%, 26% { opacity: 1; }
+  31% { opacity: 0.25; }
+  37%, 59% { opacity: 1; }
+  64% { opacity: 0.25; }
+  70%, 100% { opacity: 1; }
+}
+@keyframes sbp-tip {
+  0%, 6% { opacity: 0; }
+  12%, 26% { opacity: 1; }
+  30%, 38% { opacity: 0; }
+  44%, 59% { opacity: 1; }
+  63%, 71% { opacity: 0; }
+  77%, 100% { opacity: 1; }
+}
+.sbp-run .sbp-hl { animation: sbp-move 3s ease-in-out 1; }
+.sbp-run .sbp-lines { animation: sbp-fade 3s ease-in-out 1; }
+.sbp-run .sbp-tip { animation: sbp-tip 3s ease-in-out 1; }
+.sbp-card:hover .sbp-hl,
+.sbp-card:has(:focus-visible) .sbp-hl { animation: sbp-move 3s ease-in-out infinite; }
+.sbp-card:hover .sbp-lines,
+.sbp-card:has(:focus-visible) .sbp-lines { animation: sbp-fade 3s ease-in-out infinite; }
+.sbp-card:hover .sbp-tip,
+.sbp-card:has(:focus-visible) .sbp-tip { animation: sbp-tip 3s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .sbp-anim { animation: none !important; }
+}

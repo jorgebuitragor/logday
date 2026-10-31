@@ -3,6 +3,8 @@ import { Keyboard } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { Shortcuts } from '../../types/config';
 import { t } from '../../lib/i18n';
+import { shortcutLabel } from '../sidebar/sectionOrder';
+import { IS_MAC } from '../sidebar/sections';
 
 export function ShortcutsSettingsTab() {
   const { language, shortcuts, setShortcut } = useAppStore();
@@ -16,6 +18,9 @@ export function ShortcutsSettingsTab() {
       e.stopPropagation();
       if (['Meta', 'Control', 'Alt', 'Shift'].includes(e.key)) return;
       if (e.key === 'Escape') { setRecordingFor(null); return; }
+      // ⌘0…⌘9 son de las secciones del menú (specs/navegacion-secciones
+      // NS15): un dígito no se acepta y se sigue esperando otra tecla.
+      if (/^[0-9]$/.test(e.key)) return;
       setShortcut(recordingFor, e.key.toLowerCase());
       setRecordingFor(null);
     };
@@ -59,6 +64,17 @@ export function ShortcutsSettingsTab() {
             </div>
           );
         })}
+        {/* ⌘0…⌘9 van a las secciones del menú (specs/navegacion-secciones
+            NS15). Fijos: se muestran pero no se cambian. */}
+        <div className="flex items-center justify-between px-4 py-2.5">
+          <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+            <Keyboard size={13} className="text-[var(--text-hint)]" />
+            {t(language, 'settings', 'goToSectionRow')}
+          </div>
+          <span className="w-[180px] shrink-0 overflow-hidden whitespace-nowrap rounded-lg border border-transparent px-3 py-1 text-center text-xs font-mono text-[var(--text-muted)]">
+            {`${shortcutLabel('0', IS_MAC)}…${shortcutLabel('9', IS_MAC)}`}
+          </span>
+        </div>
       </div>
       <p className="mt-1.5 text-center text-[10px] text-[var(--text-hint)]">
         {t(language, 'settings', 'shortcutHint')}

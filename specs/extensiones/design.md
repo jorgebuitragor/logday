@@ -152,17 +152,15 @@ extensions?: Partial<Record<ExtensionId, {
     un backup.
   - Las vistas de las extensiones activas aparecen como opciones de la
     pantalla de inicio.
-- **`Sidebar.tsx`:** después de las secciones fijas, una línea
-  separadora y un botón por extensión activa con `view`, con su icono y
-  su etiqueta. Si no hay ninguna activa con vista, no aparece la
-  separadora.
+- **Menú lateral:** `useExtensionSectionItems()` (`ExtensionSections.tsx`)
+  da las extensiones activas con `view`, con su icono y su nombre, y
+  `useSectionItems()` las suma a las secciones fijas en el orden del
+  usuario (`specs/navegacion-secciones`). La separadora entre las fijas y
+  las extensiones solo se dibuja si no están mezcladas.
 - **`setSection('ext:<id>')`** dibuja `<ExtensionBoundary><View/></ExtensionBoundary>`
   en el área principal.
 - **Al desactivar** una extensión con su vista abierta, `setSection('dashboard')`
   (R14). Igual al quitar su configuración.
-- Las secciones de extensiones están en `ExtensionSections.tsx`: en el
-  menú expandido, una fila por extensión debajo de la cuadrícula de
-  secciones fijas; en el colapsado, un icono después de Extras.
 
 ## Opciones → Extensiones
 
@@ -287,12 +285,14 @@ La primera es el contador del Pomodoro (`specs/pomodoro/design.md` §3).
   qué extensiones lo tienen sin cargar su código (R16).
 - `SidebarStatusSlots` (`ExtensionSections.tsx`) monta un `ExtensionSlot`
   con `variant="inline"` por cada extensión activa que lo tenga:
-  - expandido: primer hijo del pie, antes de "Opciones";
+  - expandido: primer hijo del pie (en la Lista, antes de "Opciones"; en
+    la Barra de íconos, al pie del panel);
   - colapsado: después de la columna con scroll y antes de Buscar.
-- **Columna colapsada con scroll:** de Panel a las vistas de Tareas va en
-  un contenedor `flex-1 overflow-y-auto`; el estado, Buscar y Opciones
-  quedan fijos abajo. Con dos extensiones con vista y el contador, la
-  columna no cabía en 600 px de alto (Pomodoro, hallazgo 2).
+- **Columna colapsada con scroll:** las secciones y las vistas de Tareas
+  van en un contenedor `flex-1 overflow-y-auto`; el estado, Buscar y
+  Opciones quedan fijos abajo. Con dos extensiones con vista y el
+  contador, la columna no cabía en 600 px de alto (Pomodoro, hallazgo 2).
+  Desde `specs/navegacion-secciones`, además, lo que no cabe pasa a "Más".
 - **Abrir Opciones en la página de una extensión:** `openExtensionSettings(id)`
   del store deja una señal (`settingsExtensionRequest`) y abre Opciones;
   `SettingsModal` la consume y abre `ext:<id>`, como `openSettingsGitTab`.

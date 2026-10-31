@@ -2,6 +2,7 @@ import { Language } from './common';
 import { Theme, CustomTheme } from './theme';
 import { OvertimeMonthMeta } from './overtime';
 import type { ExtensionSection, ExtensionsConfig } from '../extensions/types';
+import type { SavedSection, SidebarStyle } from '../components/sidebar/sectionOrder';
 
 export type ViewMode = 'list' | 'kanban' | 'calendar';
 /** Secciones fijas del menú lateral. */
@@ -44,7 +45,15 @@ export interface AppConfig {
   holidaysAsNonWork?: boolean;
   animationsEnabled?: boolean;
   trashAutoPurgeEnabled?: boolean;
+  /** Antes de specs/navegacion-secciones: los textos de la fila de
+   *  secciones. Ya no se lee ni se escribe (NS5); queda en el tipo porque
+   *  aparece en configs viejas. */
   sidebarLabelsVisible?: boolean;
+  /** Estilo de las secciones del menú (NS1). Sin él, la Barra de íconos. */
+  sidebarStyle?: SidebarStyle;
+  /** Orden y visibilidad de las secciones (NS7, NS9). Sin él, el orden
+   *  por defecto. */
+  sidebarSections?: SavedSection[];
   /** Vista de notas elegida en Opciones; se usa la primera vez. */
   notesViewDefault?: NotesView;
   /** Última vista usada (el botón de la barra lateral); se recuerda. */

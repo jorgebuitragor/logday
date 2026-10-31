@@ -5,6 +5,7 @@ import { useAppStore } from '../store/appStore';
 import { t } from '../lib/i18n';
 import { ModalOverlay } from './shared/ModalOverlay';
 import { ModalPanel } from './shared/ModalPanel';
+import { SearchGoToSections, useSectionHits } from './SearchGoToSections';
 
 const STATUS_ICONS: Record<TaskStatus, React.ReactNode> = {
   todo: <Circle size={13} className="text-zinc-500 shrink-0" />,
@@ -18,8 +19,9 @@ export function SearchModal() {
     dailyEntries, setSection, setActiveDailyDate, setActiveDailyMonth, shortcuts, language,
   } = useAppStore();
   const inputRef = useRef<HTMLInputElement>(null);
+  // NS19: "Ir a <sección>", incluidas Inicio y las que están en "Más".
+  const sectionHits = useSectionHits(searchQuery);
 
-  // Búsqueda client-side en dailys cargados en memoria
   const dailyHits = useMemo(() => {
     if (!searchQuery.trim() || searchQuery.length < 2) return [];
     const q = searchQuery.toLowerCase();
@@ -68,7 +70,12 @@ export function SearchModal() {
     toggleSearch();
   };
 
-  const hasResults = searchResults.length > 0 || dailyHits.length > 0;
+  const handleGoTo = (id: (typeof sectionHits)[number]['id']) => {
+    void setSection(id);
+    toggleSearch();
+  };
+
+  const hasResults = searchResults.length > 0 || dailyHits.length > 0 || sectionHits.length > 0;
 
   return (
     <ModalOverlay onClose={toggleSearch} align="start" className="pt-[15vh] px-4">
@@ -105,6 +112,9 @@ export function SearchModal() {
             </div>
           ) : (
             <div className="p-2">
+              {/* ── Ir a (secciones) ── */}
+              <SearchGoToSections hits={sectionHits} onGo={handleGoTo} />
+
               {/* ── Tareas ── */}
               {searchResults.length > 0 && (
                 <>

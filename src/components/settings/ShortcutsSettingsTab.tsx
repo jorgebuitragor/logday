@@ -16,6 +16,9 @@ export function ShortcutsSettingsTab() {
       e.stopPropagation();
       if (['Meta', 'Control', 'Alt', 'Shift'].includes(e.key)) return;
       if (e.key === 'Escape') { setRecordingFor(null); return; }
+      // ⌘0…⌘9 son de las secciones del menú (specs/navegacion-secciones
+      // NS15): un dígito no se acepta y se sigue esperando otra tecla.
+      if (/^[0-9]$/.test(e.key)) return;
       setShortcut(recordingFor, e.key.toLowerCase());
       setRecordingFor(null);
     };

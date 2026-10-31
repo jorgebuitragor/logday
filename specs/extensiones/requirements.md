@@ -73,11 +73,15 @@ tengan su primera extensión.
 
 - R11. Una extensión con vista propia (por ejemplo, Agenda o DevTools)
   DEBERÁ aparecer como una sección del menú lateral solo mientras esté
-  activada, junto a las secciones fijas y después de ellas: en la misma
-  fila de botones con el menú expandido (hasta 6 por fila) y en la misma
-  columna de íconos, tras una separadora, con el menú colapsado.
-  (Cambiado el 30 oct 2026 a pedido de Jorge: como lista aparte, debajo
-  de la fila, no se leía como una sección más.)
+  activada, en el menú de secciones de los dos estilos (Barra de íconos
+  y Lista con nombres) y en el colapsado. Va en el orden del usuario: al
+  activarla se agrega al final, visible, y al desactivarla conserva su
+  lugar por si vuelve. Si no cabe, o si el usuario la oculta, va en
+  "Más" (`specs/navegacion-secciones` NS7, NS11, NS12).
+  (Cambiado el 30 oct 2026: como lista aparte, debajo de la fila de
+  botones, no se leía como una sección más. Cambiado otra vez el 31 oct
+  2026, con `specs/navegacion-secciones`: la fila se retiró porque ya no
+  cabían las secciones.)
 - R12. Una extensión sin vista propia DEBERÁ aparecer solo en los puntos
   de la app donde actúa. Por ejemplo, "Enviar al chat" junto a Copiar en
   el daily.
@@ -93,8 +97,9 @@ tengan su primera extensión.
   - Una extensión DEBERÁ poder abrir Opciones directamente en su página
     (por ejemplo, el botón "Opciones" de la vista del Pomodoro).
 - R26. Una extensión DEBERÁ poder mostrar un estado pequeño y siempre
-  visible en el menú lateral, abajo, encima de "Opciones", tanto con el
-  menú expandido como colapsado (por ejemplo, el contador del Pomodoro).
+  visible en el menú lateral, abajo (encima de "Opciones" o, en la Barra
+  de íconos, al pie del panel), tanto con el menú expandido como
+  colapsado (por ejemplo, el contador del Pomodoro).
   MIENTRAS no tenga nada que mostrar, NO DEBERÁ ocupar sitio. Su código
   NO DEBERÁ cargarse con la extensión apagada (R16) y un error en él
   DEBERÁ quedar aislado (R15).

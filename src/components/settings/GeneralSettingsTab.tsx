@@ -14,7 +14,7 @@ import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { ThemeTile } from './ThemeTile';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
 import { Z_MODAL_NESTED } from '../../lib/zIndex';
-import ToggleSwitch from '../shared/ToggleSwitch';
+import { SidebarSettings } from './SidebarSettings';
 
 const THEME_VALUES: { value: Theme; Icon: React.ElementType }[] = [
   { value: 'system', Icon: Monitor },
@@ -50,7 +50,6 @@ export function GeneralSettingsTab({ isStartupSelectorOpen, setIsStartupSelector
     startupScreen, setStartupScreen,
     fontSize, setFontSize,
     confirmDestructiveActions,
-    sidebarLabelsVisible, setSidebarLabelsVisible,
   } = useAppStore();
 
   const enabledExtensions = useExtensions().enabled;
@@ -456,31 +455,8 @@ export function GeneralSettingsTab({ isStartupSelectorOpen, setIsStartupSelector
     </div>
   </div>
 
-  {/* Menú lateral */}
-  <div>
-    <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
-      {t(language, 'settings', 'sidebarSection')}
-    </p>
-    <div
-      onClick={() => void setSidebarLabelsVisible(!sidebarLabelsVisible)}
-      className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 text-left transition hover:bg-[var(--bg-hover)] cursor-pointer"
-    >
-      <div>
-        <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'sidebarLabelsTitle')}</p>
-        <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'sidebarLabelsDesc')}</p>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className={`text-[10px] font-semibold uppercase tracking-wider ${
-          sidebarLabelsVisible ? 'text-[var(--accent)]' : 'text-[var(--text-hint)]'
-        }`}>
-          {sidebarLabelsVisible
-            ? t(language, 'settings', 'sidebarLabelsOn')
-            : t(language, 'settings', 'sidebarLabelsOff')}
-        </span>
-        <ToggleSwitch checked={sidebarLabelsVisible} onChange={setSidebarLabelsVisible} size="lg" />
-      </div>
-    </div>
-  </div>
+  {/* Menú lateral (specs/navegacion-secciones) */}
+  <SidebarSettings />
 
   </>;
 }

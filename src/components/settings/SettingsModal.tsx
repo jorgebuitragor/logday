@@ -11,6 +11,7 @@ import { ShortcutsSettingsTab } from './ShortcutsSettingsTab';
 import { DataSettingsTab } from './DataSettingsTab';
 import { AboutSettingsTab } from './AboutSettingsTab';
 import { ExtensionsSettingsTab } from './ExtensionsSettingsTab';
+import { SIDEBAR_SETTINGS_ID } from './SidebarSettings';
 import { ModalOverlay } from '../shared/ModalOverlay';
 import { ModalPanel } from '../shared/ModalPanel';
 import { useExtensions } from '../../extensions/useExtensions';
@@ -29,6 +30,7 @@ export function SettingsModal() {
     isGitOpen, toggleGit,
     isSyncOpen, toggleSync,
     settingsExtensionRequest, clearExtensionSettingsRequest,
+    sidebarSettingsRequest, clearSidebarSettingsRequest,
   } = useAppStore();
 
   const [isStartupSelectorOpen, setIsStartupSelectorOpen] = useState(false);
@@ -97,6 +99,18 @@ export function SettingsModal() {
       clearExtensionSettingsRequest();
     }
   }, [isSettingsOpen, settingsExtensionRequest, clearExtensionSettingsRequest]);
+
+  // "Ordenar secciones…" del menú "Más" (specs/navegacion-secciones):
+  // General, con "Menú lateral" a la vista.
+  useEffect(() => {
+    if (!isSettingsOpen || !sidebarSettingsRequest) return;
+    setSettingsTab('general');
+    clearSidebarSettingsRequest();
+    const id = window.setTimeout(() => {
+      document.getElementById(SIDEBAR_SETTINGS_ID)?.scrollIntoView({ block: 'start' });
+    }, 50);
+    return () => window.clearTimeout(id);
+  }, [isSettingsOpen, sidebarSettingsRequest, clearSidebarSettingsRequest]);
 
   if (!isSettingsOpen) return null;
 

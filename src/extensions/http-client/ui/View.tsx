@@ -1,7 +1,9 @@
 // La pantalla del Cliente HTTP (specs/cliente-http HT33–HT35, Interfaz
 // §11): a la izquierda, "Peticiones", los bloques ```http de todas las
 // notas, agrupados por nota; a la derecha, el formulario. Elegir una la
-// carga en el formulario; lo que se cambia ahí no toca la nota.
+// carga en el formulario; lo que se cambia ahí no toca la nota hasta
+// "Guardar en la nota" (HT50). Cada petición conserva sus cambios sin
+// guardar, marcados con un punto en la columna.
 //
 // La lista se lee de disco al montar la vista (al volver a ella), con
 // "Actualizar" y, con una pausa, cuando cambian las notas del store
@@ -16,10 +18,10 @@ import {
   collectNoteRequests, countRequests, filterNoteRequests, requestTitle, shortUrl, type NoteRequest, type NoteRequestGroup,
 } from '../core/noteRequests';
 import { parseHttpBlock } from '../core/parse';
-import { formFromBlock } from '../core/serialize';
+import { draftFromBlock } from '../core/noteSave';
 import { isMac, makeTr, type Tr } from '../core/text';
 import { announce } from '../announce';
-import { firstError, issueMessage, loadForm, newForm, useHttpStore, type FormOrigin } from '../store';
+import { firstError, isDirty, issueMessage, loadDraft, newForm, useHttpStore, type FormOrigin } from '../store';
 import { RequestForm } from './RequestForm';
 
 /** Tras un cambio en las notas, cuánto esperar para volver a leerlas. */
@@ -96,10 +98,10 @@ export default function HttpClientView() {
   const total = groups ? countRequests(groups) : 0;
 
   const choose = (group: NoteRequestGroup, req: NoteRequest) => {
-    const loaded = formFromBlock(req.code, req.requestIndex);
+    const loaded = draftFromBlock(req.code, req.requestIndex);
     if (!loaded) return;
     const next = originOf(group, req, tr);
-    loadForm(loaded.form, next);
+    loadDraft(next, { ...loaded, name: req.name });
     announce(tr('aLoaded', { label: next.label, title: next.title }));
   };
 
@@ -178,6 +180,7 @@ export function RequestsColumn({
   onChoose: (group: NoteRequestGroup, req: NoteRequest) => void;
   origin: FormOrigin | null;
 }) {
+  const drafts = useHttpStore((s) => s.drafts);
   const isChosen = (group: NoteRequestGroup, req: NoteRequest) =>
     !!origin && origin.noteId === group.note.id && origin.blockIndex === req.blockIndex && origin.requestIndex === req.requestIndex;
 
@@ -212,6 +215,7 @@ export function RequestsColumn({
           <ul className="flex flex-col gap-0.5">
             {group.requests.map((req) => {
               const chosen = isChosen(group, req);
+              const unsaved = isDirty(drafts[`view:${group.note.id}:${req.blockIndex}:${req.requestIndex}`]);
               return (
                 <li key={`${req.blockIndex}:${req.requestIndex}`}>
                   <button
@@ -228,6 +232,12 @@ export function RequestsColumn({
                       <span className="truncate">{req.name ?? shortUrl(req.url)}</span>
                       {req.name && <span className="truncate font-mono text-[10px] text-[var(--text-hint)]">{shortUrl(req.url)}</span>}
                     </span>
+                    {unsaved && (
+                      <>
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" aria-hidden />
+                        <span className="sr-only">{tr('unsavedSr')}</span>
+                      </>
+                    )}
                     {req.hasErrors && (
                       <>
                         <CircleAlert size={12} className="shrink-0 text-red-400" aria-hidden />

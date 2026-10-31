@@ -55,3 +55,6 @@ export const isMac = () => typeof navigator !== 'undefined' && /Mac/i.test(navig
 
 /** "⌘↵" en macOS, "Ctrl+Enter" fuera. */
 export const sendShortcut = (mac: boolean) => (mac ? '⌘↵' : 'Ctrl+Enter');
+
+/** "⌘S" en macOS, "Ctrl+S" fuera: "Guardar en la nota" (HT50). */
+export const saveShortcut = (mac: boolean) => (mac ? '⌘S' : 'Ctrl+S');

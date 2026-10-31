@@ -1,15 +1,17 @@
 // La pantalla del Cliente HTTP (specs/cliente-http HT33–HT35): registrada
-// como vista, la columna de peticiones y el formulario dibujados en cada
-// estado (con react-dom/server, sin DOM), el envío con el motor del Cliente
-// HTTP y el comando de Rust simulado, "Guardar en una nota" y su ayuda. La
-// interacción se revisa en el navegador.
+// como vista, la columna de peticiones y el editor dibujados en cada estado
+// (con react-dom/server, sin DOM), el envío con el motor del Cliente HTTP y
+// el comando de Rust simulado, "Nueva nota" y su ayuda. Las pestañas y
+// "Guardar en la nota" están en editor.test.tsx. La interacción se revisa
+// en el navegador.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { sectionKeys, t } from '../../lib/i18n';
 import type { SendInput, SendOutput } from './core/api';
 import type { HttpEnvironment } from './core/environments';
 import { collectNoteRequests, type NoteSource } from './core/noteRequests';
-import { EMPTY_FORM, formFromBlock, serializeForm, type HttpForm } from './core/serialize';
+import { draftFromBlock } from './core/noteSave';
+import type { RequestTab } from './ui/RequestForm';
 
 const app = vi.hoisted(() => ({
   language: 'es' as 'es' | 'en',
@@ -102,12 +104,15 @@ const API = note('n1', 'API de usuarios', [
 const BROKEN = note('n2', '', '```http\nFETCH https://x.com\nmal cabecera\n```\n\n```http\n```');
 const PLAIN = note('n3', 'Sin peticiones', 'Texto y un bloque de otro lenguaje:\n```json\n{"a":1}\n```');
 
-function setForm(form: Partial<HttpForm>, origin: Parameters<typeof store.loadForm>[1] | null = null) {
-  store.httpApi.setState({ form: { ...EMPTY_FORM, ...form }, origin });
+type Origin = Parameters<typeof store.loadDraft>[0];
+
+/** El borrador de la pantalla: el texto de la petición. */
+function setDraft(code: string, origin: Origin | null = null, loadedCode = code) {
+  store.httpApi.setState({ drafts: { [store.formNoteId(origin)]: { ...store.EMPTY_DRAFT, code, loadedCode } }, origin });
 }
 
-const formHtml = (loadedError: string | null = null) =>
-  renderToStaticMarkup(<RequestForm tr={tr} mac loadedError={loadedError} onOpenNote={() => {}} onSaved={() => {}} />);
+const formHtml = (loadedError: string | null = null, initialTab: RequestTab = 'params') =>
+  renderToStaticMarkup(<RequestForm tr={tr} mac loadedError={loadedError} onOpenNote={() => {}} onSaved={() => {}} initialTab={initialTab} />);
 
 const column = (groups: ReturnType<typeof collectNoteRequests> | null, query = '', origin: ReturnType<typeof originOf> | null = null) =>
   renderToStaticMarkup(
@@ -132,11 +137,10 @@ const output = (over: Partial<SendOutput> = {}): SendOutput => ({
   elapsedMs: 143, finalUrl: 'https://staging.example.com/users', redirects: [], tlsUnverified: false, droppedHeaders: [], ...over,
 });
 
-/** Lo que hace el formulario al pulsar Enviar: el bloque con lo escrito. */
-const send = (form: Partial<HttpForm>, extra: Partial<Parameters<typeof store.sendRequest>[0]> = {}) =>
+/** Lo que hace la pantalla al pulsar Enviar: el texto del borrador. */
+const send = (code: string, extra: Partial<Parameters<typeof store.sendRequest>[0]> = {}) =>
   store.sendRequest({
-    noteId: store.formNoteId(store.httpApi.getState().origin), blockIndex: 0, requestIndex: 0,
-    code: serializeForm({ ...EMPTY_FORM, ...form }).code, ...extra,
+    noteId: store.formNoteId(store.httpApi.getState().origin), blockIndex: 0, requestIndex: 0, code, ...extra,
   });
 
 beforeEach(() => {
@@ -227,22 +231,21 @@ describe('las peticiones de las notas (HT34)', () => {
   it('elegir una la carga en el formulario, diciendo de qué nota viene', () => {
     const groups = collectNoteRequests([API]);
     const req = groups[0].requests[0];
-    const loaded = formFromBlock(req.code, req.requestIndex)!;
-    store.loadForm(loaded.form, originOf(groups[0], req, tr));
+    const loaded = draftFromBlock(req.code, req.requestIndex)!;
+    store.loadDraft(originOf(groups[0], req, tr), { ...loaded, name: req.name });
     const html = formHtml();
     const t = text(html);
     expect(html).toContain('value="{{baseUrl}}/users"');
     expect(html).toContain('aria-label="Método: POST"');
     expect(t).toContain('Crear');
     expect(t).toContain('De «API de usuarios» · Abrir la nota');
-    // La segunda petición del bloque, no la primera.
-    const second = formFromBlock(req.code, 1)!;
-    expect(second.form).toEqual({ method: 'GET', url: 'https://api.example.com/users?page=2', headers: '', body: '' });
+    // La segunda petición del bloque, no la primera, sin su línea ###.
+    expect(draftFromBlock(req.code, 1)?.code).toBe('GET https://api.example.com/users?page=2');
   });
 
   it('con un error en la nota, el formulario lo avisa', () => {
     const [group] = collectNoteRequests([BROKEN]);
-    store.loadForm({ ...EMPTY_FORM, url: 'https://x.com', headers: 'mal cabecera' }, originOf(group, group.requests[0], tr));
+    store.loadDraft(originOf(group, group.requests[0], tr), { code: 'FETCH https://x.com\nmal cabecera', source: '', name: null });
     const t = text(formHtml(requestErrorText(tr, group.requests[0])));
     expect(t).toContain('En la nota, esta petición tiene un error: Línea 1: FETCH no es un método admitido.');
     expect(t).toContain('De «Sin título»');
@@ -260,52 +263,65 @@ describe('el formulario se dibuja', () => {
     expect(html).not.toContain('<select');
     expect(html).toMatch(/<button type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Método: GET"[^>]*>.*GET/);
     expect(html).toContain('aria-label="URL"');
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Guardar en una nota"/);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Nueva nota"/);
+    // Sin nota de origen, no hay "Guardar en la nota".
+    expect(html).not.toContain('Guardar en la nota');
+    // Las pestañas, con Params elegida.
+    expect(html).toMatch(/role="tablist" aria-label="Partes de la petición"/);
+    expect(text(html)).toMatch(/Params Cabeceras Auth Cuerpo Texto/);
+    expect(html).toMatch(/aria-selected="true"[^>]*>Params/);
+    expect(text(html)).toContain('Sin parámetros. Agrega uno o escríbelo en la URL.');
     expect(t).not.toContain('Traer de una nota');
   });
 
-  it('una cabecera mal escrita dice su línea en el campo, no en el bloque', () => {
-    setForm({ url: 'https://x.com', headers: 'Accept: */*\n\nmal' });
+  it('una cabecera mal escrita: el error con su línea del texto, y la tabla de solo lectura', () => {
+    setDraft('GET https://x.com\nAccept: */*\nmal');
     const html = formHtml();
     expect(text(html)).toContain('Línea 3: escribe la cabecera como Nombre: valor.');
-    expect(html).toMatch(/<textarea[^>]*aria-invalid="true"/);
+    expect(text(html)).toContain('Ir al texto');
+    // La pestaña Cabeceras lleva la marca de error.
+    expect(html).toMatch(/Cabeceras.*?<span class="text-\[var\(--text-hint\)\]">1<\/span>.*?con errores/);
+    const headers = formHtml(null, 'headers');
+    expect(text(headers)).toContain('Corrige el texto para editar la tabla: Línea 3: escribe la cabecera como Nombre: valor.');
+    expect(headers).not.toContain('Agregar cabecera');
+    expect(formHtml(null, 'text')).toMatch(/<textarea[^>]*aria-invalid="true"/);
   });
 
   it('una variable que falta, con el acceso a Opciones', () => {
     setHttp([STAGING], STAGING.id);
-    setForm({ url: '{{baseUrl}}/u', headers: 'X-Id: {{id}}' });
+    setDraft('GET {{baseUrl}}/u\nX-Id: {{id}}');
     const t = text(formHtml());
     expect(t).toContain('Falta la variable {{id}} en Staging.');
     expect(t).toContain('Definir en Opciones');
   });
 
   it('HEAD: el cuerpo desactivado con su ayuda; GET con cuerpo, el aviso; ### en el cuerpo, el error', () => {
-    setForm({ method: 'HEAD', url: 'https://x.com', body: '{}' });
-    const head = formHtml();
+    setDraft('HEAD https://x.com\n\n{}');
+    const head = formHtml(null, 'body');
     expect(head).toMatch(/<textarea[^>]*disabled=""/);
     expect(text(head)).toContain('Con HEAD no se envía el cuerpo.');
-    setForm({ url: 'https://x.com', body: '{}' });
+    setDraft('GET https://x.com\n\n{}');
     expect(text(formHtml())).toContain('Muchos servidores ignoran el cuerpo de un GET.');
-    setForm({ method: 'POST', url: 'https://x.com', body: 'a\n### b' });
+    setDraft('POST https://x.com\n\na\n### b');
     expect(text(formHtml())).toContain('Una línea del cuerpo empieza por ###');
   });
 
   it('con una respuesta: la misma vista que los bloques; vieja si la petición cambió', async () => {
     rust.reply = async () => output();
-    expect(await send({ url: 'https://x.com/a' })).toBe('sent');
-    setForm({ url: 'https://x.com/a' });
+    expect(await send('GET https://x.com/a')).toBe('sent');
+    setDraft('GET https://x.com/a');
     const html = text(formHtml());
     expect(html).toContain('200 OK');
     expect(html).toContain('Cabeceras 1');
     expect(html).not.toContain('La petición cambió');
-    setForm({ url: 'https://x.com/b' });
+    setDraft('GET https://x.com/b');
     expect(text(formHtml())).toContain('La petición cambió después de esta respuesta.');
   });
 
   it('la confirmación del entorno protegido, en el formulario', async () => {
     setHttp([PROD], PROD.id);
-    setForm({ method: 'DELETE', url: '{{baseUrl}}/u/1' });
-    expect(await send({ method: 'DELETE', url: '{{baseUrl}}/u/1' })).toBe('confirm');
+    setDraft('DELETE {{baseUrl}}/u/1');
+    expect(await send('DELETE {{baseUrl}}/u/1')).toBe('confirm');
     const t = text(formHtml());
     expect(t).toContain('Vas a enviar DELETE a Producción.');
     expect(t).toContain('No enviar');
@@ -315,7 +331,7 @@ describe('el formulario se dibuja', () => {
 
 describe('enviar con el mismo motor (HT3, HT20, HT21, HT24)', () => {
   it('dibujar la vista o el formulario no envía nada', () => {
-    setForm({ method: 'POST', url: 'https://x.com', body: '{}' });
+    setDraft('POST https://x.com\n\n{}');
     formHtml();
     renderToStaticMarkup(<HttpClientView />);
     expect(rust.calls).toEqual([]);
@@ -325,14 +341,16 @@ describe('enviar con el mismo motor (HT3, HT20, HT21, HT24)', () => {
     setHttp([STAGING], STAGING.id);
     app.extensions['http-client'].settings = { ...app.extensions['http-client'].settings, timeoutSec: 7 };
     rust.reply = async () => output();
-    const form = { method: 'POST' as const, url: '{{baseUrl}}/users', headers: 'Authorization: Bearer {{token}}', body: '{"name":"Ana"}' };
-    expect(await send(form)).toBe('sent');
+    const code = 'POST {{baseUrl}}/users\n# &debug=1\nAuthorization: Bearer {{token}}\n# X-Off: {{noDefinida}}\n\n{"name":"Ana"}';
+    expect(await send(code)).toBe('sent');
     const call = rust.calls[0];
     expect([call.method, call.url, call.body, call.timeoutMs]).toEqual(['POST', 'https://staging.example.com/users', '{"name":"Ana"}', 7000]);
     expect(call.headers).toContainEqual(['Authorization', 'Bearer {{$secret:v_ab12cd34}}']);
     expect(call.headers).toContainEqual(['Content-Type', 'application/json']);
+    // Las filas desactivadas no se envían, y su variable no hace falta.
+    expect(call.headers.map(([n]) => n)).not.toContain('X-Off');
     expect(JSON.stringify(call)).not.toContain('a1b2');
-    const source = parseHttpBlock(serializeForm(form).code).requests[0].source;
+    const source = parseHttpBlock(code).requests[0].source;
     expect(store.readFormResult(null, source)).toMatchObject({ stale: false });
     // Va a la caché del Cliente HTTP con la clave de la petición nueva.
     expect(store.cache.peek(cacheKey('view:new', 0, 0))?.value.response?.output.status).toBe(200);
@@ -343,9 +361,9 @@ describe('enviar con el mismo motor (HT3, HT20, HT21, HT24)', () => {
     rust.reply = async () => output();
     const a = originOf(groups[0], groups[0].requests[0], tr);
     const b = originOf(groups[0], groups[0].requests[1], tr);
-    store.loadForm(formFromBlock(groups[0].requests[0].code, 0)!.form, a);
-    await send({ url: 'https://x.com/a' });
-    store.loadForm(formFromBlock(groups[0].requests[0].code, 1)!.form, b);
+    store.loadDraft(a, { ...draftFromBlock(groups[0].requests[0].code, 0)!, name: 'Crear' });
+    await send('GET https://x.com/a');
+    store.loadDraft(b, { ...draftFromBlock(groups[0].requests[0].code, 1)!, name: 'Listar' });
     expect(store.readFormResult(b, null)).toBeNull();
     expect(store.readFormResult(a, null)?.entry.response?.output.status).toBe(200);
     expect(store.formNoteId(a)).toBe('view:n1:0:0');
@@ -355,44 +373,44 @@ describe('enviar con el mismo motor (HT3, HT20, HT21, HT24)', () => {
   it('entorno protegido y secreto a un host ajeno: confirmar antes', async () => {
     setHttp([PROD], PROD.id);
     rust.reply = async () => output();
-    expect(await send({ method: 'PATCH', url: '{{baseUrl}}/u' })).toBe('confirm');
+    expect(await send('PATCH {{baseUrl}}/u')).toBe('confirm');
     expect(rust.calls).toEqual([]);
-    expect(await send({ method: 'PATCH', url: '{{baseUrl}}/u' }, { confirmed: true })).toBe('sent');
+    expect(await send('PATCH {{baseUrl}}/u', { confirmed: true })).toBe('sent');
     setHttp([STAGING], STAGING.id);
-    expect(await send({ url: 'https://otro.com', headers: 'Authorization: Bearer {{token}}' })).toBe('confirm');
+    expect(await send('GET https://otro.com\nAuthorization: Bearer {{token}}')).toBe('confirm');
     expect(store.blockState(store.httpApi.getState(), store.formKey(null)).confirm?.reasons).toEqual([
       { kind: 'untrusted_host', host: 'otro.com', vars: ['token'] },
     ]);
-    expect(await send({ url: 'https://otro.com', headers: 'Authorization: Bearer {{token}}' }, { allowUntrusted: true })).toBe('sent');
+    expect(await send('GET https://otro.com\nAuthorization: Bearer {{token}}', { allowUntrusted: true })).toBe('sent');
     expect(rust.calls[rust.calls.length - 1].allowUntrustedHost).toBe(true);
   });
 
   it('"Nueva petición" vacía el formulario, cancela lo que está en curso y olvida su respuesta', async () => {
     rust.reply = async () => output();
-    setForm({ url: 'https://x.com' });
-    await send({ url: 'https://x.com' });
+    setDraft('GET https://x.com');
+    await send('GET https://x.com');
     store.httpApi.setState({ blocks: { [store.formKey(null)]: { selected: 0, inFlight: { requestId: 'r', requestIndex: 0, startedAt: Date.now() }, confirm: null } } });
     store.newForm();
     expect(store.readFormResult(null, null)).toBeNull();
     expect(store.blockState(store.httpApi.getState(), store.formKey(null)).inFlight).toBeNull();
-    expect(store.httpApi.getState().form).toEqual(EMPTY_FORM);
+    expect(store.currentDraft()).toEqual(store.EMPTY_DRAFT);
     expect(store.httpApi.getState().origin).toBeNull();
   });
 
   it('apagar la extensión olvida el formulario y las respuestas (R7, HT11)', async () => {
     const [group] = collectNoteRequests([API]);
-    store.loadForm({ ...EMPTY_FORM, url: 'https://x.com' }, originOf(group, group.requests[0], tr));
+    store.loadDraft(originOf(group, group.requests[0], tr), { code: 'GET https://x.com', source: '', name: null });
     const { default: httpClient } = await import('./index');
     httpClient.start!()();
-    expect(store.httpApi.getState().form).toEqual(EMPTY_FORM);
+    expect(store.httpApi.getState().drafts).toEqual({});
     expect(store.httpApi.getState().origin).toBeNull();
   });
 });
 
-describe('"Guardar en una nota"', () => {
+describe('"Nueva nota"', () => {
   it('crea una nota con el bloque http, con los nombres de las variables y nunca sus valores', async () => {
     setHttp([STAGING], STAGING.id);
-    const { code } = serializeForm({ method: 'GET', url: '{{baseUrl}}/me', headers: 'Authorization: Bearer {{token}}', body: '' });
+    const code = 'GET {{baseUrl}}/me\nAuthorization: Bearer {{token}}';
     await saveRequestAsNote('Cliente HTTP — 31 oct 2026, 14:05', code);
     const { content, title } = app.createNoteWith.mock.calls[app.createNoteWith.mock.calls.length - 1][0];
     expect(title).toBe('Cliente HTTP — 31 oct 2026, 14:05');

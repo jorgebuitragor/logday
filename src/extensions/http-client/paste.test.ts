@@ -83,16 +83,15 @@ describe('convertPaste', () => {
 });
 
 describe('en la URL de la pantalla', () => {
-  it('el cURL convertido carga el formulario entero (lo que hace su onPaste)', async () => {
+  it('el cURL convertido pasa a ser el texto entero de la petición (lo que hace su onPaste)', async () => {
     const { fromCurl } = await import('./core/curl');
-    const { formFromBlock } = await import('./core/serialize');
+    const { parseHttpBlock } = await import('./core/parse');
+    const { readRequestLine } = await import('./core/requestEdit');
     const r = fromCurl(`curl -X PUT 'https://x.com/a?api_key=k1' -H 'Accept: */*' -H 'X-Api-Key: k2' --data-raw '{"a":1}'`)!;
-    expect(formFromBlock(r.code)?.form).toEqual({
-      method: 'PUT',
-      url: 'https://x.com/a?api_key={{api_key}}',
-      headers: 'Accept: */*\nX-Api-Key: {{x_api_key}}',
-      body: '{\n  "a": 1\n}',
-    });
+    expect(readRequestLine(r.code)).toEqual({ method: 'PUT', url: 'https://x.com/a?api_key={{api_key}}' });
+    const req = parseHttpBlock(r.code).requests[0];
+    expect(req.headerRows.map((h) => `${h.name}: ${h.value}`)).toEqual(['Accept: */*', 'X-Api-Key: {{x_api_key}}']);
+    expect(req.body).toBe('{\n  "a": 1\n}');
     expect(r.replaced).toEqual(['api_key', 'x_api_key']);
   });
 });

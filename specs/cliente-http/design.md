@@ -1235,3 +1235,40 @@ De izquierda a derecha: lenguaje, método, petición (con 2 o más), `flex-1`, c
 | `copyCurl` | Copiar como cURL | Copy as cURL |
 | `aLanguage` | El bloque ahora es {name} | The block is now {name} |
 | `aCurlCopied` | Comando cURL copiado | cURL command copied |
+
+### 13. Pegar un cURL (31 oct 2026, HT39–HT41)
+
+Pedido por Jorge (requirements, "Cambio del 31 oct 2026: pegar un cURL").
+
+#### 13.1 El conversor (`core/curl.ts` y `core/shell.ts`)
+
+`fromCurl(text): { code, replaced } | null`, puro. Ante la duda, `null`: el texto se pega tal cual, como antes de HT39.
+
+- **Palabras** (`shellWords`, en `core/shell.ts`): las reglas de sh, bash y zsh. Comillas simples (literal), dobles (`\` escapa `$`, `` ` ``, `"`, `\` y el salto de línea), `$'…'` con los escapes de bash (Chrome lo usa con `\'`, `\n` y `\uXXXX`), `\` fuera de comillas, y la continuación `\` al final de la línea (también con espacios detrás). `$NOMBRE` y `${NOMBRE}` pasan a `{{NOMBRE}}`. Un prompt (`$ ` o `% `) delante se quita. `null` con `;` seguido de otro comando, `&&`, `||`, `|`, `<`, `>`, paréntesis, `$(…)`, comillas invertidas, otra línea con otro comando, comillas sin cerrar o `^"` (cmd). Un `&` pegado a texto por los dos lados (una URL sin comillas) es parte de la palabra.
+- **Opciones:** cortas juntas (`-sSL`, `-XPOST`, `-sX POST`) y largas con espacio o `=`. La tabla de las que llevan valor es la de curl; una larga desconocida se toma como interruptor, y si llevaba valor ese valor queda como una segunda URL y no se convierte. Las que hacen una petición que el bloque no escribe (`-F`, `-T`, `-K`, `--next`, `--digest`, `--unix-socket`, `--aws-sigv4`, `@archivo`…) dan `null`.
+- **Petición:** una sola URL, con `http://` si no tiene esquema (como curl), o que empieza por `{{`. Los `-d` se unen con `&` y los `--json` sin separador. `-G` pasa los datos a la query. `--json` agrega `Content-Type` y `Accept` de JSON si no están. `-H 'Nombre:'` quita la cabecera (no se agrega la de curl).
+- **Salida:** `MÉTODO URL`, las cabeceras en su orden y, si hay, una línea en blanco y el cuerpo. El JSON se formatea con `formatJsonBody`: la sangría de `JSON.stringify(…, null, 2)` sin pasar por `JSON.parse`, para que un número de 20 dígitos no pierda precisión. Se comprueba con `parseHttpBlock`: si el bloque tuviera un error (o una línea `###` en el cuerpo), `null`.
+
+#### 13.2 Valores sensibles
+
+Una clase `Secrets` da un nombre de variable por valor (`X-API-Key` → `x_api_key`, con `_2`, `_3`… si el mismo nombre trae otro valor; el mismo valor reusa la variable) y `replaced` los lista en el orden del bloque: la URL, las cabeceras, el cuerpo. El valor se queda en memoria mientras se convierte y se descarta; no sale del conversor.
+
+#### 13.3 El pegado (specs/extensiones R24)
+
+- `ExtensionModule.convertPaste(text)` devuelve `{ code, onInserted }` o `null`. El de Cliente HTTP (`paste.ts`) usa `fromCurl` y, al insertarse, anuncia y, si hubo valores ocultos, muestra un aviso (`showToast`, 10 s) con "Abrir Entornos" (`openSettings` del entorno activo).
+- `extensionRuntime.peek(id)` da el módulo ya cargado, sin esperar ni cargarlo (R16): el pegado responde en el acto, y el módulo se cargó al activar la extensión.
+- `NoteEditor` tiene `handlePaste`, que lee `text/plain` y llama a `handleExtensionPaste` (`components/notes/extensionPaste.ts`, puro): `pasteContext` (fuera de un bloque, dentro de uno con su lenguaje, o una selección que no es de texto), `planPaste` (sin formato, otro lenguaje o un error de la extensión: `null`) y dos transacciones: `pasteRawTr` (el texto tal cual, un párrafo por línea, o como código) y `convertPastedTr` (con `closeHistory`, para que ⌘Z deshaga solo la conversión). Fuera de un bloque, el bloque reemplaza los párrafos enteros si lo pegado los llenaba, y si no, parte el párrafo.
+- ⇧⌘V: el keydown anota la hora y un pegado en los 1,5 s siguientes va sin convertir.
+- En la pantalla, `onPaste` de la URL: `fromCurl` → `formFromBlock` → `setForm` (sin cambiar de dónde viene la petición) y el mismo aviso.
+
+#### 13.4 Textos nuevos (`httpClient`)
+
+| Clave | es | en |
+|---|---|---|
+| `aCurlPasted` | El cURL pegado ahora es una petición HTTP. Deshacer lo deja como texto. | The pasted cURL is now an HTTP request. Undo turns it back into text. |
+| `aCurlFilled` | El cURL pegado rellenó el formulario. | The pasted cURL filled in the form. |
+| `curlSecretsTitle` | Se ocultaron datos sensibles del cURL | Sensitive values hidden from the cURL |
+| `curlSecretsBody` | {n\|Se cambió un valor por\|Se cambiaron {n} valores por} {vars}. {n\|Guárdalo como secreto\|Guárdalos como secretos} en Entornos: en la nota solo queda el nombre. | {n\|A value was replaced with\|{n} values were replaced with} {vars}. Save {n\|it as a secret\|them as secrets} in Environments: the note only keeps the name. |
+| `curlBasicHint` | En {{basic_auth}} va usuario:contraseña en Base64. | {{basic_auth}} holds username:password in Base64. |
+| `curlSecretsAction` | Abrir Entornos | Open Environments |
+

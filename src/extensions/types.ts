@@ -60,6 +60,13 @@ export interface NoteBlockEditorProps {
   onClose: () => void;
 }
 
+/** Lo que devuelve `convertPaste`: el texto del bloque y, una vez
+ *  insertado, qué avisar (specs/extensiones R24, specs/cliente-http HT39). */
+export interface NotePasteConversion {
+  code: string;
+  onInserted?: () => void;
+}
+
 /** Props del estado que una extensión pone en el menú lateral, abajo,
  *  encima de "Opciones" (R26). */
 export interface SidebarStatusProps {
@@ -79,6 +86,11 @@ export interface ExtensionModule {
   /** Bloque propio en las notas y su editor (R24). */
   NoteBlock?: ComponentType<NoteBlockProps>;
   NoteBlockEditor?: ComponentType<NoteBlockEditorProps>;
+  /** R24: un texto pegado en una nota que es suyo (p. ej. un comando cURL
+   *  para Cliente HTTP) pasa a ser un bloque de su lenguaje. Devuelve el
+   *  código del bloque, o `null` si el texto no es suyo. Debe ser rápido y
+   *  puro: corre al pegar, con el módulo ya cargado (`peek`). */
+  convertPaste?: (text: string) => NotePasteConversion | null;
   /** Estado siempre visible en el menú lateral (R26). Si no hay nada que
    *  mostrar, devuelve `null`. */
   SidebarStatus?: ComponentType<SidebarStatusProps>;

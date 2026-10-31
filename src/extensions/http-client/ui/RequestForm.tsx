@@ -17,12 +17,14 @@ import { StatusItem } from '../../../components/shared/FormControls';
 import { NO_AUTOCORRECT, lineInputCls, textareaCls } from '../../devtools/ui/classes';
 import { activeEnvironment, EXTENSION_ID, readHttpSettings } from '../core/environments';
 import { HTTP_METHODS, parseHttpBlock, type ParseIssue } from '../core/parse';
-import { bodySplitsRequest, formIssues, isHttpMethod, serializeForm } from '../core/serialize';
+import { fromCurl } from '../core/curl';
+import { bodySplitsRequest, formFromBlock, formIssues, isHttpMethod, serializeForm } from '../core/serialize';
 import { localeOf, sendShortcut, type Tr } from '../core/text';
 import { announce } from '../announce';
+import { notifyCurlConverted } from '../paste';
 import {
   blockState, blockedMessage, cancelBlock, firstError, formKey, formNoteId, issueMessage, openSettings, readFormResult,
-  resolveWith, sendRequest, setFormField, useHttpStore, type FormOrigin, type SendOptions,
+  resolveWith, sendRequest, setForm, setFormField, useHttpStore, type FormOrigin, type SendOptions,
 } from '../store';
 import { EnvironmentChip } from './EnvironmentChip';
 import { ResponseView, type ResponseTab } from './ResponseView';
@@ -236,6 +238,16 @@ export function RequestForm({
               placeholder={tr('toolUrlPlaceholder')}
               value={url}
               onChange={(e) => setFormField('url', e.target.value)}
+              onPaste={(e) => {
+                // HT39: un cURL pegado en la URL rellena el formulario, con
+                // los valores sensibles ya cambiados por variables.
+                const converted = fromCurl(e.clipboardData.getData('text/plain'));
+                const loaded = converted ? formFromBlock(converted.code) : null;
+                if (!converted || !loaded) return;
+                e.preventDefault();
+                setForm(loaded.form);
+                notifyCurlConverted(converted.replaced, 'form');
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
                   e.preventDefault();

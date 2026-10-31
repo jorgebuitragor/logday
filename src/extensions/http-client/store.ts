@@ -342,6 +342,12 @@ export function setFormField<K extends keyof HttpForm>(field: K, value: HttpForm
   httpApi.setState((s) => ({ form: { ...s.form, [field]: value } }));
 }
 
+/** Pegar un cURL en la URL (HT39): el formulario entero pasa a ser esa
+ *  petición. La procedencia no cambia, como al escribir en los campos. */
+export function setForm(form: HttpForm) {
+  httpApi.setState({ form });
+}
+
 /** Elegir una petición de la columna: el formulario pasa a ser ella. Lo
  *  que se escribió en el anterior se olvida; las respuestas, no. */
 export function loadForm(form: HttpForm, origin: FormOrigin) {

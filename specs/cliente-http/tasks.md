@@ -200,6 +200,26 @@ Rama `feature/http-pantalla-propia`. Pedido por Jorge al probar (requirements, "
 - **"Texto" traducido** en el selector de la barra (`langPlain`); el selector normal sigue diciendo "Texto" también en inglés (`CODE_LANGUAGE_OPTIONS`), sin cambiar.
 - **La pantalla Cliente HTTP** no tiene "Copiar como cURL" todavía: el pedido era el bloque de la nota.
 
+## Pegar un cURL (31 oct 2026, HT39–HT41)
+
+Rama `feature/http-pantalla-propia`. Pedido por Jorge (requirements, "Cambio del 31 oct 2026: pegar un cURL"; design §13).
+
+- [x] `core/curl.ts` y `core/shell.ts` (puros): `shellWords` (comillas, escapes, `$'…'`, continuaciones, variables del shell), `fromCurl` y `formatJsonBody`, con `core/curl.test.ts` (Chrome, Postman, Insomnia, comillas dobles, `-sSL`, `-u`, `--json`, `-G -d`, `-I`, `@archivo`, `-F`, encadenados, texto que no es curl, URL sin esquema, PowerShell y cmd, opciones desconocidas, cuerpos grandes, los valores sensibles y la ida y vuelta con `toCurl`).
+- [x] Base (specs/extensiones R24): `ExtensionModule.convertPaste` y `extensionRuntime.peek`; `components/notes/extensionPaste.ts` (puro: dónde se pega, qué se hace y las dos transacciones) con su prueba, y `handlePaste` en `NoteEditor.tsx`.
+- [x] `paste.ts`: `convertCurlPaste` (el `convertPaste` del módulo) y `notifyCurlConverted` (anuncio y aviso con "Abrir Entornos"), con `paste.test.ts`.
+- [x] Pantalla: `onPaste` en la URL de `ui/RequestForm.tsx` y `setForm` en el store (HT41).
+- [x] Textos es y en con las mismas claves (§13.4).
+- [ ] Prueba en el navegador y en la app de QA: pegar un "Copiar como cURL" de Chrome y uno de Postman en un párrafo vacío, en medio de un párrafo, en un bloque `http`, en un bloque `bash`; ⇧⌘V; ⌘Z y otro ⌘Z; el aviso y "Abrir Entornos"; con la extensión apagada; y en la URL de la pantalla.
+
+### Diferencias con el pedido
+
+- **No se convierte (y se pega tal cual)** con `-F`, un cuerpo o cabeceras desde un archivo (`@archivo`), `-T`, `-K`, `--digest`/`--ntlm`, `--unix-socket`, `--next` o varias URL: un bloque que se ve bien pero se envía sin el cuerpo sería peor que el texto original. Tampoco cuando hay otro comando, una tubería o una redirección (`| jq` incluido): así nunca se pierde nada de lo pegado.
+- **Sintaxis de cmd.exe** (`^"…^"`, el "Copiar como cURL (cmd)" de Chrome en Windows) no se entiende: no se convierte. La continuación `^` y la de PowerShell (`` ` ``) al final de la línea sí, con las comillas de sh.
+- **Content-Type de curl:** con `-d` y un cuerpo `clave=valor`, el bloque lleva `application/x-www-form-urlencoded`, como lo envía curl; con un cuerpo JSON no, porque Logday pone el de JSON (decisión 6); con otro texto, tampoco.
+- **`--max-time`** no se copia: el tiempo límite es una opción de Opciones (HT24), no del bloque.
+- **"Pegar sin formato"** se reconoce por ⇧⌘V (o ⌥⇧⌘V) en el teclado: el evento de pegar no lo dice. Pegar sin formato desde un menú, sin el atajo, convierte.
+- **Valores en el cuerpo:** además de lo pedido (cabeceras y query), se ocultan los campos sensibles de un cuerpo JSON o de formulario (`"password": "{{password}}"`), porque "Copiar como cURL" de un inicio de sesión los trae.
+
 ## Al cerrar
 
 - [ ] Documentar en el vault (`02 Decisiones/`) la decisión de las peticiones en las notas y los secretos por variable, si Jorge lo aprueba como está.

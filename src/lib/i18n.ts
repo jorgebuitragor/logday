@@ -80,7 +80,7 @@ const dict = {
       icloudDesc: 'La app puede congelarse mientras iCloud sincroniza. Recomendamos usar una carpeta local.',
       // Startup options
       startupHint: 'Se aplica en el próximo inicio y reemplaza la redirección automática.',
-      startupDashboard: 'Dashboard',
+      startupDashboard: 'Inicio',
       startupDailys: 'Daily',
       startupTasks: 'Tareas',
       startupNotes: 'Notas',
@@ -2086,7 +2086,7 @@ const dict = {
       setSound: 'Sonido al terminar',
       setSoundDesc: 'Dos tonos cortos: bajan al terminar el trabajo y suben al terminar el descanso.',
       setSoundTest: 'Probar',
-      setNotifHint: 'Las notificaciones del sistema siguen la opción de Opciones → General.',
+      setNotifHint: 'Las notificaciones del sistema siguen la opción de Opciones → Preferencias.',
       setReset: 'Restablecer valores',
       // Menú lateral
       sidebarOpen: '{phase}, {min|queda|quedan} {min} min. Abrir Pomodoro.',
@@ -2250,7 +2250,7 @@ const dict = {
       icloudDesc: 'The app may freeze while iCloud syncs. We recommend using a local folder.',
       // Startup options
       startupHint: 'Applied on next launch, replaces automatic redirection.',
-      startupDashboard: 'Dashboard',
+      startupDashboard: 'Home',
       startupDailys: 'Dailys',
       startupTasks: 'Tasks',
       startupNotes: 'Notes',
@@ -4222,7 +4222,7 @@ const dict = {
       setSound: 'Sound when done',
       setSoundDesc: 'Two short tones: falling when focus ends, rising when a break ends.',
       setSoundTest: 'Play',
-      setNotifHint: 'System notifications follow the setting in Settings → General.',
+      setNotifHint: 'System notifications follow the setting in Settings → Preferences.',
       setReset: 'Reset to defaults',
       sidebarOpen: '{phase}, {min} min left. Open Pomodoro.',
       sidebarOpenLessThanMin: '{phase}, less than 1 min left. Open Pomodoro.',

@@ -41,6 +41,7 @@ import {
   Share2,
   Smile,
 } from 'lucide-react';
+import { NotesEmptyState } from './NotesEmptyState';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { TextSelection } from '@tiptap/pm/state';
 import type { Mark } from '@tiptap/pm/model';
@@ -1824,15 +1825,7 @@ export function NoteEditor() {
   };
 
   if (activeSection !== 'notes') return null;
-  if (!activeNote) {
-    return (
-      <div className="flex flex-1 items-center justify-center bg-[var(--bg-base)]">
-        <div className="text-center">
-          <p className="text-sm text-[var(--text-hint)]">{tFn(language, 'notes', 'selectOrCreate')}</p>
-        </div>
-      </div>
-    );
-  }
+  if (!activeNote) return <NotesEmptyState />;
 
   const moveTargets = ['', ...noteFolders].filter((f) => f !== activeNote.folder);
 

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { FileText, Pin, PinOff, Trash2 } from 'lucide-react';
+import { FileText, Pin, PinOff, Plus, Trash2 } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import { buildFolderTree } from '../../lib/folderTree';
@@ -35,7 +35,7 @@ const ESTIMATED_NOTE_MENU = { width: 180, height: 90 };
 export function NoteTree(props: FolderTreeProps) {
   const {
     language, notes, noteFolders, activeNote, activeNoteFolder, noteSortBy, noteSortDir,
-    confirmDestructiveActions, setActiveNote, deleteNote, toggleNotePin, selectNoteFolder, setTreeNoteFolder,
+    confirmDestructiveActions, setActiveNote, deleteNote, toggleNotePin, selectNoteFolder, setTreeNoteFolder, createNote,
   } = useAppStore();
   const confirmDelete = useConfirmDelete<Note>(confirmDestructiveActions);
   const [menu, setMenu] = useState<{ x: number; y: number; note: Note } | null>(null);
@@ -117,7 +117,17 @@ export function NoteTree(props: FolderTreeProps) {
       )}
       {rootNotes.map((note) => renderNote(note, -1))}
       {notes.length === 0 && (
-        <p className="px-3 py-2 text-[11px] text-[var(--text-hint)]">{t(language, 'notes', 'noNotesTree')}</p>
+        <div className="px-3 py-2 text-[11px]">
+          <p className="text-[var(--text-hint)]">{t(language, 'notes', 'noNotesTree')}</p>
+          <button
+            type="button"
+            onClick={() => void createNote()}
+            className="mt-1 flex items-center gap-1 rounded text-indigo-400 transition hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          >
+            <Plus size={11} aria-hidden="true" />
+            {t(language, 'notes', 'createFirstNote')}
+          </button>
+        </div>
       )}
 
       {menu && (

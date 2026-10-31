@@ -520,6 +520,9 @@ const dict = {
       emptyHint: 'Pulsa "Nueva" para crear tu primera nota',
       untitled: 'Sin título',
       noNotesTree: 'Todavía no hay notas.',
+      createFirstNote: 'Crear una nota',
+      emptyStateTitle: 'Todavía no tienes notas',
+      emptyStateHint: 'Se guardan como archivos .md en tu carpeta.',
       // Menú contextual nota
       rename: 'Renombrar',
       editTags: 'Editar tags',
@@ -2868,6 +2871,9 @@ const dict = {
       emptyHint: 'Press "New" to create your first note',
       untitled: 'Untitled',
       noNotesTree: 'No notes yet.',
+      createFirstNote: 'Create a note',
+      emptyStateTitle: 'You have no notes yet',
+      emptyStateHint: 'They are saved as .md files in your folder.',
       // Context menu
       rename: 'Rename',
       editTags: 'Edit tags',

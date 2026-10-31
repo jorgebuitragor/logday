@@ -51,3 +51,16 @@ Rama `feature/cliente-http-devtools`, desde `develop` (con `feature/devtools-opc
 - [x] `views/HttpTool.tsx` (la herramienta: specs/cliente-http Interfaz §3).
 - [x] Pruebas: `settings.test.ts` (con y sin Cliente HTTP), `httpTool.test.tsx` y la ayuda (`HelpPopover.test.tsx`).
 - [ ] Prueba en el navegador: DevTools con y sin Cliente HTTP activa (ver `specs/cliente-http/tasks.md`, PR 2).
+
+## Visor HTML (D26, design Adenda H)
+
+Rama `feature/devtools-html`, desde `develop`.
+
+- [x] Tokenizador compartido (`src/lib/htmlTokenizer.ts`) y documento aislado (`src/lib/htmlPreviewDoc.ts`: `previewCsp`, `sanitizePreviewHtml`, `buildPreviewDoc`), puros.
+- [x] `HtmlPreview` en `src/components/shared/`, con `sandbox=""`, `srcdoc` y el ancho simulado escalado; listo para el Cliente HTTP (paquete B de su rediseño).
+- [x] `tools/htmlFormat.ts`: `formatHtml`, `minifyHtml` y `checkHtml`.
+- [x] Registro: `html-preview` en `model.ts` (al final de Formatos; ```` ```html ```` y `<!DOCTYPE html` van al visor), `ui/meta.ts` (ícono, "Traer de una nota", ayuda) y `View.tsx`; textos es y en.
+- [x] `views/HtmlPreviewTool.tsx`: editor y vista previa (apilados en ventana angosta), Formatear, Minificar, Copiar, Limpiar, ancho, recursos externos, tamaño y avisos.
+- [x] Pruebas: `src/lib/htmlPreviewDoc.test.ts` y `htmlTool.test.tsx`; ajustadas `settings.test.ts` (Formatos tiene 5) y `HelpPopover.test.tsx` (10 herramientas con ayuda).
+- [x] Tabla de "En esta herramienta" en `specs/ayuda-contextual/design.md`.
+- [ ] Probar en la app (WebKit) y en Windows (WebView2): que el `srcdoc` se ve con `sandbox=""`; que un clic en un enlace no navega; que con los externos apagados no sale ninguna petición (inspector de red) y encendidos solo https; el escalado de Móvil y Tablet en ventana angosta; temas claro, oscuro y sepia.

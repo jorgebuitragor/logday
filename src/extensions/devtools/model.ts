@@ -10,7 +10,7 @@ export const HTTP_CLIENT_ID: ExtensionId = 'http-client';
 export type ToolGroup = 'formats' | 'encoding' | 'generators' | 'time' | 'text' | 'lists' | 'network';
 
 export type ToolId =
-  | 'json' | 'yaml' | 'xml' | 'convert'
+  | 'json' | 'yaml' | 'xml' | 'convert' | 'html-preview'
   | 'base64' | 'url' | 'html' | 'jwt'
   | 'uuid' | 'hash' | 'password' | 'lorem' | 'qr' | 'barcode'
   | 'timestamp' | 'cron'
@@ -19,7 +19,8 @@ export type ToolId =
   | 'http';
 
 export const TOOL_GROUPS: readonly { group: ToolGroup; tools: readonly ToolId[] }[] = [
-  { group: 'formats', tools: ['json', 'yaml', 'xml', 'convert'] },
+  // D26: el Visor HTML va al final de Formatos (D24).
+  { group: 'formats', tools: ['json', 'yaml', 'xml', 'convert', 'html-preview'] },
   { group: 'encoding', tools: ['base64', 'url', 'html', 'jwt'] },
   { group: 'generators', tools: ['uuid', 'hash', 'password', 'lorem', 'qr', 'barcode'] },
   { group: 'time', tools: ['timestamp', 'cron'] },
@@ -344,7 +345,10 @@ export function noteCodeBlocks(markdown: string): NoteCodeBlock[] {
 const LANGUAGE_TOOL: Record<string, ToolId> = {
   json: 'json', jsonc: 'json', json5: 'json',
   yaml: 'yaml', yml: 'yaml',
-  xml: 'xml', html: 'xml', svg: 'xml',
+  // D26: un bloque ```html se abre en el Visor HTML (el XML no acepta
+  // `<br>` ni atributos sin comillas); el SVG sigue siendo XML.
+  xml: 'xml', svg: 'xml',
+  html: 'html-preview', htm: 'html-preview', xhtml: 'html-preview',
   jwt: 'jwt',
   cron: 'cron', crontab: 'cron',
   regex: 'regex', regexp: 'regex',
@@ -363,6 +367,7 @@ export function toolForBlock(block: Pick<NoteCodeBlock, 'language' | 'code'>, av
   const s = block.code.trim();
   if (/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/.test(s) && s.startsWith('eyJ')) return 'jwt';
   if (/^[[{]/.test(s)) return 'json';
+  if (/^<(?:!doctype\s+html|html[\s>])/i.test(s)) return available.includes('html-preview') ? 'html-preview' : 'xml';
   if (/^</.test(s)) return 'xml';
   return null;
 }

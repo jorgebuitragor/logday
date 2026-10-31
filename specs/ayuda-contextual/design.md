@@ -232,7 +232,7 @@ Base: `devtools/View.tsx:197-235`, `ui/OutputPanel.tsx:46,53`, `ui/CodeImage.tsx
 
 **DevTools: "En esta herramienta"** (`TOOL_HELP`)
 
-Solo estas 9 herramientas lo tienen. En las demás, la descripción bajo el título basta. La de Cliente HTTP solo se ve con esa extensión activa.
+Solo estas 10 herramientas lo tienen. En las demás, la descripción bajo el título basta. La de Cliente HTTP solo se ve con esa extensión activa.
 
 | Clave | es | en |
 |---|---|---|
@@ -261,6 +261,9 @@ Solo estas 9 herramientas lo tienen. En las demás, la descripción bajo el tít
 | http.help1 | Escribe las cabeceras una por línea, como Nombre: valor. Las variables van como {{baseUrl}} y salen del entorno activo, que eliges arriba a la derecha. | Write one header per line, as Name: value. Variables go as {{baseUrl}} and come from the active environment, which you pick at the top right. |
 | http.help2 | Con un entorno protegido, POST, PUT, PATCH y DELETE piden confirmación antes de enviarse. También se pide si un secreto va a un host que no es de confianza. | With a protected environment, POST, PUT, PATCH and DELETE ask for confirmation before they are sent. So does a secret going to a host that isn't trusted. |
 | http.help3 | «Guardar en una nota» crea una nota con la petición en un bloque http, con los nombres de las variables y nunca sus valores. Lo que escribes aquí y la respuesta solo viven en la memoria. | "Save to a note" creates a note with the request in an http block, with the variable names and never their values. What you type here and the response only live in memory. |
+| html-preview.help1 | La vista previa no ejecuta scripts ni envía formularios, y los enlaces no se abren: sirve para ver cómo se ve la página, no para usarla. | The preview doesn't run scripts or send forms, and links don't open: it's for seeing how the page looks, not for using it. |
+| html-preview.help2 | No carga nada de internet: las imágenes y los estilos externos no aparecen. «Cargar recursos externos» trae imágenes, estilos y fuentes por https (nunca scripts) y se apaga al salir de la herramienta. | Nothing is loaded from the internet: external images and styles don't show up. "Load external resources" brings images, styles and fonts over https (never scripts) and turns off when you leave the tool. |
+| html-preview.help3 | Formatear y Minificar cambian el texto del editor. Con Móvil o Tablet, la página se dibuja a 375 o 768 px de ancho y se escala si no cabe. | Format and Minify change the text in the editor. With Mobile or Tablet, the page is drawn 375 or 768 px wide and scaled down if it doesn't fit. |
 
 Base: `tools/regex.ts:28` y `MAX_MATCHES`, `tools/regexRunner.ts:7` (`REGEX_TIMEOUT_MS`), `tools/cron.ts:76-90`, `tools/lists.ts:14-16,103-125`, e `i18n.ts` (`devtools`: `diffEol`, `qrMarginLow`, `barcodeCheckDigit`, `jwtNotVerified`, `jwtBearerRemoved`).
 

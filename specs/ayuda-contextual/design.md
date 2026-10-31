@@ -75,7 +75,7 @@ Se basa en el diseño del agente `logday-design` (31 oct 2026).
 ```
 
 - **Posición:** debajo del botón, alineado a su borde izquierdo y hacia la derecha, a 6 px; si no cabe, se voltea. (Al principio iba alineado al borde derecho, pero tapaba la columna de herramientas de DevTools.)
-  - Se logra con un `AnchorRect` sintético: `{ left: r.right, right: r.right, top: r.bottom + 6, bottom: r.bottom + 6 }`, con `anchorOptions: { sideX: 'left', gap: 0 }`.
+  - Se logra con un `AnchorRect` sintético: `{ left: r.left, right: r.left, top: r.bottom + 6, bottom: r.bottom + 6 }`, con `anchorOptions: { sideX: 'right', gap: 0 }`.
   - Si no cabe, `placeMenuNearAnchor` lo voltea o lo ajusta a la ventana (`lib/menuPosition.ts:60`).
 - **Contenedor:** `w-[320px] max-w-[calc(100vw-16px)] max-h-[min(70vh,440px)] overflow-y-auto rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-4 shadow-2xl`, como `DatePickerPopover`. A 800×600 caben unos 420 px de alto.
 - **Animación:** `animate-fade-in`. Se apaga con `.no-animations` y, con la clase `help-popover`, con `prefers-reduced-motion` (`App.css`).

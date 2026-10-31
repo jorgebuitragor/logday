@@ -68,7 +68,10 @@ export function TaskPicker({
     () => [null, ...(groups ? [...groups.inProgress, ...groups.todo] : [])],
     [groups],
   );
-  useEffect(() => setActive(0), [query, load]);
+  // Con búsqueda, la primera tarea que coincide (no "Sin tarea"): si no,
+  // escribir "informe" y pulsar Enter elegía "Sin tarea".
+  const hasMatches = options.length > 1;
+  useEffect(() => setActive(query.trim() && hasMatches ? 1 : 0), [query, load, hasMatches]);
   const optionId = (i: number) => `${listId}-opt-${i}`;
 
   const pick = (task: Task | null) => onPick(task ? { id: task.id, title: task.title, project: task.project } : null);

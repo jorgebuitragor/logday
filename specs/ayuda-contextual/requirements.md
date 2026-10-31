@@ -20,8 +20,8 @@ Jorge pidió el 31 oct 2026 "botones de ayuda (información) para saber cómo fu
 
 ### El patrón
 
-- AY1. DEBERÁ haber un solo componente de ayuda, `HelpButton` (`src/components/shared/HelpButton.tsx`), que usen las pantallas de la app y las extensiones. Ninguna pantalla arma su propia ayuda.
-- AY2. El botón DEBERÁ:
+- AY1. DEBERÁ haber un solo componente de ayuda, `HelpButton` (`src/components/shared/HelpButton.tsx`), que usen las pantallas de la app y las extensiones. Ninguna pantalla arma su propia ayuda. *(Desde AY24 es `useHelpPopover`, en `src/components/shared/HelpPopover.tsx`, y lo usa el botón del menú lateral.)*
+- AY2. *(Reemplazado por AY24 el 31 oct 2026.)* El botón DEBERÁ:
   - mostrar el ícono `CircleHelp`;
   - ir justo después del título de la vista o de la sección, en todas las pantallas;
   - no ir dentro del encabezado (`<h1>`/`<h2>`), para no sumarse a su nombre.
@@ -84,9 +84,9 @@ Jorge pidió el 31 oct 2026 "botones de ayuda (información) para saber cómo fu
 
 - **La ayuda de Notas, Opciones → Sync, Agentes de IA (MCP) y Git** va en un PR posterior.
   - Git, además, no hace lo que dice: el commit cada hora solo corre con Opciones abierto (`GitSettingsTab.tsx:58-69`), "Push al sincronizar" no se usa en ningún lado, y el recorrido promete "commits y push automáticos". Lo decide Jorge antes de escribir su ayuda.
-- **Un atajo de teclado para abrir la ayuda de la pantalla actual.** `?` ya es de la lista de tareas, y ⌘? es la ayuda del sistema en macOS.
+- ~~**Un atajo de teclado para abrir la ayuda de la pantalla actual.**~~ Entró el 31 oct 2026: es ⌘/ (AY27). `?` sigue siendo de la lista de tareas, y ⌘? de la ayuda del sistema en macOS.
 - **Un campo `help` en `ExtensionDefinition`** para que Opciones dibuje el botón en la página de cada extensión. Por ahora, cada extensión usa `HelpButton` en su propio componente.
-- **Ayuda en Inicio, Navegación y Captura rápida:** sus textos ya explican lo que hacen.
+- **Una ayuda propia de Inicio, Navegación y Captura rápida:** sus textos ya explican lo que hacen. Desde el 31 oct 2026, en Inicio y en las secciones sin ayuda propia el botón muestra la ayuda general (AY26).
 - **Enlaces a documentación externa:** no hay documentación pública.
 
 ## Decisiones (31 oct 2026)
@@ -104,4 +104,31 @@ Jorge aprobó la propuesta del agente de diseño, y el orquestador cerró los pu
 ## Cambio del 31 oct 2026
 
 - AY23. Opciones → Preferencias DEBERÁ tener el interruptor "Botones de ayuda" (encendido por defecto, local, sin sync). Apagado, no se dibuja ningún botón de ayuda. Lo pidió Jorge al probar la app de QA.
+  - Desde AY24 se llama "Botón de ayuda" ("Help button"), con la descripción "Muestra «Ayuda» en el menú lateral, con la ayuda de la pantalla en la que estás." Apagado, tampoco funciona ⌘/.
+
+## Cambio del 31 oct 2026: un solo botón en el menú lateral
+
+Pedido por Jorge: el botón (?) se solapaba con los de las cabeceras angostas. En vez de un botón junto al título de cada pantalla, hay uno solo en el menú lateral, que muestra la ayuda de la pantalla activa. Reemplaza AY2, y ajusta AY8, AY10 y AY16–AY20 en lo que dicen de dónde va el botón.
+
+- AY24. DEBERÁ haber un solo botón "Ayuda" en el menú lateral, con el ícono `CircleHelp`, y ningún botón de ayuda en las cabeceras:
+  - en la Lista con nombres, una fila "Ayuda" justo encima de "Opciones", con su mismo estilo;
+  - en la Barra de íconos y en el menú colapsado, un ícono encima de Buscar, con su mismo estilo y con el tooltip de la columna (nombre y atajo);
+  - con el nombre accesible "Ayuda: {pantalla}", `aria-haspopup="dialog"` y `aria-expanded`.
+- AY25. CUANDO se pulsa, DEBERÁ mostrar la ayuda de la sección activa, con el contenido de AY16–AY20:
+  - Tareas, la misma en Lista, Kanban y Calendario; "Ver todos los atajos" abre `TaskShortcutsSheet` de la vista activa;
+  - Dailys, Horas extra, DevTools y Pomodoro;
+  - en DevTools, "En esta herramienta" es el de la última herramienta abierta.
+- AY26. En las secciones sin ayuda propia (Inicio, Notas y las demás extensiones), DEBERÁ mostrar una ayuda general, "Cómo funciona Logday":
+  - moverse: ⌘0…⌘9, Buscar con "Ir a", el clic derecho en las secciones y "Más";
+  - crear: nueva tarea, nueva nota y el daily de hoy, con las teclas de la config;
+  - ⌘/, y "Ver el recorrido".
+- AY27. ⌘/ (Ctrl+/ fuera de macOS) DEBERÁ abrir o cerrar la ayuda de la pantalla activa, como el botón, también con el foco en un campo.
+  - No funciona con AY23 apagado ni durante la bienvenida.
+  - Se muestra en el tooltip del botón, en Opciones → Atajos (fijo, como "Ir a una sección") y en la ayuda general.
+  - "/" no se puede elegir como tecla de otro atajo.
+  - Con la ayuda abierta con ⌘/, al cerrarla el foco vuelve adonde estaba (AY8 dice "al botón" para cuando se abre con el botón).
+- AY28. La ayuda DEBERÁ abrirse a la derecha del menú lateral, fuera de él y sobre el contenido, alineada por abajo con el botón. Si no cabe, se ajusta a la ventana. Si el botón no se ve, se abre en la esquina inferior izquierda.
+- AY29. AY10 aplica solo a lo que mueve el botón: desplazar la pantalla de al lado no cierra la ayuda, porque el botón está fijo en el menú.
+
+Los títulos de las cabeceras de Tareas, Kanban, Calendario, Dailys y Horas extra siguen recortándose con "…" y sus botones sin encogerse: es una mejora aparte, que se queda.
 

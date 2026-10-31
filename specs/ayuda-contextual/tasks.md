@@ -39,7 +39,7 @@ Estado: en progreso.
 - [x] `overtime.title` (es) dice "Horas extra" (AY21, NS8).
 - [x] `TaskShortcutsSheet` muestra Ctrl fuera de macOS (AY22): `shortcutSheet(language, isMac)` cambia `{mod}` por ⌘ o Ctrl.
 
-### Pruebas (`src/components/shared/HelpButton.test.tsx`, 44)
+### Pruebas (`src/components/shared/HelpButton.test.tsx`, 44; hoy `HelpPopover.test.tsx`)
 
 - [x] El botón: nombre "Ayuda: {screen}" en es y en, `aria-haspopup`, `aria-expanded`, `aria-controls`, 28×28, foco visible, ícono oculto, sin `bg-indigo-*`; cerrado no dibuja la ayuda.
 - [x] El popover: diálogo con `aria-labelledby`, `aria-describedby` solo con intro, `tabindex="-1"`, el orden título, contenido y pie; solo tokens del tema salvo `TEXT_LINK`; `ul`/`ol`/`dl`/`kbd`; la nota con el ícono oculto.
@@ -64,23 +64,46 @@ Estado: en progreso.
   - en Dailys, a 800×600, el botón de ayuda se montaba sobre "Fecha": ese botón queda solo con el ícono (el nombre sigue para los lectores);
   - con poca altura, los enlaces del pie quedaban fuera de vista: el pie queda fijo abajo.
 
+## Hecho: un solo botón en el menú lateral (31 oct 2026, AY24–AY29)
+
+- [x] Sin botones de ayuda en las cabeceras de Tareas (Lista, Kanban, Calendario), Dailys, Horas extra, DevTools (`ToolFrame`) y Pomodoro (`View.tsx`). `ToolFrame` y la vista del Pomodoro quedan como en `develop`; en Tareas, Kanban, Calendario y Horas extra se quedan el `truncate` del título y el `shrink-0` de los botones.
+- [x] Dailys: "Fecha" y "Hoy" vuelven a mostrar su nombre a 288 px; más angosta, primero uno y luego el otro quedan solo con el ícono (`@[14.5rem]/dlh`, `@[12.5rem]/dlh`), y a 200 px el título se lee entero. Fuera el `min-w-[2.75rem]` del título. Medido en Chromium con la letra por defecto (design, "Las cabeceras").
+- [x] `HelpButton.tsx` pasa a `HelpPopover.tsx`, con `useHelpPopover(content)` para cualquier disparador (AY1).
+- [x] `SidebarHelpButton` (`components/help/SidebarHelp.tsx`): fila "Ayuda" encima de "Opciones" en la Lista con nombres; ícono encima de Buscar en la Barra de íconos y el colapsado, con el tooltip de la columna (AY24). Oculto con la opción apagada (AY23), y se vuelve a montar al cambiar de sección (AY6).
+- [x] `useSectionHelp` (`ScreenHelp.tsx`) y `helpTopicFor` (`helpTopics.ts`): la ayuda de cada sección y la general (AY25, AY26). Los cuerpos de DevTools y Pomodoro se cargan con `lazy`.
+- [x] DevTools lee la herramienta de `lastTool`, sin `DevtoolsContext`.
+- [x] "Ver todos los atajos" manda `logday:show-task-shortcuts`; Lista, Kanban y Calendario lo escuchan con su vista activa (`taskShortcutsRequest.ts`).
+- [x] Popover a la derecha del menú, alineado por abajo con el botón, o en la esquina inferior izquierda sin botón (`helpAnchor`, `data-help-edge`) (AY28). El desplazamiento solo lo cierra si mueve el botón (AY29).
+- [x] ⌘/ en `App.tsx` (`isHelpShortcut`, `requestHelpToggle`), también con el foco en un campo; apagado con la opción y durante la bienvenida; sale del portal para cerrar la ayuda; el foco vuelve adonde estaba (AY27).
+- [x] ⌘/ en el tooltip del botón (y a la derecha de la fila), en Opciones → Atajos y en la ayuda general. "/" no se acepta como tecla de otro atajo.
+- [x] Textos: `help.menuLabel`, `generalTitle`, `general1…5`, `settings.shortcutHelp`, y la opción "Botón de ayuda" con su descripción nueva (es y en).
+- [x] Pruebas: `components/help/SidebarHelp.test.tsx` (nuevo), `shared/HelpPopover.test.tsx` y `sidebar/SectionNav.test.tsx`:
+  - el botón en la fila y en la columna, con su nombre, ARIA, `aria-keyshortcuts` y clases; en la Barra de íconos y el colapsado encima de Buscar, y en la Lista encima de Opciones; oculto con la opción apagada en los tres;
+  - `helpTopicFor` en cada sección, y el título, la pantalla, la escena y las acciones de cada ayuda;
+  - la general: las teclas de la config como `<kbd>`, Ctrl fuera de macOS y los nombres que cita;
+  - `isHelpShortcut` (⌘/, Ctrl+/, ⇧ con "/", y no ⌘?, ⌥ ni "/" solo), que sale del portal y que no choca con los atajos de la app ni de DevTools; la fila de Opciones → Atajos;
+  - los eventos `logday:toggle-help` y `logday:show-task-shortcuts`, y que cada vista lo escucha con su vista activa;
+  - `helpAnchor` y el nuevo `scrollCloses`; que ninguna cabecera tiene ya botón de ayuda;
+  - DevTools con `lastTool` desde el store.
+- [x] `pnpm test` (528), `pnpm build` y `pnpm lint` (21 warnings, los de base).
+
 ## Pendiente
 
-### Prueba en el navegador y en la app de QA
+### Prueba visual (la hace la sesión principal)
 
-- [ ] Prueba en el navegador (Tauri simulado), a 800×600:
-  - abrir y cerrar con el botón, Esc, Cerrar y clic fuera; el foco al abrir y de vuelta al botón;
-  - Tab no sale del popover;
-  - Espacio dentro de la ayuda no inicia el Pomodoro; ⇧⌘C y ⌥⌘↓ dentro de la ayuda no hacen nada en DevTools; ⌘1…⌘9 y ⌘N sí funcionan con la ayuda abierta;
-  - clic derecho dentro de la ayuda o del recorrido no abre el menú de Tareas, Kanban ni Calendario;
-  - desplazar la herramienta de DevTools o la vista del Pomodoro cierra la ayuda;
-  - cada ayuda cabe y no tapa el título; en Dailys y Horas extra, con la lista angosta, el título, el botón y "Fecha"/"Hoy"/"Nueva" caben en la fila;
-  - DevTools en ventana angosta, con el `ToolSwitcher`, y con "En esta herramienta" (puede necesitar scroll);
-  - "Ver todos los atajos" en Lista, Kanban y Calendario, y "Ver el recorrido" en la escena que toca.
+- [ ] En el navegador (Tauri simulado) o en la app de QA, a 800×600, en los dos estilos del menú y con el menú colapsado:
+  - el botón "Ayuda" se ve encima de "Opciones" (Lista) o de Buscar (columna), con el estilo de sus vecinos; el tooltip de la columna dice "Ayuda: {pantalla}" y ⌘/;
+  - la ayuda se abre a la derecha del menú, sobre el contenido, alineada por abajo con el botón, y no se sale de la ventana con poca altura;
+  - cada sección muestra su ayuda: Tareas en Lista, Kanban y Calendario; Dailys; Horas extra; DevTools con "En esta herramienta" de la herramienta abierta (Expresiones regulares, por ejemplo); Pomodoro; y la general en Inicio, Notas y otra extensión;
+  - "Ver todos los atajos" abre la hoja en Lista, Kanban y Calendario (una sola); "Ver el recorrido" abre la escena que toca;
+  - ⌘/ abre y cierra la ayuda desde cualquier sección, también con el foco en un campo o en una nota (y el foco vuelve ahí); no hace nada con la opción apagada; en el teclado en español, ⇧⌘7 en una nota hace la lista numerada y no abre la ayuda;
+  - abrir y cerrar con el botón, Esc, Cerrar y clic fuera; Esc no cierra Opciones si la ayuda está encima; Tab no sale del popover; Espacio no inicia el Pomodoro y ⇧⌘C no copia en DevTools con la ayuda abierta; ⌘1…⌘9 y ⌘N sí;
+  - desplazar la lista de tareas o la herramienta con la ayuda abierta no la cierra;
+  - las cabeceras: Dailys a 288 px con "Fecha" y "Hoy" y a 200 px con el título entero; Tareas, Kanban, Calendario y Horas extra angostas, sin solapes.
 - [ ] Los 8 temas y uno personalizado: el contraste del botón y del texto, y los enlaces en los temas tintados.
 - [ ] Con `prefers-reduced-motion` y las animaciones de la app apagadas: sin animación al abrir.
-- [ ] VoiceOver: el nombre del botón, el estado expandido, el título y la intro al abrir, y las teclas.
-- [ ] Windows o Linux: las teclas con Ctrl, también en `TaskShortcutsSheet`.
+- [ ] VoiceOver: el nombre del botón, el estado expandido, el atajo, el título y la intro al abrir, y las teclas.
+- [ ] Windows o Linux: Ctrl+/ y las teclas con Ctrl, también en `TaskShortcutsSheet`.
 
 ## Diferencias con el diseño
 
@@ -94,6 +117,15 @@ Estado: en progreso.
 - **Archivos:** las ayudas de Tareas, Dailys y Horas extra van en `components/help/` (`ScreenHelp.tsx`, `helpKeys.ts`); la de DevTools en `devtools/ui/Help.tsx`, y la del Pomodoro en `pomodoro/Help.tsx`, para tocar lo mínimo las vistas. Los cuerpos (`ScreenHelpBody`, `DevtoolsHelpBody`, `PomodoroHelpBody`) se exportan para las pruebas.
 - **`aria-controls`:** va siempre, también con la ayuda cerrada.
 - **`KBD` en `SearchModal`, `ToolNav` y `NotePicker`:** no se cambió. Su clase no es la misma (no lleva `font-sans`), y cambiarla cambia cómo se ven.
+
+### Del cambio al menú lateral (31 oct 2026)
+
+- **Dailys:** el encargo pedía quitar el container query, el `sr-only` de "Hoy" y el `px-1.5` si ya no hacían falta. Hacen falta sin el botón de ayuda: con los nombres, los cuatro botones miden ~188 px y a 200 px caben ~167 (la cabecera de `develop` también se salía). Se quedan con otros umbrales, para que a 288 px se vean "Fecha" y "Hoy"; solo se quitó el `min-w-[2.75rem]`.
+- **El foco al cerrar** una ayuda abierta con ⌘/ vuelve adonde estaba, no al botón del menú, que el usuario no tocó.
+- **El desplazamiento** ya no cierra la ayuda salvo que mueva el botón (AY29): el botón está fijo en el menú, y cerrarla al desplazar la lista impediría leerla mientras se mira la pantalla.
+- **⌘/ con ⇧ también vale** (teclado en español), salvo que el editor ya haya usado la tecla.
+- **El nombre en la ayuda general** es el de la sección ("Ayuda: Notas"), no "Logday": el botón siempre dice en qué pantalla se está.
+- **Archivos:** `HelpButton.tsx` pasa a `HelpPopover.tsx` (ya no es un botón); las pruebas del menú lateral van en `components/help/SidebarHelp.test.tsx`, para que `HelpPopover.test.tsx` no pase el límite de líneas del lint.
 
 ## Después (otro PR)
 

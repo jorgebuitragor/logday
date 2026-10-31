@@ -82,7 +82,7 @@ La fila actual se retira; no queda como tercer modo.
 - NS21. Opciones DEBERÁ tener una entrada **Navegación** ("Navigation"), con el ícono `PanelLeft`, segunda del grupo App: General, Navegación, Preferencias y Atajos. Reúne, en este orden:
   1. **Menú lateral:** el estilo (NS20) y "Secciones del menú" (NS9);
   2. **Pantalla de inicio**, con su selector de siempre;
-  3. **Vista de notas** (Lista o Árbol);
+  3. **Vista de notas** (Lista o Árbol; Árbol es la predeterminada desde el 31 oct 2026, pedido por Jorge);
   4. **Vista de tareas al abrir** (NS22).
 
   General queda con Idioma, Tema y Tipografía; Preferencias, sin la vista de notas. "Ordenar secciones…" (en "Más") abre Opciones directamente en Navegación. En Atajos, una fila de solo lectura "Ir a una sección" muestra ⌘0…⌘9 (Ctrl+0…Ctrl+9 en Windows y Linux) (NS15).

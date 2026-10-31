@@ -284,7 +284,8 @@ export interface AppState {
   createNoteFolder: (name: string, parent?: string) => Promise<void>;
   renameNoteFolder: (folder: string, newName: string) => Promise<void>;
   deleteNoteFolder: (folder: string) => Promise<void>;
-  createNote: () => Promise<Note>;
+  /** Sin carpeta, en la carpeta abierta (o en la raíz). */
+  createNote: (folder?: string) => Promise<Note>;
   /** Nota con título y contenido, sin abrirla (la crea el agente por MCP,
    *  specs/agentes-mcp). Mismo camino que importar: el `.md` y el sync. */
   createNoteWith: (input: { title: string; content?: string; folder?: string; tags?: string[] }) => Promise<Note>;
@@ -2302,8 +2303,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   })(),
   startupScreen: 'dashboard',
   extensions: {},
-  notesView: 'list',
-  notesViewDefault: 'list',
+  notesView: 'tree',
+  notesViewDefault: 'tree',
   tasksViewDefault: 'list',
   noteSortBy: 'updated',
   noteSortDir: 'desc',
@@ -2446,8 +2447,9 @@ export const useAppStore = create<AppState>((set, get) => ({
             sidebarStyle: parseSidebarStyle(cfg.sidebarStyle, cfg.sidebarLabelsVisible),
             sidebarSections: parseSidebarSections(cfg.sidebarSections),
             // La vista de Opciones se usa la primera vez; después, la última usada.
-            notesViewDefault: cfg.notesViewDefault ?? 'list',
-            notesView: cfg.notesView ?? cfg.notesViewDefault ?? 'list',
+            // Sin ninguna guardada, el árbol (Jorge, 31 oct 2026).
+            notesViewDefault: cfg.notesViewDefault ?? 'tree',
+            notesView: cfg.notesView ?? cfg.notesViewDefault ?? 'tree',
             // Tareas abre en la vista de Opciones; la última usada no se
             // recuerda (NS22).
             ...initialTasksView(cfg),
@@ -3194,10 +3196,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadNoteFolders();
   },
 
-  createNote: async () => {
+  createNote: async (inFolder?: string) => {
     const { basePath, activeNoteFolder } = get();
     if (!basePath) throw new Error('No base path');
-    const folder = activeNoteFolder ?? '';
+    const folder = inFolder ?? activeNoteFolder ?? '';
     const id = uuidv4();
     const note: Note = {
       id,

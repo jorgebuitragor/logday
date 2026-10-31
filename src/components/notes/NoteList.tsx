@@ -1,17 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Plus, Pin, Search, Copy, CopyPlus, Trash2, FolderInput, FolderOpen, ChevronRight, Download, Pencil, Tag, X, ArrowUpDown, Upload, Loader2, Notebook } from 'lucide-react';
+import { Plus, Pin, Search, X, ArrowUpDown, Upload, Loader2, Notebook } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../store/appStore';
 import { Note } from '../../types/note';
-import { ExportModal } from './ExportModal';
+import { useNoteContextMenu } from './NoteContextMenu';
 import InlineRenameInput from '../shared/InlineRenameInput';
-import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
 import { sortNotes } from '../../lib/noteSort';
 import { stampToLocalDate } from '../../lib/localDate';
-import { useConfirmDelete } from '../../hooks/useConfirmDelete';
 import { usePositionedMenu } from '../../hooks/usePositionedMenu';
-import { ModalOverlay } from '../shared/ModalOverlay';
-import { ModalPanel } from '../shared/ModalPanel';
 import { t as tFn } from '../../lib/i18n';
 import { pickMarkdownFiles } from '../../lib/invoke';
 import { stripFencedBlocks } from '../../lib/fencedBlocks';
@@ -22,48 +18,27 @@ import { EXTENSIONS } from '../../extensions/registry';
 // JSON de un dibujo (specs/cliente-http, design A3.5).
 const EXTENSION_BLOCK_LANGUAGES = EXTENSIONS.flatMap((def) => (def.noteBlock && !def.noteBlock.inline ? [def.noteBlock.language] : []));
 
-type CtxMenu = { note: Note; x: number; y: number } | null;
-type SubMenuAnchor = { left: number; top: number; right: number; bottom: number } | null;
-
-const ESTIMATED_MAIN_MENU = { width: 210, height: 380 };
-const ESTIMATED_SUB_MENU = { width: 170, height: 220 };
 const ESTIMATED_EMPTY_MENU = { width: 170, height: 90 };
 
 export function NoteList() {
   const {
     notes,
     activeNote,
-    noteFolders,
     activeSection,
-    basePath,
     language,
-    confirmDestructiveActions,
     setActiveNote,
     createNote,
     deleteNote,
-    duplicateNote,
-    toggleNotePin,
-    moveNote,
-    renameNote,
-    updateNote,
     importNotesFromPaths,
   } = useAppStore(
     useShallow((s) => ({
       notes: s.notes,
       activeNote: s.activeNote,
-      noteFolders: s.noteFolders,
       activeSection: s.activeSection,
-      basePath: s.basePath,
       language: s.language,
-      confirmDestructiveActions: s.confirmDestructiveActions,
       setActiveNote: s.setActiveNote,
       createNote: s.createNote,
       deleteNote: s.deleteNote,
-      duplicateNote: s.duplicateNote,
-      toggleNotePin: s.toggleNotePin,
-      moveNote: s.moveNote,
-      renameNote: s.renameNote,
-      updateNote: s.updateNote,
       importNotesFromPaths: s.importNotesFromPaths,
     }))
   );
@@ -78,32 +53,18 @@ export function NoteList() {
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const sortMenuRef = useRef<HTMLDivElement>(null);
-  const [ctxMenu, setCtxMenu] = useState<CtxMenu>(null);
-  const [subMenuAnchor, setSubMenuAnchor] = useState<SubMenuAnchor>(null);
-  const [exportModalNote, setExportModalNote] = useState<Note | null>(null);
   const [emptyCtxMenu, setEmptyCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
 
-  // Renombrar nota
-  const [renamingNote, setRenamingNote] = useState<Note | null>(null);
-
-  // Editar tags
-  const [editingTagsNote, setEditingTagsNote] = useState<Note | null>(null);
-  const [tagInput, setTagInput] = useState('');
-  const tagInputRef = useRef<HTMLInputElement>(null);
+  // Nota vacía recién creada (sin título ni contenido)
+  const isNewEmptyNote = !!activeNote && !activeNote.title.trim() && !activeNote.content.trim();
 
   // Animación de eliminación
   const [removingNoteId] = useState<string | null>(null);
 
-  const moveButtonRef = useRef<HTMLButtonElement>(null);
-
-  // Nota vacía recién creada (sin título ni contenido)
-  const isNewEmptyNote = !!activeNote && !activeNote.title.trim() && !activeNote.content.trim();
-
   // id de la nota siendo descartada (animación)
   const [discardingNoteId, setDiscardingNoteId] = useState<string | null>(null);
-  const confirmDeleteNoteDialog = useConfirmDelete<Note>(confirmDestructiveActions);
 
   const doDeleteNote = async (note: Note) => {
     setDiscardingNoteId(note.id);
@@ -140,130 +101,14 @@ export function NoteList() {
     return () => document.removeEventListener('mousedown', handler);
   }, [showSortMenu]);
 
-  useEffect(() => {
-    if (editingTagsNote) setTimeout(() => tagInputRef.current?.focus(), 50);
-  }, [editingTagsNote]);
-
-  const closeMenu = () => {
-    setCtxMenu(null);
-    setSubMenuAnchor(null);
-  };
-
-  const mainMenu = usePositionedMenu(ctxMenu, { estimatedSize: ESTIMATED_MAIN_MENU, onClose: closeMenu });
-  const subMenu = usePositionedMenu(subMenuAnchor, {
-    estimatedSize: ESTIMATED_SUB_MENU,
-    anchorOptions: { sideX: 'right', alignY: 'start', gap: 4, flip: true },
-    onClose: () => setSubMenuAnchor(null),
-  });
   const emptyMenu = usePositionedMenu(emptyCtxMenu, {
     estimatedSize: ESTIMATED_EMPTY_MENU,
     onClose: () => setEmptyCtxMenu(null),
   });
 
-  const handleContextMenu = (e: React.MouseEvent, note: Note) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setSubMenuAnchor(null);
-    setCtxMenu({ note, x: e.clientX, y: e.clientY });
-  };
-
-  const handleToggleMoveSubmenu = () => {
-    if (subMenuAnchor) {
-      setSubMenuAnchor(null);
-      return;
-    }
-    const btn = moveButtonRef.current;
-    if (!btn) return;
-    const rect = btn.getBoundingClientRect();
-    setSubMenuAnchor({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom });
-  };
-
-  const handleCopy = () => {
-    if (!ctxMenu) return;
-    const { title, content } = ctxMenu.note;
-    const text = title ? `# ${title}\n\n${content}`.trim() : content.trim();
-    navigator.clipboard.writeText(text).catch(() => {});
-    closeMenu();
-  };
-
-  const handleDuplicate = async () => {
-    if (!ctxMenu) return;
-    closeMenu();
-    await duplicateNote(ctxMenu.note);
-  };
-
-  const handleDelete = () => {
-    if (!ctxMenu) return;
-    const note = ctxMenu.note;
-    closeMenu();
-    confirmDeleteNoteDialog.request(note, (n) => void doDeleteNote(n));
-  };
-
-  const handlePin = async () => {
-    if (!ctxMenu) return;
-    const note = ctxMenu.note;
-    closeMenu();
-    await toggleNotePin(note);
-  };
-
-  const handleMove = async (toFolder: string) => {
-    if (!ctxMenu) return;
-    const note = ctxMenu.note;
-    closeMenu();
-    await moveNote(note, toFolder);
-  };
-
-  const handleOpenInSystem = () => {
-    if (!ctxMenu || !basePath) return;
-    const note = ctxMenu.note;
-    closeMenu();
-    const folder = note.folder || '';
-    const path = folder
-      ? `${basePath}/notes/${folder}`
-      : `${basePath}/notes`;
-    import('../../lib/invoke').then(({ fs }) => fs.openInSystem(path));
-  };
-
-  const handleStartRename = () => {
-    if (!ctxMenu) return;
-    const note = ctxMenu.note;
-    closeMenu();
-    setRenamingNote(note);
-  };
-
-  const handleRenameConfirm = async (value: string) => {
-    if (!renamingNote) return;
-    const newTitle = value.trim();
-    if (newTitle && newTitle !== renamingNote.title) {
-      await renameNote(renamingNote, newTitle);
-    }
-    setRenamingNote(null);
-  };
-
-  const handleStartEditTags = () => {
-    if (!ctxMenu) return;
-    const note = ctxMenu.note;
-    closeMenu();
-    setTagInput('');
-    setEditingTagsNote(note);
-  };
-
-  const handleAddTag = async () => {
-    if (!editingTagsNote || !tagInput.trim()) return;
-    const tag = tagInput.trim().toLowerCase().replace(/\s+/g, '-');
-    if (editingTagsNote.tags.includes(tag)) { setTagInput(''); return; }
-    const updated = { ...editingTagsNote, tags: [...editingTagsNote.tags, tag] };
-    await updateNote(updated);
-    setEditingTagsNote(updated);
-    setTagInput('');
-  };
-
-  const handleRemoveTag = async (tag: string) => {
-    if (!editingTagsNote) return;
-    const updated = { ...editingTagsNote, tags: editingTagsNote.tags.filter(t => t !== tag) };
-    await updateNote(updated);
-    setEditingTagsNote(updated);
-  };
+  // El menú de una nota es el mismo que el del árbol (NoteContextMenu); la
+  // lista solo le pasa su borrado con animación.
+  const noteMenu = useNoteContextMenu({ onDelete: (note) => doDeleteNote(note) });
 
   const handleImportFromDialog = async () => {
     setEmptyCtxMenu(null);
@@ -346,11 +191,6 @@ export function NoteList() {
     created: tFn(language, 'notes', 'sortCreated'),
     title: tFn(language, 'notes', 'sortTitle'),
   };
-
-  // Carpetas destino (excluir la carpeta actual de la nota del menú)
-  const moveFolders = ctxMenu
-    ? ['', ...noteFolders].filter((f) => f !== ctxMenu.note.folder)
-    : [];
 
   return (
     <div className="flex h-full shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]" style={{ width: 'var(--logday-list-w)' }}>
@@ -516,13 +356,12 @@ export function NoteList() {
           sorted.map((note) => {
             const isActive = activeNote?.id === note.id;
             const preview = stripFencedBlocks(note.content, EXTENSION_BLOCK_LANGUAGES).replace(/#{1,6}\s/g, '').trim().slice(0, 100);
-            const isRenaming = renamingNote?.id === note.id;
 
             return (
               <div
                 key={note.id}
                 data-note-item
-                onContextMenu={(e) => handleContextMenu(e, note)}
+                onContextMenu={(e) => noteMenu.open(e, note)}
                 className={`animate-in w-full border-b border-[var(--border)] last:border-0 ${
                   discardingNoteId === note.id ? 'animate-discard' :
                   removingNoteId === note.id ? 'animate-out' : ''
@@ -530,12 +369,12 @@ export function NoteList() {
                   isActive ? 'bg-indigo-500/10' : 'hover:bg-[var(--bg-hover)]'
                 }`}
               >
-                {isRenaming ? (
+                {noteMenu.renamingNoteId === note.id ? (
                   <div className="px-4 py-3">
                     <InlineRenameInput
                       value={note.title}
-                      onCommit={handleRenameConfirm}
-                      onCancel={() => setRenamingNote(null)}
+                      onCommit={noteMenu.commitRename}
+                      onCancel={noteMenu.cancelRename}
                       className="w-full rounded border border-indigo-500/40 bg-[var(--bg-surface)] px-2 py-1 text-sm text-[var(--text-primary)] outline-none"
                     />
                   </div>
@@ -580,194 +419,6 @@ export function NoteList() {
         )}
       </div>
 
-      {/* Context menu */}
-      {ctxMenu && (
-        <>
-          <div className="fixed inset-0 z-40" onMouseDown={closeMenu} />
-          <div
-            ref={mainMenu.ref}
-            className="fixed z-50 min-w-[180px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl py-1"
-            style={mainMenu.style}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={handleStartRename}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
-            >
-              <Pencil size={13} />
-              {tFn(language, 'notes', 'rename')}
-            </button>
-            <button
-              onClick={handleStartEditTags}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
-            >
-              <Tag size={13} />
-              {tFn(language, 'notes', 'editTags')}
-            </button>
-
-            <div className="my-1 h-px bg-[var(--border)]" />
-
-            <button
-              onClick={handleCopy}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
-            >
-              <Copy size={13} />
-              {tFn(language, 'notes', 'copy')}
-            </button>
-            <button
-              onClick={handleDuplicate}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
-            >
-              <CopyPlus size={13} />
-              {tFn(language, 'notes', 'duplicate')}
-            </button>
-
-            <div className="my-1 h-px bg-[var(--border)]" />
-
-            <button
-              onClick={handlePin}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
-            >
-              <Pin size={13} className={ctxMenu.note.pinned ? 'text-amber-400' : ''} />
-              {ctxMenu.note.pinned ? tFn(language, 'notes', 'unpin') : tFn(language, 'notes', 'pin')}
-            </button>
-
-            {moveFolders.length > 0 && (
-              <button
-                ref={moveButtonRef}
-                onClick={handleToggleMoveSubmenu}
-                className={`flex w-full items-center justify-between px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition ${subMenuAnchor ? 'bg-[var(--bg-hover)]' : ''}`}
-              >
-                <span className="flex items-center gap-2.5">
-                  <FolderInput size={13} />
-                  {tFn(language, 'notes', 'moveTo')}
-                </span>
-                <ChevronRight size={11} />
-              </button>
-            )}
-
-            <button
-              onClick={handleOpenInSystem}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
-            >
-              <FolderOpen size={13} />
-              {navigator.userAgent.includes('Windows') ? tFn(language, 'notes', 'showInExplorer') : tFn(language, 'notes', 'showInFinder')}
-            </button>
-
-            <button
-              onClick={() => {
-                if (!ctxMenu) return;
-                const note = ctxMenu.note;
-                closeMenu();
-                setExportModalNote(note);
-              }}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
-            >
-              <Download size={13} />
-              {tFn(language, 'notes', 'export')}
-            </button>
-
-            <div className="my-1 h-px bg-[var(--border)]" />
-
-            <button
-              onClick={handleDelete}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-red-400 hover:bg-red-400/10 transition"
-            >
-              <Trash2 size={13} />
-              {tFn(language, 'notes', 'delete')}
-            </button>
-          </div>
-
-          {/* Submenú Mover a */}
-          {subMenuAnchor && moveFolders.length > 0 && (
-            <div
-              ref={subMenu.ref}
-              className="fixed z-50 min-w-[150px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl py-1"
-              style={subMenu.style}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              {moveFolders.map((f) => (
-                <button
-                  key={f || '__root__'}
-                  onClick={() => handleMove(f)}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
-                >
-                  {f || tFn(language, 'notes', 'noFolder')}
-                </button>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Modal editar tags */}
-      {editingTagsNote && (
-        <ModalOverlay onClose={() => setEditingTagsNote(null)}>
-          <ModalPanel className="w-72 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-elevated)] p-5 shadow-2xl">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-[var(--text-primary)]">{tFn(language, 'notes', 'tagsModalTitle')}</h3>
-              <button onClick={() => setEditingTagsNote(null)} className="text-[var(--text-hint)] hover:text-[var(--text-muted)]">
-                <X size={14} />
-              </button>
-            </div>
-            {/* Tags actuales */}
-            <div className="mb-3 flex flex-wrap gap-1.5 min-h-[24px]">
-              {editingTagsNote.tags.length === 0 && (
-                <span className="text-xs text-[var(--text-faint)] italic">{tFn(language, 'notes', 'noTags')}</span>
-              )}
-              {editingTagsNote.tags.map(tag => (
-                <span key={tag} className="flex items-center gap-1 rounded-full bg-indigo-500/15 px-2 py-0.5 text-xs text-indigo-400">
-                  {tag}
-                  <button onClick={() => handleRemoveTag(tag)} className="hover:text-red-400 transition">
-                    <X size={10} />
-                  </button>
-                </span>
-              ))}
-            </div>
-            {/* Input nuevo tag */}
-            <div className="flex gap-2">
-              <input
-                ref={tagInputRef}
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleAddTag();
-                  if (e.key === 'Escape') setEditingTagsNote(null);
-                }}
-                placeholder={tFn(language, 'notes', 'newTagPlaceholder')}
-                className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs text-[var(--text-primary)] outline-none focus:border-indigo-500/60 placeholder-[var(--text-hint)]"
-              />
-              <button
-                onClick={handleAddTag}
-                disabled={!tagInput.trim()}
-                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs text-white transition hover:bg-indigo-500 disabled:opacity-40"
-              >
-                {tFn(language, 'notes', 'addTag')}
-              </button>
-            </div>
-          </ModalPanel>
-        </ModalOverlay>
-      )}
-
-      {/* Modal confirmación eliminar */}
-      {confirmDeleteNoteDialog.isOpen && confirmDeleteNoteDialog.pending && (
-        <ConfirmDeleteModal
-          title={tFn(language, 'notes', 'confirmDeleteTitle')}
-          message={
-            <>
-              {tFn(language, 'notes', 'confirmDeleteMsg')}{' '}
-              <span className="font-medium text-[var(--text-primary)]">
-                &quot;{confirmDeleteNoteDialog.pending.title || tFn(language, 'notes', 'untitled')}&quot;
-              </span>
-              ? {tFn(language, 'notes', 'confirmDeleteDesc')}
-            </>
-          }
-          cancelLabel={tFn(language, 'notes', 'cancel')}
-          confirmLabel={tFn(language, 'notes', 'delete')}
-          onCancel={confirmDeleteNoteDialog.cancel}
-          onConfirm={() => { void doDeleteNote(confirmDeleteNoteDialog.pending!); confirmDeleteNoteDialog.cancel(); }}
-        />
-      )}
 
       {/* Menú contextual espacio vacío */}
       {emptyCtxMenu && (
@@ -809,10 +460,7 @@ export function NoteList() {
         </>
       )}
 
-      {/* Modal de exportar */}
-      {exportModalNote && (
-        <ExportModal note={exportModalNote} onClose={() => setExportModalNote(null)} />
-      )}
+      {noteMenu.element}
     </div>
   );
 }

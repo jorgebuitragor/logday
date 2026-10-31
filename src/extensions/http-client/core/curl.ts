@@ -236,7 +236,7 @@ function parseCommand(words: string[]): Command | null {
 
 /** Nombres de cabecera, de parámetro de la query o de campo del cuerpo
  *  cuyo valor no debe quedar escrito en la nota. */
-const SENSITIVE_NAME_RE = /token|api[-_.]?key|secret|passw(?:or)?d|session|credential|signature|^(?:x-)?auth$|^key$|^pwd$|^pass$/i;
+export const SENSITIVE_NAME_RE = /token|api[-_.]?key|secret|passw(?:or)?d|session|credential|signature|^(?:x-)?auth$|^key$|^pwd$|^pass$/i;
 
 const hasVariable = (value: string) => value.includes('{{');
 

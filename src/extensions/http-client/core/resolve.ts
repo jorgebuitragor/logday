@@ -32,6 +32,8 @@ export interface PreviewHeader {
   secret: boolean;
   /** "Agregada por Logday". */
   auto: boolean;
+  /** "Codificada por Logday": una Basic que Rust pasa a Base64 (HT44). */
+  encoded?: boolean;
 }
 
 export interface SentPreview {
@@ -69,6 +71,18 @@ export type Resolved =
   };
 
 export const secretMarker = (key: string) => `{{$secret:${key}}}`;
+
+/** HT44, la misma regla que `encode_basic` de Rust: una `Authorization` o
+ *  `Proxy-Authorization` Basic cuyas credenciales, sin las marcas de los
+ *  secretos, tienen `:` o un espacio. Solo para la marca de la vista: la
+ *  codificación la hace Rust. */
+export function basicEncodedByLogday(name: string, wireValue: string): boolean {
+  if (!/^(proxy-)?authorization$/i.test(name)) return false;
+  const m = /^basic\s+(\S[\s\S]*)$/i.exec(wireValue.trim());
+  if (!m) return false;
+  const creds = m[1].replace(/\{\{\$secret:[^}]*\}\}/g, 'x');
+  return /[:\s]/.test(creds);
+}
 
 const hasHeader = (headers: readonly { name: string }[], name: string) =>
   headers.some((h) => h.name.toLowerCase() === name.toLowerCase());
@@ -142,8 +156,10 @@ export function resolveRequest(req: ParsedRequest, ctx: ResolveContext): Resolve
   const previewHeaders: PreviewHeader[] = [];
   for (const h of req.headers) {
     let secret = false;
-    wireHeaders.push([h.name, fill(h.value, false, () => { secret = true; })]);
-    previewHeaders.push({ name: h.name, value: fill(h.value, true), secret, auto: false });
+    const wire = fill(h.value, false, () => { secret = true; });
+    wireHeaders.push([h.name, wire]);
+    const encoded = basicEncodedByLogday(h.name, wire);
+    previewHeaders.push({ name: h.name, value: fill(h.value, true), secret, auto: false, ...(encoded ? { encoded } : {}) });
   }
   // HT5: con HEAD el cuerpo no se envía.
   const rawBody = req.method === 'HEAD' ? null : req.body;

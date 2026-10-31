@@ -29,7 +29,19 @@ Estado: en progreso.
 
 ## Pendiente
 
-- [ ] Prueba visual en el navegador: 800×600, español e inglés, oscuro, claro y sepia, animaciones apagadas, teclado.
+- [ ] Probar en la app de QA (WebKit real y diálogo nativo de carpeta), y en Windows y Linux.
+- [ ] Probar con las animaciones apagadas y con el lector de pantalla (las pruebas cubren el CSS y la semántica).
+
+### Prueba en el navegador (31 oct 2026, Tauri simulado, 800×600)
+
+- [x] Los 5 pasos, empezando sin config: el idioma preelegido es el del sistema, cambiar a inglés traduce la pantalla y el foco va al título en cada paso.
+- [x] Carpeta: Continuar deshabilitado hasta elegirla; el aviso de iCloud se ve y elegir no escribe la config; "ya tiene datos" con una carpeta con `projects/`.
+- [x] Sepia y Lista con nombres se aplican al momento; las escenas usan ese estilo; la escena 4 muestra ⌘0 y ⌘1…⌘4.
+- [x] "Abrir Logday" guarda `basePath`, idioma, estilo y pantalla de inicio, crea las carpetas y abre en Tareas.
+- [x] "Ver el recorrido" en Acerca de: Esc lo cierra sin cerrar Opciones y el foco vuelve al botón.
+- [x] Arreglado en la prueba:
+  - el botón principal quedaba casi transparente con texto blanco en los temas tintados (App.css cambia `bg-indigo-*` por `--accent-soft`); ahora usa el indigo literal;
+  - los atajos globales (⌘N, ⌘T, ⌘D) funcionaban durante la bienvenida, sin carpeta.
 
 ## Diferencias con el diseño
 

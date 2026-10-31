@@ -104,16 +104,16 @@ describe('ordenar (D19)', () => {
     expect(moveGroup(read({}), 'formats', -1, OFF)).toEqual({});
     expect(moveGroup(read({}), 'lists', 1, OFF)).toEqual({});
     expect(moveTool(read({}), 'json', -1)).toEqual({});
-    expect(moveTool(read({}), 'convert', 1)).toEqual({});
+    expect(moveTool(read({}), 'html-preview', 1)).toEqual({});
   });
 
   it('una herramienta se mueve solo dentro de su grupo', () => {
     let raw: Record<string, unknown> = {};
     raw = apply(raw, moveTool(read(raw), 'convert', -1));
-    expect(read(raw).toolOrder).toEqual({ formats: ['json', 'yaml', 'convert', 'xml'] });
+    expect(read(raw).toolOrder).toEqual({ formats: ['json', 'yaml', 'convert', 'xml', 'html-preview'] });
     // Al arrastrar más allá del final se queda al final de su grupo.
     raw = apply(raw, moveToolTo(read(raw), 'json', 99));
-    expect(orderedTools(read(raw), 'formats')).toEqual(['yaml', 'convert', 'xml', 'json']);
+    expect(orderedTools(read(raw), 'formats')).toEqual(['yaml', 'convert', 'xml', 'html-preview', 'json']);
     expect(resolve(read(raw)).sections[1].tools).toEqual(['base64', 'url', 'html', 'jwt']);
     raw = apply(raw, moveToolTo(read(raw), 'json', 0));
     raw = apply(raw, moveToolTo(read(raw), 'xml', 2));

@@ -128,7 +128,8 @@ Rama `feature/cliente-http-devtools`, desde `develop` (con el PR 1 y `feature/de
 - [x] Textos de §8.8 en `devtools` y `httpClient`, es y en.
 - [x] `specs/devtools`: D11 reescrito, D0 y D25 (el grupo Red), design §G.4 y las tareas.
 - [x] Pruebas: `core/serialize.test.ts`, `devtools/httpTool.test.tsx` (aparece y desaparece, cada estado, el envío con Rust simulado y sus confirmaciones, guardar en una nota, paridad y voseo), `settings.test.ts` con y sin Cliente HTTP y la ayuda en `HelpPopover.test.tsx`.
-- [ ] Prueba en el navegador, en los temas claro, oscuro y sepia:
+- [x] Primera prueba en el navegador (31 oct 2026, Tauri simulado, tema oscuro): DevTools abre en Cliente HTTP con el formulario, el entorno y el aviso; un POST con `Content-Type` y cuerpo JSON se envía con esos datos (más `User-Agent`) y la respuesta aparece debajo; «Guardar en una nota» crea la nota con el bloque `http` equivalente y el toast con «Abrir».
+- [ ] Resto de la prueba en el navegador, en los temas claro, oscuro y sepia:
   - DevTools con y sin Cliente HTTP activa: la columna, el buscador, ⌥⌘↓/↑, el pie, la ayuda y Opciones → DevTools;
   - apagar Cliente HTTP con su herramienta abierta, y volver a encenderla;
   - enviar con el botón, ⌘↵ y Enter en la URL; cancelar con Esc; ⌥⌘1–3; ⌘⇧C, ⌘⇧S, ⌘⇧O y ⌘⇧⌫;

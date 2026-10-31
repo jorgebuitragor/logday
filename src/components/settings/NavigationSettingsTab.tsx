@@ -76,56 +76,55 @@ function StartupScreenSettings() {
   return (
     <div>
       <p className={SECTION_TITLE}>{t(language, 'settings', 'startupScreen')}</p>
-      <div className="rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] p-3">
-        <div ref={ref} className="relative">
-          <button
-            type="button"
-            onClick={() => setIsOpen((s) => !s)}
-            className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition ${
-              isOpen
-                ? 'border-indigo-500/60 bg-indigo-500/10'
-                : 'border-[var(--border-card)] bg-[var(--bg-elevated)] hover:border-[var(--border-high)] hover:bg-[var(--bg-hover)]'
-            }`}
-            aria-haspopup="listbox"
-            aria-expanded={isOpen}
-          >
-            <span>
-              <span className="block text-xs font-medium text-[var(--text-secondary)]">{active.label}</span>
-              <span className="mt-0.5 block text-[10px] text-[var(--text-hint)]">{active.desc}</span>
-            </span>
-            <ChevronDown size={14} className={`text-[var(--text-hint)] transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-          </button>
+      {/* El selector va directo, sin otra tarjeta alrededor (Jorge, 31 oct 2026). */}
+      <div ref={ref} className="relative">
+        <button
+          type="button"
+          onClick={() => setIsOpen((s) => !s)}
+          className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition ${
+            isOpen
+              ? 'border-indigo-500/60 bg-indigo-500/10'
+              : 'border-[var(--border-card)] bg-[var(--bg-surface)] hover:border-[var(--border-high)] hover:bg-[var(--bg-hover)]'
+          }`}
+          aria-haspopup="listbox"
+          aria-expanded={isOpen}
+        >
+          <span>
+            <span className="block text-xs font-medium text-[var(--text-secondary)]">{active.label}</span>
+            <span className="mt-0.5 block text-[10px] text-[var(--text-hint)]">{active.desc}</span>
+          </span>
+          <ChevronDown size={14} className={`text-[var(--text-hint)] transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        </button>
 
-          {isOpen && (
-            <div className="absolute left-0 right-0 z-20 mt-1.5 overflow-hidden rounded-lg border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl">
-              <div role="listbox" aria-label={t(language, 'settings', 'startupOptionsAria')} className="p-1">
-                {options.map(({ value, label, desc }) => {
-                  const isActive = startupScreen === value;
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      role="option"
-                      aria-selected={isActive}
-                      onClick={() => {
-                        void setStartupScreen(value);
-                        setIsOpen(false);
-                      }}
-                      className={`w-full rounded-md px-3 py-2 text-left transition ${
-                        isActive ? 'bg-indigo-500/10 text-indigo-400' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-                      }`}
-                    >
-                      <span className="block text-xs font-medium">{label}</span>
-                      <span className="mt-0.5 block text-[10px] text-[var(--text-hint)]">{desc}</span>
-                    </button>
-                  );
-                })}
-              </div>
+        {isOpen && (
+          <div className="absolute left-0 right-0 z-20 mt-1.5 overflow-hidden rounded-lg border border-[var(--border-card)] bg-[var(--bg-elevated)] shadow-xl">
+            <div role="listbox" aria-label={t(language, 'settings', 'startupOptionsAria')} className="p-1">
+              {options.map(({ value, label, desc }) => {
+                const isActive = startupScreen === value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    role="option"
+                    aria-selected={isActive}
+                    onClick={() => {
+                      void setStartupScreen(value);
+                      setIsOpen(false);
+                    }}
+                    className={`w-full rounded-md px-3 py-2 text-left transition ${
+                      isActive ? 'bg-indigo-500/10 text-indigo-400' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                    }`}
+                  >
+                    <span className="block text-xs font-medium">{label}</span>
+                    <span className="mt-0.5 block text-[10px] text-[var(--text-hint)]">{desc}</span>
+                  </button>
+                );
+              })}
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
-      <p className="mt-2 text-center text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'startupHint')}</p>
+      <p className="mt-2 text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'startupHint')}</p>
     </div>
   );
 }

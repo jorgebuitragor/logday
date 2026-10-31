@@ -103,6 +103,8 @@ export interface AccentPalette {
   '--accent-inline': string;
   '--accent-link': string;
   '--accent-code': string;
+  '--accent-solid': string;
+  '--accent-on': string;
 }
 
 function lerp(a: number, b: number, t: number): number {
@@ -144,6 +146,7 @@ export function deriveAccentPalette(hex: string, base: 'dark' | 'light', intensi
       '--accent-inline': inline,
       '--accent-link': accent,
       '--accent-code': code,
+      ...solidButton(strong),
     };
   }
 
@@ -172,7 +175,15 @@ export function deriveAccentPalette(hex: string, base: 'dark' | 'light', intensi
     '--accent-inline': inline,
     '--accent-link': strong,
     '--accent-code': code,
+    ...solidButton(strong),
   };
+}
+
+/** El botón principal relleno (`--accent-solid`) y su texto: blanco o casi
+ *  negro, el que más contraste dé con el acento. */
+function solidButton(solid: string): Pick<AccentPalette, '--accent-solid' | '--accent-on'> {
+  const on = contrastRatio(solid, '#ffffff') >= contrastRatio(solid, '#111827') ? '#ffffff' : '#111827';
+  return { '--accent-solid': solid, '--accent-on': on };
 }
 
 // Escalas de referencia: los valores reales de los temas dark/light ya

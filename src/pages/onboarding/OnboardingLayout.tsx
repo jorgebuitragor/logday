@@ -10,11 +10,11 @@ import { ONBOARDING_STEPS, type OnboardingStep } from '../../lib/onboarding';
 
 /** Indigo fijo y no `--accent`: el texto blanco no contrasta en sepia ni en
  *  los temas tintados (design, Botón principal). */
-// Indigo fijo con valores literales y no `bg-indigo-600`: en los temas
-// tintados App.css cambia cualquier `bg-indigo-*` por `--accent-soft`, casi
-// transparente, y el texto blanco dejaba de leerse (sepia, prueba del 31 oct
-// 2026). Blanco sobre #4f46e5 da ~6,3:1 en todos los temas.
-export const PRIMARY_BTN = `rounded-xl bg-[#4f46e5] px-5 py-2 text-sm font-semibold text-white transition hover:bg-[#6366f1] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-[#4f46e5] ${FOCUS_RING}`;
+// Relleno con el acento del tema (`--accent-solid`) y el texto que contrasta
+// con él (`--accent-on`), definidos por tema en App.css y derivados en los
+// personalizados. No `bg-indigo-600`: en los temas tintados App.css lo cambia
+// por `--accent-soft`, casi transparente, y el texto blanco no se leía.
+export const PRIMARY_BTN = `rounded-xl bg-[var(--accent-solid)] px-5 py-2 text-sm font-semibold text-[var(--accent-on)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:brightness-100 ${FOCUS_RING}`;
 export const SKIP_BTN = `rounded text-xs text-[var(--text-hint)] hover:text-[var(--text-secondary)] hover:underline disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING}`;
 
 export function useOnboardingText() {

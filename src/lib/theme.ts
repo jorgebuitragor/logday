@@ -7,6 +7,7 @@ const CUSTOM_THEME_VARS = [
   '--border', '--border-card', '--border-high',
   '--text-primary', '--text-body', '--text-secondary', '--text-tertiary', '--text-muted', '--text-hint', '--text-faint',
   '--accent', '--accent-strong', '--accent-soft', '--accent-ink', '--accent-inline', '--accent-link', '--accent-code',
+  '--accent-solid', '--accent-on',
 ] as const;
 
 const TINTED_BUILTIN_THEMES: BuiltInTheme[] = ['high-contrast', 'visual-rest', 'sepia', 'oled', 'nordic'];

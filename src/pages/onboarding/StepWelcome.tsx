@@ -1,6 +1,6 @@
 // Paso 1: bienvenida e idioma (specs/onboarding OB5).
 import type { Language } from '../../types/common';
-import logo from '../../assets/logo.png';
+import { LogoMark } from '../../components/sidebar/sections';
 import { OnboardingLayout, PRIMARY_BTN, useOnboardingText } from './OnboardingLayout';
 
 const LANGUAGES: { value: Language; label: string }[] = [
@@ -23,9 +23,8 @@ export function StepWelcome({ language, onLanguage, onStart, focusTitle }: {
       title={tr('welcomeTitle')}
       hero={
         <div className="mb-4 flex flex-col items-center text-center">
-          <div className="mb-3 inline-flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl">
-            <img src={logo} alt="" className="h-full w-full object-cover" />
-          </div>
+          {/* El mismo logo del menú, con el acento del tema activo. */}
+          <LogoMark size={64} className="mb-3" />
           <p aria-hidden="true" className="brand-wordmark text-3xl">log<span className="accent">day</span></p>
         </div>
       }

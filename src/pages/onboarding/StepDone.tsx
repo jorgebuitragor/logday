@@ -65,7 +65,7 @@ export function StepDone({ folder, onBack, onOpen, finishing, finishError, onPic
                   value={value}
                   checked={selected}
                   onChange={() => void setStartupScreen(value)}
-                  className="accent-indigo-500"
+                  className="accent-[var(--accent)]"
                 />
                 {Icon && <Icon size={15} className="shrink-0" />}
                 <span className="min-w-0">

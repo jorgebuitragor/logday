@@ -11,8 +11,8 @@ import { TourScenes } from './TourScenes';
 import { TOUR_SCENES } from './scenes';
 
 const TITLE_ID = 'tour-modal-title';
-// Mismo botón que la bienvenida: indigo literal, legible en los temas tintados.
-const PRIMARY_BTN = `rounded-xl bg-[#4f46e5] px-5 py-2 text-sm font-semibold text-white transition hover:bg-[#6366f1] ${FOCUS_RING}`;
+// Mismo botón que la bienvenida: el acento sólido del tema y su texto.
+const PRIMARY_BTN = `rounded-xl bg-[var(--accent-solid)] px-5 py-2 text-sm font-semibold text-[var(--accent-on)] transition hover:brightness-110 ${FOCUS_RING}`;
 
 export function TourModal({ onClose, initialScene = 0 }: { onClose: () => void; initialScene?: number }) {
   const language = useAppStore((s) => s.language);

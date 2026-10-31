@@ -120,6 +120,9 @@ const dict = {
       animationsDesc: 'Activa o desactiva todas las animaciones y transiciones de la app.',
       animationsEnabled: 'Activadas',
       animationsDisabled: 'Desactivadas',
+      helpSection: 'Ayuda',
+      helpButtonsTitle: 'Botones de ayuda',
+      helpButtonsDesc: 'Muestra el botón (?) junto al título de las pantallas que explica cómo funcionan.',
       sidebarSection: 'Menú lateral',
       // Shortcuts
       shortcutNewNote: 'Nueva nota',
@@ -2440,6 +2443,9 @@ const dict = {
       animationsDesc: 'Enable or disable all animations and transitions in the app.',
       animationsEnabled: 'Enabled',
       animationsDisabled: 'Disabled',
+      helpSection: 'Help',
+      helpButtonsTitle: 'Help buttons',
+      helpButtonsDesc: 'Shows the (?) button next to screen titles that explains how they work.',
       sidebarSection: 'Sidebar menu',
       // Shortcuts
       shortcutNewNote: 'New note',

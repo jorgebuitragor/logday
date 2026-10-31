@@ -100,3 +100,8 @@ Jorge aprobó la propuesta del agente de diseño, y el orquestador cerró los pu
 - Horas extra se llama "Horas extra" también en su cabecera;
 - `TaskShortcutsSheet` muestra Ctrl fuera de macOS;
 - Notas, Sync, MCP y Git quedan fuera de este PR.
+
+## Cambio del 31 oct 2026
+
+- AY23. Opciones → Preferencias DEBERÁ tener el interruptor "Botones de ayuda" (encendido por defecto, local, sin sync). Apagado, no se dibuja ningún botón de ayuda. Lo pidió Jorge al probar la app de QA.
+

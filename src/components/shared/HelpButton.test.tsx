@@ -14,6 +14,7 @@ const app = vi.hoisted(() => ({
   sidebarSections: undefined,
   extensions: {} as Record<string, { enabled: boolean }>,
   animationsEnabled: true,
+  helpButtonsEnabled: true,
   shortcuts: { newNote: 'n', newTask: 't', search: 'f', newDaily: 'd', markAbsence: 'a' },
   showToast: () => '',
 }));
@@ -58,6 +59,25 @@ beforeEach(() => {
 });
 
 // ── El botón ────────────────────────────────────────────────
+
+describe('Opción para ocultar la ayuda (AY23)', () => {
+  it('sin dibujar con los botones de ayuda apagados', () => {
+    app.helpButtonsEnabled = false;
+    try {
+      expect(renderToStaticMarkup(<HelpButton screen="DevTools" title="Cómo funciona DevTools"><p>x</p></HelpButton>)).toBe('');
+    } finally {
+      app.helpButtonsEnabled = true;
+    }
+  });
+
+  it('los textos de la opción existen en es y en', () => {
+    for (const lang of ['es', 'en'] as const) {
+      for (const key of ['helpSection', 'helpButtonsTitle', 'helpButtonsDesc'] as const) {
+        expect(t(lang, 'settings', key)).toBeTruthy();
+      }
+    }
+  });
+});
 
 describe('HelpButton (AY1, AY2, AY11)', () => {
   const html = () => renderToStaticMarkup(<HelpButton screen="DevTools" title="Cómo funciona DevTools"><p>x</p></HelpButton>);

@@ -32,7 +32,14 @@ const ANCHOR_OPTIONS = { sideX: 'right' as const, gap: 0 };
 // Abierto, el fondo del hover y sin acento (design, Estados).
 const BUTTON_CLS = `${ICON_BTN} min-h-7 min-w-7 justify-center aria-expanded:bg-[var(--bg-hover)] aria-expanded:text-[var(--text-primary)]`;
 
-export function HelpButton({
+/** Sin dibujar si el usuario apagó los botones de ayuda en Opciones →
+ *  Preferencias (AY23). Envuelve a `HelpButtonInner` para no saltarse hooks. */
+export function HelpButton(props: Parameters<typeof HelpButtonInner>[0]) {
+  const enabled = useAppStore((s) => s.helpButtonsEnabled);
+  return enabled ? <HelpButtonInner {...props} /> : null;
+}
+
+function HelpButtonInner({
   screen, title, intro, tourScene, actions = [], children,
 }: {
   /** El nombre de la pantalla, para "Ayuda: {screen}". */

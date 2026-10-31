@@ -147,6 +147,7 @@ export interface AppState {
 
   // Accesibilidad
   animationsEnabled: boolean;
+  helpButtonsEnabled: boolean;
 
   // Menú lateral (specs/navegacion-secciones)
   sidebarStyle: SidebarStyle;
@@ -360,6 +361,7 @@ export interface AppState {
   setWorkWeekDays: (days: 5 | 6) => Promise<void>;
   setHolidaysAsNonWork: (enabled: boolean) => Promise<void>;
   setAnimationsEnabled: (enabled: boolean) => Promise<void>;
+  setHelpButtonsEnabled: (enabled: boolean) => Promise<void>;
   setSidebarStyle: (style: SidebarStyle) => Promise<void>;
   /** `undefined` vuelve al orden y la visibilidad por defecto. */
   setSidebarSections: (sections: SavedSection[] | undefined) => Promise<void>;
@@ -487,7 +489,7 @@ async function persistConfig(get: SyncGet): Promise<void> {
   const {
     configDir, basePath, startupScreen, language, confirmDestructiveActions,
     notificationsEnabled, defaultReminderMinutes, workWeekDays, holidaysAsNonWork,
-    animationsEnabled, trashAutoPurgeEnabled, sidebarStyle, sidebarSections, activeProject, activeNoteFolder,
+    animationsEnabled, helpButtonsEnabled, trashAutoPurgeEnabled, sidebarStyle, sidebarSections, activeProject, activeNoteFolder,
     notesView, notesViewDefault, tasksViewDefault, noteSortBy, noteSortDir, taskSortBy, extensions,
   } = get();
   if (!configDir || !basePath) return;
@@ -501,6 +503,7 @@ async function persistConfig(get: SyncGet): Promise<void> {
     workWeekDays,
     holidaysAsNonWork,
     animationsEnabled,
+    helpButtonsEnabled,
     trashAutoPurgeEnabled,
     // `sidebarLabelsVisible` ya no se escribe (NS5): al guardar se cae.
     sidebarStyle,
@@ -2279,6 +2282,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   workWeekDays: 5 as (5 | 6),
   holidaysAsNonWork: true,
   animationsEnabled: true,
+  helpButtonsEnabled: true,
   trashAutoPurgeEnabled: true,
   sidebarStyle: DEFAULT_SIDEBAR_STYLE,
   sidebarSections: undefined,
@@ -2435,6 +2439,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             workWeekDays: (cfg.workWeekDays as (5 | 6)) ?? 5,
             holidaysAsNonWork: cfg.holidaysAsNonWork ?? true,
             animationsEnabled: cfg.animationsEnabled ?? true,
+            helpButtonsEnabled: cfg.helpButtonsEnabled ?? true,
             trashAutoPurgeEnabled: cfg.trashAutoPurgeEnabled ?? true,
             // NS5: una config con `sidebarLabelsVisible` y sin estilo
             // abre con la Barra de íconos, la predeterminada.
@@ -4055,6 +4060,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setAnimationsEnabled: async (enabled) => {
     set({ animationsEnabled: enabled });
     applyAnimationsToDOM(enabled);
+    await persistConfig(get);
+  },
+
+  setHelpButtonsEnabled: async (enabled) => {
+    set({ helpButtonsEnabled: enabled });
     await persistConfig(get);
   },
 

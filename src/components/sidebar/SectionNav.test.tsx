@@ -277,8 +277,10 @@ describe('Opciones → Menú lateral (NS9, NS20)', () => {
     expect(count(html, 'aria-hidden="true" class="sbp')).toBe(2);
     expect(plain).toContain('Secciones del menú');
     expect(plain).not.toContain('Textos del menú lateral');
-    expect(html).toMatch(/disabled=""[^>]*aria-label="Mover Dailys arriba"/);
-    expect(html).toMatch(/disabled=""[^>]*aria-label="Mover Horas extra abajo"/);
+    // aria-disabled y no disabled: el botón movido al extremo conserva el foco (specs/devtools §G.3).
+    expect(html).toMatch(/aria-disabled="true"[^>]*aria-label="Mover Dailys arriba"/);
+    expect(html).toMatch(/aria-disabled="true"[^>]*aria-label="Mover Horas extra abajo"/);
+    expect(html).not.toMatch(/disabled=""[^>]*aria-label="Mover/);
     expect(count(html, 'role="switch" aria-checked="true"')).toBe(3);
     expect(count(html, 'role="switch" aria-checked="false"')).toBe(1);
     expect(plain).toContain('Restablecer orden');

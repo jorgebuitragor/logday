@@ -52,6 +52,22 @@ getrandom = "0.2"
 # almacén falso en memoria que no guarda nada.
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3.6", features = ["apple-native"] }
+# Título de la bandeja del Pomodoro con dígitos de ancho fijo
+# (specs/pomodoro PM11). Las mismas versiones que ya usa tray-icon, para
+# que `ns_status_item()` devuelva estos mismos tipos.
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "objc2-core-foundation",
+    "NSButton",
+    "NSControl",
+    "NSFont",
+    "NSFontDescriptor",
+    "NSResponder",
+    "NSStatusBarButton",
+    "NSStatusItem",
+    "NSView",
+] }
 
 # En Linux, Secret Service por D-Bus (GNOME Keyring, KWallet). Usa
 # libdbus del sistema, que ya llega con las dependencias de webkit2gtk

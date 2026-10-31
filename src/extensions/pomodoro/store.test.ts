@@ -25,7 +25,7 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: native.invoke }));
 vi.mock('../../lib/invoke', () => ({ isPermissionGranted: async () => true, sendNotification: native.notify }));
 vi.mock('./sound', () => ({ playChime: vi.fn(), closeAudio: vi.fn() }));
 
-import { activate, deactivate, handleFinish, startPhase, tick, togglePhase, usePomodoro } from './store';
+import { activate, deactivate, handleFinish, resetPomodoro, startPhase, tick, togglePhase, usePomodoro } from './store';
 
 const MIN = 60_000;
 const T0 = new Date(2026, 9, 30, 9, 0).getTime();
@@ -97,6 +97,39 @@ describe('store del Pomodoro sin Rust', () => {
     expect(native.notify).not.toHaveBeenCalled();
     handleFinish(finishKey(t), 'restore');
     expect(usePomodoro.getState().history).toHaveLength(1);
+  });
+
+  it('restablecer (PM16): para el temporizador, borra el historial y vuelve a las opciones por defecto', async () => {
+    native.invoke.mockResolvedValue(true);
+    app.extensions.pomodoro.settings = {
+      workMin: 50, autoBreaks: true, showTrayTime: false, showSidebarCounter: false,
+      history: [{ end: new Date(T0 - 30 * MIN).toISOString(), minutes: 50 }],
+    };
+    activate();
+    startPhase();
+    usePomodoro.setState((s) => ({ timer: { ...s.timer, done: 2, task: { id: 'a', title: 'Informe', project: 'P' } } }));
+    await flush();
+    expect(usePomodoro.getState().history).toHaveLength(1);
+    native.invoke.mockClear();
+    await resetPomodoro();
+    const s = usePomodoro.getState();
+    expect(s.timer).toMatchObject({ phase: 'work', status: 'ready', done: 0, task: null });
+    expect(s.timer.endAt).toBeUndefined();
+    expect(s.history).toEqual([]);
+    // Lo guardado: opciones por defecto (las nuevas incluidas), Listo y sin historial.
+    const saved = app.extensions.pomodoro.settings as Record<string, unknown>;
+    expect(saved).toMatchObject({
+      workMin: 25, autoBreaks: false, showTrayTime: true, showSidebarCounter: true, history: [],
+      timer: { phase: 'work', status: 'ready', done: 0, task: null },
+    });
+    // La bandeja se pone al día: Listo, con el tiempo visible otra vez.
+    expect(native.invoke).toHaveBeenCalledWith('pomodoro_idle', {
+      tray: expect.objectContaining({ toggle: 'Iniciar un pomodoro (25 min)', showTime: true, skip: null }),
+    });
+    // Un fin que llegue tarde con la clave vieja no hace nada.
+    vi.setSystemTime(T0 + 50 * MIN);
+    handleFinish(`work:${T0 + 50 * MIN}`, 'native');
+    expect(usePomodoro.getState().history).toEqual([]);
   });
 
   it('desactivar a mitad de fase la para y no cuenta (PM13)', async () => {

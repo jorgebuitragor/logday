@@ -245,8 +245,8 @@ export function DailyList() {
       {/* Header. Con la lista al mínimo (200 px) no caben el título, la ayuda
           y los cuatro botones: "Hoy" queda solo con el ícono y el título se
           recorta, pero conserva el ancho para la ayuda (sin solaparse). */}
-      <div className="@container/dlh flex items-center justify-between gap-1 border-b border-[var(--border)] px-3 py-3 @[15rem]/dlh:px-4">
-        <div className="flex min-w-[3.25rem] items-center gap-1 overflow-hidden">
+      <div className="@container/dlh flex items-center justify-between gap-1 border-b border-[var(--border)] px-4 py-3">
+        <div className="flex min-w-[2.75rem] items-center gap-1 overflow-hidden">
           <h2 className="truncate text-sm font-semibold text-[var(--text-primary)]">{t(language, 'dailys', 'title')}</h2>
           <DailysHelp />
         </div>
@@ -256,7 +256,7 @@ export function DailyList() {
             <button
               ref={pickerBtnRef}
               onClick={handleOpenPicker}
-              className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition ${
+              className={`flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs transition ${
                 showDatePicker
                   ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]'
                   : 'text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
@@ -292,21 +292,21 @@ export function DailyList() {
           )}
           <button
             onClick={() => setShowAbsenceModal(true)}
-            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             title={t(language, 'absence', 'markButton')}
           >
             <CalendarOff size={14} />
           </button>
           <button
             onClick={() => setShowAbsenceListModal(true)}
-            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             title={t(language, 'absence', 'listButton')}
           >
             <ListChecks size={14} />
           </button>
           <button
             onClick={createTodayDaily}
-            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-indigo-400 transition hover:bg-indigo-500/10"
+            className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs text-indigo-400 transition hover:bg-indigo-500/10"
             title={t(language, 'dailys', 'createTodayTitle')}
           >
             <Plus size={14} />

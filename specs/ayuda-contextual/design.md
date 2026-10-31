@@ -337,4 +337,5 @@ Jorge vio que el botón se solapaba con los de la cabecera al achicar la ventana
 
 - **Tamaño:** el botón mide 20×20 px y su ícono 13 px. Antes eran `ICON_BTN` con `min-h-7 min-w-7` (28 px) y un ícono de 14 px. No se encoge (`shrink-0`) y, con el espacio de alrededor, cumple la excepción de espaciado de WCAG 2.5.8.
 - **Cabeceras de Tareas, Kanban, Calendario, Dailys y Horas extra:** el grupo del título lleva `min-w-0` y el título `truncate`, así que cuando falta espacio se recorta con "…". Los botones de la derecha llevan `shrink-0`, para que nunca se tapen ni se corten.
+- **Dailys:** con la lista al mínimo no caben el título, la ayuda y los cuatro botones. "Hoy" queda solo con el ícono por debajo de 15rem (container query `@container/dlh`), los botones de la cabecera usan `px-1.5`, y el título conserva `min-w-[2.75rem]` para que la ayuda no se monte sobre "Fecha". Probado a 288 y 200 px en Dailys, Horas extra y Tareas: sin solapes ni botones cortados.
 

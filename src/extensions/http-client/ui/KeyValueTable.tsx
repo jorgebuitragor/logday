@@ -7,8 +7,8 @@
 // No es un `grid` ARIA: en un formulario ese patrón confunde al lector de
 // pantalla. Tab recorre casilla → nombre → valor → eliminar, fila a fila.
 import { useEffect, useRef, useState, type InputHTMLAttributes, type KeyboardEvent } from 'react';
-import { CircleAlert, KeyRound, Plus, Trash2 } from 'lucide-react';
-import { CHIP, FOCUS_RING, ICON_BTN, INPUT_CLS, SECONDARY_CLS } from '../../../components/shared/controlClasses';
+import { CircleAlert, CornerDownRight, KeyRound, Plus, Trash2 } from 'lucide-react';
+import { FOCUS_RING, ICON_BTN, INPUT_CLS, SECONDARY_CLS } from '../../../components/shared/controlClasses';
 import { StatusItem } from '../../../components/shared/FormControls';
 import { NO_AUTOCORRECT } from '../../devtools/ui/classes';
 import type { Tr } from '../core/text';
@@ -162,6 +162,15 @@ export function KeyValueTable({
       ) : (
         <table className="w-full table-fixed border-separate border-spacing-y-1 text-xs">
           <caption className="sr-only">{caption}</caption>
+          {/* Con `table-fixed` los anchos salen de la primera fila, que es la
+              cabecera oculta: sin esto las cuatro columnas medían igual y la
+              casilla dejaba un hueco grande a la izquierda. */}
+          <colgroup>
+            <col className="w-7" />
+            <col className="w-[38%]" />
+            <col />
+            <col className="w-8" />
+          </colgroup>
           <thead className="sr-only">
             <tr>
               <th scope="col">{tr('colEnabled')}</th>
@@ -242,7 +251,14 @@ export function KeyValueTable({
                         onKeyDown={(e) => rowKeyDown(e, i, 'value', isLast)}
                         className={`${CELL_INPUT} ${dim}`}
                       />
-                      {row.ownLine && <span className={`${CHIP} hidden shrink-0 whitespace-nowrap @lg/tool:inline`}>{tr('rowOwnLine')}</span>}
+                      {/* Un ícono y no una etiqueta: la etiqueta dejaba el valor en
+                          unos 46 px en la pantalla (prueba del 31 oct 2026). */}
+                      {row.ownLine && (
+                        <span className="shrink-0 text-[var(--text-hint)]" title={tr('rowOwnLine')}>
+                          <CornerDownRight size={12} aria-hidden />
+                          <span className="sr-only">{tr('rowOwnLine')}</span>
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="w-8 p-0">

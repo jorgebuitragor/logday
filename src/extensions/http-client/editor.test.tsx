@@ -122,7 +122,7 @@ describe('el editor en pestañas (HT40–HT43)', () => {
     expect(html).toMatch(/aria-label="Enviar lang"[^>]*checked=""/);
     expect(html).toMatch(/aria-label="Enviar debug"(?![^>]*checked)[^>]*\/>/);
     expect(html).toContain('value="large"');
-    expect(html.match(/en una línea aparte/g)).toHaveLength(2);
+    expect(html.match(/title="en una línea aparte"/g)).toHaveLength(2);
     expect(html).toContain('aria-label="Valor de lang"');
     expect(html).toContain('aria-label="Eliminar size"');
     expect(text(html)).toContain('Agregar parámetro');

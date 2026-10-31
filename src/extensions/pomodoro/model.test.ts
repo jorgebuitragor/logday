@@ -32,6 +32,13 @@ describe('opciones (PM1)', () => {
     expect(isDefaultOptions(readOptions({ showSidebarCounter: false }))).toBe(false);
   });
 
+  it('"Mostrar en Inicio" (PM17): encendido por defecto, y solo booleanos', () => {
+    expect(readOptions({}).showOnHome).toBe(true);
+    expect(readOptions({ showOnHome: false }).showOnHome).toBe(false);
+    expect(readOptions({ showOnHome: 'no' }).showOnHome).toBe(true);
+    expect(isDefaultOptions(readOptions({ showOnHome: false }))).toBe(false);
+  });
+
   it('restablecer (PM16): opciones por defecto, Listo en trabajo y sin historial', () => {
     const r = resetSettings(T0);
     expect(readOptions(r)).toEqual(DEFAULT_OPTIONS);

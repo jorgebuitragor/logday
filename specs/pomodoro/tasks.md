@@ -55,6 +55,10 @@ Estado: en progreso.
 - [x] **"Reiniciar el ciclo" a la vista (PM2):** un solo botón con borde e ícono (`ListRestart`) junto a "Bloque n de 4", en todos los anchos. Antes era texto gris de 11 px y, en el layout ancho, se iba al pie de "Hoy".
 - [x] Pruebas: lectura de las opciones nuevas, `resetSettings`, `minuteDigits`, lo que se le pasa a Rust con el tiempo apagado, el contador sin dibujar, un solo "Reiniciar el ciclo", el restablecer en el store (estado, opciones, historial y bandeja) y, en Rust, el relleno del título y la bandeja sin tiempo.
 
+## Hecho (rama `feature/inicio-extensiones`, 31 oct 2026)
+
+- [x] **Tarjeta en Inicio (PM17):** `HomeCard.tsx` (design §3.4), `showOnHome` en `PomodoroOptions` (encendido por defecto) y el interruptor "Mostrar en Inicio" en Opciones, bajo "Dónde se ve". Pruebas: la tarjeta en Listo, corriendo, en pausa, con un descanso listo, con tarea y resumen, sin dibujar al apagarla, en inglés, y la lectura de la opción.
+
 ## Diferencias con el diseño
 
 - **Plurales:** en vez de las claves `*One` del §9 (`todaySummaryOne`), las formas `{n|uno|varios}` dentro de la misma clave.

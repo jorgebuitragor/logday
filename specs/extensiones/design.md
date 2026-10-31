@@ -71,6 +71,7 @@ export interface ExtensionModule {
   dailyActions?: ComponentType<{ date: string; getText: () => Promise<string> }>; // botones junto a Copiar
   NoteBlock?: ComponentType<NoteBlockProps>; // bloque propio en las notas (R24), con NoteBlockEditor
   SidebarStatus?: ComponentType<{ collapsed: boolean }>; // estado en el menú lateral (R26)
+  HomeCard?: ComponentType<object>;          // tarjeta al final de Inicio (R27)
   start?: () => () => void;                  // procesos propios; devuelve cómo pararlos (R7)
 }
 ```
@@ -326,6 +327,47 @@ La primera es el contador del Pomodoro (`specs/pomodoro/design.md` §3).
 - **Abrir Opciones en la página de una extensión:** `openExtensionSettings(id)`
   del store deja una señal (`settingsExtensionRequest`) y abre Opciones;
   `SettingsModal` la consume y abre `ext:<id>`, como `openSettingsGitTab`.
+
+## Tarjetas en Inicio (R27)
+
+Las primeras son la del Pomodoro (`specs/pomodoro` PM17) y "Reuniones de
+hoy" de Google Calendar (`specs/google-calendar` G12).
+
+- Punto `HomeCard` (`ComponentType<HomeCardProps>`, `HomeCardProps =
+  object`): cada tarjeta lee lo suyo de su store. Si no hay nada que
+  mostrar, o su "Mostrar en Inicio" está apagado, devuelve `null`.
+- Metadato `homeCard: { order }` en el registro, para que Inicio sepa qué
+  extensiones la tienen, y en qué orden, sin cargar su código (R16).
+  Pomodoro 10, Google Calendar 20.
+- `ExtensionHomeCards` (`components/dashboard/ExtensionHomeCards.tsx`) va
+  después de "Esta semana". Monta un `ExtensionSlot` con `variant="block"`
+  por cada extensión activa con tarjeta, por `order`, en una rejilla
+  `repeat(auto-fit, minmax(min(100%, 18rem), 1fr))` (una, dos o tres por
+  fila según el ancho), con un `h2` solo para lectores de pantalla
+  ("Extensiones"). Sin ninguna, no dibuja nada.
+  - Una tarjeta que devuelve `null` no crea ningún elemento, así que no
+    deja hueco. Si ninguna dibuja nada, la rejilla queda vacía y se oculta
+    con `:empty`, y la sección, con `:has(> div:empty)`.
+- `HomeCardShell` (`components/dashboard/HomeCardShell.tsx`): el marco y la
+  cabecera de las tarjetas propias de Inicio (`rounded-2xl`, ícono 16
+  `text-indigo-400`, `h3 text-sm font-semibold`, `dash-enter dash-d4`), con
+  un texto pequeño junto al título y un enlace opcional a la derecha como
+  "Ver calendario →". Las extensiones lo usan para parecer de Inicio.
+- "Mostrar en Inicio": cada extensión lo guarda en sus `settings` locales
+  (`showOnHome`, encendido salvo `false`) y lo pone en su página de
+  Opciones.
+- **Aviso "Extensiones"** (`ExtensionsHomeHint`, en el mismo archivo): a
+  todo el ancho, con borde punteado, solo si no hay ninguna extensión
+  activa (aunque sea una sin tarjeta) y no se descartó.
+  - Nombra cuatro del registro, en una lista sin controles: Pomodoro,
+    Google Calendar, DevTools y Captura rápida.
+  - "Ver extensiones" llama a `openExtensionsCatalog()` del store: abre
+    Opciones con la señal `extensionsCatalogRequest`, y `SettingsModal`
+    abre la pestaña Extensiones (como `openSidebarSettings`).
+  - "Ocultar este aviso" (✕) llama a `dismissHomeExtensionsHint()`:
+    `homeExtensionsHintDismissed: true` en `config.json`, que no se
+    sincroniza (solo se escribe la clave si se descartó). El foco pasa al
+    control anterior al aviso, para que no caiga al `body`.
 
 ## Atajo global y ventana propia (R25)
 

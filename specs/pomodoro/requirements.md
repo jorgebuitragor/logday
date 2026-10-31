@@ -67,6 +67,10 @@ Jorge la pidió el 30 oct 2026, de la lista de candidatas del grupo Herramientas
   - se borra el historial local (PM9).
   - La vista, el contador del menú y la bandeja se ponen al día enseguida. La confirmación dice exactamente qué se borra. No toca tareas ni el daily (PM7).
 
+### Tarjeta en Inicio (31 oct 2026, pedida por Jorge; specs/extensiones R27)
+
+- PM17. MIENTRAS la extensión esté activa, Inicio DEBERÁ tener al final una tarjeta del Pomodoro con la fase o el estado ("En pausa", "Trabajo listo"), el tiempo, el progreso de la fase, la tarea elegida (si hay), el resumen de hoy (PM9) y el botón principal (Iniciar, Pausar, Reanudar o iniciar el descanso). "Abrir →" lleva a la vista. Las opciones DEBERÁN tener "Mostrar en Inicio", encendido por defecto; apagado, la tarjeta no se dibuja. Los avisos de iniciar, pausar y terminar se leen con una región viva, como en la vista; el tiempo no.
+
 ## Decisiones (30 oct 2026)
 
 Son las recomendadas por el diseño (`design.md`, sección 12):

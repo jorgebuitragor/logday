@@ -68,12 +68,39 @@ interface ExternalEvent {
 - El estado de la última consulta (cuándo, cuántos o el error) va a un
   store del módulo que lee el panel.
 
+## Tarjeta en Inicio (G12)
+
+`HomeCard.tsx`, con `HomeCardShell` de Inicio y `homeCard: { order: 20 }`
+en el registro.
+
+- **De dónde salen los eventos:** si el `range` compartido (el del
+  Calendario) incluye hoy, los de `bySource['google-calendar']` de hoy, con
+  el estado de `useCalendarSync`. Si no (nunca se abrió el Calendario, o
+  muestra otro mes), una consulta propia: `refreshToday(clientId)` llama a
+  `fetchToday`, que pide solo el día local (`dayRange` → `rangeToInstants`)
+  y deja el resultado en el store `useHomeToday` (en memoria, G9). La
+  tarjeta la lanza al montarse y cada 10 minutos, y nunca cambia el
+  `range`: cambiarlo haría que el Calendario pidiera otro mes.
+- `useHomeToday` se vacía al parar la extensión y al cambiar de cuenta o
+  de cliente. Lo de otro día no se muestra como de hoy (se guarda `day`).
+- `homeAgenda` (pura, con pruebas): los de hoy, todo el día primero y por
+  hora; hasta 5; el índice del primero con hora desde ahora ("Siguiente")
+  y cuántos no caben. La hora se refresca cada minuto.
+- Estados: sin conectar (texto y "Conectar", que abre su página de
+  Opciones), cargando, vacío ("No tienes reuniones hoy."), con eventos y
+  error (el mensaje de `calendarErrorMessage` y "Reintentar", sobre los
+  últimos eventos).
+- Una fila con `url` es un botón que la abre con `fs.openUrl`, como el
+  Calendario; sin enlace, es texto.
+- "Mostrar en Inicio": `showOnHome` en los `settings` (encendido salvo
+  `false`), con su interruptor al final del panel.
+
 ## Configuración
 
 En `extensions['google-calendar'].settings`:
 
 ```jsonc
-{ "clientId": "…apps.googleusercontent.com", "secretHint": "…abcd", "account": "jorge@fcv.org" }
+{ "clientId": "…apps.googleusercontent.com", "secretHint": "…abcd", "account": "jorge@fcv.org", "showOnHome": true }
 ```
 
 En el llavero, `ext:google-calendar:google_client_secret` y

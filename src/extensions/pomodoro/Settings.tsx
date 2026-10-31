@@ -1,5 +1,5 @@
 // Panel de Opciones → Extensiones → Pomodoro (design §2.10): duraciones,
-// arranque solo, sonido, dónde se ve (PM15) y restablecer todo (PM16). Los
+// arranque solo, sonido, dónde se ve (PM15, PM17) y restablecer todo (PM16). Los
 // cambios se guardan al momento; la fase en curso mantiene su fin y lo
 // nuevo se aplica desde la siguiente.
 import { useMemo } from 'react';
@@ -126,6 +126,8 @@ export default function PomodoroSettings() {
         />
         <p className="text-[11px] text-[var(--text-hint)]">{tr('setTrayTimeHint')}</p>
         <Toggle label={tr('setSidebarCounter')} checked={o.showSidebarCounter} onChange={(v) => set({ showSidebarCounter: v })} />
+        <Toggle label={tr('setShowOnHome')} checked={o.showOnHome} onChange={(v) => set({ showOnHome: v })} />
+        <p className="text-[11px] text-[var(--text-hint)]">{tr('setShowOnHomeHint')}</p>
       </div>
 
       {!isDefaultOptions(o) && (

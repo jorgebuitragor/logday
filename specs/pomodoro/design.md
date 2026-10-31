@@ -342,6 +342,17 @@ Va después del `flex-1` y **antes de Buscar** (`Sidebar.tsx:594`): crece hacia 
 - Aparece y desaparece sin animar la altura. Con animaciones activas, solo hace `opacity` 0→1 en 150 ms (`motion-reduce:transition-none`, y `.no-animations` ya lo anula).
 - Pasar de una fase a otra **no** lo quita ni lo vuelve a poner: cambian el ícono, la etiqueta, el color y el tiempo dentro del mismo nodo, así que el alto no cambia nunca mientras está visible.
 
+#### 3.4 Tarjeta en Inicio (PM17)
+
+`HomeCard.tsx`, con `HomeCardShell` de Inicio (`specs/extensiones` R27) y `homeCard: { order: 10 }` en el registro.
+
+- Cabecera: reloj de arena, "Pomodoro" y "Abrir →" (`aria-label` "Abrir Pomodoro"); con el teclado (`detail` 0) pide el foco para el título de la vista (`requestViewFocus`), como el contador del menú.
+- Cuerpo: ícono de la fase con su color (solo gráfico, §5) y el estado (la fase si corre, "En pausa", "Trabajo listo" o "Descanso listo"); el tiempo en `text-2xl font-semibold tabular-nums`, con el texto para lectores de pantalla de la vista (`timeSr`); a la derecha, el botón principal (`togglePhase`). La barra de progreso es la del contador (pista `--phase-track`, gris en pausa).
+- "Tarea: {título}" si hay una elegida, y al pie el resumen de hoy ("Hoy: 2 pomodoros · 50 min de foco") o "Aún no has hecho pomodoros hoy.".
+- El botón principal tiene la forma tintada del botón de "Hoy" en Inicio, pero con el texto en `--text-primary` y el ícono `text-indigo-400`, por lo mismo que §2.6: `text-indigo-300` no se aclara en sepia.
+- Región `sr-only aria-live="polite"` con `live.text` del store; la vista y la tarjeta no se montan a la vez (secciones distintas), así que no se lee dos veces.
+- Devuelve `null` si la extensión no está corriendo (`active`) o si `showOnHome` está apagado.
+
 ### 4. Bandeja del sistema (PM11)
 
 Como el fin lo vigila Rust (PM5), Rust también actualiza el título y el tooltip. Así siguen al día con la ventana oculta. Los textos llegan traducidos desde el frontend al iniciar la fase, como `quick_capture_configure` pasa `trayLabel` (`quick_capture.rs:178`).

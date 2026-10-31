@@ -14,6 +14,7 @@ import { absenceTypeLabel } from '../../lib/absenceLabel';
 import { TaskContextMenu } from '../tasks/TaskContextMenu';
 import { AbsenceModal } from '../shared/AbsenceModal';
 import { WeeklyMiniCalendar } from './WeeklyMiniCalendar';
+import { ExtensionHomeCards, ExtensionsHomeHint } from './ExtensionHomeCards';
 import { placeMenuAtPointer } from '../../lib/menuPosition';
 import { stampSortKey, stampToLocalDate } from '../../lib/localDate';
 import { countDoneThisWeek } from '../../lib/taskListing';
@@ -523,6 +524,10 @@ export function DashboardView() {
             </p>
           )}
         </section>
+
+        {/* Lo de las extensiones, al final (specs/extensiones R27). */}
+        <ExtensionHomeCards />
+        <ExtensionsHomeHint />
       </div>
     </div>
 

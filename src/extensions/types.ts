@@ -58,6 +58,10 @@ export interface SidebarStatusProps {
   collapsed: boolean;
 }
 
+/** Props de la tarjeta que una extensión pone en Inicio (R27). Por ahora
+ *  ninguna: cada tarjeta lee lo suyo de su store. */
+export type HomeCardProps = object;
+
 /** Lo que aporta una extensión a cada punto de extensión. No es una API
  *  pública: se cambia cuando haga falta, porque todas viven en este repo. */
 export interface ExtensionModule {
@@ -73,11 +77,14 @@ export interface ExtensionModule {
   /** Estado siempre visible en el menú lateral (R26). Si no hay nada que
    *  mostrar, devuelve `null`. */
   SidebarStatus?: ComponentType<SidebarStatusProps>;
+  /** Tarjeta al final de Inicio (R27). Si no hay nada que mostrar (o el
+   *  usuario la apagó en sus opciones), devuelve `null`. */
+  HomeCard?: ComponentType<HomeCardProps>;
   /** Procesos propios; devuelve cómo pararlos (R7). */
   start?: () => () => void;
 }
 
-export type ExtensionPoint = 'Settings' | 'View' | 'dailyActions' | 'NoteBlock' | 'NoteBlockEditor' | 'SidebarStatus';
+export type ExtensionPoint = 'Settings' | 'View' | 'dailyActions' | 'NoteBlock' | 'NoteBlockEditor' | 'SidebarStatus' | 'HomeCard';
 
 /** Metadatos del registro: se dibujan sin cargar el código (R16). */
 export interface ExtensionDefinition {
@@ -109,6 +116,10 @@ export interface ExtensionDefinition {
   /** R26: si tiene `SidebarStatus`. Es metadato para que el menú lateral
    *  no cargue el módulo solo para saberlo (R16). */
   sidebarStatus?: boolean;
+  /** R27: si tiene `HomeCard`, y su lugar entre las tarjetas de Inicio
+   *  (de menor a mayor). Es metadato para que Inicio no cargue el módulo
+   *  solo para saberlo (R16). */
+  homeCard?: { order: number };
   /** Claves de sus secretos en el llavero (`ext:<id>:<clave>`). El
    *  llavero no se puede listar, así que "Quitar configuración" (R8)
    *  borra estas. */

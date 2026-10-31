@@ -465,3 +465,86 @@ describe('Opciones → Cliente HTTP', () => {
     expect(renderToStaticMarkup(<Settings />)).toContain('aria-label="Entorno activo: Sin entorno"');
   });
 });
+
+describe('entornos apagados (HT72)', () => {
+  const off = (envs: HttpEnvironment[] = [STAGING], activeEnvId: string | null = STAGING.id) => {
+    app.extensions['http-client'].settings = { environments: envs, activeEnvId, useEnvironments: false };
+  };
+  const send = (code: string) => store.sendRequest({ noteId: 'n1', blockIndex: 0, code, requestIndex: 0 });
+
+  it('la barra no tiene selector de entorno, y Enviar no queda deshabilitado por una variable', () => {
+    off();
+    const html = block('GET https://x.com/{{id}}', 'header');
+    expect(text(html)).not.toContain('Staging');
+    expect(text(html)).not.toContain('Sin entorno');
+    expect(html).not.toContain('aria-disabled="true"');
+  });
+
+  it('la franja avisa: se enviarán tal cual', () => {
+    off();
+    expect(text(block('GET https://x.com/{{id}}\nX-T: {{token}}', 'footer'))).toContain(
+      'Variables sin resolver: {{id}} y {{token}} se enviarán tal cual, porque los entornos están apagados.',
+    );
+    // Si la URL no es válida sin la variable, lo dice.
+    expect(text(block('GET {{baseUrl}}/u', 'footer'))).toContain('La URL no es válida: lleva {{baseUrl}} sin resolver');
+  });
+
+  it('se envía con {{x}} tal cual, sin el entorno elegido ni sus secretos', async () => {
+    off();
+    rust.reply = async () => output();
+    expect(await send('GET https://x.com/{{id}}\nAuthorization: Bearer {{token}}')).toBe('sent');
+    expect(rust.calls[0].url).toBe('https://x.com/{{id}}');
+    expect(rust.calls[0].headers).toContainEqual(['Authorization', 'Bearer {{token}}']);
+    expect(JSON.stringify(rust.calls[0])).not.toContain('$secret');
+    expect(rust.calls[0].trustedHosts).toEqual([]);
+  });
+
+  it('los entornos guardados siguen ahí y vuelven al encender', () => {
+    off();
+    const html = text(renderToStaticMarkup(<Settings />));
+    expect(html).toContain('Los entornos están apagados');
+    expect(html).not.toContain('Variables');
+    app.extensions['http-client'].settings = { ...app.extensions['http-client'].settings, useEnvironments: true };
+    expect(text(renderToStaticMarkup(<Settings />))).toContain('Staging');
+    expect(text(block('GET {{baseUrl}}', 'header'))).toContain('Staging');
+  });
+});
+
+describe('avisos de seguridad configurables (HT74, HT75)', () => {
+  const send = (code: string) => store.sendRequest({ noteId: 'n1', blockIndex: 0, code, requestIndex: 0 });
+
+  it('de serie, Rust oculta los secretos de la respuesta y se confirma el host ajeno', async () => {
+    setEnvs([STAGING], STAGING.id);
+    rust.reply = async () => output();
+    expect(await send('GET https://otro.com\nAuthorization: Bearer {{token}}')).toBe('confirm');
+    await send('GET {{baseUrl}}');
+    expect(rust.calls[0].maskResponse).toBe(true);
+  });
+
+  it('apagados: no se pregunta (y Rust tampoco rechaza el host), y la respuesta llega tal cual', async () => {
+    app.extensions['http-client'].settings = {
+      environments: [STAGING], activeEnvId: STAGING.id, confirmUntrustedSecrets: false, maskResponseSecrets: false,
+    };
+    rust.reply = async () => output();
+    expect(await send('GET https://otro.com\nAuthorization: Bearer {{token}}')).toBe('sent');
+    expect(rust.calls[0].allowUntrustedHost).toBe(true);
+    expect(rust.calls[0].maskResponse).toBe(false);
+    // El entorno protegido se sigue confirmando: es por entorno (HT20).
+    app.extensions['http-client'].settings = { ...app.extensions['http-client'].settings, environments: [PROD], activeEnvId: PROD.id };
+    expect(await send('DELETE {{baseUrl}}/u/1')).toBe('confirm');
+  });
+
+  it('Opciones: los dos interruptores, encendidos y con su explicación, y "Pegar un cURL" en "Preguntar"', () => {
+    setEnvs([STAGING], STAGING.id);
+    const html = renderToStaticMarkup(<Settings />);
+    const t = text(html);
+    expect(t).toContain('Avisos de seguridad');
+    expect(t).toContain('Confirmar antes de enviar un secreto a un host que no es de confianza');
+    expect(t).toContain('Ocultar en la respuesta los secretos que devuelva el servidor');
+    expect(t).toContain('Usar entornos');
+    expect((html.match(/role="switch" aria-checked="true"/g) ?? []).length).toBeGreaterThanOrEqual(3);
+    expect(html).toContain('aria-label="Valores sensibles: Preguntar"');
+    app.extensions['http-client'].settings = { ...app.extensions['http-client'].settings, curlPaste: 'keep' };
+    expect(renderToStaticMarkup(<Settings />)).toContain('aria-label="Valores sensibles: Dejar los valores tal cual"');
+  });
+});

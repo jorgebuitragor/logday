@@ -23,6 +23,8 @@ import { isMac, makeTr, type Tr } from '../core/text';
 import { announce } from '../announce';
 import { firstError, isDirty, issueMessage, loadDraft, newForm, useHttpStore, type FormOrigin } from '../store';
 import { RequestForm } from './RequestForm';
+import { EnvironmentsScreen } from './Environments';
+import { EXTENSION_ID, readHttpSettings } from '../core/environments';
 
 /** Tras un cambio en las notas, cuánto esperar para volver a leerlas. */
 const RELOAD_DELAY_MS = 800;
@@ -54,6 +56,11 @@ export default function HttpClientView() {
   const tr = useMemo(() => makeTr(language), [language]);
   const mac = useMemo(isMac, []);
   const origin = useHttpStore((s) => s.origin);
+  // HT76: el panel Entornos ocupa el lugar del formulario, que se queda
+  // montado (oculto) para no perder su pestaña. Sin entornos, no hay panel.
+  const useEnvironments = useAppStore((s) => readHttpSettings(s.extensions[EXTENSION_ID]?.settings).useEnvironments);
+  const [envPanel, setEnvPanel] = useState<{ envId: string | null } | null>(null);
+  const showEnvs = envPanel !== null && useEnvironments;
 
   const [groups, setGroups] = useState<NoteRequestGroup[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -98,6 +105,7 @@ export default function HttpClientView() {
   const total = groups ? countRequests(groups) : 0;
 
   const choose = (group: NoteRequestGroup, req: NoteRequest) => {
+    setEnvPanel(null);
     const loaded = draftFromBlock(req.code, req.requestIndex);
     if (!loaded) return;
     const next = originOf(group, req, tr);
@@ -106,6 +114,7 @@ export default function HttpClientView() {
   };
 
   const startNew = () => {
+    setEnvPanel(null);
     newForm();
     announce(tr('aNew'));
   };
@@ -155,8 +164,21 @@ export default function HttpClientView() {
         onChoose={choose}
         origin={origin}
       />
-      <section aria-labelledby="http-view-title" className="@container/tool flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
-        <RequestForm tr={tr} mac={mac} loadedError={loadedError} onOpenNote={(t) => void openNote(t)} onSaved={refresh} />
+      <section
+        aria-labelledby={showEnvs ? 'http-envs-title' : 'http-view-title'}
+        className="@container/tool flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto"
+      >
+        {showEnvs && <EnvironmentsScreen tr={tr} initialEnvId={envPanel.envId} onClose={() => setEnvPanel(null)} />}
+        <div hidden={showEnvs} className="flex min-w-0 flex-col">
+          <RequestForm
+            tr={tr}
+            mac={mac}
+            loadedError={loadedError}
+            onOpenNote={(t) => void openNote(t)}
+            onSaved={refresh}
+            onOpenEnvironments={(envId) => setEnvPanel({ envId })}
+          />
+        </div>
       </section>
     </div>
     </div>

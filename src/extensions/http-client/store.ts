@@ -157,12 +157,17 @@ export const setUserAgent = (ua: string) => {
 /** El User-Agent que agrega Logday, para mostrarlo en Cabeceras (HT42). */
 export const currentUserAgent = () => userAgent;
 
-export function resolveWith(req: ParsedRequest, env: HttpEnvironment | null): Resolved {
+/** Con las opciones de ahora: sin entornos (HT72), las variables sin
+ *  valor se envían tal cual; sin la confirmación de HT21 (HT74), un
+ *  secreto a un host ajeno no se pregunta. */
+export function resolveWith(req: ParsedRequest, env: HttpEnvironment | null, settings: HttpClientSettings = currentSettings()): Resolved {
   return resolveRequest(req, {
     env,
     now: () => new Date(),
     uuid: () => crypto.randomUUID(),
     userAgent,
+    keepUnresolved: !settings.useEnvironments,
+    confirmUntrusted: settings.confirmUntrustedSecrets,
   });
 }
 
@@ -185,8 +190,18 @@ export function blockedMessage(tr: Tr, r: Resolved, env: HttpEnvironment | null)
   }
   if (r.emptySecrets.length) return tr('secretEmpty', { var: listVars(tr, r.emptySecrets.slice(0, 1)), env: envName });
   if (r.unknownSystem.length) return tr('systemUnknown', { var: `{{${r.unknownSystem[0]}}}` });
+  if (r.urlError === 'invalid_url' && r.unresolved?.length) {
+    return tr('url.unresolved', { n: r.unresolved.length, vars: listVars(tr, r.unresolved) });
+  }
   if (r.urlError) return tr(`url.${r.urlError}` as HttpClientKey);
   return null;
+}
+
+/** HT73: el aviso, que no bloquea, de las variables que se envían tal
+ *  cual porque los entornos están apagados. */
+export function unresolvedMessage(tr: Tr, r: Resolved | null): string | null {
+  if (!r?.ok || r.unresolved.length === 0) return null;
+  return tr('varUnresolved', { n: r.unresolved.length, vars: listVars(tr, r.unresolved) });
 }
 
 /** El primer error de sintaxis de la petición o del bloque. */
@@ -242,7 +257,7 @@ export async function sendRequest(opts: SendOptions): Promise<SendResult> {
   }
   const settings = currentSettings();
   const env = activeEnvironment(settings);
-  const resolved = resolveWith(req, env);
+  const resolved = resolveWith(req, env, settings);
   if (!resolved.ok) {
     announce(tr('aFailed', { message: blockedMessage(tr, resolved, env) ?? '' }));
     return 'blocked';
@@ -277,7 +292,9 @@ export async function sendRequest(opts: SendOptions): Promise<SendResult> {
       followRedirects: settings.followRedirects,
       insecureTls: !!env?.insecureTls || !!opts.insecureOnce,
       trustedHosts: resolved.trustedHosts,
-      allowUntrustedHost: !!opts.allowUntrusted,
+      // HT74: sin la confirmación, Rust tampoco rechaza el host ajeno.
+      allowUntrustedHost: !!opts.allowUntrusted || !settings.confirmUntrustedSecrets,
+      maskResponse: settings.maskResponseSecrets,
     });
     setResult(rKey, { response: { ...sent, output }, error: null, cancelled: false }, req.source, req.firstLine);
     announce(tr('aDone', { status: output.status, reason: output.reason, time: formatElapsed(output.elapsedMs, useAppStore.getState().language) }));

@@ -65,9 +65,11 @@ export async function saveAsSecret(tr: Tr, envId: string | null, name: string, v
 
 /** El estado de lo escrito en un campo: un secreto con su pista, una
  *  variable que falta, una normal, o un literal que quedaría en la nota. */
-function VarStatus({ tr, value, env }: { tr: Tr; value: string; env: HttpEnvironment | null }) {
+function VarStatus({ tr, value, env, envsOff = false }: { tr: Tr; value: string; env: HttpEnvironment | null; envsOff?: boolean }) {
   const m = ONLY_VAR_RE.exec(value.trim());
   if (!m) return null;
+  // HT72: sin entornos, la variable se envía tal cual.
+  if (envsOff) return <StatusItem kind="warn">{tr('varSentAsIs')}</StatusItem>;
   if (!env) return <StatusItem kind="warn">{tr('varMissingNoEnvShort')}</StatusItem>;
   const v = env.vars.find((x) => x.name === m[1]);
   if (!v) return <StatusItem kind="warn">{tr('varMissingIn', { env: env.name })}</StatusItem>;
@@ -291,6 +293,8 @@ function AuthField({
   /** El usuario de Basic no es un secreto: no se avisa. */
   secretLike?: boolean;
 }) {
+  // HT72: sin entornos no hay dónde guardar un secreto.
+  const envsOff = !readHttpSettings(useAppStore((s) => s.extensions[EXTENSION_ID]?.settings)).useEnvironments;
   return (
     <div className="flex flex-col gap-1">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -298,9 +302,9 @@ function AuthField({
         <VariableCombobox tr={tr} label={label} value={value} onValue={onValue} env={env} placeholder={`{{${suggested}}}`} />
       </div>
       <div className="pl-[6.5rem]">
-        {secretLike && isLiteral(value)
+        {secretLike && isLiteral(value) && !envsOff
           ? <SaveSecret tr={tr} value={value} suggested={suggested} onSaved={(name) => onValue(`{{${name}}}`)} />
-          : <VarStatus tr={tr} value={value} env={env} />}
+          : <VarStatus tr={tr} value={value} env={env} envsOff={envsOff} />}
       </div>
     </div>
   );

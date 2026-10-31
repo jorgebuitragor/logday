@@ -8,7 +8,7 @@
 // confirmaciones. Lo escrito y la respuesta viven en memoria; la nota de
 // la que vino solo cambia con "Guardar en la nota" (HT50).
 import { useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { ChevronDown, FilePlus, Globe, Save, Send, X } from 'lucide-react';
+import { ChevronDown, FilePlus, Globe, Save, Send, SlidersHorizontal, X } from 'lucide-react';
 import { useAppStore } from '../../../store/appStore';
 import type { Note } from '../../../types/note';
 import type { Language } from '../../../lib/i18n';
@@ -18,15 +18,15 @@ import { StatusItem } from '../../../components/shared/FormControls';
 import { lineInputCls } from '../../devtools/ui/classes';
 import { activeEnvironment, EXTENSION_ID, readHttpSettings } from '../core/environments';
 import { HTTP_METHODS, parseHttpBlock } from '../core/parse';
-import { fromCurl } from '../core/curl';
 import { readRequestLine, writeRequestLine } from '../core/requestEdit';
 import { draftSplitsRequest, formIssues } from '../core/serialize';
 import { localeOf, saveShortcut, sendShortcut, type Tr } from '../core/text';
 import { announce } from '../announce';
-import { notifyCurlConverted } from '../paste';
+import { askCurlChoice, chosen, notifyCurlConverted, planCurlPaste } from '../paste';
 import {
   blockState, blockedMessage, cancelBlock, currentDraft, dismissConflict, firstError, formKey, formNoteId, isDirty,
-  issueMessage, openSettings, readFormResult, resolveWith, saveDraftToNote, sendRequest, setDraftCode, useHttpStore, type SendOptions,
+  issueMessage, openSettings, readFormResult, resolveWith, saveDraftToNote, sendRequest, setDraftCode, unresolvedMessage, useHttpStore,
+  type SendOptions,
 } from '../store';
 import { EnvironmentChip } from './EnvironmentChip';
 import { LiveInput } from './KeyValueTable';
@@ -49,7 +49,7 @@ export function saveRequestAsNote(title: string, code: string): Promise<Note> {
 }
 
 export function RequestForm({
-  tr, mac, loadedError, onOpenNote, onSaved, initialTab = 'params',
+  tr, mac, loadedError, onOpenNote, onSaved, initialTab = 'params', onOpenEnvironments,
 }: {
   tr: Tr;
   mac: boolean;
@@ -60,6 +60,9 @@ export function RequestForm({
   onSaved: () => void;
   /** La pestaña con la que abre (las pruebas dibujan cada una). */
   initialTab?: RequestTab;
+  /** Abre el panel Entornos de la pantalla (HT76), con ese entorno. Sin
+   *  él, "Definir" y el selector llevan a Opciones. */
+  onOpenEnvironments?: (envId: string | null) => void;
 }) {
   const language = useAppStore((s) => s.language);
   const showToast = useAppStore((s) => s.showToast);
@@ -81,14 +84,17 @@ export function RequestForm({
   const currentSource = req?.source ?? null;
 
   const raw = useAppStore((s) => s.extensions[EXTENSION_ID]?.settings);
-  const env = activeEnvironment(readHttpSettings(raw));
+  const settings = readHttpSettings(raw);
+  const env = activeEnvironment(settings);
+  const defineVars = onOpenEnvironments ?? openSettings;
 
   const hasUrl = readRequestLine(shownCode).url.trim() !== '';
   const shownReq = shownParsed.requests[0];
   const split = draftSplitsRequest(shownCode);
   const issue = hasUrl && !split ? firstError(formIssues(shownParsed.issues), shownReq) : null;
-  const resolved = hasUrl && shownReq && !issue && !split ? resolveWith(shownReq, env) : null;
+  const resolved = hasUrl && shownReq && !issue && !split ? resolveWith(shownReq, env, settings) : null;
   const blocked = resolved ? blockedMessage(tr, resolved, env) : null;
+  const unresolved = unresolvedMessage(tr, resolved);
   const problem = split ? tr('toolBodySeparator') : issue ? issueMessage(tr, issue) : blocked;
   const missingVars = !!resolved && !resolved.ok && (resolved.missing.length > 0 || resolved.emptySecrets.length > 0);
   const warnings = hasUrl && !issue ? (shownReq?.issues ?? []).filter((i) => i.severity === 'warn') : [];
@@ -113,6 +119,11 @@ export function RequestForm({
 
   const edit = (next: string) => {
     if (next !== code) setDraftCode(next);
+  };
+
+  const fillFromCurl = (r: { code: string; replaced: string[] }) => {
+    setDraftCode(r.code, { apiKey: null });
+    notifyCurlConverted(r.replaced, 'form');
   };
 
   const sendWith = (extra: Partial<SendOptions> = {}) =>
@@ -253,7 +264,13 @@ export function RequestForm({
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-          <EnvironmentChip />
+          <EnvironmentChip onConfigure={onOpenEnvironments} />
+          {onOpenEnvironments && settings.useEnvironments && (
+            <button type="button" onClick={() => onOpenEnvironments(env?.id ?? null)} className={`${SECONDARY_CLS} py-1`}>
+              <SlidersHorizontal size={13} aria-hidden />
+              {tr('envPanelOpen')}
+            </button>
+          )}
         </div>
       </header>
 
@@ -335,13 +352,29 @@ export function RequestForm({
               onValue={(v) => edit(writeRequestLine(code, 0, { url: v.trim() }))}
               onPaste={(e) => {
                 // HT39c: un cURL pegado en la URL pasa a ser la petición
-                // entera, con los valores sensibles ya cambiados por variables.
-                const converted = fromCurl(e.clipboardData.getData('text/plain'));
-                if (!converted) return;
+                // entera; los valores sensibles, según la opción (HT70).
+                const text = e.clipboardData.getData('text/plain');
+                const plan = planCurlPaste(text);
+                if (!plan) return;
                 e.preventDefault();
-                setDraftCode(converted.code, { apiKey: null });
-                (e.target as HTMLInputElement).blur();
-                notifyCurlConverted(converted.replaced, 'form');
+                const input = e.target as HTMLInputElement;
+                if (plan.mode !== 'ask') {
+                  fillFromCurl(chosen(plan, plan.mode === 'keep' ? 'keep' : 'variables'));
+                  input.blur();
+                  return;
+                }
+                void askCurlChoice(plan).then((choice) => {
+                  if (choice) {
+                    fillFromCurl(chosen(plan, choice));
+                    return;
+                  }
+                  // Esc: el texto tal cual en la URL, como lo pegaría el campo.
+                  setDraftCode(writeRequestLine(currentDraft().code, 0, { url: text.replace(/[\r\n]+/g, ' ').trim() }));
+                  // Tras dibujar: el campo toma su valor al enfocarse.
+                  requestAnimationFrame(() => {
+                    if (input.isConnected) input.focus();
+                  });
+                });
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
@@ -390,7 +423,7 @@ export function RequestForm({
           />
         </div>
 
-        {(problem || pending || inFlight || error || result?.entry.cancelled || warnings.length > 0 || loadedError) && (
+        {(problem || pending || inFlight || error || result?.entry.cancelled || warnings.length > 0 || loadedError || unresolved) && (
           <div className="flex flex-col gap-2">
             {loadedError && <StatusItem kind="info">{tr('viewLoadedErrors', { message: loadedError })}</StatusItem>}
             {problem && !pending && (
@@ -400,8 +433,8 @@ export function RequestForm({
                   <button type="button" onClick={() => goToText(issue?.line)} className={TEXT_LINK}>{tr('goToText')}</button>
                 )}
                 {missingVars && (
-                  <button type="button" onClick={() => openSettings(env?.id ?? null)} className={TEXT_LINK}>
-                    {tr('defineInSettings')}
+                  <button type="button" onClick={() => defineVars(env?.id ?? null)} className={TEXT_LINK}>
+                    {tr(onOpenEnvironments ? 'defineInEnvironments' : 'defineInSettings')}
                   </button>
                 )}
               </div>
@@ -422,6 +455,7 @@ export function RequestForm({
             {error && !inFlight && <SendFailure tr={tr} error={error} insecureEnv={!!env?.insecureTls} onRetry={sendWith} />}
             {result?.entry.cancelled && !inFlight && <StatusItem kind="info">{tr('err.cancelled')}</StatusItem>}
             {warnings.map((w) => <StatusItem key={w.code} kind="info">{issueMessage(tr, w)}</StatusItem>)}
+            {unresolved && !problem && <StatusItem kind="warn">{unresolved}</StatusItem>}
           </div>
         )}
 

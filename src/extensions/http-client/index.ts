@@ -13,6 +13,7 @@ import { resetAll, setUserAgent } from './store';
 import HttpNoteBlock from './ui/Block';
 import HttpClientSettingsPanel from './ui/Settings';
 import HttpClientView from './ui/View';
+import { closeCurlSecretsDialog } from './ui/CurlSecretsDialog';
 
 const httpClient: ExtensionModule = {
   NoteBlock: HttpNoteBlock,
@@ -23,6 +24,7 @@ const httpClient: ExtensionModule = {
     const unmount = mountAnnouncer();
     void getVersion().then((v) => setUserAgent(`Logday/${v}`)).catch(() => {});
     return () => {
+      closeCurlSecretsDialog();
       resetAll();
       unmount();
     };

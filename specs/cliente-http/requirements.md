@@ -4,6 +4,8 @@ Estado: en curso. El enfoque y las decisiones del diseño los aprobó Jorge el 3
 
 El **Cliente HTTP v2** (HT40–HT69: editor de petición en pestañas, respuesta con árbol, historial, importar y generar código) lo aprobó Jorge el 31 oct 2026 con las ocho decisiones tal como las recomienda su diseño (design §14). Se hace en ocho PR, en el orden de `tasks.md`. Está implementado el PR A1 (HT40–HT44 y HT50, rama `feature/http-v2-a1`), sin la prueba en el navegador.
 
+El 31 oct 2026, pedido por Jorge al probar, los entornos y los avisos de seguridad pasan a ser opcionales y los entornos se editan también desde la pantalla (HT70–HT77, rama `feature/http-entornos`), sin la prueba en el navegador.
+
 ## Contexto
 
 Jorge preguntó si tenía sentido un cliente HTTP "tipo Postman" en Logday para probar APIs y servicios. Se le propuso, y aprobó, algo más pequeño que Postman: una extensión opcional (`http-client`, grupo Herramientas) cuyas peticiones se escriben **dentro de las notas**, en un bloque ```` ```http ````, con la sintaxis de REST Client de VS Code y de Bruno. Con la extensión activa, el bloque muestra "Enviar" y, debajo, la respuesta.
@@ -61,18 +63,20 @@ Es la primera extensión del grupo Herramientas que envía datos fuera del equip
 
 - HT15. La URL, las cabeceras y el cuerpo PODRÁN llevar variables `{{nombre}}`. Se resuelven al enviar, con el entorno activo. Además, hay tres variables del sistema: `{{$uuid}}` (un UUID v4), `{{$timestamp}}` (segundos Unix) y `{{$isoTimestamp}}` (instante ISO 8601 en UTC).
 - HT16. SI la petición usa una variable que no está definida en el entorno activo, o un secreto sin valor en este equipo, NO DEBERÁ enviarse. El bloque DEBERÁ decir cuáles faltan y en qué entorno, con un acceso para definirlas.
-- HT17. Los entornos (por ejemplo, Local, Staging y Producción) DEBERÁN administrarse en Opciones → Cliente HTTP: crear, renombrar, duplicar y eliminar, y en cada uno, sus variables (nombre, valor y si es secreta).
+  - *Enmendado el 31 oct 2026:* con los entornos apagados (HT72), una variable sin valor no bloquea: se envía tal cual, con un aviso (HT73).
+- HT17. Los entornos (por ejemplo, Local, Staging y Producción) DEBERÁN administrarse en Opciones → Cliente HTTP: crear, renombrar, duplicar y eliminar, y en cada uno, sus variables (nombre, valor y si es secreta). *Enmendado el 31 oct 2026:* también desde el panel Entornos de la pantalla (HT76).
   - Se guardan solo en este equipo y NO DEBERÁN sincronizarse (R9).
   - Eliminar un entorno o una variable DEBERÁ pedir confirmación con el patrón compartido (`ConfirmDeleteModal`, que respeta "Confirmar antes de eliminar").
 - HT18. **Secretos.** El valor de una variable marcada como secreta DEBERÁ guardarse solo en el llavero del sistema (R10).
-  - El webview lo escribe una vez y no lo vuelve a leer: el comando Rust lo pone en la petición al enviarla.
+  - El webview lo escribe una vez y no lo vuelve a leer: el comando Rust lo pone en la petición al enviarla. *Enmendado el 31 oct 2026:* salvo con el ojo o "Copiar" del panel Entornos, por un clic del usuario (HT77).
   - NUNCA DEBERÁ ir en la nota, en `config.json`, en `localStorage`, en los backups de configuración, en el sync ni en los logs.
   - En la interfaz, un secreto se muestra solo con su pista (`••••…a1b2`), también en la petición enviada.
-- HT19. Hay un solo **entorno activo** para todas las peticiones. DEBERÁ poder cambiarse desde Opciones, desde la barra de cada bloque y desde la pantalla Cliente HTTP (HT33), y se recuerda en este equipo. "Sin entorno" es una opción válida: las peticiones sin variables se envían igual.
+- HT19. Hay un solo **entorno activo** para todas las peticiones. DEBERÁ poder cambiarse desde Opciones, desde la barra de cada bloque y desde la pantalla Cliente HTTP (HT33), y se recuerda en este equipo. "Sin entorno" es una opción válida: las peticiones sin variables se envían igual. *Enmendado el 31 oct 2026:* con los entornos apagados (HT72) no hay selector y no se usa ninguno.
 - HT20. **Entorno protegido.** Un entorno PODRÁ marcarse como "Pedir confirmación antes de enviar". MIENTRAS esté activo, enviar un POST, PUT, PATCH o DELETE DEBERÁ pedir una confirmación en el mismo bloque, con el método y el nombre del entorno. GET, HEAD y OPTIONS se envían sin preguntar.
 - HT21. **Secretos a un host ajeno.** Cada entorno tiene sus hosts de confianza: los de sus variables cuyo valor es una URL, más los que el usuario agregue.
   - SI una petición lleva un secreto y su host no está en esa lista, DEBERÁ pedirse una confirmación en el bloque. La confirmación nombra las variables secretas y el host.
   - El comando Rust DEBERÁ comprobarlo también, después de poner los secretos, y rechazar el envío si no hay confirmación.
+  - *Enmendado el 31 oct 2026:* la confirmación se puede apagar en Opciones (HT74).
 - HT22. "Quitar configuración" (R8) DEBERÁ borrar los entornos, las opciones y todos los secretos de la extensión en el llavero. Eliminar un entorno o una variable secreta, o dejar de marcarla como secreta, DEBERÁ borrar su secreto del llavero.
 
 ### Envío (Rust)
@@ -149,7 +153,7 @@ Además, del diseño:
 
 ## Cambio del 31 oct 2026
 
-- HT31. SI la respuesta trae el valor de un secreto (en las cabeceras o en un cuerpo de texto; por ejemplo, un servidor de eco), Rust DEBERÁ cambiarlo por su marca `{{$secret:<clave>}}` antes de devolverla, para que nunca llegue al webview ni se muestre. Lo pidió Jorge tras probar con httpbin.
+- HT31. SI la respuesta trae el valor de un secreto (en las cabeceras o en un cuerpo de texto; por ejemplo, un servidor de eco), Rust DEBERÁ cambiarlo por su marca `{{$secret:<clave>}}` antes de devolverla, para que nunca llegue al webview ni se muestre. Lo pidió Jorge tras probar con httpbin. *Enmendado el 31 oct 2026:* se puede apagar en Opciones (HT75).
 
 ## Cambio del 31 oct 2026: pantalla propia
 
@@ -192,7 +196,7 @@ Los dos últimos requisitos se llamaban HT40 y HT41. El 31 oct 2026 pasaron a HT
   - SI el texto no es un único comando que el bloque pueda escribir (otro comando, `|`, `&&`, `;`, una redirección, un cuerpo o cabeceras desde un archivo con `@`, un formulario `-F`, `-T`, otro esquema que http o https, un método que no es de HT5), NO DEBERÁ convertirse: se pega tal cual, como antes;
   - "Pegar sin formato" (⇧⌘V) pega tal cual. ⌘Z justo después DEBERÁ dejar el texto original pegado; otro ⌘Z lo quita;
   - con la extensión apagada, pegar no cambia.
-- HT39b. **Valores sensibles del cURL.** El bloque queda en la nota, que se sincroniza, así que los valores sensibles NUNCA DEBERÁN quedar escritos en él (HT18): se cambian por variables `{{nombre}}`, que se resuelven con el entorno activo (HT15):
+- HT39b. **Valores sensibles del cURL.** El bloque queda en la nota, que se sincroniza, así que los valores sensibles NUNCA DEBERÁN quedar escritos en él (HT18): se cambian por variables `{{nombre}}`, que se resuelven con el entorno activo (HT15). *Enmendado el 31 oct 2026:* es lo que pasa con "Cambiar por variables"; de serie se pregunta antes, y el usuario puede elegir dejar los valores (HT70, HT71). Los valores que se detectan son:
   - `Authorization` y `Proxy-Authorization`, con el esquema a la vista (`Bearer {{token}}`, `Basic {{basic_auth}}`); `Cookie` y `-b` (`{{cookie}}`); `-u` y el usuario y la contraseña de la URL (`Basic {{basic_auth}}`). *Enmendado el 31 oct 2026 (v2, design §14.14):* `-u usuario:contraseña` y el usuario de la URL dan `Authorization: Basic {{username}}:{{password}}`, con dos variables, y Rust codifica en Base64 al enviar (HT44); ya no hace falta guardar el valor en Base64 a mano;
   - las cabeceras, los parámetros de la query y los campos de un cuerpo JSON o de formulario cuyo nombre contiene `token`, `api-key`/`apikey`, `secret`, `password`, `session`, `credential` o `signature` (o es `key`, `auth`, `pwd` o `pass`);
   - lo que ya es una variable (`{{token}}`, o `$TOKEN` del shell, que pasa a `{{TOKEN}}`) se deja.
@@ -286,3 +290,30 @@ Propuesta de diseño del 31 oct 2026 a partir de lo que Jorge echaba de menos de
 6. **"Descargar entero a un archivo"**, con *streaming* y hasta 2 GB, en B3 (HT59): el mismo canal sirve después para SSE. En B1 basta "Guardar como archivo" de lo recibido.
 7. **Java con multipart deshabilitado en "Copiar como…"**, con la razón (HT60).
 8. **Scripts de Postman al importar: omitirlos, contarlos y ofrecer copiarlos como texto, apagado de serie** (HT67).
+
+## Cambio del 31 oct 2026: entornos opcionales, avisos configurables y panel Entornos
+
+Pedido por Jorge al probar: "Restringir a la fuerza los tokens puede ser molesto para algunos usuarios. Que tengan la opción de habilitar o deshabilitar entornos y si quieren ajustar para editar automáticamente tokens y secretos. Además, no hay un espacio para visualizar/editar dichos datos." Eligió preguntar al pegar un cURL salvo que el usuario fije otra cosa, el interruptor general de entornos, los dos avisos de seguridad configurables y un panel Entornos en la pantalla. Lo seguro sigue siendo lo de serie: preguntar, entornos encendidos y los dos avisos encendidos.
+
+- HT70. **Pegar un cURL: valores sensibles.** Opciones → Cliente HTTP DEBERÁ tener "Valores sensibles" en "Pegar un cURL", con tres valores: **Preguntar** (de serie), **Cambiar por variables** (lo de HT39b) y **Dejar los valores tal cual**. Vale para pegar en una nota (HT39) y en la URL de la pantalla (HT39c).
+  - Con "Dejar los valores tal cual", el bloque o el formulario llevan los valores como venían, sin el aviso de "Valores ocultos". `-u usuario:contraseña` da `Authorization: Basic usuario:contraseña`, que Rust codifica (HT44).
+  - Un cURL sin valores sensibles se convierte sin preguntar, con cualquier valor de la opción.
+- HT71. **Preguntar.** Con "Preguntar" y valores sensibles, antes de insertar nada DEBERÁ abrirse un diálogo con el estilo de la app (nunca `window.confirm`):
+  - los nombres de las variables que los reemplazarían (`{{token}}`), NUNCA los valores;
+  - "Cambiar por variables" (el principal, con el foco) y "Dejar los valores";
+  - la casilla "Recordar mi elección", que fija la opción de HT70 con lo elegido;
+  - Esc cierra sin elegir: el texto se pega tal cual, sin convertir (en la URL de la pantalla, en el campo URL).
+  - Mientras está abierto, el texto pegado solo vive en memoria: la nota no cambia (no se guarda ni se sincroniza con el valor). Al responder, en la nota se pega en dos pasos de Deshacer, como siempre (⌘Z deja el texto pegado; otro ⌘Z, la nota como estaba).
+- HT72. **Usar entornos.** Opciones → Cliente HTTP DEBERÁ tener el interruptor "Usar entornos" (encendido de serie). MIENTRAS esté apagado:
+  - no hay selector de entorno en la barra de los bloques ni en la pantalla, ni el botón Entornos de la pantalla; Opciones no muestra los entornos, solo que están apagados;
+  - las `{{variables}}` no se resuelven desde ningún entorno (las del sistema, `{{$uuid}}` y las demás, sí) y no hay secretos que poner;
+  - los entornos guardados, sus secretos y el entorno elegido NO DEBERÁN borrarse: vuelven al encenderlo. Auth no ofrece "Guardar como secreto".
+- HT73. **Variables sin resolver.** Con los entornos apagados, una petición con `{{x}}` sin valor DEBERÁ poder enviarse, con `{{x}}` tal cual, y la franja DEBERÁ avisar antes: "Variables sin resolver: {{x}} se enviará tal cual". SI por eso la URL no es válida (`{{baseUrl}}/users`), no se envía y se dice que la URL lleva variables sin resolver.
+- HT74. **Confirmar los secretos a un host ajeno.** Opciones → Cliente HTTP DEBERÁ tener "Confirmar antes de enviar un secreto a un host que no es de confianza" (encendido de serie), con su explicación. Apagado, HT21 no pregunta, y el webview le dice a Rust que no rechace el envío. La confirmación de los entornos protegidos (HT20) es por entorno y no cambia.
+- HT75. **Ocultar los secretos de la respuesta.** Opciones → Cliente HTTP DEBERÁ tener "Ocultar en la respuesta los secretos que devuelva el servidor" (encendido de serie), con su explicación. Va en cada envío como `maskResponse`; apagado, Rust no aplica HT31 a las cabeceras ni al cuerpo de la respuesta. SI el campo falta, Rust DEBERÁ ocultarlos. La URL final y las redirecciones se ocultan siempre: son lo que se envió.
+- HT76. **Panel Entornos en la pantalla.** MIENTRAS los entornos estén encendidos, la pantalla Cliente HTTP DEBERÁ tener "Entornos" junto al selector de entorno, que abre un panel en el lugar del formulario (y "Volver a la petición"). El panel es el mismo de Opciones: el entorno activo; un entorno por pestaña; crear, renombrar, duplicar y eliminar (con confirmación), marcarlo activo ("Usar este entorno") y protegido; sus variables (nombre, valor editable en línea, casilla de secreto) y sus hosts de confianza. "Configurar entornos…" del selector y "Definir en Entornos" de una variable que falta abren también el panel.
+- HT77. **Ver y copiar un secreto.** Un secreto guardado DEBERÁ mostrarse como `••••…a1b2`, con un ojo y "Copiar":
+  - el ojo lee el valor del llavero con el comando Rust `http_client_reveal_secret`, que solo acepta las claves de esta extensión (`v_` y 8 hex), y lo muestra;
+  - se vuelve a ocultar solo a los 30 s, con el ojo, al cambiar de entorno o al salir del panel o de la pantalla;
+  - "Copiar" copia el valor sin mostrarlo;
+  - el valor revelado NUNCA DEBERÁ guardarse en el store, en `config.json` ni en `localStorage`: solo en el estado del componente. Editarlo escribe en el llavero, como siempre.

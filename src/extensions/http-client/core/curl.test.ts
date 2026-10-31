@@ -341,3 +341,34 @@ describe('toCurl → fromCurl: ida y vuelta (casos de edit.test.ts)', () => {
     expect(JSON.parse(back.req.body!)).toEqual({ a: 1 });
   });
 });
+
+describe('fromCurl con los valores tal cual (HT70, "Dejar los valores")', () => {
+  it('no cambia nada por variables, y el bloque es válido', () => {
+    const text = "curl 'https://x.com/a?token=t0k&page=2' -H 'Authorization: Bearer s3cr3t' -H 'Cookie: sid=abc' -H 'X-Api-Key: k3y' --data-raw '{\"password\":\"p4ss\",\"user\":\"ana\"}'";
+    const r = fromCurl(text, { keepValues: true });
+    expect(r).not.toBeNull();
+    expect(r!.replaced).toEqual([]);
+    expect(r!.code).toContain('?token=t0k&page=2');
+    expect(r!.code).toContain('Authorization: Bearer s3cr3t');
+    expect(r!.code).toContain('Cookie: sid=abc');
+    expect(r!.code).toContain('X-Api-Key: k3y');
+    expect(JSON.parse(parseHttpBlock(r!.code).requests[0].body!)).toEqual({ password: 'p4ss', user: 'ana' });
+    expect(r!.code).not.toContain('{{');
+    // Con variables (lo de siempre), los mismos nombres que se preguntarían.
+    expect(fromCurl(text)!.replaced).toEqual(['token', 'token_2', 'cookie', 'x_api_key', 'password']);
+    expect(fromCurl(text)!.code).not.toContain('s3cr3t');
+  });
+
+  it('-u y el usuario de la URL dan Basic usuario:contraseña, que Rust codifica (HT44)', () => {
+    expect(fromCurl("curl -u ana:p4ss https://x.com", { keepValues: true })!.code).toBe('GET https://x.com\nAuthorization: Basic ana:p4ss');
+    expect(fromCurl('curl https://ana:p%40ss@x.com/a', { keepValues: true })!.code).toBe('GET https://x.com/a\nAuthorization: Basic ana:p@ss');
+    // Sin contraseña sigue llevando ":", para que no parezca ya codificada.
+    expect(fromCurl('curl -u ana https://x.com', { keepValues: true })!.code).toBe('GET https://x.com\nAuthorization: Basic ana:');
+  });
+
+  it('un formulario se queda como estaba', () => {
+    const r = fromCurl("curl -d 'user=ana&password=p%40ss' https://x.com/login", { keepValues: true })!;
+    expect(r.code).toContain('user=ana&password=p%40ss');
+    expect(r.replaced).toEqual([]);
+  });
+});

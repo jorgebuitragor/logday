@@ -1,40 +1,57 @@
-// Opciones → Cliente HTTP (Interfaz §4, HT17–HT22, HT24): los entornos con
-// sus variables, los secretos en el llavero, los hosts de confianza y las
-// opciones de las peticiones. Todo es local (R9); los valores de los
-// secretos solo cruzan una vez hacia Rust, al guardarlos (R10).
-import { useEffect, useRef, useState } from 'react';
+// Opciones → Cliente HTTP (Interfaz §4, HT17–HT22, HT24, HT70–HT75): los
+// entornos con sus variables (los mismos que el panel Entornos de la
+// pantalla, `EnvironmentsManager`), qué hacer al pegar un cURL, los avisos
+// de seguridad y las opciones de las peticiones. Todo es local (R9); los
+// valores de los secretos van al llavero (R10).
+import { useEffect, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { ChevronDown, CircleDot, Info, Plus, ShieldAlert } from 'lucide-react';
+import { ChevronDown, Info } from 'lucide-react';
 import { useAppStore } from '../../../store/appStore';
-import { useConfirmDelete } from '../../../hooks/useConfirmDelete';
-import { ConfirmDeleteModal } from '../../../components/shared/ConfirmDeleteModal';
-import { FOCUS_RING, SECONDARY_CLS } from '../../../components/shared/controlClasses';
+import { SECONDARY_CLS } from '../../../components/shared/controlClasses';
 import { NumberField, Toggle } from '../../../components/shared/FormControls';
-import { clearExtensionSecret } from '../../secrets';
-import {
-  DEFAULT_SETTINGS, EXTENSION_ID, LIMITS, defaultEnvName, newEnvironment, readHttpSettings, replaceEnvironment, secretKeysOf,
-  withVariable, withoutVariable, type HttpEnvironment, type HttpVariable,
-} from '../core/environments';
-import { makeTr } from '../core/text';
+import { CURL_PASTE_MODES, DEFAULT_SETTINGS, EXTENSION_ID, LIMITS, readHttpSettings, type CurlPasteMode } from '../core/environments';
+import { makeTr, type Tr } from '../core/text';
 import { peekSettingsEnvRequest, takeSettingsEnvRequest } from '../store';
 import { extensionSection } from '../../state';
+import type { HttpClientKey } from '../../../lib/i18n';
 import { TEXT_LINK } from './SendStatus';
-import { EnvironmentPanel, fresh } from './EnvironmentPanel';
+import { EnvironmentsManager } from './Environments';
 import { FIELD_BTN, Menu } from './Menu';
 
-type Pending =
-  | { kind: 'env'; env: HttpEnvironment }
-  | { kind: 'var'; envId: string; index: number; v: HttpVariable }
-  | { kind: 'unsecret'; envId: string; index: number; v: HttpVariable & { secret: true } };
+const HELP = 'pl-9 text-[10px] text-[var(--text-hint)]';
+
+const CURL_MODE_KEY: Record<CurlPasteMode, HttpClientKey> = {
+  ask: 'curlPasteAsk',
+  variables: 'curlPasteVariables',
+  keep: 'curlPasteKeep',
+};
+
+/** HT70: qué hacer con los valores sensibles de un cURL pegado. */
+export function CurlPastePicker({ tr, mode, onChange }: { tr: Tr; mode: CurlPasteMode; onChange: (mode: CurlPasteMode) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-[var(--text-secondary)]" aria-hidden>{tr('curlPasteLabel')}</span>
+      <Menu
+        label={`${tr('curlPasteLabel')}: ${tr(CURL_MODE_KEY[mode])}`}
+        buttonClassName={`${FIELD_BTN} min-w-[12rem]`}
+        items={CURL_PASTE_MODES.map((m) => ({ key: m, label: tr(CURL_MODE_KEY[m]), checked: m === mode, onSelect: () => onChange(m) }))}
+        button={
+          <>
+            <span className="flex-1 truncate text-left">{tr(CURL_MODE_KEY[mode])}</span>
+            <ChevronDown size={13} className="shrink-0 text-[var(--text-hint)]" aria-hidden />
+          </>
+        }
+      />
+    </div>
+  );
+}
 
 export default function HttpClientSettingsPanel() {
-  const { language, raw, update, confirmDestructiveActions, showToast } = useAppStore(
+  const { language, raw, update } = useAppStore(
     useShallow((s) => ({
       language: s.language,
       raw: s.extensions[EXTENSION_ID]?.settings,
       update: s.updateExtensionSettings,
-      confirmDestructiveActions: s.confirmDestructiveActions,
-      showToast: s.showToast,
     })),
   );
   const tr = makeTr(language);
@@ -46,78 +63,16 @@ export default function HttpClientSettingsPanel() {
     if (s.isSettingsOpen) s.toggleSettings();
     void s.setSection(extensionSection(EXTENSION_ID));
   };
-  const envs = settings.environments;
-  const activeEnv = envs.find((e) => e.id === settings.activeEnvId) ?? null;
-  const activeName = activeEnv?.name ?? tr('envNone');
   // "Definir en Opciones" abre con ese entorno elegido. Se lee en el primer
   // dibujo y se consume después (en modo estricto el inicializador corre dos veces).
-  const [selectedId, setSelectedId] = useState<string | null>(() => peekSettingsEnvRequest() ?? settings.activeEnvId ?? envs[0]?.id ?? null);
+  const [initialEnvId] = useState<string | null>(() => peekSettingsEnvRequest());
   useEffect(() => {
     takeSettingsEnvRequest();
   }, []);
-  const selected = envs.find((e) => e.id === selectedId) ?? envs[0] ?? null;
-  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
-  const confirm = useConfirmDelete<Pending>(confirmDestructiveActions);
-
-  const createEnv = () => {
-    const all = fresh().environments;
-    const env = newEnvironment(defaultEnvName(all, (n) => tr('envDefaultName', { n })));
-    // El primero que se crea pasa a ser el activo.
-    void update(EXTENSION_ID, { environments: [...all, env], ...(all.length === 0 ? { activeEnvId: env.id } : {}) });
-    setSelectedId(env.id);
-  };
-
-  const run = async (p: Pending) => {
-    try {
-      const s = fresh();
-      if (p.kind === 'env') {
-        // Primero los secretos: si el llavero falla, el entorno queda.
-        await Promise.all(secretKeysOf(p.env).map((k) => clearExtensionSecret(EXTENSION_ID, k)));
-        const rest = s.environments.filter((e) => e.id !== p.env.id);
-        await update(EXTENSION_ID, { environments: rest, activeEnvId: s.activeEnvId === p.env.id ? null : s.activeEnvId });
-        setSelectedId(rest[0]?.id ?? null);
-      } else {
-        const env = s.environments.find((e) => e.id === p.envId);
-        if (!env) return;
-        if (p.v.secret) await clearExtensionSecret(EXTENSION_ID, p.v.key);
-        const next = p.kind === 'var'
-          ? withoutVariable(env, p.index)
-          : withVariable(env, p.index, { name: p.v.name, secret: false, value: '' });
-        await update(EXTENSION_ID, { environments: replaceEnvironment(s.environments, next) });
-      }
-    } catch {
-      showToast({ kind: 'error', title: tr('keychainSaveError') });
-    }
-    confirm.cancel();
-  };
-
-  const onTabKey = (e: React.KeyboardEvent, i: number) => {
-    const n = envs.length;
-    const to = e.key === 'ArrowRight' ? (i + 1) % n : e.key === 'ArrowLeft' ? (i - 1 + n) % n : e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : -1;
-    if (to < 0) return;
-    e.preventDefault();
-    setSelectedId(envs[to].id);
-    tabRefs.current[envs[to].id]?.focus();
-  };
 
   const changed = settings.timeoutSec !== DEFAULT_SETTINGS.timeoutSec
     || settings.maxResponseMb !== DEFAULT_SETTINGS.maxResponseMb
     || settings.followRedirects !== DEFAULT_SETTINGS.followRedirects;
-
-  const pending = confirm.pending;
-  const modal = pending && (() => {
-    if (pending.kind === 'env') {
-      return { title: tr('envDeleteTitle', { name: pending.env.name }), message: tr('envDeleteMessage', { n: pending.env.vars.length }), confirmLabel: tr('envDeleteConfirm') };
-    }
-    if (pending.kind === 'unsecret') {
-      return { title: tr('varUnsecretTitle', { name: pending.v.name }), message: tr('varUnsecretMessage'), confirmLabel: tr('varUnsecretConfirm') };
-    }
-    return {
-      title: tr('varDeleteTitle', { name: pending.v.name }),
-      message: tr(pending.v.secret ? 'varDeleteMessageSecret' : 'varDeleteMessage'),
-      confirmLabel: tr('varDeleteConfirm'),
-    };
-  })();
 
   return (
     <div className="space-y-5 text-xs">
@@ -126,106 +81,43 @@ export default function HttpClientSettingsPanel() {
           <p className="font-medium text-[var(--text-secondary)]">{tr('envsTitle')}</p>
           <p className="text-[11px] text-[var(--text-hint)]">{tr('envsIntro')}</p>
         </div>
-
-        {envs.length === 0 ? (
-          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-[var(--border-high)] px-4 py-3">
-            <p className="flex-1 text-[11px] text-[var(--text-hint)]">{tr('envsEmpty')}</p>
-            <button type="button" onClick={createEnv} className={SECONDARY_CLS}>
-              <Plus size={13} aria-hidden />
-              {tr('envCreateButton')}
-            </button>
-          </div>
+        <div>
+          <Toggle label={tr('useEnvironments')} checked={settings.useEnvironments} onChange={(v) => void update(EXTENSION_ID, { useEnvironments: v })} />
+          <p className={HELP}>{tr('useEnvironmentsHelp')}</p>
+        </div>
+        {settings.useEnvironments ? (
+          <EnvironmentsManager tr={tr} initialEnvId={initialEnvId} />
         ) : (
-          <>
-            <div className="flex items-center gap-2">
-              <span className="text-[var(--text-secondary)]" aria-hidden>{tr('envActiveLabel')}</span>
-              <Menu
-                label={`${tr('envActiveLabel')}: ${activeName}${activeEnv?.protected ? `, ${tr('envProtected')}` : ''}`}
-                buttonClassName={`${FIELD_BTN} min-w-[10rem]`}
-                items={[
-                  { key: 'none', label: tr('envNone'), checked: !settings.activeEnvId, onSelect: () => void update(EXTENSION_ID, { activeEnvId: null }) },
-                  ...envs.map((e) => ({
-                    key: e.id,
-                    label: (
-                      <>
-                        <span className="truncate">{e.name}</span>
-                        {e.protected && <ShieldAlert size={12} className="ml-auto shrink-0 text-amber-400" aria-hidden />}
-                      </>
-                    ),
-                    srSuffix: e.protected ? tr('envProtected') : undefined,
-                    checked: e.id === settings.activeEnvId,
-                    onSelect: () => void update(EXTENSION_ID, { activeEnvId: e.id }),
-                  })),
-                ]}
-                button={
-                  <>
-                    {activeEnv?.protected && <ShieldAlert size={12} className="shrink-0 text-amber-400" aria-hidden />}
-                    <span className={`flex-1 truncate text-left ${activeEnv ? '' : 'text-[var(--text-hint)]'}`}>{activeName}</span>
-                    <ChevronDown size={13} className="shrink-0 text-[var(--text-hint)]" aria-hidden />
-                  </>
-                }
-              />
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <div role="tablist" aria-label={tr('envTabs')} className="flex flex-wrap gap-1">
-                {envs.map((e, i) => {
-                  const active = e.id === selected?.id;
-                  return (
-                    <button
-                      key={e.id}
-                      ref={(el) => {
-                        tabRefs.current[e.id] = el;
-                      }}
-                      type="button"
-                      role="tab"
-                      id={`http-env-tab-${e.id}`}
-                      aria-selected={active}
-                      aria-controls="http-env-panel"
-                      tabIndex={active ? 0 : -1}
-                      onClick={() => setSelectedId(e.id)}
-                      onKeyDown={(ev) => onTabKey(ev, i)}
-                      className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition ${FOCUS_RING} ${
-                        active ? 'bg-indigo-500/10 text-[var(--text-primary)] ring-1 ring-indigo-500/40' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-                      }`}
-                    >
-                      {e.id === settings.activeEnvId && <CircleDot size={10} className="text-indigo-400" aria-hidden />}
-                      {e.protected && <ShieldAlert size={11} className="text-amber-400" aria-hidden />}
-                      {e.name}
-                      {e.id === settings.activeEnvId && <span className="sr-only"> ({tr('envActive')})</span>}
-                      {e.protected && <span className="sr-only"> ({tr('envProtected')})</span>}
-                    </button>
-                  );
-                })}
-              </div>
-              <button type="button" onClick={createEnv} className={SECONDARY_CLS}>
-                <Plus size={13} aria-hidden />
-                {tr('envNew')}
-              </button>
-            </div>
-
-            {selected && (
-              <div
-                id="http-env-panel"
-                role="tabpanel"
-                aria-labelledby={`http-env-tab-${selected.id}`}
-                className="space-y-4 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] p-4"
-              >
-                <EnvironmentPanel
-                  key={selected.id}
-                  env={selected}
-                  tr={tr}
-                  onDelete={() => confirm.request({ kind: 'env', env: selected }, (p) => void run(p))}
-                  onDeleteVar={(index) => confirm.request({ kind: 'var', envId: selected.id, index, v: selected.vars[index] }, (p) => void run(p))}
-                  onUnsecret={(index) => {
-                    const v = selected.vars[index];
-                    if (v?.secret) confirm.request({ kind: 'unsecret', envId: selected.id, index, v }, (p) => void run(p));
-                  }}
-                />
-              </div>
-            )}
-          </>
+          <p className="rounded-xl border border-dashed border-[var(--border-high)] px-4 py-3 text-[11px] text-[var(--text-hint)]">
+            {tr('envsOff')}
+          </p>
         )}
+      </section>
+
+      <section className="space-y-2">
+        <p className="font-medium text-[var(--text-secondary)]">{tr('curlPasteTitle')}</p>
+        <CurlPastePicker tr={tr} mode={settings.curlPaste} onChange={(m) => void update(EXTENSION_ID, { curlPaste: m })} />
+        <p className="text-[10px] text-[var(--text-hint)]">{tr('curlPasteHelp')}</p>
+      </section>
+
+      <section className="space-y-2">
+        <p className="font-medium text-[var(--text-secondary)]">{tr('securityTitle')}</p>
+        <div>
+          <Toggle
+            label={tr('confirmUntrustedToggle')}
+            checked={settings.confirmUntrustedSecrets}
+            onChange={(v) => void update(EXTENSION_ID, { confirmUntrustedSecrets: v })}
+          />
+          <p className={HELP}>{tr('confirmUntrustedHelp')}</p>
+        </div>
+        <div>
+          <Toggle
+            label={tr('maskResponseToggle')}
+            checked={settings.maskResponseSecrets}
+            onChange={(v) => void update(EXTENSION_ID, { maskResponseSecrets: v })}
+          />
+          <p className={HELP}>{tr('maskResponseHelp')}</p>
+        </div>
       </section>
 
       <section className="space-y-2">
@@ -258,17 +150,6 @@ export default function HttpClientSettingsPanel() {
         {tr('viewHint')}
         <button type="button" onClick={openView} className={TEXT_LINK}>{tr('viewHintOpen')}</button>
       </p>
-
-      {pending && modal && (
-        <ConfirmDeleteModal
-          title={modal.title}
-          message={modal.message}
-          cancelLabel={tr('deleteCancel')}
-          confirmLabel={modal.confirmLabel}
-          onCancel={confirm.cancel}
-          onConfirm={() => void run(pending)}
-        />
-      )}
     </div>
   );
 }

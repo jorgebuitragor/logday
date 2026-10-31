@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { sectionKeys, t } from '../../../lib/i18n';
 import {
-  DEFAULT_SETTINGS, defaultEnvName, duplicateEnvironment, envNameError, isValidHost, looksSecret, maskOf,
+  DEFAULT_SETTINGS, activeEnvironment, chosenEnvironment, defaultEnvName, duplicateEnvironment, envNameError, isValidHost, looksSecret, maskOf,
   readHttpSettings, secretKeysOf, trustedHosts, varNameError, type HttpEnvironment,
 } from './environments';
 import { chooseBodyView, defaultFileName, DISPLAY_LIMIT } from './body';
@@ -17,6 +17,25 @@ const env = (over: Partial<HttpEnvironment> = {}): HttpEnvironment => ({
 describe('ajustes y entornos (HT17–HT22)', () => {
   it('sin ajustes, los de por defecto', () => {
     expect(readHttpSettings(undefined)).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it('los interruptores de HT70–HT75: encendidos y "Preguntar" de serie, también si vienen mal', () => {
+    const s = readHttpSettings({});
+    expect([s.useEnvironments, s.confirmUntrustedSecrets, s.maskResponseSecrets, s.curlPaste]).toEqual([true, true, true, 'ask']);
+    const off = readHttpSettings({ useEnvironments: false, confirmUntrustedSecrets: false, maskResponseSecrets: false, curlPaste: 'keep' });
+    expect([off.useEnvironments, off.confirmUntrustedSecrets, off.maskResponseSecrets, off.curlPaste]).toEqual([false, false, false, 'keep']);
+    const odd = readHttpSettings({ useEnvironments: 'no', maskResponseSecrets: 0, curlPaste: 'nunca' });
+    expect([odd.useEnvironments, odd.maskResponseSecrets, odd.curlPaste]).toEqual([true, true, 'ask']);
+  });
+
+  it('con los entornos apagados no hay entorno activo, pero el elegido se conserva (HT72)', () => {
+    const raw = { environments: [env()], activeEnvId: 'e_00000001' };
+    expect(activeEnvironment(readHttpSettings(raw))?.name).toBe('Local');
+    const off = readHttpSettings({ ...raw, useEnvironments: false });
+    expect(activeEnvironment(off)).toBeNull();
+    expect(off.environments).toHaveLength(1);
+    expect(off.activeEnvId).toBe('e_00000001');
+    expect(chosenEnvironment(off)?.name).toBe('Local');
   });
 
   it('descarta lo que no es válido sin romper y ajusta los rangos', () => {

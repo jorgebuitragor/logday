@@ -281,7 +281,7 @@ function redactAuthorization(value: string, secrets: Secrets, prefix: string): s
  *  Base64 al enviar (HT44, design §14.14), así nadie tiene que guardar el
  *  Base64 a mano. Lo que ya es una variable se deja; sin `:`, la
  *  contraseña queda vacía (curl la pediría). */
-function basicCredentials(creds: string, secrets: Secrets): string {
+function basicCredentials(creds: string, secrets: Pick<Secrets, 'take'>): string {
   const colon = creds.indexOf(':');
   const user = colon < 0 ? creds : creds.slice(0, colon);
   const pass = colon < 0 ? '' : creds.slice(colon + 1);
@@ -414,10 +414,18 @@ function normalizeUrl(raw: string): string | null {
   return `http://${url}`;
 }
 
+export interface FromCurlOptions {
+  /** HT70, "Dejar los valores tal cual": no cambia nada por variables
+   *  (`replaced` queda vacío). `-u` sigue dando `Basic usuario:contraseña`,
+   *  que Rust codifica al enviar (HT44). */
+  keepValues?: boolean;
+}
+
 /** `curl …` pegado → el texto de un bloque `http` equivalente, con los
- *  valores sensibles cambiados por variables `{{nombre}}` (HT39). `null`
- *  si el texto no es un único comando curl que el bloque pueda escribir. */
-export function fromCurl(text: string): FromCurlResult | null {
+ *  valores sensibles cambiados por variables `{{nombre}}` (HT39), salvo con
+ *  `keepValues`. `null` si el texto no es un único comando curl que el
+ *  bloque pueda escribir. */
+export function fromCurl(text: string, options: FromCurlOptions = {}): FromCurlResult | null {
   // Un prompt delante (`$ curl …`, `% curl …`) se quita.
   const src = text.replace(/^\s*[$%][ \t]+(?=curl)/, '');
   if (!/^\s*\S*curl(?:\.exe)?[\s]/i.test(src)) return null;
@@ -485,13 +493,19 @@ export function fromCurl(text: string): FromCurlResult | null {
     if (form && !has('content-type')) headers.push({ name: 'Content-Type', value: 'application/x-www-form-urlencoded' });
   }
 
-  // Los valores sensibles, en el orden en que se leen en el bloque.
-  url = redactUrl(url, secrets);
-  const headerLines = headers.map((h) => `${h.name}: ${h.basic ? basicCredentials(h.value, secrets) : redactHeader(h.name, h.value, secrets)}`);
+  // Los valores sensibles, en el orden en que se leen en el bloque. Con
+  // `keepValues` se quedan: el JSON se formatea igual y el resto no cambia.
+  const keep = !!options.keepValues;
+  const asIs: Pick<Secrets, 'take'> = { take: (_base, value) => value };
+  if (!keep) url = redactUrl(url, secrets);
+  const headerLines = headers.map((h) => {
+    if (h.basic) return `${h.name}: ${basicCredentials(h.value, keep ? asIs : secrets)}`;
+    return `${h.name}: ${keep ? h.value : redactHeader(h.name, h.value, secrets)}`;
+  });
   if (body !== null) {
     const contentType = headers.find((h) => h.name.toLowerCase() === 'content-type')?.value ?? '';
-    if (json !== null) body = formatJsonBody(body, secrets) ?? json;
-    else if (form && /x-www-form-urlencoded/i.test(contentType)) body = redactPairs(body, secrets);
+    if (json !== null) body = keep ? json : formatJsonBody(body, secrets) ?? json;
+    else if (!keep && form && /x-www-form-urlencoded/i.test(contentType)) body = redactPairs(body, secrets);
     if (!body.trim()) body = null;
   }
 

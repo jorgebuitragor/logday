@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_OPTIONS, STALE_MS, cycleBlock, finish, finishKey, formatClock, fractionLeft, initialTimer, isDefaultOptions,
-  longBreakNext, milestoneCrossed, nextPhase, pause, pruneHistory, readHistory, readOptions, readTimer, remainingOf,
-  restartCycle, restartPhase, resume, rolloverDay, showsCounter, skip, start, todayEntries, toggle, wholeMinutes,
+  longBreakNext, milestoneCrossed, minuteDigits, nextPhase, pause, pruneHistory, readHistory, readOptions, readTimer, remainingOf,
+  resetSettings, restartCycle, restartPhase, resume, rolloverDay, showsCounter, skip, start, todayEntries, toggle, wholeMinutes,
   type HistoryEntry, type PomodoroOptions, type TimerState,
 } from './model';
 
@@ -23,6 +23,21 @@ describe('opciones (PM1)', () => {
     expect(readOptions({ workMin: 1 }).workMin).toBe(1);
     expect(isDefaultOptions(readOptions({}))).toBe(true);
     expect(isDefaultOptions(readOptions({ autoWork: true }))).toBe(false);
+  });
+
+  it('dónde se ve (PM15): encendido por defecto, y solo booleanos', () => {
+    expect(readOptions({})).toMatchObject({ showTrayTime: true, showSidebarCounter: true });
+    expect(readOptions({ showTrayTime: false, showSidebarCounter: false })).toMatchObject({ showTrayTime: false, showSidebarCounter: false });
+    expect(readOptions({ showTrayTime: 'no', showSidebarCounter: 0 })).toMatchObject({ showTrayTime: true, showSidebarCounter: true });
+    expect(isDefaultOptions(readOptions({ showSidebarCounter: false }))).toBe(false);
+  });
+
+  it('restablecer (PM16): opciones por defecto, Listo en trabajo y sin historial', () => {
+    const r = resetSettings(T0);
+    expect(readOptions(r)).toEqual(DEFAULT_OPTIONS);
+    expect(r.timer).toEqual(initialTimer(T0));
+    expect(r.timer).toMatchObject({ phase: 'work', status: 'ready', done: 0, task: null });
+    expect(r.history).toEqual([]);
   });
 });
 
@@ -195,6 +210,13 @@ describe('formatos', () => {
     expect(formatClock(200)).toBe('0:01');
     expect(formatClock(-1)).toBe('0:00');
     expect(wholeMinutes(18 * MIN + 42_000)).toBe(18);
+  });
+
+  it('cifras de los minutos al empezar la fase, para el ancho del título', () => {
+    expect(minuteDigits(25 * MIN)).toBe(2);
+    expect(minuteDigits(10 * MIN)).toBe(2);
+    expect(minuteDigits(5 * MIN)).toBe(1);
+    expect(minuteDigits(120 * MIN)).toBe(3);
   });
 
   it('hitos de 5 y 1 minutos, solo si la fase dura más', () => {

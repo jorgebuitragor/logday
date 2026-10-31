@@ -13,6 +13,8 @@ const app = vi.hoisted(() => ({
   language: 'es',
   extensions: { pomodoro: { enabled: true, settings: {} as Record<string, unknown> } },
   notificationsEnabled: true,
+  confirmDestructiveActions: true,
+  showToast: () => '',
   tasks: [],
   activeSection: 'dashboard',
   setSection: async () => {},
@@ -107,5 +109,27 @@ describe('vista del Pomodoro', () => {
     expect(html).toContain('value="50"');
     expect(text(html)).toContain('Restablecer valores');
     expect(text(html)).toContain('Empezar solos los descansos');
+    // PM15 y PM16.
+    expect(text(html)).toMatch(/Mostrar el tiempo en la (barra de menús|bandeja del sistema)/);
+    expect(text(html)).toContain('Mostrar el contador en el menú lateral');
+    expect(text(html)).toContain('Restablecer el Pomodoro');
+  });
+
+  it('con "Mostrar el contador en el menú lateral" apagado, no se dibuja (PM15)', () => {
+    app.extensions.pomodoro.settings = { showSidebarCounter: false };
+    setTimer(start(initialTimer(T0), T0, o), T0 + MIN);
+    expect(renderToStaticMarkup(<SidebarStatus collapsed={false} />)).toBe('');
+    expect(renderToStaticMarkup(<SidebarStatus collapsed />)).toBe('');
+    // En pausa tampoco; la vista sigue igual.
+    setTimer(pause(start(initialTimer(T0), T0, o), T0 + MIN), T0 + 2 * MIN);
+    expect(renderToStaticMarkup(<SidebarStatus collapsed={false} />)).toBe('');
+    expect(text(renderToStaticMarkup(<View />))).toContain('24:00');
+  });
+
+  it('"Reiniciar el ciclo" se ve una sola vez, junto al ciclo', () => {
+    setTimer({ ...initialTimer(T0), done: 2 });
+    const html = text(renderToStaticMarkup(<View />));
+    expect(html.match(/Reiniciar el ciclo/g)).toHaveLength(1);
+    expect(html).toMatch(/Bloque 3 de 4 Reiniciar el ciclo/);
   });
 });

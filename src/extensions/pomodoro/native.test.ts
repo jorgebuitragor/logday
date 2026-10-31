@@ -28,7 +28,17 @@ describe('lo que se le pasa a Rust', () => {
       toggle: 'Pausar',
       skip: 'Saltar',
       tooltip: 'Logday · Trabajo · {time}',
+      showTime: true,
+      minuteDigits: 2,
     });
+  });
+
+  it('sin el tiempo en la bandeja (PM15): lo dice a Rust y el menú sigue', () => {
+    const tray = trayTexts(running(), { ...o, showTrayTime: false }, tr);
+    expect(tray).toMatchObject({ showTime: false, toggle: 'Pausar', skip: 'Saltar', status: 'Trabajo · {min} min' });
+    // Un descanso de 5 min: una cifra, sin relleno.
+    const brk = start({ ...initialTimer(T0), phase: 'short', done: 1 }, T0, o);
+    expect(trayTexts(brk, o, tr).minuteDigits).toBe(1);
   });
 
   it('el cuarto bloque avisa del descanso largo, y con arranque solo lo dice', () => {
@@ -46,7 +56,11 @@ describe('lo que se le pasa a Rust', () => {
     // D2: sin nada en curso, solo "Iniciar un pomodoro".
     expect(nativeRequest(initialTimer(T0), o, tr, false)).toEqual({
       cmd: 'pomodoro_idle',
-      args: { tray: { status: null, statusLessThanMin: null, toggle: 'Iniciar un pomodoro (25 min)', skip: null, tooltip: null } },
+      args: {
+        tray: {
+          status: null, statusLessThanMin: null, toggle: 'Iniciar un pomodoro (25 min)', skip: null, tooltip: null, showTime: true, minuteDigits: 2,
+        },
+      },
     });
   });
 

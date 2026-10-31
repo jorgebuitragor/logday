@@ -15,7 +15,7 @@ export type Phase = 'work' | 'short' | 'long';
  *  finished: Terminado, la fase siguiente espera a que la inicies (PM3). */
 export type TimerStatus = 'ready' | 'running' | 'paused' | 'finished';
 
-// ─── Opciones (PM1, PM3, PM5) ───
+// ─── Opciones (PM1, PM3, PM5, PM15) ───
 
 export interface PomodoroOptions {
   workMin: number;
@@ -26,11 +26,19 @@ export interface PomodoroOptions {
   autoBreaks: boolean;
   autoWork: boolean;
   sound: boolean;
+  /** El tiempo junto al ícono de la bandeja (título en macOS, tooltip en
+   *  Windows). Apagado, el menú de la bandeja sigue (PM15). */
+  showTrayTime: boolean;
+  /** El contador del menú lateral (PM10, PM15). */
+  showSidebarCounter: boolean;
 }
 
 export const DEFAULT_OPTIONS: PomodoroOptions = {
   workMin: 25, shortMin: 5, longMin: 15, longEvery: 4, autoBreaks: false, autoWork: false, sound: true,
+  showTrayTime: true, showSidebarCounter: true,
 };
+
+const boolOr = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fallback);
 
 export const MIN_MINUTES = 1;
 export const MAX_MINUTES = 120;
@@ -49,9 +57,11 @@ export function readOptions(raw: Record<string, unknown> | undefined): PomodoroO
     shortMin: intIn(s.shortMin, MIN_MINUTES, MAX_MINUTES, DEFAULT_OPTIONS.shortMin),
     longMin: intIn(s.longMin, MIN_MINUTES, MAX_MINUTES, DEFAULT_OPTIONS.longMin),
     longEvery: intIn(s.longEvery, MIN_LONG_EVERY, MAX_LONG_EVERY, DEFAULT_OPTIONS.longEvery),
-    autoBreaks: typeof s.autoBreaks === 'boolean' ? s.autoBreaks : DEFAULT_OPTIONS.autoBreaks,
-    autoWork: typeof s.autoWork === 'boolean' ? s.autoWork : DEFAULT_OPTIONS.autoWork,
-    sound: typeof s.sound === 'boolean' ? s.sound : DEFAULT_OPTIONS.sound,
+    autoBreaks: boolOr(s.autoBreaks, DEFAULT_OPTIONS.autoBreaks),
+    autoWork: boolOr(s.autoWork, DEFAULT_OPTIONS.autoWork),
+    sound: boolOr(s.sound, DEFAULT_OPTIONS.sound),
+    showTrayTime: boolOr(s.showTrayTime, DEFAULT_OPTIONS.showTrayTime),
+    showSidebarCounter: boolOr(s.showSidebarCounter, DEFAULT_OPTIONS.showSidebarCounter),
   };
 }
 
@@ -239,6 +249,17 @@ export function restartPhase(t: TimerState, now: number): TimerState {
   return t;
 }
 
+/** Un tipo literal (no la interfaz), para pasarlo como `Record<string, unknown>`. */
+export type ResetSettings = { [K in keyof PomodoroOptions]: PomodoroOptions[K] } & { timer: TimerState; history: HistoryEntry[] };
+
+/** Restablecer el Pomodoro (PM16): lo que se guarda en
+ *  `extensions.pomodoro.settings` para dejarlo como recién activado. El
+ *  temporizador en Listo, en trabajo, con el ciclo en cero y sin tarea; las
+ *  opciones por defecto y el historial vacío. */
+export function resetSettings(now: number): ResetSettings {
+  return { ...DEFAULT_OPTIONS, timer: initialTimer(now), history: [] };
+}
+
 /** Reiniciar el ciclo: trabajo, con el contador en cero. No toca el historial. */
 export function restartCycle(t: TimerState, now: number): TimerState {
   return { ...initialTimer(now), task: t.task, lastKey: t.lastKey };
@@ -353,6 +374,11 @@ export function rolloverDay(t: TimerState, today: string): TimerState {
 }
 
 // ─── Formatos ───
+
+/** Las cifras de los minutos al empezar la fase (2 con 25:00, 3 con
+ *  120:00): el título de la bandeja se rellena hasta ellas para no cambiar
+ *  de ancho a mitad de fase (PM11). */
+export const minuteDigits = (durationMs: number) => String(Math.floor(Math.ceil(Math.max(0, durationMs) / 1000) / 60)).length;
 
 /** `m:ss` en minutos totales, sin horas: igual en la vista, el menú y la
  *  bandeja (design §2.4). Hacia arriba: el último segundo es `0:01`. */

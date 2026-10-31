@@ -1,18 +1,22 @@
 // Panel de Opciones → Extensiones → Pomodoro (design §2.10): duraciones,
-// arranque solo y sonido. Los cambios se guardan al momento; la fase en
-// curso mantiene su fin y lo nuevo se aplica desde la siguiente.
+// arranque solo, sonido, dónde se ve (PM15) y restablecer todo (PM16). Los
+// cambios se guardan al momento; la fase en curso mantiene su fin y lo
+// nuevo se aplica desde la siguiente.
 import { useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { Info, Volume2 } from 'lucide-react';
+import { Info, RotateCcw, Volume2 } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { NumberField, Toggle } from '../../components/shared/FormControls';
-import { SECONDARY_CLS } from '../../components/shared/controlClasses';
+import { ConfirmDeleteModal } from '../../components/shared/ConfirmDeleteModal';
+import { FOCUS_RING, SECONDARY_CLS } from '../../components/shared/controlClasses';
+import { useConfirmDelete } from '../../hooks/useConfirmDelete';
+import { Z_MODAL_NESTED } from '../../lib/zIndex';
 import {
   DEFAULT_OPTIONS, MAX_LONG_EVERY, MAX_MINUTES, MIN_LONG_EVERY, MIN_MINUTES, POMODORO_ID, isDefaultOptions, readOptions,
   type PomodoroOptions,
 } from './model';
-import { testSound, updateOptions, usePomodoro } from './store';
-import { makeTr, type Tr } from './text';
+import { resetPomodoro, testSound, updateOptions, usePomodoro } from './store';
+import { isMac, makeTr, type Tr } from './text';
 import type { PomodoroKey } from '../../lib/i18n';
 
 type NumberKey = 'workMin' | 'shortMin' | 'longMin' | 'longEvery';
@@ -28,15 +32,37 @@ function Subtitle({ tr, k }: { tr: Tr; k: PomodoroKey }) {
   return <p className="font-medium text-[var(--text-secondary)]">{tr(k)}</p>;
 }
 
+/** Como "Quitar configuración" en Opciones → Extensiones: texto rojo, sin
+ *  relleno, porque borra el historial. */
+const DANGER_CLS = `flex items-center gap-1.5 rounded-lg border border-[var(--border-card)] px-3 py-1.5 text-xs text-red-400 transition hover:bg-red-500/10 ${FOCUS_RING}`;
+
 export default function PomodoroSettings() {
-  const { language, raw } = useAppStore(
-    useShallow((s) => ({ language: s.language, raw: s.extensions[POMODORO_ID]?.settings })),
+  const { language, raw, confirmDestructiveActions, showToast } = useAppStore(
+    useShallow((s) => ({
+      language: s.language,
+      raw: s.extensions[POMODORO_ID]?.settings,
+      confirmDestructiveActions: s.confirmDestructiveActions,
+      showToast: s.showToast,
+    })),
   );
   const status = usePomodoro((s) => s.timer.status);
   const o = useMemo(() => readOptions(raw), [raw]);
   const tr = useMemo(() => makeTr(language), [language]);
+  const mac = useMemo(isMac, []);
   const set = (patch: Partial<PomodoroOptions>) => updateOptions(patch);
   const midPhase = status === 'running' || status === 'paused';
+  // El patrón compartido de confirmación: con la opción global apagada,
+  // restablece directo.
+  const resetDialog = useConfirmDelete<true>(confirmDestructiveActions);
+  const doReset = async () => {
+    resetDialog.cancel();
+    try {
+      await resetPomodoro();
+      showToast({ kind: 'success', title: tr('resetDone') });
+    } catch (err) {
+      showToast({ kind: 'error', title: tr('resetError'), description: String(err) });
+    }
+  };
 
   return (
     <div className="space-y-4 text-xs">
@@ -89,10 +115,44 @@ export default function PomodoroSettings() {
         <p className="text-[11px] text-[var(--text-hint)]">{tr('setNotifHint')}</p>
       </div>
 
+      <div className="space-y-2">
+        <Subtitle tr={tr} k="setShowIn" />
+        {/* En macOS el tiempo va en la barra de menús; en Windows y Linux,
+            en la bandeja del sistema (tooltip o etiqueta). */}
+        <Toggle
+          label={tr(mac ? 'setTrayTimeMac' : 'setTrayTime')}
+          checked={o.showTrayTime}
+          onChange={(v) => set({ showTrayTime: v })}
+        />
+        <p className="text-[11px] text-[var(--text-hint)]">{tr('setTrayTimeHint')}</p>
+        <Toggle label={tr('setSidebarCounter')} checked={o.showSidebarCounter} onChange={(v) => set({ showSidebarCounter: v })} />
+      </div>
+
       {!isDefaultOptions(o) && (
         <button type="button" className={SECONDARY_CLS} onClick={() => set({ ...DEFAULT_OPTIONS })}>
           {tr('setReset')}
         </button>
+      )}
+
+      <div className="space-y-2 border-t border-[var(--border)] pt-4">
+        <Subtitle tr={tr} k="setResetSection" />
+        <p className="text-[11px] text-[var(--text-hint)]">{tr('setResetAllDesc')}</p>
+        <button type="button" className={DANGER_CLS} onClick={() => resetDialog.request(true, () => void doReset())}>
+          <RotateCcw size={13} aria-hidden />
+          {tr('setResetAll')}
+        </button>
+      </div>
+
+      {resetDialog.isOpen && (
+        <ConfirmDeleteModal
+          zIndex={Z_MODAL_NESTED}
+          title={tr('resetTitle')}
+          message={tr('resetMessage')}
+          cancelLabel={tr('resetCancel')}
+          confirmLabel={tr('resetConfirm')}
+          onCancel={resetDialog.cancel}
+          onConfirm={() => void doReset()}
+        />
       )}
     </div>
   );

@@ -40,3 +40,14 @@ Rama `feature/devtools-opciones`, sobre `feature/ayuda-contextual`.
 - **Foco al mover:** la clase compartida `SOFT_DISABLED` (`controlClasses.ts`) suma `aria-disabled:hover:text-[var(--text-hint)]` a las tres del diseño, porque `ICON_BTN` aclara el texto al pasar el ratón.
 - **Página en A-Z:** las tarjetas siguen el orden de grupos del usuario, y la ayuda `set.azHint` se ve bajo el modo y bajo "Orden y visibilidad", como dice §G.3.
 
+
+## Cliente HTTP en DevTools (D25, specs/cliente-http PR 2)
+
+Rama `feature/cliente-http-devtools`, desde `develop` (con `feature/devtools-opciones` ya dentro).
+
+- [x] `model.ts`: el grupo `network` y la herramienta `http` al final de `TOOL_GROUPS`; `availableTools`/`availableToolsIn`, y las funciones de la lista con las disponibles (design §G.4); `LANGUAGE_TOOL.http` y `OUTPUT_LANGUAGE.http`; `onClearDrafts` y `clearToolDrafts`.
+- [x] La columna, el selector, el buscador, ⌥⌘↓/↑, `lastTool`, "Traer de una nota", la ayuda y Opciones → DevTools trabajan con `availableTools` (D25).
+- [x] El pie de la lista con `privacyNoteWithHttp` mientras está Cliente HTTP (D11).
+- [x] `views/HttpTool.tsx` (la herramienta: specs/cliente-http Interfaz §3).
+- [x] Pruebas: `settings.test.ts` (con y sin Cliente HTTP), `httpTool.test.tsx` y la ayuda (`HelpPopover.test.tsx`).
+- [ ] Prueba en el navegador: DevTools con y sin Cliente HTTP activa (ver `specs/cliente-http/tasks.md`, PR 2).

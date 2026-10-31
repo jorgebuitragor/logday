@@ -9,7 +9,7 @@ import { ModalPanel } from '../../../components/shared/ModalPanel';
 import { noteCodeBlocks, toolForBlock, type NoteCodeBlock } from '../model';
 import { readAllNotes } from '../notes';
 import { useDevtools } from './context';
-import { PICKER_TOOLS } from './meta';
+import { fallbackTool } from './meta';
 import { fold, toolKey } from './text';
 import { FOCUS_RING } from './classes';
 import { Spinner } from './controls';
@@ -22,7 +22,7 @@ interface NoteWithBlocks {
 const FOCUSABLE = 'button:not([disabled]), input, [tabindex]:not([tabindex="-1"])';
 
 export function NotePicker({ onClose, onPick }: { onClose: () => void; onPick: (note: Note, block: NoteCodeBlock) => void }) {
-  const { tr, tool } = useDevtools();
+  const { tr, tool, available } = useDevtools();
   const [notes, setNotes] = useState<NoteWithBlocks[] | null>(null);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
@@ -94,10 +94,10 @@ export function NotePicker({ onClose, onPick }: { onClose: () => void; onPick: (
 
   const optionId = (i: number) => `devtools-picker-note-${i}`;
   const blockAction = (block: NoteCodeBlock) => {
-    const target = toolForBlock(block);
+    const target = toolForBlock(block, available);
     return target
       ? tr('pickerOpenIn', { tool: tr(toolKey(target, 'name')) })
-      : tr('pickerLoadInto', { tool: tr(toolKey(PICKER_TOOLS.has(tool) ? tool : 'json', 'name')) });
+      : tr('pickerLoadInto', { tool: tr(toolKey(fallbackTool(tool), 'name')) });
   };
 
   return (

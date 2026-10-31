@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentType } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ALL_TOOLS, clearDrafts, draftKey, readDevtoolsSettings, resolveToolList, setDraft, type DevtoolsSettings, type ToolId } from './model';
+import { availableTools, clearDrafts, draftKey, readDevtoolsSettings, resolveToolList, setDraft, type DevtoolsSettings, type ToolId } from './model';
 import { ToolNav, navBlocks } from './ui/ToolNav';
 import DevtoolsSettingsPanel from './Settings';
 import { DevtoolsContext, type DevtoolsContextValue } from './ui/context';
@@ -40,9 +40,12 @@ vi.mock('../../store/appStore', () => ({
   useAppStore: Object.assign((select: (s: typeof store.state) => unknown) => select(store.state), { getState: () => store.state }),
 }));
 
-function context(tool: ToolId, settings: DevtoolsSettings): DevtoolsContextValue {
+const OFF = availableTools(false);
+
+function context(tool: ToolId, settings: DevtoolsSettings, available: readonly ToolId[] = OFF): DevtoolsContextValue {
   return {
     tool,
+    available,
     language: 'es',
     tr: makeTr('es'),
     mac: true,
@@ -184,7 +187,7 @@ describe('columna de herramientas', () => {
     const html = nav('json', { lastTool: 'json', options: {} });
     expect(html.match(/aria-expanded="true"/g)).toHaveLength(6);
     expect(html).not.toContain('aria-expanded="false"');
-    for (const tool of ALL_TOOLS) expect(text(html)).toContain(makeTr('es')(toolKey(tool, 'name')));
+    for (const tool of OFF) expect(text(html)).toContain(makeTr('es')(toolKey(tool, 'name')));
     expect(html).toContain('aria-label="Abrir las opciones de DevTools"');
   });
 
@@ -207,7 +210,7 @@ describe('columna de herramientas', () => {
 
   it('al buscar, las ocultas que coinciden van al final y los plegados no esconden nada', () => {
     const settings = readDevtoolsSettings({ hidden: ['xml'], collapsed: ['formats'] });
-    const resolved = resolveToolList(settings, (tool) => makeTr('es')(toolKey(tool, 'name')), 'es-CO');
+    const resolved = resolveToolList(settings, (tool) => makeTr('es')(toolKey(tool, 'name')), 'es-CO', OFF);
     const tr = makeTr('es');
     const matches = (q: string) => (tool: ToolId) => fold([tr(toolKey(tool, 'name')), tr(toolKey(tool, 'keywords'))].join(' ')).includes(q);
     const blocks = navBlocks(resolved, settings, 'base64', matches('json'));
@@ -267,7 +270,7 @@ describe('Opciones → DevTools', () => {
   });
 
   it('la última visible no se puede ocultar', () => {
-    const html = page({ hidden: ALL_TOOLS.filter((tool) => tool !== 'cron') });
+    const html = page({ hidden: OFF.filter((tool) => tool !== 'cron') });
     expect(text(html)).toContain('Deja al menos una herramienta visible.');
   });
 });

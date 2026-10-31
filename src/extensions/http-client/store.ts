@@ -288,6 +288,33 @@ export function readResult(noteId: string, blockIndex: number, requestIndex: num
   return cache.get(cacheKey(noteId, blockIndex, requestIndex), req.firstLine, req.source);
 }
 
+// ---------- DevTools (A10) ----------
+// La herramienta "Cliente HTTP" de DevTools es un bloque más, con una sola
+// petición y una clave propia: `devtools#0`, y en la caché `devtools#0#0`.
+
+export const DEVTOOLS_NOTE_ID = 'devtools';
+export const DEVTOOLS_KEY = blockKey(DEVTOOLS_NOTE_ID, 0);
+
+/** La última respuesta de la herramienta, aunque la URL haya cambiado
+ *  (entonces se ve como vieja): solo hay una petición. */
+export function readDevtoolsResult(source: string | null): { entry: CachedResult; stale: boolean } | null {
+  const entry = cache.peek(cacheKey(DEVTOOLS_NOTE_ID, 0, 0));
+  if (!entry) return null;
+  return { entry: entry.value, stale: entry.source !== source };
+}
+
+/** "Limpiar", "Vaciar todas las herramientas" o la parada de DevTools:
+ *  cancela lo que esté en curso y olvida la respuesta y la confirmación. */
+export function resetDevtoolsSlot() {
+  const s = httpApi.getState();
+  const b = s.blocks[DEVTOOLS_KEY];
+  if (b?.inFlight) void cancelHttp(b.inFlight.requestId);
+  cache.delete(cacheKey(DEVTOOLS_NOTE_ID, 0, 0));
+  const blocks = { ...s.blocks };
+  delete blocks[DEVTOOLS_KEY];
+  httpApi.setState({ blocks, rev: s.rev + 1 });
+}
+
 /** El entorno activo para todas las peticiones (HT19). */
 export async function setActiveEnv(id: string | null) {
   const app = useAppStore.getState();

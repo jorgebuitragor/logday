@@ -17,7 +17,8 @@ export interface ResolvedSection {
   hidden: boolean;
 }
 
-export const DEFAULT_SIDEBAR_STYLE: SidebarStyle = 'icons';
+// Jorge lo cambió a la Lista con nombres el 31 oct 2026, al probar la app.
+export const DEFAULT_SIDEBAR_STYLE: SidebarStyle = 'list';
 
 /** Las secciones fijas, salvo Inicio, en su orden por defecto (NS7). */
 export const CORE_SECTION_IDS = ['dailys', 'tasks', 'notes', 'overtime'] as const;
@@ -42,10 +43,12 @@ export function clampSidebarWidth(width: number, style: SidebarStyle): number {
 
 // ── Config ────────────────────────────────────────────────────
 
-/** NS5: sin estilo guardado (también si viene `sidebarLabelsVisible`, de
- *  antes de este cambio), la Barra de íconos. */
-export function parseSidebarStyle(raw: unknown): SidebarStyle {
-  return raw === 'list' || raw === 'icons' ? raw : DEFAULT_SIDEBAR_STYLE;
+/** NS5: sin estilo guardado, la Lista con nombres. Quien tenía apagado
+ *  "Textos del menú lateral" (`sidebarLabelsVisible: false`, de antes de la
+ *  navegación nueva) quería solo íconos: para esa config, la Barra de íconos. */
+export function parseSidebarStyle(raw: unknown, legacyLabelsVisible?: unknown): SidebarStyle {
+  if (raw === 'list' || raw === 'icons') return raw;
+  return legacyLabelsVisible === false ? 'icons' : DEFAULT_SIDEBAR_STYLE;
 }
 
 /** Lo que viene de `config.json`. Sin lista válida, `undefined` (el orden

@@ -2438,7 +2438,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             trashAutoPurgeEnabled: cfg.trashAutoPurgeEnabled ?? true,
             // NS5: una config con `sidebarLabelsVisible` y sin estilo
             // abre con la Barra de íconos, la predeterminada.
-            sidebarStyle: parseSidebarStyle(cfg.sidebarStyle),
+            sidebarStyle: parseSidebarStyle(cfg.sidebarStyle, cfg.sidebarLabelsVisible),
             sidebarSections: parseSidebarSections(cfg.sidebarSections),
             // La vista de Opciones se usa la primera vez; después, la última usada.
             notesViewDefault: cfg.notesViewDefault ?? 'list',

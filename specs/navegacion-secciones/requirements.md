@@ -27,11 +27,11 @@ La fila actual se retira; no queda como tercer modo.
 
 ### Modos
 
-- NS1. El menú lateral DEBERÁ tener dos estilos de secciones, elegibles en Opciones → Navegación → Menú lateral (NS21): **Barra de íconos** (predeterminado) y **Lista con nombres**. Los dos son variantes de un mismo componente, con los mismos datos, orden, fijado, teclado, "Más" y colapsado.
+- NS1. El menú lateral DEBERÁ tener dos estilos de secciones, elegibles en Opciones → Navegación → Menú lateral (NS21): **Lista con nombres** (predeterminado) y **Barra de íconos**. Los dos son variantes de un mismo componente, con los mismos datos, orden, fijado, teclado, "Más" y colapsado.
 - NS2. **Barra de íconos:** una columna de 44 px a la izquierda, con un botón de 36×36 px por sección, y a su derecha el panel de la sección activa. El panel lleva como título el nombre de la sección activa y, a la derecha del título, sus acciones y el botón de colapsar.
 - NS3. **Lista con nombres:** arriba del panel, una fila por sección, con ícono y nombre (unos 28 px de alto cada una), con el mismo aspecto que la barra de Opciones.
 - NS4. **Colapsado:** en los dos estilos, el menú colapsado es la misma columna de íconos de la Barra de íconos, sin panel. Debajo de las secciones, como hoy, van las vistas de Tareas cuando Tareas está activa. Abajo quedan fijos el estado de las extensiones (R26), Buscar y Opciones. Las secciones se dibujan desde una sola lista, no repetidas a mano.
-- NS5. La preferencia es local y no se sincroniza. SI la config trae `sidebarLabelsVisible` y no trae estilo, se toma la Barra de íconos (que es el predeterminado en los dos casos) y la opción "Textos del menú lateral" desaparece de Opciones.
+- NS5. La preferencia es local y no se sincroniza. SI la config no trae estilo, se toma la Lista con nombres, salvo que traiga `sidebarLabelsVisible: false` (quien había apagado los textos del menú quería solo íconos): ahí, la Barra de íconos. La opción "Textos del menú lateral" desaparece de Opciones.
 
 ### Secciones
 
@@ -102,6 +102,7 @@ La fila actual se retira; no queda como tercer modo.
 ## Decisiones (31 oct 2026)
 
 - Jorge eligió A (predeterminado), C y D, y retirar la fila.
+- **Cambio del 31 oct 2026:** al probar la app de QA, Jorge pidió que la **Lista con nombres** sea el estilo por defecto. La Barra de íconos queda como alternativa.
 - Las tomó el orquestador, siguiendo al agente de diseño, y Jorge puede cambiarlas:
   - Inicio pasa a ser una entrada propia (NS6);
   - "Extras" pasa a llamarse "Horas extra" en el menú (NS8);

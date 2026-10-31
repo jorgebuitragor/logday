@@ -113,7 +113,7 @@ describe('completeOnboarding (OB3, OB9, OB16)', () => {
 
   it('"Omitir" con los valores por defecto: Inicio y la Barra de íconos', async () => {
     await useAppStore.getState().completeOnboarding('/datos');
-    expect(savedConfig()).toMatchObject({ startupScreen: 'dashboard', sidebarStyle: 'icons' });
+    expect(savedConfig()).toMatchObject({ startupScreen: 'dashboard', sidebarStyle: 'list' });
     expect(useAppStore.getState().activeSection).toBe('dashboard');
   });
 

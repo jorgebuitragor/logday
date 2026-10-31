@@ -39,7 +39,7 @@ Estado: en progreso.
 
 Se basa en el análisis del agente `logday-design` (31 oct 2026), sobre `Sidebar.tsx`, `ExtensionSections.tsx`, `SettingsModal.tsx:143-190` (barra de Opciones), `ThemeTile.tsx`, `GeneralSettingsTab.tsx:461-481`, `controlClasses.ts` y `App.css`. Lo marcado como **nuevo** no existe hoy.
 
-### 1. Barra de íconos (predeterminada)
+### 1. Barra de íconos
 
 ```
 +----+---------------------+
@@ -78,7 +78,7 @@ Se basa en el análisis del agente `logday-design` (31 oct 2026), sobre `Sidebar
   - `SidebarStatusSlots collapsed` va encima de Buscar.
   - La parte de las secciones tiene scroll propio (como hoy) y, si hay "Más", lo que no cabe va ahí.
 
-### 2. Lista con nombres
+### 2. Lista con nombres (predeterminada desde el 31 oct 2026)
 
 ```
 +--------------------------+

@@ -2250,6 +2250,13 @@ const noteUpdatedThrottle = new NoteUpdatedThrottle();
 // Último guardado de cada nota (ver flushNoteUpdated).
 const noteSavesInFlight = new Map<string, Promise<void>>();
 
+/** Espera a que termine el último guardado de una nota, si hay uno: quien
+ *  la reescribe desde fuera del editor (lib/noteExternalEdit.ts) lee el
+ *  `.md` después de ese guardado, no antes. */
+export function waitForNoteSave(noteId: string): Promise<void> {
+  return noteSavesInFlight.get(noteId) ?? Promise.resolve();
+}
+
 // ── Store ──────────────────────────────────────────────────────
 
 export const useAppStore = create<AppState>((set, get) => ({

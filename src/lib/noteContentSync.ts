@@ -364,6 +364,9 @@ export function registerOpenNoteDoc(noteId: string, handler: OpenNoteHandler): (
   };
 }
 
+/** Si la nota está abierta en el editor (tiene un `Y.Doc` vivo). */
+export const isNoteOpen = (noteId: string) => openNoteHandlers.has(noteId);
+
 /** Entrega un `content_state` (base64) al editor de la nota si está
  *  abierta. `null` si no lo está (o se cerró en el medio): quien llama lo
  *  aplica en disco con `applyIncomingContentState`. */

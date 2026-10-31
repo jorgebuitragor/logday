@@ -94,10 +94,11 @@ describe('HelpButton (AY1, AY2, AY11)', () => {
     expect(out).toMatch(/<svg[^>]*lucide-circle-question-mark[^>]*aria-hidden="true"|<svg[^>]*aria-hidden="true"[^>]*lucide-circle/);
   });
 
-  it('mide al menos 28×28, con el foco visible y sin acento', () => {
+  it('es chico (20×20) y no se encoge, con el foco visible y sin acento', () => {
     const cls = html().match(/class="([^"]+)"/)![1];
-    expect(cls).toContain('min-h-7');
-    expect(cls).toContain('min-w-7');
+    expect(cls).toContain('h-5');
+    expect(cls).toContain('w-5');
+    expect(cls).toContain('shrink-0');
     expect(cls).toContain('focus-visible:ring-2');
     expect(cls).toContain('aria-expanded:bg-[var(--bg-hover)]');
     expect(cls).not.toMatch(/bg-indigo/);

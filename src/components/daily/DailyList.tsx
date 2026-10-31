@@ -244,11 +244,11 @@ export function DailyList() {
     <div className="flex h-full shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]" style={{ width: 'var(--logday-list-w)' }}>
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
-        <div className="flex shrink-0 items-center gap-1">
-          <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'dailys', 'title')}</h2>
+        <div className="flex min-w-0 items-center gap-1">
+          <h2 className="truncate text-sm font-semibold text-[var(--text-primary)]">{t(language, 'dailys', 'title')}</h2>
           <DailysHelp />
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-0.5">
           {/* Selector de fecha – dropdown con posición fija */}
           <div className="relative">
             <button

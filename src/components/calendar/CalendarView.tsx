@@ -295,11 +295,11 @@ export function CalendarView() {
       {/* Header */}
       <div className="border-b border-[var(--border)] px-4 py-3 space-y-2.5">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1">
-          <h1 className="text-lg font-semibold text-[var(--text-primary)]">{t(language, 'tasks', 'calendarTitle')}</h1>
+        <div className="flex min-w-0 items-center gap-1">
+          <h1 className="truncate text-lg font-semibold text-[var(--text-primary)]">{t(language, 'tasks', 'calendarTitle')}</h1>
           <TasksHelp onShowShortcuts={() => setShowShortcuts(true)} />
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-3">
           <button
             onClick={goToday}
             disabled={year === today.getFullYear() && month === today.getMonth()}

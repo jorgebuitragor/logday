@@ -205,8 +205,8 @@ export function KanbanBoard() {
       {/* Header + filtros */}
       <div className="border-b border-[var(--border)] px-6 pt-4 pb-3 space-y-2.5">
         {/* El proyecto, como en la lista: se ve que el tablero está filtrado. */}
-        <div className="flex items-center gap-1">
-          <h1 className="text-lg font-semibold text-[var(--text-primary)] capitalize">{activeProject ?? t(language, 'tasks', 'kanbanTitle')}</h1>
+        <div className="flex min-w-0 items-center gap-1">
+          <h1 className="truncate text-lg font-semibold text-[var(--text-primary)] capitalize">{activeProject ?? t(language, 'tasks', 'kanbanTitle')}</h1>
           <TasksHelp onShowShortcuts={() => setShowShortcuts(true)} />
         </div>
 

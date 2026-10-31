@@ -105,12 +105,12 @@ export function OvertimeList({ onEdit, activeEntryId }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
         <div className="flex min-w-0 items-center gap-1">
-          <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'overtime', 'title')}</h2>
+          <h2 className="truncate text-sm font-semibold text-[var(--text-primary)]">{t(language, 'overtime', 'title')}</h2>
           <OvertimeHelp />
         </div>
         <button
           onClick={() => onEdit(null)}
-          className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-indigo-400 transition hover:bg-indigo-500/10"
+          className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-indigo-400 transition hover:bg-indigo-500/10"
           title={t(language, 'overtime', 'newOvertimeTitle')}
         >
           <Plus size={14} />

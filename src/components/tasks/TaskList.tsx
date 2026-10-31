@@ -259,12 +259,12 @@ export function TaskList() {
         <div className="mx-auto w-full max-w-3xl">
         <div className="flex items-center justify-between mb-3">
           <div className="flex min-w-0 items-center gap-1">
-            <h1 className="text-lg font-semibold text-[var(--text-primary)] capitalize">{title}</h1>
+            <h1 className="truncate text-lg font-semibold text-[var(--text-primary)] capitalize" title={title}>{title}</h1>
             <TasksHelp onShowShortcuts={() => setShowShortcuts(true)} />
           </div>
           <button
             onClick={() => setNewTaskDraft({})}
-            className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white transition hover:bg-indigo-500"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white transition hover:bg-indigo-500"
           >
             <Plus size={14} />
             {t(language, 'tasks', 'newTask')}

@@ -15,7 +15,7 @@ import { Z_MODAL_NESTED } from '../../lib/zIndex';
 import type { AnchorRect } from '../../lib/menuPosition';
 import { usePositionedMenu } from '../../hooks/usePositionedMenu';
 import { TourModal } from '../tour/TourModal';
-import { ICON_BTN, KBD, PANEL_TITLE, TEXT_LINK } from './controlClasses';
+import { FOCUS_RING, ICON_BTN, KBD, PANEL_TITLE, TEXT_LINK } from './controlClasses';
 import { closeOnEscape, nextTrapIndex, passesToApp, scrollCloses } from './helpKeyboard';
 
 export interface HelpAction {
@@ -30,7 +30,10 @@ const ESTIMATED_SIZE = { width: 320, height: 360 };
 // DevTools, prueba del 31 oct 2026); si no cabe, menuPosition lo voltea.
 const ANCHOR_OPTIONS = { sideX: 'right' as const, gap: 0 };
 // Abierto, el fondo del hover y sin acento (design, Estados).
-const BUTTON_CLS = `${ICON_BTN} min-h-7 min-w-7 justify-center aria-expanded:bg-[var(--bg-hover)] aria-expanded:text-[var(--text-primary)]`;
+// Chico (20 px, ícono de 13) y sin encogerse, pegado al título: el de 28 px
+// empujaba o tapaba los botones de las cabeceras angostas (Jorge, 31 oct
+// 2026). Con el espacio alrededor, cumple la excepción de WCAG 2.5.8.
+const BUTTON_CLS = `inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] aria-expanded:bg-[var(--bg-hover)] aria-expanded:text-[var(--text-primary)] ${FOCUS_RING}`;
 
 /** Sin dibujar si el usuario apagó los botones de ayuda en Opciones →
  *  Preferencias (AY23). Envuelve a `HelpButtonInner` para no saltarse hooks. */
@@ -165,7 +168,7 @@ function HelpButtonInner({
         onClick={toggle}
         className={BUTTON_CLS}
       >
-        <CircleHelp size={14} aria-hidden />
+        <CircleHelp size={13} aria-hidden />
       </button>
       {(open || tourOpen) && createPortal(
         // AY9: los eventos de un portal suben por el árbol de React hasta la

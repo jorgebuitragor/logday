@@ -330,3 +330,11 @@ Base: `pomodoro/View.tsx:62-83`, `SidebarStatus.tsx` e `i18n.ts` (`pomodoro.task
 Las filas "⌘ clic · ⇧ clic" y "⌘ Enter" se arman con ⌘ en macOS y con Ctrl fuera, en los dos idiomas. Quedan "Ctrl clic · ⇧ clic" y "Ctrl Enter", o "Ctrl click · ⇧ click" y "Ctrl Enter".
 
 Antes de escribirlos en `i18n.ts`, se comprueba contra el código que cada botón y cada atajo que nombran existan con ese nombre (AY14).
+
+## Cambio del 31 oct 2026: botón más chico
+
+Jorge vio que el botón se solapaba con los de la cabecera al achicar la ventana (la lista baja hasta 200 px). Ahora:
+
+- **Tamaño:** el botón mide 20×20 px y su ícono 13 px. Antes eran `ICON_BTN` con `min-h-7 min-w-7` (28 px) y un ícono de 14 px. No se encoge (`shrink-0`) y, con el espacio de alrededor, cumple la excepción de espaciado de WCAG 2.5.8.
+- **Cabeceras de Tareas, Kanban, Calendario, Dailys y Horas extra:** el grupo del título lleva `min-w-0` y el título `truncate`, así que cuando falta espacio se recorta con "…". Los botones de la derecha llevan `shrink-0`, para que nunca se tapen ni se corten.
+

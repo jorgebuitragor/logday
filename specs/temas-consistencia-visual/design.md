@@ -134,13 +134,13 @@ mejor en cada uno).
 
 ## Oscuro más legible (31 oct 2026)
 
-Jorge encontraba el Oscuro difícil de leer y pidió acercarlo al Nórdico sin perder el índigo de Logday.
+Jorge encontraba el Oscuro difícil de leer. Primero se acercó al Nórdico (#1c1d2a, grafito con tono índigo), pero no lo terminó de convencer y pidió un intermedio entre ese y el negro de antes. Quedó así:
 
-- **Fondos:** pasan de negro neutro (#121212) a grafito con un leve tono índigo: `--bg-base` #1c1d2a, `--bg-panel` #1f2030, `--bg-surface` #272939, `--bg-hover` #303244, `--bg-elevated` #242536 y `--bg-input` #1f2030.
-- **Bordes:** #383b50, #40435a y #5c6079.
-- **Textos:** más claros y con el mismo tinte. `--text-muted` es #a5aabe y `--text-hint` #9ca1b6.
+- **Fondos:** casi negros, con un leve tono índigo: `--bg-base` #17181e, `--bg-panel` #1a1a22, `--bg-surface` #22222a, `--bg-hover` #2a2b34, `--bg-elevated` #1e1e27 y `--bg-input` #1a1b23.
+- **Bordes:** #31323d, #3a3b46 y #535562.
+- **Textos:** más claros que antes, con un tinte leve: `--text-muted` #9ea2b0, `--text-hint` #969aaa y `--text-faint` #8e91a1. Los de antes eran #888, #848484 y #7e7e7e.
 - **Contraste contra `--bg-base`:**
-  - texto: entre 5,8:1 (`--text-faint`) y 14,7:1;
-  - acento #818cf8: 5,6:1.
-- **Texto índigo fijo:** `text-indigo-400` pasa a #929bfa en este tema, con el resaltado del activo (`bg-indigo-500/15`) incluido. Con #818cf8 quedaba en ~4,1:1; ahora pasa de 4,5:1. `--accent-link` también es #929bfa.
-- **Temas personalizados:** siguen derivándose de la escala del Oscuro anterior (`DARK_BG_REF` en `src/lib/themeColor.ts`), para que no cambien los que ya existen.
+  - texto: entre 5,7:1 (`--text-faint`) y 15,6:1;
+  - acento #818cf8: 5,9:1;
+  - el activo del menú (`text-indigo-400` sobre `bg-indigo-500/15`): 5:1.
+- **Temas personalizados:** siguen derivándose de la escala del Oscuro anterior (`DARK_BG_REF` en `src/lib/themeColor.ts`), así que los que ya existen no cambian.

@@ -54,6 +54,16 @@ Estado: en progreso.
 - [x] Paridad es/en de `help`, `devtools.help.*`, `<tool>.help*` y `pomodoro.help*`, los mismos huecos en los dos idiomas y ningún texto con voseo (AY14).
 - [x] `pnpm test` (500), `pnpm build` y `pnpm lint` (21 warnings, los de base).
 
+### Prueba en el navegador (31 oct 2026, Tauri simulado)
+
+- [x] DevTools: abre, el foco entra, Tab queda dentro, Esc cierra y devuelve el foco al botón.
+- [x] Pomodoro: con la ayuda abierta, Espacio no arranca el temporizador; ⌘2 sigue llevando a Tareas.
+- [x] Tareas: "Ver todos los atajos" abre la hoja.
+- [x] Arreglado en la prueba:
+  - el recuadro se abría hacia la izquierda y tapaba la columna de herramientas de DevTools: ahora se abre hacia la derecha del botón;
+  - en Dailys, a 800×600, el botón de ayuda se montaba sobre "Fecha": ese botón queda solo con el ícono (el nombre sigue para los lectores);
+  - con poca altura, los enlaces del pie quedaban fuera de vista: el pie queda fijo abajo.
+
 ## Pendiente
 
 ### Prueba en el navegador y en la app de QA

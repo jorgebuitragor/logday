@@ -1,6 +1,6 @@
-// Vista previa aislada de HTML (specs/devtools D26). La usa el Visor HTML
-// de DevTools y la reutilizará el Cliente HTTP para las respuestas
-// `text/html` (paquete B de su rediseño). Lo que la aísla está en
+// Vista previa aislada de HTML (specs/devtools D26). La usan el Visor HTML
+// de DevTools y la respuesta del Cliente HTTP cuando es una página HTML
+// (specs/cliente-http HT53). Lo que la aísla está en
 // `lib/htmlPreviewDoc.ts`; aquí, el iframe y el ancho simulado.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildPreviewDoc } from '../../lib/htmlPreviewDoc';

@@ -29,7 +29,7 @@ Rama `feature/devtools-opciones`, sobre `feature/ayuda-contextual`.
 - [x] Textos de §G.7 en es y en (`set.*`, `group.hidden`, `groupCount*`, `help.p6`) y `help.p5` cambiado; `help.p6` en `GENERAL_HELP` (`ui/Help.tsx`) (D7).
 - [x] Actualizar la tabla de textos de DevTools en `specs/ayuda-contextual/design.md` (`help.p5` cambiado y `help.p6` nuevo) y las pruebas de la ayuda que cuenten sus párrafos.
 - [x] Pruebas de vista (`views.test.tsx`): encabezados con `aria-expanded`, la activa visible en un grupo plegado, "Ocultas" al buscar, el A-Z y la página de Opciones.
-- [ ] Probar en el navegador (build de producción con Tauri simulado): plegar en la columna y en el selector, ordenar con ratón y teclado, ocultar, A-Z, ⌥⌘↓/↑, foco al mover a un extremo (también en Opciones → Navegación), y temas claro, oscuro, sepia, alto contraste y uno tintado.
+- [x] Probar en el navegador (build de producción con Tauri simulado): plegar en la columna y en el selector, ordenar con ratón y teclado, ocultar, A-Z, ⌥⌘↓/↑, foco al mover a un extremo (también en Opciones → Navegación), y temas claro, oscuro, sepia, alto contraste y uno tintado. Probado el 31 oct 2026 con Tauri simulado: plegar Codificar (se guarda), la página de Opciones desde el botón del buscador, ocultar XML, bajar YAML (con anuncio y el foco en el botón), modo A-Z, y buscar «xml», que la muestra en «Ocultas» y Enter la abre. Falta: arrastrar con el ratón, ⌥⌘↓/↑ y la app de QA.
 
 ### Diferencias con el diseño
 

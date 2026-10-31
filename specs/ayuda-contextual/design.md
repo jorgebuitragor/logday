@@ -201,7 +201,8 @@ Huecos: `{search}` = `shortcut('mod+shift+F')` y `{run}` = `shortcut('mod+enter'
 | help.p2 | Pega o escribe en Entrada y el Resultado aparece al momento. Si no sabes qué poner, usa «Probar con un ejemplo». Con una entrada muy grande, o en los generadores, usa {run}. | Paste or type in Input and the Output appears right away. If you're not sure what to enter, use "Try an example". With a very large input, or in generators, use {run}. |
 | help.p3 | «Traer de una nota» carga un bloque de código de cualquier nota. Si el bloque dice su lenguaje (```json, ```sql…), se abre en la herramienta que le corresponde. | "Load from a note" loads a code block from any note. If the block names its language (```json, ```sql…), it opens in the matching tool. |
 | help.p4 | «Guardar en una nota» crea una nota nueva con el resultado en un bloque de código. | "Save to a note" creates a new note with the output in a code block. |
-| help.p5 | Lo que pegas solo vive en la memoria: sigue ahí al cambiar de herramienta y se borra al cerrar Logday. Solo se recuerdan la última herramienta y sus opciones. Para borrarlo antes, usa «Vaciar todas las herramientas», al pie. | What you paste lives only in memory: it stays when you switch tools and is cleared when you close Logday. Only the last tool and its options are remembered. To clear it sooner, use "Clear all tools" at the bottom. |
+| help.p5 | Lo que pegas solo vive en la memoria: sigue ahí al cambiar de herramienta y se borra al cerrar Logday. Solo se recuerdan la última herramienta, sus opciones y cómo ordenaste la lista. Para borrarlo antes, usa «Vaciar todas las herramientas», al pie. | What you paste lives only in memory: it stays when you switch tools and is cleared when you close Logday. Only the last tool, its options and how you arranged the list are remembered. To clear it sooner, use "Clear all tools" at the bottom. |
+| help.p6 | Haz clic en el nombre de un grupo para plegarlo o desplegarlo. Para ordenar u ocultar herramientas, usa el botón de opciones junto al buscador. | Click a group's name to collapse or expand it. To reorder or hide tools, use the settings button next to the search box. |
 | help.inTool | En esta herramienta | In this tool |
 
 **DevTools: atajos**
@@ -255,7 +256,7 @@ Base: `tools/regex.ts:28` y `MAX_MATCHES`, `tools/regexRunner.ts:7` (`REGEX_TIME
 
 La ayuda de DevTools se arma así, de arriba abajo:
 1. `HelpSection` "En esta herramienta", si la herramienta está en `TOOL_HELP`;
-2. `HelpSection` sin título, con `help.p1…p5`;
+2. `HelpSection` sin título, con `help.p1…p6` (`help.p6`, de specs/devtools D21);
 3. `HelpShortcuts`.
 
 **Tareas (sección `help`)**

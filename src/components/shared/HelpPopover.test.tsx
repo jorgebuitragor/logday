@@ -304,7 +304,7 @@ describe('TaskShortcutsSheet con ⌘ o Ctrl (AY22)', () => {
 function devtools(tool: ToolId, mac = true, language: 'es' | 'en' = 'es'): DevtoolsContextValue {
   return {
     tool, language, tr: makeDevtoolsTr(language), mac,
-    settings: { lastTool: tool, options: {} },
+    settings: { lastTool: tool, options: {}, layout: 'groups' }, updateSettings: () => {}, openSettings: () => {},
     setOptions: () => {}, announce: () => {}, copyText: async () => true, saveNote: async () => null, openNote: () => {},
     openPicker: () => {}, actionsRef: { current: {} }, loadedFrom: null, clearLoaded: () => {}, takeFocus: () => false,
     goTo: () => {}, shortcut: (spec) => devtoolsShortcut(spec, mac), switcherOpen: false, setSwitcherOpen: () => {},
@@ -453,7 +453,7 @@ describe('los textos (AY14)', () => {
     expect(sectionKeys('en', 'help').sort()).toEqual(sectionKeys('es', 'help').sort());
     expect(sectionKeys('es', 'help').length).toBe(23 + 7);
     expect(devtoolsHelp('en')).toEqual(devtoolsHelp('es'));
-    expect(devtoolsHelp('es').length).toBe(16 + 22);
+    expect(devtoolsHelp('es').length).toBe(17 + 22);
     expect(pomodoroHelp('en')).toEqual(pomodoroHelp('es'));
     expect(pomodoroHelp('es').length).toBe(9);
   });

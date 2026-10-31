@@ -4,9 +4,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentType } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { clearDrafts, draftKey, setDraft, type ToolId } from './model';
+import { ALL_TOOLS, clearDrafts, draftKey, readDevtoolsSettings, resolveToolList, setDraft, type DevtoolsSettings, type ToolId } from './model';
+import { ToolNav, navBlocks } from './ui/ToolNav';
+import DevtoolsSettingsPanel from './Settings';
 import { DevtoolsContext, type DevtoolsContextValue } from './ui/context';
-import { makeTr, shortcutLabel } from './ui/text';
+import { fold, makeTr, shortcutLabel, toolKey } from './ui/text';
 import { JsonTool, XmlTool, YamlTool } from './views/FormatTools';
 import { Base64Tool, HtmlTool, UrlTool } from './views/EncodeTools';
 import ConvertTool from './views/ConvertTool';
@@ -24,18 +26,29 @@ import DiffTool from './views/DiffTool';
 import SqlListTool from './views/SqlListTool';
 import ListCompareTool from './views/ListCompareTool';
 
-// El store real necesita `window`; las herramientas solo usan `showToast`.
+// El store real necesita `window`. Las herramientas solo usan `showToast`;
+// la página de Opciones, el idioma y la configuración de la extensión.
+const store = vi.hoisted(() => ({
+  state: {
+    showToast: () => '',
+    language: 'es',
+    extensions: {} as Record<string, { enabled: boolean; settings?: Record<string, unknown> }>,
+    updateExtensionSettings: async () => {},
+  },
+}));
 vi.mock('../../store/appStore', () => ({
-  useAppStore: (select: (s: { showToast: () => string }) => unknown) => select({ showToast: () => '' }),
+  useAppStore: Object.assign((select: (s: typeof store.state) => unknown) => select(store.state), { getState: () => store.state }),
 }));
 
-function render(tool: ToolId, View: ComponentType, options: Record<string, string | number | boolean> = {}) {
-  const ctx: DevtoolsContextValue = {
+function context(tool: ToolId, settings: DevtoolsSettings): DevtoolsContextValue {
+  return {
     tool,
     language: 'es',
     tr: makeTr('es'),
     mac: true,
-    settings: { lastTool: tool, options: { [tool]: options } },
+    settings,
+    updateSettings: () => {},
+    openSettings: () => {},
     setOptions: () => {},
     announce: () => {},
     copyText: async () => true,
@@ -51,6 +64,10 @@ function render(tool: ToolId, View: ComponentType, options: Record<string, strin
     switcherOpen: false,
     setSwitcherOpen: () => {},
   };
+}
+
+function render(tool: ToolId, View: ComponentType, options: Record<string, string | number | boolean> = {}) {
+  const ctx = context(tool, { lastTool: tool, options: { [tool]: options }, layout: 'groups' });
   return renderToStaticMarkup(
     <DevtoolsContext.Provider value={ctx}>
       <View />
@@ -150,5 +167,107 @@ describe('vista de DevTools: cada herramienta se dibuja', () => {
     const lc = text(render('list-compare', ListCompareTool));
     expect(lc).toContain('A 2 · B 2 · en las dos 1');
     expect(lc).toContain('1 duplicado');
+  });
+});
+
+// ── La lista y la página de Opciones (D17–D22, design Adenda G) ──────
+
+const nav = (active: ToolId, raw: Record<string, unknown>) =>
+  renderToStaticMarkup(
+    <DevtoolsContext.Provider value={context(active, readDevtoolsSettings(raw))}>
+      <ToolNav active={active} idPrefix="t" onSelect={() => {}} />
+    </DevtoolsContext.Provider>,
+  );
+
+describe('columna de herramientas', () => {
+  it('sin nada guardado se ve como antes, con los encabezados desplegados', () => {
+    const html = nav('json', { lastTool: 'json', options: {} });
+    expect(html.match(/aria-expanded="true"/g)).toHaveLength(6);
+    expect(html).not.toContain('aria-expanded="false"');
+    for (const tool of ALL_TOOLS) expect(text(html)).toContain(makeTr('es')(toolKey(tool, 'name')));
+    expect(html).toContain('aria-label="Abrir las opciones de DevTools"');
+  });
+
+  it('un grupo plegado: aria-expanded, contador y la activa se sigue viendo', () => {
+    const html = nav('yaml', { collapsed: ['formats', 'time'] });
+    expect(html).toMatch(/<button[^>]*id="t-group-formats"[^>]*aria-expanded="false"[^>]*aria-controls="t-items-formats"/);
+    expect(html).toContain('<span class="sr-only">, 4 herramientas</span>');
+    expect(html).toMatch(/aria-current="page"[^>]*>.*?YAML/);
+    const t = text(html);
+    expect(t).not.toContain('JSON');
+    expect(t).not.toContain('Timestamp');
+    expect(t).toContain('Base64');
+  });
+
+  it('la activa oculta va en "Ocultas"', () => {
+    const html = nav('jwt', { hidden: ['jwt', 'regex'] });
+    expect(text(html)).toMatch(/Ocultas.*JWT/);
+    expect(text(html)).not.toContain('Expresiones regulares');
+  });
+
+  it('al buscar, las ocultas que coinciden van al final y los plegados no esconden nada', () => {
+    const settings = readDevtoolsSettings({ hidden: ['xml'], collapsed: ['formats'] });
+    const resolved = resolveToolList(settings, (tool) => makeTr('es')(toolKey(tool, 'name')), 'es-CO');
+    const tr = makeTr('es');
+    const matches = (q: string) => (tool: ToolId) => fold([tr(toolKey(tool, 'name')), tr(toolKey(tool, 'keywords'))].join(' ')).includes(q);
+    const blocks = navBlocks(resolved, settings, 'base64', matches('json'));
+    expect(blocks.every((b) => !b.collapsible)).toBe(true);
+    expect(blocks[0]).toMatchObject({ group: 'formats', collapsed: false });
+    expect(blocks[0].tools).toContain('json');
+    const xml = navBlocks(resolved, settings, 'base64', matches('xml'));
+    expect(xml[xml.length - 1]).toMatchObject({ group: 'hidden', tools: ['xml'] });
+    // Sin buscar, el grupo plegado sin la activa no muestra herramientas.
+    expect(navBlocks(resolved, settings, 'base64')[0]).toMatchObject({ group: 'formats', collapsed: true, tools: [] });
+  });
+
+  it('A-Z: sin encabezados, en orden alfabético', () => {
+    const html = nav('json', { layout: 'az' });
+    expect(html).not.toContain('aria-expanded');
+    const t = text(html);
+    expect(t.indexOf('Base64')).toBeLessThan(t.indexOf('Cron'));
+    expect(t.indexOf('Expresiones regulares')).toBeLessThan(t.indexOf('Hashes'));
+  });
+});
+
+describe('Opciones → DevTools', () => {
+  const page = (settings: Record<string, unknown>) => {
+    store.state.extensions = { devtools: { enabled: true, settings } };
+    return renderToStaticMarkup(<DevtoolsSettingsPanel />);
+  };
+  afterEach(() => {
+    store.state.extensions = {};
+  });
+
+  it('por defecto: Por grupos, sin restablecer, y las flechas de los extremos con aria-disabled', () => {
+    const html = page({ lastTool: 'json', options: {} });
+    const t = text(html);
+    expect(t).toContain('Lista de herramientas');
+    expect(t).toContain('Arrastra para ordenar');
+    expect(t).not.toContain('Restablecer orden');
+    expect(t).not.toContain('Restablecer las opciones');
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*aria-label="Mover el grupo Formatos arriba"/);
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*aria-label="Mover JSON arriba"/);
+    expect(html).not.toMatch(/aria-label="Mover YAML arriba"[^>]*disabled/);
+    // Ninguna flecha usa `disabled` (el foco caería al body).
+    expect(html).not.toMatch(/<button[^>]*\sdisabled=""[^>]*aria-label="Mover/);
+    expect(html.match(/<ul[^>]*data-group-row/g)).toHaveLength(6);
+  });
+
+  it('con cambios aparecen los botones de restablecer', () => {
+    const t = text(page({ hidden: ['jwt'], options: { json: { indent: 4 } } }));
+    expect(t).toContain('Restablecer orden');
+    expect(t).toContain('Restablecer las opciones de las herramientas');
+  });
+
+  it('A-Z: sin asas ni flechas, con la ayuda del orden alfabético', () => {
+    const html = page({ layout: 'az' });
+    expect(html).not.toContain('Mover JSON arriba');
+    expect(html).not.toContain('Arrastrar JSON');
+    expect(text(html)).toContain('En la lista A-Z el orden es alfabético');
+  });
+
+  it('la última visible no se puede ocultar', () => {
+    const html = page({ hidden: ALL_TOOLS.filter((tool) => tool !== 'cron') });
+    expect(text(html)).toContain('Deja al menos una herramienta visible.');
   });
 });

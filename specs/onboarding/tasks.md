@@ -40,7 +40,11 @@ Estado: en progreso.
 - [x] "Abrir Logday" guarda `basePath`, idioma, estilo y pantalla de inicio, crea las carpetas y abre en Tareas.
 - [x] "Ver el recorrido" en Acerca de: Esc lo cierra sin cerrar Opciones y el foco vuelve al botón.
 - [x] Arreglado en la prueba:
-  - el botón principal quedaba casi transparente con texto blanco en los temas tintados (App.css cambia `bg-indigo-*` por `--accent-soft`); ahora usa el indigo literal;
+  - el botón principal quedaba casi transparente con texto blanco en los temas tintados (App.css cambia `bg-indigo-*` por `--accent-soft`).
+- [x] A pedido de Jorge, el logo y el botón principal siguen el tema:
+  - el logo es el mismo SVG del menú, con `--accent`;
+  - el botón usa los tokens nuevos `--accent-solid` y `--accent-on`. Están fijados en App.css para los 7 temas, con contraste de 4.5:1 o más, y se derivan en los personalizados (`themeColor.ts`).
+  - Probado en los 7 temas;
   - los atajos globales (⌘N, ⌘T, ⌘D) funcionaban durante la bienvenida, sin carpeta.
 
 ## Diferencias con el diseño

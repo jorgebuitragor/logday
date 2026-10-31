@@ -25,8 +25,10 @@ export interface HelpAction {
 
 const FOCUSABLE = 'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 const ESTIMATED_SIZE = { width: 320, height: 360 };
-// Debajo del botón y alineado a su borde derecho, a 6 px (design, El popover).
-const ANCHOR_OPTIONS = { sideX: 'left' as const, gap: 0 };
+// Debajo del botón, alineado a su borde izquierdo y hacia la derecha, a 6 px.
+// Hacia la izquierda tapaba lo que explica (la columna de herramientas de
+// DevTools, prueba del 31 oct 2026); si no cabe, menuPosition lo voltea.
+const ANCHOR_OPTIONS = { sideX: 'right' as const, gap: 0 };
 // Abierto, el fondo del hover y sin acento (design, Estados).
 const BUTTON_CLS = `${ICON_BTN} min-h-7 min-w-7 justify-center aria-expanded:bg-[var(--bg-hover)] aria-expanded:text-[var(--text-primary)]`;
 
@@ -115,7 +117,7 @@ export function HelpButton({
     }
     const r = buttonRef.current?.getBoundingClientRect();
     if (!r) return;
-    setAnchor({ left: r.right, right: r.right, top: r.bottom + 6, bottom: r.bottom + 6 });
+    setAnchor({ left: r.left, right: r.left, top: r.bottom + 6, bottom: r.bottom + 6 });
   };
 
   // AY7: Tab recorre solo los controles de la ayuda.

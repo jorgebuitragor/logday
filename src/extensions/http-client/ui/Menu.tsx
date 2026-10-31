@@ -2,7 +2,7 @@
 // ↑/↓, Home/End, Enter/Espacio para elegir y Esc para cerrar, que devuelve
 // el foco al botón, y escribir letras salta a la opción que empieza así
 // (typeahead). Lo usan los selectores de la barra (lenguaje, método,
-// petición), el del entorno y, en vez de un <select> nativo (que en macOS
+// petición), el del entorno, "Copiar como…" y, en vez de un <select> nativo (que en macOS
 // es la lista azul del sistema), el método del formulario y el entorno
 // activo de Opciones, con el botón como un campo (`FIELD_BTN`).
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -15,8 +15,13 @@ export interface MenuItem {
   /** Solo para lectores de pantalla, tras la etiqueta. */
   srSuffix?: string;
   checked?: boolean;
-  /** Una acción (no una opción): sin marca de elegida, tras un separador. */
+  /** Una acción (no una opción): sin marca de elegida, tras un separador
+   *  si también hay opciones. */
   action?: boolean;
+  /** Se puede enfocar (y se lee, con `description`) pero no hace nada. */
+  disabled?: boolean;
+  /** Una segunda línea en pequeño: por qué está deshabilitada, p. ej. */
+  description?: string;
   onSelect: () => void;
 }
 
@@ -27,10 +32,13 @@ export const CHIP_BTN = `flex min-w-0 items-center gap-1 rounded-md px-1.5 py-0.
 export const FIELD_BTN = `flex items-center justify-between gap-2 rounded-lg border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs text-[var(--text-primary)] transition hover:bg-[var(--bg-hover)] ${FOCUS_RING}`;
 
 export function Menu({
-  label, button, items, hint, align = 'left', buttonClassName = CHIP_BTN, listClassName = 'min-w-[220px] max-w-[22rem]',
+  label, button, items, hint, align = 'left', buttonClassName = CHIP_BTN, listClassName = 'min-w-[220px] max-w-[22rem]', disabled, title,
 }: {
   /** `aria-label` del botón. */
   label: string;
+  /** El botón no abre el menú (p. ej. "Copiar como…" con errores). */
+  disabled?: boolean;
+  title?: string;
   button: ReactNode;
   items: MenuItem[];
   /** Una línea arriba, sin acción ("Se usa en todas las peticiones."). */
@@ -45,6 +53,11 @@ export function Menu({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const typed = useRef({ text: '', at: 0 });
+
+  // Si se deshabilita abierto (aparece un error mientras se escribe), se cierra.
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
 
   useEffect(() => {
     if (!open) return;
@@ -101,15 +114,26 @@ export function Menu({
       type="button"
       role={item.action ? 'menuitem' : 'menuitemradio'}
       aria-checked={item.action ? undefined : !!item.checked}
+      // Deshabilitada, sigue en el recorrido con las flechas (patrón de
+      // menú de la APG), para que se lea por qué.
+      aria-disabled={item.disabled || undefined}
       tabIndex={-1}
       onClick={() => {
+        if (item.disabled) return;
         close(true);
         item.onSelect();
       }}
-      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-hover)] focus:bg-[var(--bg-hover)] focus:outline-none`}
+      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] ${item.disabled ? 'cursor-default text-[var(--text-hint)]' : 'text-[var(--text-primary)]'} hover:bg-[var(--bg-hover)] focus:bg-[var(--bg-hover)] focus:outline-none`}
     >
       {!item.action && <span className="flex w-3 shrink-0 justify-center">{item.checked && <Check size={12} aria-hidden />}</span>}
-      <span className="flex min-w-0 flex-1 items-center gap-1.5">{item.label}</span>
+      {item.description ? (
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="flex min-w-0 items-center gap-1.5">{item.label}</span>
+          <span className="text-[10px] text-[var(--text-hint)]">{item.description}</span>
+        </span>
+      ) : (
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">{item.label}</span>
+      )}
       {item.srSuffix && <span className="sr-only">, {item.srSuffix}</span>}
     </button>
   );
@@ -122,6 +146,8 @@ export function Menu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={label}
+        title={title}
+        disabled={disabled}
         onClick={() => setOpen((v) => !v)}
         onKeyDown={(e) => {
           if (e.key === 'ArrowDown' && !open) {
@@ -143,7 +169,7 @@ export function Menu({
         >
           {hint && <p className="px-3 py-1 text-[10px] text-[var(--text-hint)]">{hint}</p>}
           {options.map(row)}
-          {actions.length > 0 && <div className="my-1 border-t border-[var(--border)]" role="separator" />}
+          {options.length > 0 && actions.length > 0 && <div className="my-1 border-t border-[var(--border)]" role="separator" />}
           {actions.map(row)}
         </div>
       )}

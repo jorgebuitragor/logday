@@ -1652,3 +1652,19 @@ El diseño se escribió mientras cambiaban el spec y el código. Donde no coinci
   - colores de estado en sepia (hallazgo 9.1-1);
   - tokens `--syntax-*` en los temas claros (hallazgo 4).
   Quedan para después `PRIMARY_CLS` en los temas tintados, el ítem activo en sepia, el `aria-live` de los toasts, la trampa de foco de `ModalPanel` y los lenguajes `xml`, `csv` y `diff` en el editor de notas.
+
+## Notas de la implementación de la vista
+
+Lo que la vista hace distinto de lo escrito arriba, y por qué:
+
+- **Lista para SQL IN:**
+  - Comillas: `Simples · Dobles · Ninguna`. La Adenda solo nombraba simples y ninguna, pero D13 pide también las dobles.
+  - Con "Envolver en IN (…)" y sin columna, sale `IN (…)`; con columna, `col IN (…)`. La columna se puede escribir aunque no se parta en grupos.
+  - "Números sin comillas" deja sin comillas `NULL` (exacto) y los números sin ceros a la izquierda: `007` va como `'007'` y el estado lo explica (`sqlLeadingZero`).
+- **Timestamp:** como tiene un solo campo, "Intercambiar" (D6) pasa de número a fecha ISO con desfase, o de fecha a segundos Unix.
+- **JSON:** avisa los números de más de 15 cifras. No avisa las claves repetidas (§9), que pediría un lector propio con el árbol.
+- **Codificar:** la salida es un `<pre>` de lectura, no un textarea de solo lectura.
+- **Interruptores:** `ToggleSwitch` va dentro de un `<label>`, que le da el nombre accesible; el componente compartido no acepta `aria-labelledby`.
+- **Ventana angosta:** la nota de privacidad y "Vaciar todas las herramientas" van al pie de la herramienta, porque la columna no se ve.
+- **Claves de i18n:** `sep.newline` en lugar de `sep.lines`, para que coincida con `ListSeparator`. Se sumaron las que la vista necesitó (`jwtCol*`, `quotesDouble`, `oneValue`, `tabCount`, `pickerLoading`, `error.barcode-invalid`…) y se quitaron las que ya no usa (`csvNotArray`, `duplicateKey`, `yamlDocuments`, `escapeQuotes`, `jsonYaml.*`, `jsonCsv.*`).
+- **Funciones sumadas en `tools/`** (con pruebas en `tools3.test.ts`): opciones del CSV, posición de los errores de Base64 y URL, `htmlEncode` con no ASCII, `lorem` sin la frase clásica, `checkBarcode` y `gs1CheckDigit`, `detectSeparator`, `findUnclosedQuote`, `duplicateCounts` y `groupNames`. `ToolErrorCode` suma `sql-unclosed-quote`.

@@ -135,7 +135,11 @@ export default function HttpClientView() {
   }, [origin, groups, tr]);
 
   return (
-    <div className="@container/httpview flex min-h-0 flex-1 flex-col @2xl/httpview:flex-row">
+    // El contenedor de la consulta va aparte: una container query no aplica
+    // al propio elemento que la declara, y con todo en uno la columna nunca
+    // pasaba al costado (prueba del 31 oct 2026, a 1100 px).
+    <div className="@container/httpview flex min-h-0 flex-1">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col @2xl/httpview:flex-row">
       <RequestsColumn
         tr={tr}
         groups={shown}
@@ -152,6 +156,7 @@ export default function HttpClientView() {
       <section aria-labelledby="http-view-title" className="@container/tool flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
         <RequestForm tr={tr} mac={mac} loadedError={loadedError} onOpenNote={(t) => void openNote(t)} onSaved={refresh} />
       </section>
+    </div>
     </div>
   );
 }

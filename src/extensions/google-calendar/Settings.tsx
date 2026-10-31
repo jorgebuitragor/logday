@@ -2,13 +2,14 @@ import { useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { AlertCircle, CheckCircle2, ChevronDown, ExternalLink, KeyRound, Lightbulb, LogIn, LogOut, RefreshCw } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
+import { Toggle } from '../../components/shared/FormControls';
 import { t } from '../../lib/i18n';
 import { fs } from '../../lib/invoke';
 import { setExtensionSecret } from '../secrets';
 import { readTeamChatSettings } from '../team-chat/model';
 import { connectCalendar, copyClientFromTeamChat, disconnectCalendar, toCalendarError, type CalendarCommandError } from './api';
 import { refreshGoogleCalendar, useCalendarSync } from './sync';
-import { CLIENT_SECRET_KEY, GOOGLE_CALENDAR_ID, readCalendarSettings } from './model';
+import { CLIENT_SECRET_KEY, GOOGLE_CALENDAR_ID, readCalendarSettings, showsOnHome } from './model';
 
 const INPUT_CLS =
   'min-w-0 flex-1 rounded-lg border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs text-[var(--text-primary)] placeholder-[var(--text-hint)] focus:border-indigo-500 focus:outline-none';
@@ -281,6 +282,16 @@ export default function GoogleCalendarSettings() {
             </button>
           </div>
         )}
+      </div>
+
+      {/* R27: la tarjeta "Reuniones de hoy" en Inicio. */}
+      <div className="space-y-1 border-t border-[var(--border)] pt-3">
+        <Toggle
+          label={t(language, 'googleCalendar', 'showOnHome')}
+          checked={showsOnHome(raw)}
+          onChange={(v) => void update(GOOGLE_CALENDAR_ID, { showOnHome: v })}
+        />
+        <p className="text-[11px] text-[var(--text-hint)]">{t(language, 'googleCalendar', 'showOnHomeHint')}</p>
       </div>
 
       <p className="text-[10px] text-[var(--text-hint)]">{t(language, 'googleCalendar', 'readOnly')}</p>

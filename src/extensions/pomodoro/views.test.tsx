@@ -8,6 +8,7 @@ import { pomodoroApi, usePomodoro } from './store';
 import View from './View';
 import SidebarStatus from './SidebarStatus';
 import Settings from './Settings';
+import HomeCard from './HomeCard';
 
 const app = vi.hoisted(() => ({
   language: 'es',
@@ -112,6 +113,7 @@ describe('vista del Pomodoro', () => {
     // PM15 y PM16.
     expect(text(html)).toMatch(/Mostrar el tiempo en la (barra de menús|bandeja del sistema)/);
     expect(text(html)).toContain('Mostrar el contador en el menú lateral');
+    expect(text(html)).toContain('Mostrar en Inicio');
     expect(text(html)).toContain('Restablecer el Pomodoro');
   });
 
@@ -131,5 +133,81 @@ describe('vista del Pomodoro', () => {
     const html = text(renderToStaticMarkup(<View />));
     expect(html.match(/Reiniciar el ciclo/g)).toHaveLength(1);
     expect(html).toMatch(/Bloque 3 de 4 Reiniciar el ciclo/);
+  });
+});
+
+describe('tarjeta del Pomodoro en Inicio (PM17, R27)', () => {
+  beforeEach(() => {
+    app.extensions.pomodoro.settings = {};
+  });
+
+  it('Listo: el tiempo completo, Iniciar y sin pomodoros hoy', () => {
+    setTimer(initialTimer(T0));
+    const html = renderToStaticMarkup(<HomeCard />);
+    const plain = text(html);
+    expect(plain).toContain('Pomodoro');
+    expect(plain).toContain('Trabajo listo');
+    expect(plain).toContain('25:00');
+    expect(plain).toContain('Iniciar el bloque');
+    expect(plain).toContain('Aún no has hecho pomodoros hoy.');
+    expect(plain).toContain('Abrir');
+    expect(html).toContain('aria-label="Abrir Pomodoro"');
+    // La única región viva es la de los avisos, no el tiempo.
+    expect(html.match(/aria-live/g)).toHaveLength(1);
+    expect(html).toMatch(/class="sr-only" aria-live="polite"/);
+  });
+
+  it('corriendo, en pausa y con un descanso listo', () => {
+    setTimer(start(initialTimer(T0), T0, o), T0 + 6 * MIN + 18_000);
+    let plain = text(renderToStaticMarkup(<HomeCard />));
+    expect(plain).toContain('18:42');
+    expect(plain).toContain('18 minutos y 42 segundos');
+    expect(plain).toContain('Pausar');
+    expect(plain).toMatch(/Trabajo 18:42/);
+
+    setTimer(pause(start(initialTimer(T0), T0, o), T0 + 10 * MIN), T0 + 20 * MIN);
+    plain = text(renderToStaticMarkup(<HomeCard />));
+    expect(plain).toContain('En pausa');
+    expect(plain).toContain('15:00');
+    expect(plain).toContain('Reanudar');
+
+    setTimer({ ...initialTimer(T0), phase: 'short', status: 'finished', done: 1, lastEnd: { phase: 'work', at: T0, recovered: false, auto: false } });
+    plain = text(renderToStaticMarkup(<HomeCard />));
+    expect(plain).toContain('Descanso listo');
+    expect(plain).toContain('Iniciar el descanso');
+  });
+
+  it('con tarea y con el resumen de hoy', () => {
+    setTimer({ ...initialTimer(T0), task: { id: 'a', title: 'Informe Q3', project: 'Trabajo' } });
+    usePomodoro.setState({
+      history: [
+        { end: new Date(T0 - 30 * MIN).toISOString(), minutes: 25 },
+        { end: new Date(T0 - 60 * MIN).toISOString(), minutes: 25 },
+      ],
+    });
+    const plain = text(renderToStaticMarkup(<HomeCard />));
+    expect(plain).toContain('Tarea: Informe Q3');
+    expect(plain).toContain('Hoy: 2 pomodoros · 50 min de foco');
+  });
+
+  it('no se dibuja sin la extensión corriendo ni con "Mostrar en Inicio" apagado', () => {
+    setTimer(initialTimer(T0));
+    usePomodoro.setState({ active: false });
+    expect(renderToStaticMarkup(<HomeCard />)).toBe('');
+    usePomodoro.setState({ active: true });
+    app.extensions.pomodoro.settings = { showOnHome: false };
+    expect(renderToStaticMarkup(<HomeCard />)).toBe('');
+  });
+
+  it('en inglés', () => {
+    app.language = 'en';
+    try {
+      setTimer(initialTimer(T0));
+      const plain = text(renderToStaticMarkup(<HomeCard />));
+      expect(plain).toContain('Focus ready');
+      expect(plain).toContain('You haven’t done any pomodoros today.');
+    } finally {
+      app.language = 'es';
+    }
   });
 });

@@ -149,6 +149,10 @@ export interface AppState {
   animationsEnabled: boolean;
   helpButtonsEnabled: boolean;
 
+  // Inicio (specs/extensiones R27)
+  /** El aviso de "Extensiones" al final de Inicio se descartó. Local. */
+  homeExtensionsHintDismissed: boolean;
+
   // Menú lateral (specs/navegacion-secciones)
   sidebarStyle: SidebarStyle;
   /** `undefined`: el orden por defecto. */
@@ -370,6 +374,14 @@ export interface AppState {
   /** Señal para que Opciones abra la pestaña Navegación. */
   sidebarSettingsRequest: boolean;
   clearSidebarSettingsRequest: () => void;
+  /** Abre Opciones en el catálogo de extensiones ("Ver extensiones" de
+   *  Inicio, specs/extensiones R27). */
+  openExtensionsCatalog: () => void;
+  /** Señal para que Opciones abra la pestaña Extensiones. */
+  extensionsCatalogRequest: boolean;
+  clearExtensionsCatalogRequest: () => void;
+  /** "Ocultar este aviso" del aviso de extensiones en Inicio (R27). */
+  dismissHomeExtensionsHint: () => Promise<void>;
   setTrashAutoPurgeEnabled: (enabled: boolean) => Promise<void>;
   listTrash: () => Promise<trash.TrashListItem[]>;
   /** `silent`: sin aviso (al deshacer un borrado de varias tareas, que avisa una vez). */
@@ -489,8 +501,8 @@ async function persistConfig(get: SyncGet): Promise<void> {
   const {
     configDir, basePath, startupScreen, language, confirmDestructiveActions,
     notificationsEnabled, defaultReminderMinutes, workWeekDays, holidaysAsNonWork,
-    animationsEnabled, helpButtonsEnabled, trashAutoPurgeEnabled, sidebarStyle, sidebarSections, activeProject, activeNoteFolder,
-    notesView, notesViewDefault, tasksViewDefault, noteSortBy, noteSortDir, taskSortBy, extensions,
+    animationsEnabled, helpButtonsEnabled, homeExtensionsHintDismissed, trashAutoPurgeEnabled, sidebarStyle, sidebarSections,
+    activeProject, activeNoteFolder, notesView, notesViewDefault, tasksViewDefault, noteSortBy, noteSortDir, taskSortBy, extensions,
   } = get();
   if (!configDir || !basePath) return;
   await saveConfig(configDir, {
@@ -504,6 +516,8 @@ async function persistConfig(get: SyncGet): Promise<void> {
     holidaysAsNonWork,
     animationsEnabled,
     helpButtonsEnabled,
+    // Solo se escribe si se descartó: las configs de siempre no cambian.
+    ...(homeExtensionsHintDismissed ? { homeExtensionsHintDismissed } : {}),
     trashAutoPurgeEnabled,
     // `sidebarLabelsVisible` ya no se escribe (NS5): al guardar se cae.
     sidebarStyle,
@@ -2287,6 +2301,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   sidebarStyle: DEFAULT_SIDEBAR_STYLE,
   sidebarSections: undefined,
   sidebarSettingsRequest: false,
+  extensionsCatalogRequest: false,
+  homeExtensionsHintDismissed: false,
   theme: (localStorage.getItem('theme') as Theme) || 'system',
   customThemes: (() => {
     try {
@@ -2440,6 +2456,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             holidaysAsNonWork: cfg.holidaysAsNonWork ?? true,
             animationsEnabled: cfg.animationsEnabled ?? true,
             helpButtonsEnabled: cfg.helpButtonsEnabled ?? true,
+            homeExtensionsHintDismissed: cfg.homeExtensionsHintDismissed === true,
             trashAutoPurgeEnabled: cfg.trashAutoPurgeEnabled ?? true,
             // NS5: una config con `sidebarLabelsVisible` y sin estilo
             // abre con la Barra de íconos, la predeterminada.
@@ -4080,6 +4097,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   openSidebarSettings: () => set({ isSettingsOpen: true, sidebarSettingsRequest: true }),
   clearSidebarSettingsRequest: () => set({ sidebarSettingsRequest: false }),
+
+  openExtensionsCatalog: () => set({ isSettingsOpen: true, extensionsCatalogRequest: true }),
+  clearExtensionsCatalogRequest: () => set({ extensionsCatalogRequest: false }),
+
+  dismissHomeExtensionsHint: async () => {
+    set({ homeExtensionsHintDismissed: true });
+    await persistConfig(get);
+  },
 
   setTrashAutoPurgeEnabled: async (enabled) => {
     set({ trashAutoPurgeEnabled: enabled });

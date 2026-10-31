@@ -105,6 +105,22 @@ tengan su primera extensión.
   MIENTRAS no tenga nada que mostrar, NO DEBERÁ ocupar sitio. Su código
   NO DEBERÁ cargarse con la extensión apagada (R16) y un error en él
   DEBERÁ quedar aislado (R15).
+- R27. Una extensión activa DEBERÁ poder poner una tarjeta en Inicio,
+  al final, después de "Esta semana" (por ejemplo, el Pomodoro o las
+  reuniones de hoy de Google Calendar), con una opción "Mostrar en Inicio"
+  en su página de Opciones, encendida por defecto y guardada en su
+  configuración local. MIENTRAS no tenga nada que mostrar, o el usuario la
+  apague, NO DEBERÁ ocupar sitio. Su código NO DEBERÁ cargarse con la
+  extensión apagada (R16) y un error en ella DEBERÁ quedar aislado (R15).
+  - MIENTRAS no haya ninguna extensión activa, Inicio DEBERÁ mostrar al
+    final un aviso pequeño de que existen, con un botón que abre el
+    catálogo en Opciones. El aviso DEBERÁ poder ocultarse, y eso se
+    recuerda en la configuración local (no se sincroniza).
+  - (Pedido y decisiones de Jorge, 31 oct 2026: las tarjetas van al final
+    de Inicio; el aviso, solo sin ninguna activa y descartable; el primer
+    cambio trae Pomodoro y Google Calendar con su interruptor. Quedan para
+    después Granola, "Enviar el daily" desde Inicio, los avisos de una
+    línea de OpenProject, MCP y Webhook, y la tarjeta del Cliente HTTP.)
 - R22. Una extensión DEBERÁ poder mostrar eventos de solo lectura en el
   Calendario de Logday (por ejemplo, las reuniones de Google Calendar),
   distintos de los eventos propios. Esos eventos NO DEBERÁN guardarse en

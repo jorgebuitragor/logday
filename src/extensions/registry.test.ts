@@ -51,6 +51,12 @@ describe('registro de extensiones', () => {
     expect(EXTENSIONS.filter((d) => d.sidebarStatus).map((d) => d.id)).toEqual(['pomodoro']);
   });
 
+  it('las extensiones con tarjeta en Inicio lo declaran, con su orden (R27)', () => {
+    const withCard = EXTENSIONS.filter((d) => d.homeCard);
+    expect(withCard.map((d) => d.id)).toEqual(['google-calendar', 'pomodoro']);
+    expect(getExtension('pomodoro')?.homeCard?.order).toBeLessThan(getExtension('google-calendar')?.homeCard?.order ?? 0);
+  });
+
   it('Cliente HTTP: herramienta con aviso, bloque inline y secretos por variable', () => {
     const http = getExtension('http-client');
     expect(http?.category).toBe('tool');

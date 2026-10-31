@@ -54,6 +54,20 @@ Estado: en progreso.
 - [x] `openExtensionSettings(id)`: Opciones abierto en la página de una
   extensión (R21).
 
+## Tarjetas en Inicio (R27)
+
+- [x] Punto `HomeCard`, metadato `homeCard: { order }`, `ExtensionHomeCards`
+  después de "Esta semana" y `HomeCardShell` (31 oct 2026, rama
+  `feature/inicio-extensiones`). Lo estrenan Pomodoro (PM17) y Google
+  Calendar (G12).
+- [x] Aviso "Extensiones" sin ninguna activa, `openExtensionsCatalog()` y
+  `dismissHomeExtensionsHint()` (`homeExtensionsHintDismissed`, local).
+- [ ] Prueba visual en la app de QA: anchos (una, dos tarjetas por fila),
+  temas claro y sepia, foco al ocultar el aviso.
+- [ ] Después (decisión de Jorge): Granola, "Enviar el daily" desde Inicio,
+  avisos de una línea de OpenProject, MCP y Webhook, y la tarjeta del
+  Cliente HTTP.
+
 ## Primera extensión
 
 - [x] `team-chat`, en modo local. Ver

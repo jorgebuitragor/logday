@@ -43,6 +43,7 @@ export function SettingsModal() {
     isSyncOpen, toggleSync,
     settingsExtensionRequest, clearExtensionSettingsRequest,
     sidebarSettingsRequest, clearSidebarSettingsRequest,
+    extensionsCatalogRequest, clearExtensionsCatalogRequest,
   } = useAppStore();
 
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
@@ -104,6 +105,14 @@ export function SettingsModal() {
     setSettingsTab('navigation');
     clearSidebarSettingsRequest();
   }, [isSettingsOpen, sidebarSettingsRequest, clearSidebarSettingsRequest]);
+
+  // "Ver extensiones" del aviso de Inicio abre el catálogo
+  // (specs/extensiones R27).
+  useEffect(() => {
+    if (!isSettingsOpen || !extensionsCatalogRequest) return;
+    setSettingsTab('extensions');
+    clearExtensionsCatalogRequest();
+  }, [isSettingsOpen, extensionsCatalogRequest, clearExtensionsCatalogRequest]);
 
   if (!isSettingsOpen) return null;
 

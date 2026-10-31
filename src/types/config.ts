@@ -46,6 +46,9 @@ export interface AppConfig {
   animationsEnabled?: boolean;
   /** El botón (?) de ayuda junto al título de las pantallas (specs/ayuda-contextual AY23). */
   helpButtonsEnabled?: boolean;
+  /** Se descartó el aviso de "Extensiones" al final de Inicio
+   *  (specs/extensiones R27). Local, no se sincroniza. */
+  homeExtensionsHintDismissed?: boolean;
   trashAutoPurgeEnabled?: boolean;
   /** Antes de specs/navegacion-secciones: los textos de la fila de
    *  secciones. Ya no se lee ni se escribe (NS5); queda en el tipo porque

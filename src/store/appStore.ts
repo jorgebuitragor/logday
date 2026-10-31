@@ -2303,8 +2303,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   })(),
   startupScreen: 'dashboard',
   extensions: {},
-  notesView: 'list',
-  notesViewDefault: 'list',
+  notesView: 'tree',
+  notesViewDefault: 'tree',
   tasksViewDefault: 'list',
   noteSortBy: 'updated',
   noteSortDir: 'desc',
@@ -2447,8 +2447,9 @@ export const useAppStore = create<AppState>((set, get) => ({
             sidebarStyle: parseSidebarStyle(cfg.sidebarStyle, cfg.sidebarLabelsVisible),
             sidebarSections: parseSidebarSections(cfg.sidebarSections),
             // La vista de Opciones se usa la primera vez; después, la última usada.
-            notesViewDefault: cfg.notesViewDefault ?? 'list',
-            notesView: cfg.notesView ?? cfg.notesViewDefault ?? 'list',
+            // Sin ninguna guardada, el árbol (Jorge, 31 oct 2026).
+            notesViewDefault: cfg.notesViewDefault ?? 'tree',
+            notesView: cfg.notesView ?? cfg.notesViewDefault ?? 'tree',
             // Tareas abre en la vista de Opciones; la última usada no se
             // recuerda (NS22).
             ...initialTasksView(cfg),

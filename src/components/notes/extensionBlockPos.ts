@@ -115,3 +115,26 @@ export function selectionOutsideTr(state: EditorState, pos: number): Transaction
     ?? NodeSelection.create(state.doc, pos);
   return state.tr.setSelection(next);
 }
+
+/** La selección está en el texto del bloque que empieza en `pos`. */
+export function selectionInBlock(state: EditorState, pos: number): boolean {
+  const { $from } = state.selection;
+  return $from.parent.type.name === 'codeBlock' && $from.before() === pos;
+}
+
+/** Si un bloque compacto se expande porque el usuario puso el cursor
+ *  dentro: solo con el foco en el editor (no en la barra) y por una
+ *  transacción que mueve la selección o cambia el texto. Al abrir o
+ *  cambiar de nota la selección de ProseMirror queda al principio del
+ *  documento, dentro del bloque si la nota empieza por uno, y eso no es
+ *  el usuario; tampoco las transacciones que solo llevan metadatos (el
+ *  foco, el guardado). */
+export function revealsCompact(state: EditorState, pos: number, focused: boolean, tr: Transaction): boolean {
+  if (!focused || !selectionInBlock(state, pos)) return false;
+  return tr.selectionSet || tr.docChanged;
+}
+
+/** Si el bloque puede arrancar compacto al montarse: no, si el usuario
+ *  está escribiendo en él (un bloque recién creado, con el foco y el
+ *  cursor dentro). Sin foco, la selección dentro no cuenta. */
+export const canStartCompact = (state: EditorState, pos: number, focused: boolean) => !(focused && selectionInBlock(state, pos));

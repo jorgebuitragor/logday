@@ -2,12 +2,14 @@ import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import CodeBlockLowlight, { type CodeBlockLowlightOptions } from '@tiptap/extension-code-block-lowlight';
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import type { Node as PMNode } from '@tiptap/pm/model';
+import type { Transaction } from '@tiptap/pm/state';
 import { MermaidBlock } from './MermaidBlock';
 import { ExtensionSlot } from '../../extensions/ExtensionSlot';
 import type { ExtensionId } from '../../extensions/types';
 import { emitNoteBlockRun } from '../../extensions/noteBlockEvents';
 import {
-  blockCodesOf, blockIndexAt, inlineRunTarget, languageOf, selectionOutsideTr, setBlockCodeTr, setBlockLanguageTr,
+  blockCodesOf, blockIndexAt, canStartCompact, inlineRunTarget, languageOf, revealsCompact, selectionInBlock, selectionOutsideTr,
+  setBlockCodeTr, setBlockLanguageTr,
 } from './extensionBlockPos';
 
 // Bloques de código con lenguaje `mermaid`, dibujados dentro del documento.
@@ -111,9 +113,9 @@ function ExtensionCodeBlockView({ node, editor, getPos, extension }: NodeViewPro
  *
  *  Compacto (specs/cliente-http, bloque compacto): el código y la franja
  *  se ocultan con CSS, pero siguen en el documento: el texto, la selección
- *  y Deshacer no cambian. Si el cursor cae dentro (Deshacer, ir a una
- *  línea, borrar desde el párrafo de abajo), el bloque se expande: el
- *  cursor nunca queda en algo que no se ve. */
+ *  y Deshacer no cambian. Si el usuario pone el cursor dentro (Deshacer,
+ *  ir a una línea, borrar desde el párrafo de abajo, una tecla con la
+ *  selección ahí), el bloque se expande: no escribe en algo que no se ve. La selección que deja abrir la nota no cuenta (`revealsCompact`). */
 function InlineExtensionBlockView({ node, editor, getPos, extension }: NodeViewProps) {
   const blocks = (extension.options as Options).extensionBlocks.current;
   const language = languageOf(node);
@@ -121,9 +123,8 @@ function InlineExtensionBlockView({ node, editor, getPos, extension }: NodeViewP
   const read = () => {
     const pos = posOf(getPos);
     if (typeof pos !== 'number') return { index: -1, cursor: null as number | null };
-    const { $from } = editor.state.selection;
-    const inside = $from.parent.type.name === 'codeBlock' && $from.before() === pos;
-    return { index: blockIndexAt(editor.state.doc, pos, language), cursor: inside ? $from.parentOffset : null };
+    const inside = selectionInBlock(editor.state, pos);
+    return { index: blockIndexAt(editor.state.doc, pos, language), cursor: inside ? editor.state.selection.$from.parentOffset : null };
   };
   const [where, setWhere] = useState(read);
   const [compact, setCompactState] = useState(false);
@@ -164,18 +165,25 @@ function InlineExtensionBlockView({ node, editor, getPos, extension }: NodeViewP
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(finishAnimation, 400);
   };
-  const latest = useRef({ read, changeCompact });
-  latest.current = { read, changeCompact };
+  const reveal = (tr: Transaction) => {
+    const pos = posOf(getPos);
+    if (!compactRef.current || typeof pos !== 'number' || !revealsCompact(editor.state, pos, editor.view.hasFocus(), tr)) return;
+    revealRef.current = true;
+    changeCompact(false);
+  };
+  const latest = useRef({ read, reveal });
+  latest.current = { read, reveal };
 
   useEffect(() => {
-    const onTransaction = () => {
+    const onTransaction = ({ transaction }: { transaction: Transaction }) => {
       const next = latest.current.read();
       setWhere((prev) => (prev.index === next.index && prev.cursor === next.cursor ? prev : next));
-      if (compactRef.current && next.cursor !== null) {
-        revealRef.current = true;
-        latest.current.changeCompact(false);
-      }
+      latest.current.reveal(transaction);
     };
+    // Sin escuchar el foco: al hacer clic en otra parte del editor, el foco
+    // llega antes que la selección nueva y expandiría el bloque bajo el
+    // clic. Si el foco llega por Tab con la selección dentro, la primera
+    // tecla (flecha o texto) es una transacción y lo expande.
     editor.on('transaction', onTransaction);
     return () => {
       editor.off('transaction', onTransaction);
@@ -214,7 +222,15 @@ function InlineExtensionBlockView({ node, editor, getPos, extension }: NodeViewP
     const tr = setBlockCodeTr(editor.state, pos, next);
     if (tr) editor.view.dispatch(tr);
   };
-  const setCompact = (next: boolean) => {
+  const setCompact = (next: boolean, opts: { initial?: boolean } = {}) => {
+    if (next && opts.initial) {
+      // Al montarse: sin mover la selección (la nota se está abriendo) y
+      // sin compactar el bloque en el que el usuario está escribiendo.
+      const pos = posOf(getPos);
+      if (typeof pos !== 'number' || !canStartCompact(editor.state, pos, editor.view.hasFocus())) return;
+      changeCompact(true);
+      return;
+    }
     if (next) {
       // Primero el cursor sale (si estaba dentro); si no, se expandiría
       // otra vez en el acto. El foco se queda en la barra.

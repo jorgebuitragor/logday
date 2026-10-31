@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { Schema } from '@tiptap/pm/model';
 import { EditorState, TextSelection } from '@tiptap/pm/state';
 import {
-  blockCodesOf, blockIndexAt, changedRange, inlineRunTarget, selectionOutsideTr, setBlockCodeTr, setBlockLanguageTr,
+  blockCodesOf, blockIndexAt, canStartCompact, changedRange, inlineRunTarget, revealsCompact, selectionInBlock, selectionOutsideTr,
+  setBlockCodeTr, setBlockLanguageTr,
 } from './extensionBlockPos';
 import { emitNoteBlockRun, subscribeNoteBlockRun, type NoteBlockRunEvent } from '../../extensions/noteBlockEvents';
 
@@ -153,5 +154,46 @@ describe('bloque compacto: la nota (blockCodes, setCompact)', () => {
     const next = state.apply(selectionOutsideTr(state, 0)!);
     expect(next.selection.from).toBe(0);
     expect(next.selection.$from.parent.type.name).toBe('doc');
+  });
+});
+
+describe('bloque compacto: cuándo se expande solo', () => {
+  // Una nota que empieza por un bloque http (el caso de "Servicio de
+  // pedidos"): al abrirla, ProseMirror deja la selección al principio,
+  // dentro del bloque.
+  const first = schema.node('doc', null, [code('http', 'GET https://api/pedidos'), para('notas')]);
+  const opened = EditorState.create({ doc: first });
+  const metaOnly = () => opened.tr.setMeta('focus', true);
+
+  it('al abrir la nota la selección queda dentro del primer bloque', () => {
+    expect(selectionInBlock(opened, 0)).toBe(true);
+  });
+
+  it('sin foco, nada lo expande: ni la selección inicial ni otras transacciones', () => {
+    expect(revealsCompact(opened, 0, false, metaOnly())).toBe(false);
+    expect(revealsCompact(opened, 0, false, opened.tr.setSelection(TextSelection.create(first, 3)))).toBe(false);
+    expect(revealsCompact(opened, 0, false, opened.tr.insertText('x', 3))).toBe(false);
+  });
+
+  it('con "Bloques compactos al abrir": sin foco, la selección dentro no impide arrancar compacto', () => {
+    expect(canStartCompact(opened, 0, false)).toBe(true);
+    // Con el foco y el cursor dentro (un bloque recién creado), no.
+    expect(canStartCompact(opened, 0, true)).toBe(false);
+    // Con el foco en otra parte, sí.
+    const elsewhere = EditorState.create({ doc: first, selection: TextSelection.create(first, first.child(0).nodeSize + 2) });
+    expect(canStartCompact(elsewhere, 0, true)).toBe(true);
+  });
+
+  it('con foco: lo expande una transacción que mueve la selección dentro o cambia el texto, no una de metadatos', () => {
+    expect(revealsCompact(opened, 0, true, metaOnly())).toBe(false);
+    const moved = opened.tr.setSelection(TextSelection.create(first, 4));
+    expect(revealsCompact(opened.apply(moved), 0, true, moved)).toBe(true);
+    const typed = opened.tr.insertText('x', 3);
+    expect(revealsCompact(opened.apply(typed), 0, true, typed)).toBe(true);
+  });
+
+  it('con foco, la selección en otra parte no lo expande', () => {
+    const out = opened.tr.setSelection(TextSelection.create(first, first.child(0).nodeSize + 2));
+    expect(revealsCompact(opened.apply(out), 0, true, out)).toBe(false);
   });
 });

@@ -85,11 +85,13 @@ function useCompact(props: NoteBlockProps, b: Block) {
   latest.current = { key, setCompact, noteId: b.noteId };
 
   // Con qué arranca: lo elegido o la opción de Opciones. Antes de pintar,
-  // para que no se vea expandido un instante. Con el cursor dentro (un
-  // bloque recién creado), expandido.
+  // para que no se vea expandido un instante. La nota decide si se puede
+  // (`initial`): no si el usuario está escribiendo en el bloque. `cursor`
+  // no sirve: al abrir la nota la selección queda al principio, dentro
+  // del bloque si la nota empieza por uno, sin que el usuario esté ahí.
   useLayoutEffect(() => {
     if (!setCompact) return;
-    if (initialCompact(loadCompact(key), b.settings.compactOnOpen) && (props.cursor === null || props.cursor === undefined)) setCompact(true);
+    if (initialCompact(loadCompact(key), b.settings.compactOnOpen)) setCompact(true, { initial: true });
   // Solo al montarse.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

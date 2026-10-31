@@ -56,9 +56,11 @@ export interface NoteBlockProps {
   compact?: boolean;
   /** Solo en el modo inline: compacta o expande el bloque. Recordarlo es
    *  cosa de la extensión. Al compactar con el cursor dentro, el cursor
-   *  sale del bloque; si el cursor vuelve a entrar (Deshacer, ir a una
-   *  línea), la nota lo expande sola, sin avisar a la extensión. */
-  setCompact?: (compact: boolean) => void;
+   *  sale del bloque; si el usuario vuelve a ponerlo dentro (Deshacer, ir
+   *  a una línea), la nota lo expande sola, sin avisar a la extensión.
+   *  `initial`: el estado con que arranca al montarse; no mueve la
+   *  selección y no compacta si el usuario está escribiendo en el bloque. */
+  setCompact?: (compact: boolean, opts?: { initial?: boolean }) => void;
   /** Solo en el modo inline: el texto de cada bloque de ese lenguaje en la
    *  nota, en orden (el de `index` es este). Se calcula al llamarla. */
   blockCodes?: () => string[];

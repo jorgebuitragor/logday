@@ -225,7 +225,7 @@ Base: `devtools/View.tsx:197-235`, `ui/OutputPanel.tsx:46,53`, `ui/CodeImage.tsx
 
 **DevTools: "En esta herramienta"** (`TOOL_HELP`)
 
-Solo estas 8 herramientas lo tienen. En las demás, la descripción bajo el título basta.
+Solo estas 9 herramientas lo tienen. En las demás, la descripción bajo el título basta.
 
 | Clave | es | en |
 |---|---|---|
@@ -251,6 +251,9 @@ Solo estas 8 herramientas lo tienen. En las demás, la descripción bajo el tít
 | barcode.help2 | En EAN, UPC e ITF-14 puedes omitir el dígito de control: se calcula y se agrega al final. | In EAN, UPC and ITF-14 you can leave out the check digit: it's calculated and added at the end. |
 | jwt.help1 | Pega el token; el prefijo «Bearer» se quita solo. | Paste the token; the "Bearer" prefix is removed. |
 | jwt.help2 | Se decodifica, pero la firma no se verifica: decodificarlo no prueba que sea auténtico. | It's decoded, but the signature isn't verified: decoding doesn't prove it's authentic. |
+| html-preview.help1 | La vista previa no ejecuta scripts ni envía formularios, y los enlaces no se abren: sirve para ver cómo se ve la página, no para usarla. | The preview doesn't run scripts or send forms, and links don't open: it's for seeing how the page looks, not for using it. |
+| html-preview.help2 | No carga nada de internet: las imágenes y los estilos externos no aparecen. «Cargar recursos externos» trae imágenes, estilos y fuentes por https (nunca scripts) y se apaga al salir de la herramienta. | Nothing is loaded from the internet: external images and styles don't show up. "Load external resources" brings images, styles and fonts over https (never scripts) and turns off when you leave the tool. |
+| html-preview.help3 | Formatear y Minificar cambian el texto del editor. Con Móvil o Tablet, la página se dibuja a 375 o 768 px de ancho y se escala si no cabe. | Format and Minify change the text in the editor. With Mobile or Tablet, the page is drawn 375 or 768 px wide and scaled down if it doesn't fit. |
 
 Base: `tools/regex.ts:28` y `MAX_MATCHES`, `tools/regexRunner.ts:7` (`REGEX_TIMEOUT_MS`), `tools/cron.ts:76-90`, `tools/lists.ts:14-16,103-125`, e `i18n.ts` (`devtools`: `diffEol`, `qrMarginLow`, `barcodeCheckDigit`, `jwtNotVerified`, `jwtBearerRemoved`).
 

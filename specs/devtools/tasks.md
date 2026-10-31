@@ -61,3 +61,16 @@ Rama `feature/http-pantalla-propia`, desde `develop`. Pedido por Jorge: el Clien
 - [x] Textos: fuera `privacyNoteWithHttp`, `group.network`, `http.name`, `http.desc`, `http.placeholder`, `http.keywords`, `http.help1`–`3`, `help.k.runHttp` y `help.k.tabsHttp` (es y en). D11 restaurado y D25 retirado en `requirements.md`.
 - [x] Pruebas: lo guardado con `lastTool: 'http'`, `network` y `http` en el orden, las ocultas y los plegados se lee sin romper y se ignora (`settings.test.ts`); la vista y Opciones → DevTools, sin Red con Cliente HTTP activa (`views.test.tsx`); la ayuda vuelve a sus 8 herramientas (`HelpPopover.test.tsx`).
 - [ ] Prueba en el navegador: DevTools con Cliente HTTP activa no muestra Red; una config vieja con `lastTool: 'http'` abre JSON.
+
+## Visor HTML (D26, design Adenda H)
+
+Rama `feature/devtools-html`, desde `develop`.
+
+- [x] Tokenizador compartido (`src/lib/htmlTokenizer.ts`) y documento aislado (`src/lib/htmlPreviewDoc.ts`: `previewCsp`, `sanitizePreviewHtml`, `buildPreviewDoc`), puros.
+- [x] `HtmlPreview` en `src/components/shared/`, con `sandbox=""`, `srcdoc` y el ancho simulado escalado; listo para el Cliente HTTP (paquete B de su rediseño).
+- [x] `tools/htmlFormat.ts`: `formatHtml`, `minifyHtml` y `checkHtml`.
+- [x] Registro: `html-preview` en `model.ts` (al final de Formatos; ```` ```html ```` y `<!DOCTYPE html` van al visor), `ui/meta.ts` (ícono, "Traer de una nota", ayuda) y `View.tsx`; textos es y en.
+- [x] `views/HtmlPreviewTool.tsx`: editor y vista previa (apilados en ventana angosta), Formatear, Minificar, Copiar, Limpiar, ancho, recursos externos, tamaño y avisos.
+- [x] Pruebas: `src/lib/htmlPreviewDoc.test.ts` y `htmlTool.test.tsx`; ajustadas `settings.test.ts` (Formatos tiene 5) y `HelpPopover.test.tsx` (10 herramientas con ayuda).
+- [x] Tabla de "En esta herramienta" en `specs/ayuda-contextual/design.md`.
+- [ ] Probar en la app (WebKit) y en Windows (WebView2): que el `srcdoc` se ve con `sandbox=""`; que un clic en un enlace no navega; que con los externos apagados no sale ninguna petición (inspector de red) y encendidos solo https; el escalado de Móvil y Tablet en ventana angosta; temas claro, oscuro y sepia.

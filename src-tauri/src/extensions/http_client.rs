@@ -187,6 +187,23 @@ pub fn mask_secrets(text: &str, secrets: &[(String, String)]) -> String {
     out
 }
 
+/// La respuesta también puede traer un secreto de vuelta (un servidor de
+/// eco como httpbin, un error que repite la cabecera…): cada valor vuelve a
+/// su marca en las cabeceras y en el cuerpo de texto, para que el webview
+/// nunca lo tenga (pedido por Jorge el 31 oct 2026, al probar con httpbin).
+/// Un cuerpo binario no se toca.
+pub fn mask_response(headers: Vec<(String, String)>, body: Body, secrets: &[(String, String)]) -> (Vec<(String, String)>, Body) {
+    if secrets.is_empty() {
+        return (headers, body);
+    }
+    let headers = headers.into_iter().map(|(k, v)| (k, mask_secrets(&v, secrets))).collect();
+    let body = match body {
+        Body::Text { text, lossy } => Body::Text { text: mask_secrets(&text, secrets), lossy },
+        other => other,
+    };
+    (headers, body)
+}
+
 /// El host en minúsculas y sin el puerto.
 pub fn host_of(url: &Url) -> Option<String> {
     url.host_str().map(|h| h.to_ascii_lowercase())
@@ -540,11 +557,13 @@ pub async fn execute(p: Prepared) -> Result<SendOutput, SendError> {
     let body_bytes = bytes.len() as u64;
     let final_url = if redirects.is_empty() { p.masked_url.clone() } else { mask_secrets(url.as_str(), &p.secrets) };
 
+    let (response_headers, body) = mask_response(response_headers, classify_body(content_type.as_deref(), bytes, empty), &p.secrets);
+
     Ok(SendOutput {
         status: status.as_u16(),
         reason,
         headers: response_headers,
-        body: classify_body(content_type.as_deref(), bytes, empty),
+        body,
         body_bytes,
         content_length,
         truncated,
@@ -701,6 +720,26 @@ mod tests {
 
     fn secret(key: &str, value: &str) -> Vec<(String, String)> {
         vec![(key.to_string(), value.to_string())]
+    }
+
+    #[test]
+    fn la_respuesta_oculta_los_secretos_que_devuelve_el_servidor() {
+        let s = secret("v_ab12cd34", "tok3n");
+        let headers = vec![("x-echo".to_string(), "Bearer tok3n".to_string()), ("content-type".to_string(), "application/json".to_string())];
+        let body = Body::Text { text: r#"{"headers":{"Authorization":"Bearer tok3n"},"url":"https://x.com/?k=tok3n"}"#.into(), lossy: false };
+        let (h, b) = mask_response(headers, body, &s);
+        assert_eq!(h[0].1, "Bearer {{$secret:v_ab12cd34}}");
+        assert_eq!(h[1].1, "application/json");
+        match b {
+            Body::Text { text, .. } => {
+                assert!(!text.contains("tok3n"));
+                assert_eq!(text.matches("{{$secret:v_ab12cd34}}").count(), 2);
+            }
+            _ => panic!("debe seguir siendo texto"),
+        }
+        // Sin secretos no cambia nada, y un binario no se toca.
+        let bin = Body::Binary { base64: "dG9rM24=".into() };
+        assert_eq!(mask_response(vec![], bin, &s).1, Body::Binary { base64: "dG9rM24=".into() });
     }
 
     #[test]
@@ -992,12 +1031,14 @@ mod tests {
         assert_eq!(out.status, 302);
         assert!(out.redirects.is_empty());
 
-        // El secreto llega al servidor y vuelve enmascarado en la URL.
+        // El secreto llega al servidor (que lo devuelve en el cuerpo) y vuelve
+        // enmascarado en la URL y en el cuerpo: si no hubiera llegado, el
+        // cuerpo no traería la marca.
         let mut echo = input(&format!("{base}/echo-auth?k={{{{$secret:v_ab12cd34}}}}"));
         echo.headers = vec![("Authorization".into(), "Bearer {{$secret:v_ab12cd34}}".into())];
         echo.trusted_hosts = vec!["127.0.0.1".into()];
         let out = run(echo, secret("v_ab12cd34", "s3cr3t")).unwrap();
-        assert_eq!(out.body, Body::Text { text: "Bearer s3cr3t".into(), lossy: false });
+        assert_eq!(out.body, Body::Text { text: "Bearer {{$secret:v_ab12cd34}}".into(), lossy: false });
         assert!(!out.final_url.contains("s3cr3t"));
 
         // Puerto cerrado: error de conexión, solo con el host.

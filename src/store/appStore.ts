@@ -284,7 +284,8 @@ export interface AppState {
   createNoteFolder: (name: string, parent?: string) => Promise<void>;
   renameNoteFolder: (folder: string, newName: string) => Promise<void>;
   deleteNoteFolder: (folder: string) => Promise<void>;
-  createNote: () => Promise<Note>;
+  /** Sin carpeta, en la carpeta abierta (o en la raíz). */
+  createNote: (folder?: string) => Promise<Note>;
   /** Nota con título y contenido, sin abrirla (la crea el agente por MCP,
    *  specs/agentes-mcp). Mismo camino que importar: el `.md` y el sync. */
   createNoteWith: (input: { title: string; content?: string; folder?: string; tags?: string[] }) => Promise<Note>;
@@ -3194,10 +3195,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadNoteFolders();
   },
 
-  createNote: async () => {
+  createNote: async (inFolder?: string) => {
     const { basePath, activeNoteFolder } = get();
     if (!basePath) throw new Error('No base path');
-    const folder = activeNoteFolder ?? '';
+    const folder = inFolder ?? activeNoteFolder ?? '';
     const id = uuidv4();
     const note: Note = {
       id,

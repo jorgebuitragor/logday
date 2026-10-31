@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { FileText, Pin, PinOff, Plus, Trash2 } from 'lucide-react';
+import { FilePlus, FileText, Pin, PinOff, Plus, Trash2 } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import { buildFolderTree } from '../../lib/folderTree';
@@ -139,6 +139,13 @@ export function NoteTree(props: FolderTreeProps) {
             style={menuLayout.style}
             onMouseDown={(e) => e.stopPropagation()}
           >
+            <button
+              onClick={() => { const folder = menu.note.folder; setMenu(null); void createNote(folder); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"
+            >
+              <FilePlus size={13} />
+              {t(language, 'sidebar', 'newNoteInFolder')}
+            </button>
             <button
               onClick={() => { void toggleNotePin(menu.note); setMenu(null); }}
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)]"

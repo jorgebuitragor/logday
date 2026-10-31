@@ -121,6 +121,16 @@ tengan su primera extensión.
   que la extensión dibuja entero y edita en un editor aparte (Excalidraw),
   y el modo inline, en el que el código se ve y se edita en la nota y la
   extensión le pone una barra encima y una franja debajo (Cliente HTTP).
+  En el modo inline, la barra DEBERÁ poder cambiar el lenguaje del bloque
+  (sin eso no hay forma de hacerlo: el selector de los bloques normales
+  no está en los de las extensiones) y reemplazar su texto, con acciones
+  que le da el editor (31 oct 2026, pedido por Jorge al probar).
+  Una extensión con bloque PODRÁ además convertir un texto pegado en la
+  nota en un bloque suyo (`convertPaste`; por ejemplo, un comando cURL en
+  una petición de Cliente HTTP), solo con la extensión activa y con su
+  código ya cargado. "Pegar sin formato" y los bloques de código de otro
+  lenguaje pegan tal cual, y Deshacer deja el texto original (31 oct 2026,
+  pedido por Jorge).
 - R25. Una extensión DEBERÁ poder registrar un atajo de teclado global y
   tener su propia ventana (por ejemplo, la captura rápida). La ventana se
   crea al activarla y se destruye al desactivarla, y NO DEBERÁ escribir

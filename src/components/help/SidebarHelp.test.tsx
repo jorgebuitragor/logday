@@ -140,12 +140,13 @@ const probe = () => {
 };
 
 describe('qué ayuda corresponde a cada sección (AY25, AY26)', () => {
-  it('helpTopicFor: la propia en Tareas, Dailys, Horas extra, DevTools y Pomodoro; la general en las demás', () => {
+  it('helpTopicFor: la propia en Tareas, Dailys, Horas extra, DevTools, Pomodoro y Cliente HTTP; la general en las demás', () => {
     expect(helpTopicFor('tasks')).toBe('tasks');
     expect(helpTopicFor('dailys')).toBe('dailys');
     expect(helpTopicFor('overtime')).toBe('overtime');
     expect(helpTopicFor('ext:devtools')).toBe('devtools');
     expect(helpTopicFor('ext:pomodoro')).toBe('pomodoro');
+    expect(helpTopicFor('ext:http-client')).toBe('http-client');
     for (const section of ['dashboard', 'notes', 'ext:excalidraw', 'ext:google-calendar', 'ext:team-chat'] as const) {
       expect([section, helpTopicFor(section)]).toEqual([section, 'general']);
     }
@@ -168,6 +169,13 @@ describe('qué ayuda corresponde a cada sección (AY25, AY26)', () => {
     expect(probe()).toMatchObject({ screen: 'DevTools', title: t('es', 'devtools', 'help.title'), tour: 'none' });
     app.activeSection = 'ext:pomodoro';
     expect(probe()).toMatchObject({ screen: 'Pomodoro', title: t('es', 'pomodoro', 'helpTitle'), tour: 'none' });
+  });
+
+  it('Cliente HTTP: su pantalla tiene su ayuda (specs/cliente-http HT35)', () => {
+    app.activeSection = 'ext:http-client';
+    expect(probe()).toMatchObject({ screen: 'Cliente HTTP', title: 'Cómo funciona el Cliente HTTP', tour: 'none' });
+    app.language = 'en';
+    expect(probe()).toMatchObject({ screen: 'HTTP client', title: 'How HTTP client works' });
   });
 
   it('las demás: la general, con el nombre de la sección en el botón', () => {

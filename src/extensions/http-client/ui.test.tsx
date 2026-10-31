@@ -8,12 +8,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { SendInput, SendOutput } from './core/api';
 import type { HttpEnvironment } from './core/environments';
 import { parseHttpBlock } from './core/parse';
+import type { NoteBlockProps } from '../types';
 
 const app = vi.hoisted(() => ({
   language: 'es',
   extensions: {
     'http-client': { enabled: true, settings: {} as Record<string, unknown> },
-    devtools: { enabled: false },
   } as Record<string, { enabled: boolean; settings?: Record<string, unknown> }>,
   confirmDestructiveActions: true,
   updateExtensionSettings: async (id: string, patch: Record<string, unknown>) => {
@@ -71,8 +71,9 @@ function setEnvs(envs: HttpEnvironment[], activeEnvId: string | null) {
   app.extensions['http-client'].settings = { environments: envs, activeEnvId };
 }
 
-const block = (code: string, part: 'header' | 'footer', cursor: number | null = null) =>
-  renderToStaticMarkup(<HttpNoteBlock code={code} onEdit={() => {}} part={part} noteId="n1" index={0} cursor={cursor} />);
+const block = (code: string, part: 'header' | 'footer', cursor: number | null = null, extra: Partial<NoteBlockProps> = {}) =>
+  renderToStaticMarkup(<HttpNoteBlock code={code} onEdit={() => {}} part={part} noteId="n1" index={0} cursor={cursor} {...extra} />);
+const editable = { setLanguage: () => {}, setCode: () => {} };
 
 const output = (over: Partial<SendOutput> = {}): SendOutput => ({
   status: 200, reason: 'OK', headers: [['content-type', 'application/json'], ['x-id', '7']],
@@ -139,6 +140,53 @@ describe('barra del bloque', () => {
     const html = text(block('GET https://x.com', 'header'));
     expect(html).toContain('Cancelar');
     expect(html).not.toContain('Enviar (');
+  });
+});
+
+describe('barra del bloque: lenguaje, método y cURL (HT36–HT38)', () => {
+  it('en una nota editable: el lenguaje (HTTP) y el método son botones de menú con su nombre', () => {
+    const html = block('POST https://x.com', 'header', null, editable);
+    expect(html).toContain('aria-label="Lenguaje del bloque: HTTP"');
+    expect(html).toContain('aria-label="Método: POST"');
+    expect((html.match(/aria-haspopup="menu"/g) ?? []).length).toBeGreaterThanOrEqual(3); // lenguaje, método y entorno
+    expect(html).toContain('aria-label="Copiar como cURL"');
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*aria-label="Copiar como cURL"/);
+  });
+
+  it('sin las acciones del editor (otra vista) la etiqueta es texto y no hay selector de método', () => {
+    const html = block('POST https://x.com', 'header');
+    expect(html).not.toContain('Lenguaje del bloque');
+    expect(html).not.toContain('aria-label="Método');
+    expect(text(html)).toContain('HTTP');
+  });
+
+  it('el método es el de la petición de la barra: la del cursor con ###', () => {
+    const code = '### A\nGET https://x.com/a\n\n### B\ndelete https://x.com/b';
+    expect(block(code, 'header', null, editable)).toContain('aria-label="Método: GET"');
+    expect(block(code, 'header', code.indexOf('delete') + 1, editable)).toContain('aria-label="Método: DELETE"');
+    // Solo URL: un GET.
+    expect(block('https://x.com', 'header', null, editable)).toContain('aria-label="Método: GET"');
+  });
+
+  it('una línea que no se entiende no tiene selector de método; con errores, cURL se desactiva', () => {
+    const html = block('mal', 'header', null, editable);
+    expect(html).not.toContain('aria-label="Método');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Copiar como cURL"/);
+    expect(block('GET https://x.com\nmal', 'header', null, editable)).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Copiar como cURL"/);
+    // Una variable que falta no es un error: el comando lleva {{nombre}}.
+    expect(block('GET {{baseUrl}}', 'header', null, editable)).not.toMatch(/<button[^>]*disabled=""[^>]*aria-label="Copiar como cURL"/);
+  });
+
+  it('en inglés, los mismos controles', () => {
+    app.language = 'en';
+    try {
+      const html = block('PUT https://x.com', 'header', null, editable);
+      expect(html).toContain('aria-label="Block language: HTTP"');
+      expect(html).toContain('aria-label="Method: PUT"');
+      expect(html).toContain('aria-label="Copy as cURL"');
+    } finally {
+      app.language = 'es';
+    }
   });
 });
 
@@ -357,7 +405,10 @@ describe('Opciones → Cliente HTTP', () => {
     const html = text(renderToStaticMarkup(<Settings />));
     expect(html).toContain('Todavía no tienes entornos.');
     expect(html).toContain('Crear un entorno');
-    expect(html).toContain('Activa DevTools para probar una petición sin guardarla.');
+    // El pie lleva a la pantalla propia, no a DevTools (HT33).
+    expect(html).toContain('Para probar una petición sin guardarla, usa la pantalla Cliente HTTP del menú lateral.');
+    expect(html).toContain('Abrir Cliente HTTP');
+    expect(html).not.toContain('DevTools');
     expect(html).toContain('Tiempo límite');
   });
 
@@ -374,5 +425,14 @@ describe('Opciones → Cliente HTTP', () => {
     expect(t).toContain('staging.example.com de baseUrl');
     expect(t).toContain('Pedir confirmación antes de enviar POST, PUT, PATCH o DELETE');
     expect(html).toContain('aria-label="Nombre de la variable 1"');
+  });
+
+  it('el entorno activo es el menú de la app, no un <select> nativo', () => {
+    setEnvs([STAGING, PROD], PROD.id);
+    const html = renderToStaticMarkup(<Settings />);
+    expect(html).not.toContain('<select');
+    expect(html).toMatch(/aria-haspopup="menu" aria-expanded="false" aria-label="Entorno activo: Producción, protegido"/);
+    setEnvs([STAGING], null);
+    expect(renderToStaticMarkup(<Settings />)).toContain('aria-label="Entorno activo: Sin entorno"');
   });
 });

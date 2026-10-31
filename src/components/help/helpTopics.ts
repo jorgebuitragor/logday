@@ -3,7 +3,7 @@
 import type { ActiveSection } from '../../types/config';
 
 /** Las ayudas que hay: las de las pantallas que la tienen y la general. */
-export type HelpTopic = 'tasks' | 'dailys' | 'overtime' | 'devtools' | 'pomodoro' | 'general';
+export type HelpTopic = 'tasks' | 'dailys' | 'overtime' | 'devtools' | 'pomodoro' | 'http-client' | 'general';
 
 const BY_SECTION: Partial<Record<ActiveSection, HelpTopic>> = {
   tasks: 'tasks',
@@ -11,6 +11,7 @@ const BY_SECTION: Partial<Record<ActiveSection, HelpTopic>> = {
   overtime: 'overtime',
   'ext:devtools': 'devtools',
   'ext:pomodoro': 'pomodoro',
+  'ext:http-client': 'http-client',
 };
 
 /** La ayuda de la sección activa. Tareas es la misma en Lista, Kanban y

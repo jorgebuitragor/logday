@@ -1863,7 +1863,7 @@ interface DevtoolsSettings {
 
 **Compatibilidad:** lo guardado hasta hoy (`{ lastTool, options }`) se lee como todo por defecto, y se ve igual que antes. No hace falta migración.
 
-**Herramientas que dependen de otra extensión** (D25, specs/cliente-http A10, 31 oct 2026): `availableTools(httpEnabled)` da las que se pueden usar, y `resolveToolList`, `availableGroups`, `moveGroup`, `moveGroupTo`, `visibleToolCount`, `setToolHidden` e `isToolHidden` la reciben como último argumento. Lo que no está disponible no se ve en ningún sitio (tampoco entre las ocultas), las flechas de los grupos lo saltan y "no ocultar la última visible" cuenta solo las disponibles. Lo guardado de Cliente HTTP se conserva tal cual mientras está apagada. La usan la columna, el selector, el buscador, ⌥⌘↓/↑, `toolForBlock`, la ayuda (`ui/Help.tsx`) y la página de Opciones; la vista y la ayuda la sacan de `availableToolsIn(extensions)`.
+**Herramientas que dependían de otra extensión** (D25, retirado el 31 oct 2026): con la herramienta Cliente HTTP, la lista trabajaba con `availableTools(httpEnabled)`. Al darle al Cliente HTTP su propia pantalla (specs/cliente-http HT33), se quitaron `availableTools`, `availableToolsIn`, el grupo `network`, la herramienta `http` y el argumento `available` de las funciones de la lista, que vuelven a trabajar con `ALL_TOOLS`. Lo guardado con `http` o `network` lo descarta `readDevtoolsSettings`, como cualquier id desconocido.
 
 **Herramientas o grupos nuevos en una versión futura** (D24, la regla de `resolveSections`):
 - una herramienta que no está en `toolOrder[g]` va al final de su grupo, en el orden de `TOOL_GROUPS`, visible (porque `hidden` es una lista de exclusión);

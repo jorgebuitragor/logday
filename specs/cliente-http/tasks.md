@@ -1,6 +1,6 @@
 # Cliente HTTP — Tasks
 
-Estado: PR 1 y PR 2 implementados (31 oct 2026); faltan sus pruebas visuales y en la app de QA. Rama `feature/cliente-http`, desde `develop`. Son dos PR: el primero deja la extensión completa en las notas; el segundo suma la herramienta de DevTools.
+Estado: PR 1 y PR 2 implementados (31 oct 2026), y la herramienta de DevTools del PR 2 reemplazada por una pantalla propia (rama `feature/http-pantalla-propia`); faltan sus pruebas visuales y en la app de QA. Rama `feature/cliente-http`, desde `develop`. Son dos PR: el primero deja la extensión completa en las notas; el segundo sumaba la herramienta de DevTools, que ahora es la pantalla (abajo).
 
 ## Antes de empezar
 
@@ -95,7 +95,7 @@ Estado: PR 1 y PR 2 implementados (31 oct 2026); faltan sus pruebas visuales y e
 - **`.extension-node-inline` sin `overflow: hidden`**, para que los menús de la barra no se corten. Las islas anulan también `p` y las tablas de `.prose-editor`, no solo `pre` y `code`.
 - **Redirecciones con secretos:** no se siguen si cambia el origen (esquema, host o puerto), algo más estricto que "si cambia el host" (A7.5): así un secreto tampoco baja de https a http.
 - **HT21 desde Rust:** si un secreto va en el host (el webview no lo ve), Rust rechaza con `secret_host_not_allowed` y el bloque pide la misma confirmación; al confirmarla se reenvía con `allowUntrustedHost`. El texto para cuando no hay nombres de variables es `confirmUntrustedSecret`.
-- **Opciones:** el "Entorno activo" es un `<select>` nativo, no el menú del chip. Una variable nueva es una fila en borrador hasta que tiene un nombre válido (los ajustes descartan las variables sin nombre).
+- **Opciones:** el "Entorno activo" era un `<select>` nativo, no el menú del chip (*desde el 31 oct 2026 es el `Menu`, ver "Sin selectores nativos"*). Una variable nueva es una fila en borrador hasta que tiene un nombre válido (los ajustes descartan las variables sin nombre).
 - **Respuesta:** "Guardar como archivo" es siempre un botón de ícono, sin el menú "Más acciones". "Hace…" usa `Intl.RelativeTimeFormat` directamente. Se quitaron las claves `ago`, `moreActions` y `envLabel`, y se sumaron `responseAria`, `tabsAria`, `bodyAria`, `headersAria`, `requestAria`, `saveDefaultName`, `confirmUntrustedSecret`, `hostAddAria`, `maxSizeUnit`, `err.invalid_url`, `err.scheme_not_allowed`, `err.credentials_in_url` y `err.invalid_method`.
 - **El aviso de GET o HEAD con cuerpo** se ve también sin respuesta.
 - **Parser:** además de las líneas en blanco del final, quita las del principio del cuerpo.
@@ -150,6 +150,85 @@ Rama `feature/cliente-http-devtools`, desde `develop` (con el PR 1 y `feature/de
 - **Apagar Cliente HTTP** también olvida lo escrito en la herramienta (`clearToolDrafts('http')`, desde su parada), además de las respuestas.
 - **`saveOutputAsNote`** usa siempre `formatFence`: la cerca lleva una comilla más que la línea más larga que empiece por comillas, en vez de 4 fijas. Vale para todas las herramientas.
 - **`toolForBlock`** abre un ```` ```http ```` en Cliente HTTP solo si está; un bloque sin lenguaje no se reconoce como petición.
+
+## Pantalla propia (31 oct 2026, HT33–HT35)
+
+Rama `feature/http-pantalla-propia`, desde `develop`. Pedido por Jorge (requirements, "Cambio del 31 oct 2026: pantalla propia"; design §11).
+
+- [x] Registro: `view: true` (HT33). `index.ts` aporta `View`; su parada ya no toca los borradores de DevTools.
+- [x] `core/noteRequests.ts` (puro): `collectNoteRequests`, `filterNoteRequests`, `shortUrl`, `requestTitle`, `countRequests`, con `noteRequests.test.ts` (varios bloques, `###`, mal formados, vacíos, notas sin bloques, cercas de 4, más de 20, el buscador).
+- [x] `core/serialize.ts`: `formFromBlock(code, index)` carga cualquier petición del bloque; una línea que no se entiende (o un método no admitido) va entera a la URL.
+- [x] `store.ts`: `form` y `origin` en memoria, `formNoteId`/`formKey` (`view:<nota>:<bloque>:<petición>` y `view:new`), `readFormResult`, `setFormField`, `loadForm`, `newForm`. Fuera `DEVTOOLS_NOTE_ID`, `DEVTOOLS_KEY`, `readDevtoolsResult` y `resetDevtoolsSlot`.
+- [x] `ui/RequestForm.tsx` (lo que era `devtools/views/HttpTool.tsx`, sin el marco de DevTools), `ui/View.tsx` (la columna y la pantalla) y `ui/Help.tsx`.
+- [x] `lib/allNotes.ts`: `readAllNotes` sale de `devtools/notes.ts` para compartirla.
+- [x] Ayuda: `helpTopics.ts` y `ScreenHelp.tsx` (specs/ayuda-contextual AY30).
+- [x] Opciones → Cliente HTTP: el pie apunta a la pantalla, con "Abrir Cliente HTTP". El aviso de R6 y la descripción de la extensión nombran la pantalla.
+- [x] DevTools vuelve a antes del PR 2 (specs/devtools, tareas "Quitar Cliente HTTP de DevTools").
+- [x] Textos es y en con las mismas claves; fuera `devtoolsHint`, `devtoolsOffHint` y `toolLoadedMulti`.
+- [x] Pruebas: `view.test.tsx` (la vista registrada y su sección, la columna en cada estado, cargar una petición, el formulario en cada estado, el envío con Rust simulado y sus confirmaciones, una respuesta por petición, "Nueva petición", la parada, "Guardar en una nota", la ayuda, paridad y voseo), `serialize.test.ts`, `ui.test.tsx` (el pie de Opciones) y `SidebarHelp.test.tsx` (el tema y el título de la ayuda).
+- [ ] Prueba en el navegador y en la app de QA, en los temas claro, oscuro y sepia:
+  - activar la extensión: aparece la sección con `Globe`; apagarla con la pantalla abierta lleva a Inicio;
+  - la columna con notas de varias carpetas, un bloque con `###`, uno mal escrito, el buscador, "Actualizar", y que se actualice tras editar una nota y volver;
+  - elegir una petición, "Abrir la nota", "Nueva petición", "Guardar en una nota" (aparece en la columna);
+  - enviar con el botón, ⌘↵ y Enter en la URL; cancelar con Esc; las confirmaciones; ir de una petición a otra y volver (cada una con su respuesta);
+  - la ventana angosta (la columna arriba, el formulario debajo) y el foco con el teclado;
+  - la ayuda de la sección y el enlace de Opciones.
+
+### Diferencias con el pedido
+
+- **"Traer de una nota" no está:** lo reemplaza la columna, que ya muestra todos los bloques `http`.
+- **Sin "Limpiar"** en el formulario: "Nueva petición" hace lo mismo y además deja de apuntar a la nota.
+- **Atajos:** solo ⌘↵, Enter en la URL y Esc. Los ⌘⇧C, ⌘⇧S, ⌘⇧⌫ y ⌥⌘1–3 eran convenciones de DevTools y no se trajeron; las pestañas de la respuesta se recorren con ←/→ (roving tabindex).
+- **"Guardar en una nota" crea siempre una nota nueva**, también si la petición vino de una nota: no reescribe el bloque original. La petición sigue en el formulario como antes (sin pasar a "venir" de la nota nueva), para que su respuesta no se pierda.
+- **Una respuesta por petición:** cada petición de la columna tiene su clave en la caché (§11.2), en vez de una sola respuesta para todo el formulario.
+
+## Lenguaje, método y cURL en la barra (31 oct 2026, HT36–HT38)
+
+Rama `feature/http-pantalla-propia`. Pedido por Jorge al probar (requirements, "Cambio del 31 oct 2026: lenguaje, método y cURL en la barra del bloque"; design §12).
+
+- [x] Base (specs/extensiones R24): `setLanguage` y `setCode` en `NoteBlockProps`, en `InlineExtensionBlockView`, con `setBlockLanguageTr`, `setBlockCodeTr` y `changedRange` puros en `extensionBlockPos.ts`.
+- [x] `core/parse.ts`: `requestLine` en cada petición. `core/edit.ts`: `setRequestMethod`, `toCurl` y `shellQuote`.
+- [x] Barra (`ui/Block.tsx`): selector de lenguaje, selector de método y "Copiar como cURL". `ui/Menu.tsx` suma typeahead.
+- [x] Textos es y en con las mismas claves (§12.3).
+- [x] Pruebas: `core/edit.test.ts` (varias peticiones con `###`, comentarios, línea sin método, minúsculas, método no admitido, GET/HEAD con cuerpo; cURL con variables, comillas, saltos de línea, Content-Type automático, HEAD y la query en líneas `?`/`&`), `extensionBlockPos.test.ts` (las transacciones: lenguaje, cursor, bloque vacío, tramo distinto) y `ui.test.tsx` (la barra con los selectores y cURL, sin las acciones del editor, la petición del cursor, en inglés).
+- [ ] Prueba en la app de QA: cambiar a JSON y a Texto desde la barra (el bloque pasa a normal con su selector, sin saltar el scroll, con el foco en el código); cambiar el método con el ratón y el teclado (typeahead), con varias peticiones y con el cursor en otra; ⌘Z; pegar el cURL en una terminal.
+
+### Diferencias con el pedido
+
+- **Sin buscador en el selector de lenguaje:** el normal tiene uno, pero es solo con el ratón. El de la barra es el `Menu` accesible de la barra, con typeahead (escribir "ja" salta a Java), que con once lenguajes cumple lo mismo.
+- **cURL en la barra**, no en la franja: así está también sin respuesta. HEAD va con `--head` (con `-X HEAD` curl espera un cuerpo) y sin cuerpo. Las comillas son de sh y zsh; en `cmd.exe` de Windows no sirven.
+- **"Texto" traducido** en el selector de la barra (`langPlain`); el selector normal sigue diciendo "Texto" también en inglés (`CODE_LANGUAGE_OPTIONS`), sin cambiar.
+- **La pantalla Cliente HTTP** no tiene "Copiar como cURL" todavía: el pedido era el bloque de la nota.
+
+## Pegar un cURL (31 oct 2026, HT39–HT41)
+
+Rama `feature/http-pantalla-propia`. Pedido por Jorge (requirements, "Cambio del 31 oct 2026: pegar un cURL"; design §13).
+
+- [x] `core/curl.ts` y `core/shell.ts` (puros): `shellWords` (comillas, escapes, `$'…'`, continuaciones, variables del shell), `fromCurl` y `formatJsonBody`, con `core/curl.test.ts` (Chrome, Postman, Insomnia, comillas dobles, `-sSL`, `-u`, `--json`, `-G -d`, `-I`, `@archivo`, `-F`, encadenados, texto que no es curl, URL sin esquema, PowerShell y cmd, opciones desconocidas, cuerpos grandes, los valores sensibles y la ida y vuelta con `toCurl`).
+- [x] Base (specs/extensiones R24): `ExtensionModule.convertPaste` y `extensionRuntime.peek`; `components/notes/extensionPaste.ts` (puro: dónde se pega, qué se hace y las dos transacciones) con su prueba, y `handlePaste` en `NoteEditor.tsx`.
+- [x] `paste.ts`: `convertCurlPaste` (el `convertPaste` del módulo) y `notifyCurlConverted` (anuncio y aviso con "Abrir Entornos"), con `paste.test.ts`.
+- [x] Pantalla: `onPaste` en la URL de `ui/RequestForm.tsx` y `setForm` en el store (HT41).
+- [x] Textos es y en con las mismas claves (§13.4).
+- [ ] Prueba en el navegador y en la app de QA: pegar un "Copiar como cURL" de Chrome y uno de Postman en un párrafo vacío, en medio de un párrafo, en un bloque `http`, en un bloque `bash`; ⇧⌘V; ⌘Z y otro ⌘Z; el aviso y "Abrir Entornos"; con la extensión apagada; y en la URL de la pantalla.
+
+### Diferencias con el pedido
+
+- **No se convierte (y se pega tal cual)** con `-F`, un cuerpo o cabeceras desde un archivo (`@archivo`), `-T`, `-K`, `--digest`/`--ntlm`, `--unix-socket`, `--next` o varias URL: un bloque que se ve bien pero se envía sin el cuerpo sería peor que el texto original. Tampoco cuando hay otro comando, una tubería o una redirección (`| jq` incluido): así nunca se pierde nada de lo pegado.
+- **Sintaxis de cmd.exe** (`^"…^"`, el "Copiar como cURL (cmd)" de Chrome en Windows) no se entiende: no se convierte. La continuación `^` y la de PowerShell (`` ` ``) al final de la línea sí, con las comillas de sh.
+- **Content-Type de curl:** con `-d` y un cuerpo `clave=valor`, el bloque lleva `application/x-www-form-urlencoded`, como lo envía curl; con un cuerpo JSON no, porque Logday pone el de JSON (decisión 6); con otro texto, tampoco.
+- **`--max-time`** no se copia: el tiempo límite es una opción de Opciones (HT24), no del bloque.
+- **"Pegar sin formato"** se reconoce por ⇧⌘V (o ⌥⇧⌘V) en el teclado: el evento de pegar no lo dice. Pegar sin formato desde un menú, sin el atajo, convierte.
+- **Valores en el cuerpo:** además de lo pedido (cabeceras y query), se ocultan los campos sensibles de un cuerpo JSON o de formulario (`"password": "{{password}}"`), porque "Copiar como cURL" de un inicio de sesión los trae.
+
+## Sin selectores nativos (31 oct 2026)
+
+Pedido por Jorge al probar la pantalla: el selector de método del formulario era un `<select>` nativo, que en macOS se abre como la lista azul del sistema, y pidió el diseño de la app.
+
+- [x] `ui/Menu.tsx`: `buttonClassName` y `listClassName`, y `FIELD_BTN` (el botón con la forma de un campo).
+- [x] Formulario (`ui/RequestForm.tsx`): el método es el `Menu` de la barra, con `aria-label` "Método: X". Fuera la clave `toolMethod`, que ya no se usa.
+- [x] Opciones → Cliente HTTP (`ui/Settings.tsx`): el "Entorno activo" también, con el escudo de los protegidos como en el chip. Con esto el Cliente HTTP no tiene ningún `<select>`.
+- [x] Pruebas: `view.test.tsx` (el formulario sin `<select>`, el botón del método) y `ui.test.tsx` (el entorno activo de Opciones).
+- [ ] Prueba en el navegador: abrir con Enter, Espacio y ↓; flechas, Inicio/Fin y letras; Esc devuelve el foco al botón; clic fuera cierra; los temas claro, oscuro y sepia.
 
 ## Al cerrar
 

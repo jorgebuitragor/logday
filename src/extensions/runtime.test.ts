@@ -32,6 +32,19 @@ describe('carga diferida (R16)', () => {
     expect(load).toHaveBeenCalledTimes(2);
   });
 
+  it('peek da el módulo ya cargado, sin cargarlo nunca', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const mod = { convertPaste: () => null };
+    const load = vi.fn().mockRejectedValueOnce(new Error('chunk')).mockResolvedValueOnce(mod);
+    const rt = createExtensionRuntime(() => fakeDef(load));
+    expect(rt.peek(A)).toBeUndefined();
+    expect(load).not.toHaveBeenCalled();
+    await expect(rt.load(A)).rejects.toThrow('chunk');
+    expect(rt.peek(A)).toBeUndefined();
+    await rt.load(A);
+    expect(rt.peek(A)).toBe(mod);
+  });
+
   it('una extensión desconocida rechaza sin romper', async () => {
     const rt = createExtensionRuntime(() => undefined);
     await expect(rt.load(A)).rejects.toThrow();

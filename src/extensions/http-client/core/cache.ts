@@ -16,7 +16,8 @@ export interface CacheEntry<T> {
   at: number;
 }
 
-/** `${noteId}#${blockIndex}#${requestIndex}`; DevTools usa `devtools#0#0`. */
+/** `${noteId}#${blockIndex}#${requestIndex}`; el formulario de la pantalla
+ *  usa `view:<nota>:<bloque>:<petición>#0#0` o `view:new#0#0`. */
 export const cacheKey = (noteId: string, blockIndex: number, requestIndex: number) => `${noteId}#${blockIndex}#${requestIndex}`;
 
 export interface CacheHit<T> {
@@ -55,7 +56,7 @@ export class ResponseCache<T> {
   }
 
   /** La última respuesta de esa clave, sea de la petición que sea, sin
-   *  marcarla como reciente. La usa DevTools, que tiene una sola petición:
+   *  marcarla como reciente. La usa el formulario, que tiene una sola petición:
    *  al cambiar la URL, la respuesta anterior se sigue viendo como vieja. */
   peek(key: string): CacheEntry<T> | null {
     return this.map.get(key) ?? null;

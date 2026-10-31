@@ -1,8 +1,8 @@
 // La ayuda de cada sección (specs/ayuda-contextual AY17–AY20, AY25, AY26,
 // design "Textos"): la que abre el botón "Ayuda" del menú lateral. Tareas,
-// Dailys, Horas extra y la general salen de la sección `help`; DevTools y
-// Pomodoro, de sus extensiones, que se cargan solo al abrirla (R16). Las
-// teclas salen de la config.
+// Dailys, Horas extra y la general salen de la sección `help`; DevTools,
+// Pomodoro y Cliente HTTP, de sus extensiones, que se cargan solo al
+// abrirla (R16). Las teclas salen de la config.
 import { lazy, Suspense, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../store/appStore';
@@ -16,6 +16,7 @@ import { helpTopicFor } from './helpTopics';
 
 const DevtoolsHelp = lazy(() => import('../../extensions/devtools/ui/Help'));
 const PomodoroHelp = lazy(() => import('../../extensions/pomodoro/Help'));
+const HttpClientHelp = lazy(() => import('../../extensions/http-client/ui/Help'));
 
 /** Escenas de TourModal (components/tour/scenes.ts). */
 const SCENE_DAY = 0;
@@ -78,6 +79,12 @@ export function useSectionHelp(): HelpContent {
           screen: t(language, 'pomodoro', 'title'),
           title: t(language, 'pomodoro', 'helpTitle'),
           body: <Suspense fallback={null}><PomodoroHelp /></Suspense>,
+        };
+      case 'http-client':
+        return {
+          screen: t(language, 'extensions', 'http-client.name'),
+          title: t(language, 'httpClient', 'helpTitle'),
+          body: <Suspense fallback={null}><HttpClientHelp /></Suspense>,
         };
       default:
         // Inicio, Notas y las extensiones sin ayuda propia: la general, con

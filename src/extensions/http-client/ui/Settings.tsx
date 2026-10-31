@@ -4,11 +4,11 @@
 // secretos solo cruzan una vez hacia Rust, al guardarlos (R10).
 import { useEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { CircleDot, Info, Plus, ShieldAlert } from 'lucide-react';
+import { ChevronDown, CircleDot, Info, Plus, ShieldAlert } from 'lucide-react';
 import { useAppStore } from '../../../store/appStore';
 import { useConfirmDelete } from '../../../hooks/useConfirmDelete';
 import { ConfirmDeleteModal } from '../../../components/shared/ConfirmDeleteModal';
-import { FOCUS_RING, INPUT_CLS, SECONDARY_CLS } from '../../../components/shared/controlClasses';
+import { FOCUS_RING, SECONDARY_CLS } from '../../../components/shared/controlClasses';
 import { NumberField, Toggle } from '../../../components/shared/FormControls';
 import { clearExtensionSecret } from '../../secrets';
 import {
@@ -20,6 +20,7 @@ import { peekSettingsEnvRequest, takeSettingsEnvRequest } from '../store';
 import { extensionSection } from '../../state';
 import { TEXT_LINK } from './SendStatus';
 import { EnvironmentPanel, fresh } from './EnvironmentPanel';
+import { FIELD_BTN, Menu } from './Menu';
 
 type Pending =
   | { kind: 'env'; env: HttpEnvironment }
@@ -46,6 +47,8 @@ export default function HttpClientSettingsPanel() {
     void s.setSection(extensionSection(EXTENSION_ID));
   };
   const envs = settings.environments;
+  const activeEnv = envs.find((e) => e.id === settings.activeEnvId) ?? null;
+  const activeName = activeEnv?.name ?? tr('envNone');
   // "Definir en Opciones" abre con ese entorno elegido. Se lee en el primer
   // dibujo y se consume después (en modo estricto el inicializador corre dos veces).
   const [selectedId, setSelectedId] = useState<string | null>(() => peekSettingsEnvRequest() ?? settings.activeEnvId ?? envs[0]?.id ?? null);
@@ -135,16 +138,33 @@ export default function HttpClientSettingsPanel() {
         ) : (
           <>
             <div className="flex items-center gap-2">
-              <label htmlFor="http-active-env" className="text-[var(--text-secondary)]">{tr('envActiveLabel')}</label>
-              <select
-                id="http-active-env"
-                value={settings.activeEnvId ?? ''}
-                onChange={(e) => void update(EXTENSION_ID, { activeEnvId: e.target.value || null })}
-                className={INPUT_CLS}
-              >
-                <option value="">{tr('envNone')}</option>
-                {envs.map((e) => <option key={e.id} value={e.id}>{e.name}{e.protected ? ` (${tr('envProtected')})` : ''}</option>)}
-              </select>
+              <span className="text-[var(--text-secondary)]" aria-hidden>{tr('envActiveLabel')}</span>
+              <Menu
+                label={`${tr('envActiveLabel')}: ${activeName}${activeEnv?.protected ? `, ${tr('envProtected')}` : ''}`}
+                buttonClassName={`${FIELD_BTN} min-w-[10rem]`}
+                items={[
+                  { key: 'none', label: tr('envNone'), checked: !settings.activeEnvId, onSelect: () => void update(EXTENSION_ID, { activeEnvId: null }) },
+                  ...envs.map((e) => ({
+                    key: e.id,
+                    label: (
+                      <>
+                        <span className="truncate">{e.name}</span>
+                        {e.protected && <ShieldAlert size={12} className="ml-auto shrink-0 text-amber-400" aria-hidden />}
+                      </>
+                    ),
+                    srSuffix: e.protected ? tr('envProtected') : undefined,
+                    checked: e.id === settings.activeEnvId,
+                    onSelect: () => void update(EXTENSION_ID, { activeEnvId: e.id }),
+                  })),
+                ]}
+                button={
+                  <>
+                    {activeEnv?.protected && <ShieldAlert size={12} className="shrink-0 text-amber-400" aria-hidden />}
+                    <span className={`flex-1 truncate text-left ${activeEnv ? '' : 'text-[var(--text-hint)]'}`}>{activeName}</span>
+                    <ChevronDown size={13} className="shrink-0 text-[var(--text-hint)]" aria-hidden />
+                  </>
+                }
+              />
             </div>
 
             <div className="flex flex-wrap items-center gap-2">

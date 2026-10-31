@@ -95,7 +95,7 @@ Estado: PR 1 y PR 2 implementados (31 oct 2026), y la herramienta de DevTools de
 - **`.extension-node-inline` sin `overflow: hidden`**, para que los menús de la barra no se corten. Las islas anulan también `p` y las tablas de `.prose-editor`, no solo `pre` y `code`.
 - **Redirecciones con secretos:** no se siguen si cambia el origen (esquema, host o puerto), algo más estricto que "si cambia el host" (A7.5): así un secreto tampoco baja de https a http.
 - **HT21 desde Rust:** si un secreto va en el host (el webview no lo ve), Rust rechaza con `secret_host_not_allowed` y el bloque pide la misma confirmación; al confirmarla se reenvía con `allowUntrustedHost`. El texto para cuando no hay nombres de variables es `confirmUntrustedSecret`.
-- **Opciones:** el "Entorno activo" es un `<select>` nativo, no el menú del chip. Una variable nueva es una fila en borrador hasta que tiene un nombre válido (los ajustes descartan las variables sin nombre).
+- **Opciones:** el "Entorno activo" era un `<select>` nativo, no el menú del chip (*desde el 31 oct 2026 es el `Menu`, ver "Sin selectores nativos"*). Una variable nueva es una fila en borrador hasta que tiene un nombre válido (los ajustes descartan las variables sin nombre).
 - **Respuesta:** "Guardar como archivo" es siempre un botón de ícono, sin el menú "Más acciones". "Hace…" usa `Intl.RelativeTimeFormat` directamente. Se quitaron las claves `ago`, `moreActions` y `envLabel`, y se sumaron `responseAria`, `tabsAria`, `bodyAria`, `headersAria`, `requestAria`, `saveDefaultName`, `confirmUntrustedSecret`, `hostAddAria`, `maxSizeUnit`, `err.invalid_url`, `err.scheme_not_allowed`, `err.credentials_in_url` y `err.invalid_method`.
 - **El aviso de GET o HEAD con cuerpo** se ve también sin respuesta.
 - **Parser:** además de las líneas en blanco del final, quita las del principio del cuerpo.
@@ -219,6 +219,16 @@ Rama `feature/http-pantalla-propia`. Pedido por Jorge (requirements, "Cambio del
 - **`--max-time`** no se copia: el tiempo límite es una opción de Opciones (HT24), no del bloque.
 - **"Pegar sin formato"** se reconoce por ⇧⌘V (o ⌥⇧⌘V) en el teclado: el evento de pegar no lo dice. Pegar sin formato desde un menú, sin el atajo, convierte.
 - **Valores en el cuerpo:** además de lo pedido (cabeceras y query), se ocultan los campos sensibles de un cuerpo JSON o de formulario (`"password": "{{password}}"`), porque "Copiar como cURL" de un inicio de sesión los trae.
+
+## Sin selectores nativos (31 oct 2026)
+
+Pedido por Jorge al probar la pantalla: el selector de método del formulario era un `<select>` nativo, que en macOS se abre como la lista azul del sistema, y pidió el diseño de la app.
+
+- [x] `ui/Menu.tsx`: `buttonClassName` y `listClassName`, y `FIELD_BTN` (el botón con la forma de un campo).
+- [x] Formulario (`ui/RequestForm.tsx`): el método es el `Menu` de la barra, con `aria-label` "Método: X". Fuera la clave `toolMethod`, que ya no se usa.
+- [x] Opciones → Cliente HTTP (`ui/Settings.tsx`): el "Entorno activo" también, con el escudo de los protegidos como en el chip. Con esto el Cliente HTTP no tiene ningún `<select>`.
+- [x] Pruebas: `view.test.tsx` (el formulario sin `<select>`, el botón del método) y `ui.test.tsx` (el entorno activo de Opciones).
+- [ ] Prueba en el navegador: abrir con Enter, Espacio y ↓; flechas, Inicio/Fin y letras; Esc devuelve el foco al botón; clic fuera cierra; los temas claro, oscuro y sepia.
 
 ## Al cerrar
 

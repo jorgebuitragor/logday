@@ -7,18 +7,18 @@
 // store del Cliente HTTP, en memoria; nada va a disco ni a la nota de la
 // que vino la petición.
 import { useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { FilePlus, Globe, Send, X } from 'lucide-react';
+import { ChevronDown, FilePlus, Globe, Send, X } from 'lucide-react';
 import { useAppStore } from '../../../store/appStore';
 import type { Note } from '../../../types/note';
 import type { Language } from '../../../lib/i18n';
 import { formatFence } from '../../../lib/fencedBlocks';
-import { ICON_BTN, INPUT_CLS, PANEL_TITLE, SECONDARY_CLS, SEND_BTN } from '../../../components/shared/controlClasses';
+import { ICON_BTN, PANEL_TITLE, SECONDARY_CLS, SEND_BTN } from '../../../components/shared/controlClasses';
 import { StatusItem } from '../../../components/shared/FormControls';
 import { NO_AUTOCORRECT, lineInputCls, textareaCls } from '../../devtools/ui/classes';
 import { activeEnvironment, EXTENSION_ID, readHttpSettings } from '../core/environments';
 import { HTTP_METHODS, parseHttpBlock, type ParseIssue } from '../core/parse';
 import { fromCurl } from '../core/curl';
-import { bodySplitsRequest, formFromBlock, formIssues, isHttpMethod, serializeForm } from '../core/serialize';
+import { bodySplitsRequest, formFromBlock, formIssues, serializeForm } from '../core/serialize';
 import { localeOf, sendShortcut, type Tr } from '../core/text';
 import { announce } from '../announce';
 import { notifyCurlConverted } from '../paste';
@@ -27,6 +27,7 @@ import {
   resolveWith, sendRequest, setForm, setFormField, useHttpStore, type FormOrigin, type SendOptions,
 } from '../store';
 import { EnvironmentChip } from './EnvironmentChip';
+import { FIELD_BTN, Menu } from './Menu';
 import { ResponseView, type ResponseTab } from './ResponseView';
 import { ConfirmBox, SendFailure, SendProgress, TEXT_LINK, useDebounced, useNow } from './SendStatus';
 
@@ -221,14 +222,23 @@ export function RequestForm({
             </span>
           )}
           <div className="flex flex-wrap items-center gap-2">
-            <select
-              aria-label={tr('toolMethod')}
-              value={method}
-              onChange={(e) => isHttpMethod(e.target.value) && setFormField('method', e.target.value)}
-              className={`${INPUT_CLS} w-28 font-mono font-semibold`}
-            >
-              {HTTP_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
+            <Menu
+              label={tr('methodPicker', { method })}
+              buttonClassName={`${FIELD_BTN} w-28`}
+              listClassName="min-w-[7rem]"
+              items={HTTP_METHODS.map((m) => ({
+                key: m,
+                checked: m === method,
+                label: <span className="font-mono font-semibold">{m}</span>,
+                onSelect: () => setFormField('method', m),
+              }))}
+              button={
+                <>
+                  <span className="font-mono font-semibold">{method}</span>
+                  <ChevronDown size={13} className="shrink-0 text-[var(--text-hint)]" aria-hidden />
+                </>
+              }
+            />
             <input
               ref={urlRef}
               type="text"

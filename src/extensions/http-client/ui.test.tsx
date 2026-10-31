@@ -426,4 +426,13 @@ describe('Opciones → Cliente HTTP', () => {
     expect(t).toContain('Pedir confirmación antes de enviar POST, PUT, PATCH o DELETE');
     expect(html).toContain('aria-label="Nombre de la variable 1"');
   });
+
+  it('el entorno activo es el menú de la app, no un <select> nativo', () => {
+    setEnvs([STAGING, PROD], PROD.id);
+    const html = renderToStaticMarkup(<Settings />);
+    expect(html).not.toContain('<select');
+    expect(html).toMatch(/aria-haspopup="menu" aria-expanded="false" aria-label="Entorno activo: Producción, protegido"/);
+    setEnvs([STAGING], null);
+    expect(renderToStaticMarkup(<Settings />)).toContain('aria-label="Entorno activo: Sin entorno"');
+  });
 });

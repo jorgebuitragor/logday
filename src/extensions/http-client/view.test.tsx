@@ -232,7 +232,7 @@ describe('las peticiones de las notas (HT34)', () => {
     const html = formHtml();
     const t = text(html);
     expect(html).toContain('value="{{baseUrl}}/users"');
-    expect(html).toMatch(/<option value="POST" selected="">/);
+    expect(html).toContain('aria-label="Método: POST"');
     expect(t).toContain('Crear');
     expect(t).toContain('De «API de usuarios» · Abrir la nota');
     // La segunda petición del bloque, no la primera.
@@ -256,7 +256,9 @@ describe('el formulario se dibuja', () => {
     expect(t).toContain('Enviar manda la petición a la URL que escribas, desde este equipo.');
     expect(t).toContain('Sin entorno');
     expect(html).toMatch(/aria-disabled="true"[^>]*title="Enviar \(⌘↵\)"/);
-    expect(html).toContain('aria-label="Método"');
+    // El método es el menú de la app, no un <select> nativo (la lista azul de macOS).
+    expect(html).not.toContain('<select');
+    expect(html).toMatch(/<button type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Método: GET"[^>]*>.*GET/);
     expect(html).toContain('aria-label="URL"');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Guardar en una nota"/);
     expect(t).not.toContain('Traer de una nota');

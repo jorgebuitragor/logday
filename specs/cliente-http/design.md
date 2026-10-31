@@ -675,7 +675,7 @@ Usa `ToolFrame` con `bodyClass="flex flex-col gap-4 px-5 py-4"` y `headerExtra={
 
 - **Aviso fijo** bajo la descripción: `flex items-center gap-1.5 text-[10px] text-[var(--text-hint)]`, con `Globe size={11}`. Así queda claro dentro de DevTools, cuyo pie dice que todo es local.
 - **Fila de la petición:** `flex flex-wrap items-center gap-2`.
-  - Método: un `<select>` nativo con `INPUT_CLS font-mono font-semibold w-28` y `aria-label="Método"`.
+  - Método: ~~un `<select>` nativo con `INPUT_CLS font-mono font-semibold w-28` y `aria-label="Método"`~~. *Desde el 31 oct 2026 (pedido por Jorge: el `<select>` de macOS es la lista azul del sistema), el `Menu` de la barra (`ui/Menu.tsx`) con el botón `FIELD_BTN w-28` (la forma de un campo), `aria-label="Método: GET"`, ✓ en el elegido y typeahead; Enter, Espacio o ↓ lo abren y Esc lo cierra y devuelve el foco al botón.*
   - URL: `lineInputCls()` con `aria-label="URL"`, el placeholder de `http.placeholder` y `NO_AUTOCORRECT`. Enter en la URL envía.
   - Enviar: `SEND_BTN` (Cancelar mientras envía).
 - **Cabeceras y Cuerpo:** dos paneles en `grid gap-4 @3xl/tool:grid-cols-2`, con su `<label>` de `PANEL_TITLE`, `textareaCls(invalid, 'min-h-[7rem] h-[20vh]')` y `NO_AUTOCORRECT`.

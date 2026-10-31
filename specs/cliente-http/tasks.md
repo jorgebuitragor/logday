@@ -182,6 +182,24 @@ Rama `feature/http-pantalla-propia`, desde `develop`. Pedido por Jorge (requirem
 - **"Guardar en una nota" crea siempre una nota nueva**, también si la petición vino de una nota: no reescribe el bloque original. La petición sigue en el formulario como antes (sin pasar a "venir" de la nota nueva), para que su respuesta no se pierda.
 - **Una respuesta por petición:** cada petición de la columna tiene su clave en la caché (§11.2), en vez de una sola respuesta para todo el formulario.
 
+## Lenguaje, método y cURL en la barra (31 oct 2026, HT36–HT38)
+
+Rama `feature/http-pantalla-propia`. Pedido por Jorge al probar (requirements, "Cambio del 31 oct 2026: lenguaje, método y cURL en la barra del bloque"; design §12).
+
+- [x] Base (specs/extensiones R24): `setLanguage` y `setCode` en `NoteBlockProps`, en `InlineExtensionBlockView`, con `setBlockLanguageTr`, `setBlockCodeTr` y `changedRange` puros en `extensionBlockPos.ts`.
+- [x] `core/parse.ts`: `requestLine` en cada petición. `core/edit.ts`: `setRequestMethod`, `toCurl` y `shellQuote`.
+- [x] Barra (`ui/Block.tsx`): selector de lenguaje, selector de método y "Copiar como cURL". `ui/Menu.tsx` suma typeahead.
+- [x] Textos es y en con las mismas claves (§12.3).
+- [x] Pruebas: `core/edit.test.ts` (varias peticiones con `###`, comentarios, línea sin método, minúsculas, método no admitido, GET/HEAD con cuerpo; cURL con variables, comillas, saltos de línea, Content-Type automático, HEAD y la query en líneas `?`/`&`), `extensionBlockPos.test.ts` (las transacciones: lenguaje, cursor, bloque vacío, tramo distinto) y `ui.test.tsx` (la barra con los selectores y cURL, sin las acciones del editor, la petición del cursor, en inglés).
+- [ ] Prueba en la app de QA: cambiar a JSON y a Texto desde la barra (el bloque pasa a normal con su selector, sin saltar el scroll, con el foco en el código); cambiar el método con el ratón y el teclado (typeahead), con varias peticiones y con el cursor en otra; ⌘Z; pegar el cURL en una terminal.
+
+### Diferencias con el pedido
+
+- **Sin buscador en el selector de lenguaje:** el normal tiene uno, pero es solo con el ratón. El de la barra es el `Menu` accesible de la barra, con typeahead (escribir "ja" salta a Java), que con once lenguajes cumple lo mismo.
+- **cURL en la barra**, no en la franja: así está también sin respuesta. HEAD va con `--head` (con `-X HEAD` curl espera un cuerpo) y sin cuerpo. Las comillas son de sh y zsh; en `cmd.exe` de Windows no sirven.
+- **"Texto" traducido** en el selector de la barra (`langPlain`); el selector normal sigue diciendo "Texto" también en inglés (`CODE_LANGUAGE_OPTIONS`), sin cambiar.
+- **La pantalla Cliente HTTP** no tiene "Copiar como cURL" todavía: el pedido era el bloque de la nota.
+
 ## Al cerrar
 
 - [ ] Documentar en el vault (`02 Decisiones/`) la decisión de las peticiones en las notas y los secretos por variable, si Jorge lo aprueba como está.

@@ -457,12 +457,14 @@ Las dos islas llevan `className="extension-block-ui @container/httpblock"`.
 
 De izquierda a derecha:
 
-1. **Etiqueta:** `HTTP` con `PANEL_TITLE` y `font-mono`, más `aria-hidden` (el nombre ya lo da el `aria-label`).
+1. **Etiqueta:** `HTTP` con `PANEL_TITLE` y `font-mono`, más `aria-hidden` (el nombre ya lo da el `aria-label`). *Desde el 31 oct 2026, en una nota editable es el selector de lenguaje (HT38, §12).*
+   - **Selector de método** (HT36, §12), a continuación.
 2. **Selector de petición** (solo con 2 o más): un botón `flex min-w-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] ${FOCUS_RING}`.
    - Muestra el nombre (`### nombre`) o "{MÉTODO} {ruta}", cortado con `truncate max-w-[16rem]`, y `ChevronDown size={11}`.
    - Abre un menú (`role="menu"`, `menuitemradio`) con una fila por petición: el método en `font-mono text-[10px] font-semibold` y la ruta o el nombre. Las peticiones con error llevan `CircleAlert size={11} text-red-400` y el texto sr "con errores".
    - Al mover el cursor dentro del código, la selección sigue a la petición del cursor.
 3. `flex-1`.
+   - **Copiar como cURL** (HT37, §12), antes del chip.
 4. **Chip del entorno** (`EnvironmentChip`, §1.3).
 5. **Enviar** (`SEND_BTN`, **nueva** en `controlClasses.ts`). Es la versión pequeña de `MAIN_BTN` del Pomodoro: `flex items-center gap-1.5 rounded-lg border border-indigo-500/50 bg-indigo-500/10 px-2.5 py-1 text-xs font-medium text-[var(--text-primary)] transition hover:bg-indigo-500/15 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 ${FOCUS_RING}`.
    - Ícono `Send size={13} className="text-indigo-400"`.
@@ -773,7 +775,7 @@ De 1 a 300 segundos; de 1 a 50 MB.
 | Código del bloque | `⌘↵` (Ctrl+Enter) | Envía la petición del cursor. Si falta algo, lo anuncia; si hace falta confirmar, enfoca "No enviar". Mientras se envía, no hace nada. |
 | Confirmación | `Esc` | No enviar; el foco vuelve a donde estaba. |
 | Barra o respuesta | `Esc` mientras se envía | Cancela. |
-| Menús (petición, entorno) | ↑/↓, Home/End, Enter/Espacio, Esc | Patrón de menú. Esc devuelve el foco al botón. |
+| Menús (lenguaje, método, petición, entorno) | ↑/↓, Home/End, Enter/Espacio, Esc, letras | Patrón de menú. Esc devuelve el foco al botón. Escribir letras salta a la opción que empieza así (typeahead, desde el 31 oct 2026). |
 | Pestañas de la respuesta y de los entornos | ←/→, Home/End | Roving tabindex. |
 | Pantalla, formulario | `⌘↵` (Ctrl+Enter) | Enviar, desde cualquier campo. |
 | Pantalla, URL | Enter | Enviar. |
@@ -1195,3 +1197,41 @@ Pedida por Jorge: el Cliente HTTP de DevTools no se encontraba (con la extensió
 | `viewHint` · `viewHintOpen` | ver §8.7 | see §8.7 |
 
 Los de la ayuda (`helpTitle`, `help1`–`help6`, `helpKeySend`, `helpKeyUrl`, `helpKeyCancel`) están en specs/ayuda-contextual, design, "la ayuda del Cliente HTTP".
+
+### 12. Lenguaje, método y cURL en la barra (31 oct 2026, HT36–HT38)
+
+Pedido por Jorge al probar (requirements, "Cambio del 31 oct 2026: lenguaje, método y cURL en la barra del bloque").
+
+#### 12.1 La barra
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ HTTP ▾  POST ▾  Crear usuario ▾                 ⌨  ⛁ Staging ▾  [➤ Enviar] │
+├──────────────────────────────────────────────────────────────────────────┤
+```
+
+De izquierda a derecha: lenguaje, método, petición (con 2 o más), `flex-1`, cURL, entorno y Enviar. Los dos selectores nuevos son el `Menu` de la barra (`ui/Menu.tsx`, el del selector de petición): botón `CHIP_BTN` con `aria-haspopup="menu"`, menú con `menuitemradio`, el foco visible de `FOCUS_RING` y el patrón de teclado de §5, que suma typeahead (las letras saltan a la opción).
+
+- **Lenguaje** (HT38): el botón dice `HTTP` (`PANEL_TITLE`, `font-mono`) con `ChevronDown`, y `aria-label` "Lenguaje del bloque: HTTP". El menú tiene la pista "Con otro lenguaje, el bloque deja de ser una petición." y la lista `CODE_LANGUAGE_OPTIONS` (`lib/codeHighlight.ts`), la misma del selector de los bloques normales, con HTTP marcado; "Texto" se traduce (`langPlain`). Al elegir otro llama a `setLanguage` del host y anuncia "El bloque ahora es {nombre}".
+- **Método** (HT36): el botón muestra el método (`font-mono text-[10px] font-semibold`) y `aria-label` "Método: POST". Es el de la petición de la barra, leído del texto de ahora y no del que va con el debounce de 300 ms, para que el cambio se vea en el acto. No aparece si la línea de la petición no se entiende (`missing_request_line`). Al elegir otro, `setRequestMethod` (`core/edit.ts`) da el texto nuevo, la barra llama a `setCode` del host y anuncia "Método: GET" (más el aviso del cuerpo, si con GET o HEAD lo tiene).
+- **Copiar como cURL** (HT37): `ICON_BTN` con `SquareTerminal`, `aria-label` y `title` "Copiar como cURL"; al copiar pasa 1,5 s a `Check` con "Copiado" y anuncia "Comando cURL copiado". Está `disabled` con un error de sintaxis en la petición o en el bloque (una variable que falta no lo es: el comando lleva `{{nombre}}`). `toCurl` (`core/edit.ts`) arma el comando del texto sin resolver.
+- Sin `setLanguage` ni `setCode` (fuera del editor) la etiqueta vuelve a ser texto y no hay selector de método.
+
+#### 12.2 Acciones del host (specs/extensiones R24)
+
+`NoteBlockProps` suma `setLanguage(language)` y `setCode(code)`, solo en el modo inline y con el editor editable. Las implementa `InlineExtensionBlockView` (`mermaidCodeBlock.tsx`) sobre su propia posición (`getPos()`, leída al usarlas), con transacciones puras de `extensionBlockPos.ts`:
+
+- `setBlockLanguageTr`: `setNodeMarkup` con el lenguaje nuevo (`plaintext` lo quita, como `handleChangeCodeLanguage`). La selección se mapea; si estaba fuera del bloque, va al principio de su código. El NodeView se reemplaza por el de un bloque normal, así que se guarda y se repone el scroll del panel y el foco vuelve al editor (el menú desaparece con la barra).
+- `setBlockCodeTr`: reemplaza solo el tramo distinto (`changedRange`, sin partir un emoji), con `insertText` o `delete` (no `deleteRange`, que borraría el bloque si queda vacío). Así el cursor se queda donde estaba y ⌘Z deshace en un paso. El foco sigue en el botón del menú.
+
+#### 12.3 Textos nuevos (`httpClient`)
+
+| Clave | es | en |
+|---|---|---|
+| `langPicker` | Lenguaje del bloque: {name} | Block language: {name} |
+| `langPlain` | Texto | Plain text |
+| `langHint` | Con otro lenguaje, el bloque deja de ser una petición. | With another language, the block is no longer a request. |
+| `methodPicker` | Método: {method} | Method: {method} |
+| `copyCurl` | Copiar como cURL | Copy as cURL |
+| `aLanguage` | El bloque ahora es {name} | The block is now {name} |
+| `aCurlCopied` | Comando cURL copiado | cURL command copied |

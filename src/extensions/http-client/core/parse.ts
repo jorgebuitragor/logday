@@ -39,6 +39,9 @@ export interface ParsedRequest {
    *  cursor y para la caché. */
   startLine: number;
   endLine: number;
+  /** Línea del bloque (desde 1) con el método y la URL: la que reescribe
+   *  el selector de método (`setRequestMethod`). */
+  requestLine: number;
   /** El texto de la sección, sin espacios al final de cada línea ni
    *  líneas en blanco al final, para saber si cambió. */
   source: string;
@@ -103,6 +106,7 @@ function parseSection(lines: string[], section: Section): ParsedRequest | null {
     if (lines[k].includes(RESERVED)) issues.push({ code: 'reserved_syntax', line: lineNo(k), severity: 'error' });
   }
 
+  const requestLineIdx = i;
   const requestLine = lines[i].trim();
   let method: HttpMethod = 'GET';
   let url = '';
@@ -167,6 +171,7 @@ function parseSection(lines: string[], section: Section): ParsedRequest | null {
     body,
     startLine: lineNo(section.start),
     endLine: Math.max(lineNo(section.start), last),
+    requestLine: lineNo(requestLineIdx),
     source,
     firstLine,
     issues: issues.sort((a, b) => a.line - b.line),

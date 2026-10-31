@@ -121,6 +121,10 @@ tengan su primera extensión.
   que la extensión dibuja entero y edita en un editor aparte (Excalidraw),
   y el modo inline, en el que el código se ve y se edita en la nota y la
   extensión le pone una barra encima y una franja debajo (Cliente HTTP).
+  En el modo inline, la barra DEBERÁ poder cambiar el lenguaje del bloque
+  (sin eso no hay forma de hacerlo: el selector de los bloques normales
+  no está en los de las extensiones) y reemplazar su texto, con acciones
+  que le da el editor (31 oct 2026, pedido por Jorge al probar).
 - R25. Una extensión DEBERÁ poder registrar un atajo de teclado global y
   tener su propia ventana (por ejemplo, la captura rápida). La ventana se
   crea al activarla y se destruye al desactivarla, y NO DEBERÁ escribir

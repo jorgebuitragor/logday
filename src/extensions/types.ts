@@ -42,6 +42,15 @@ export interface NoteBlockProps {
   /** Solo en el modo inline: la posición del cursor dentro del texto del
    *  bloque, o `null` si el cursor está fuera. */
   cursor?: number | null;
+  /** Solo en el modo inline, y si la nota se puede editar: cambia el
+   *  lenguaje del bloque, como el selector de los bloques de código
+   *  normales (`plaintext` lo quita). Si el nuevo no es de la extensión, el
+   *  bloque pasa a verse como código normal, con su selector de siempre. */
+  setLanguage?: (language: string) => void;
+  /** Solo en el modo inline, y si la nota se puede editar: reemplaza el
+   *  texto del bloque. Cambia solo el tramo distinto, así el cursor se
+   *  queda en su sitio y Deshacer lo revierte en un paso. */
+  setCode?: (code: string) => void;
 }
 
 /** Props del editor de ese bloque, que se abre al crearlo o editarlo. */

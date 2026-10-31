@@ -1,6 +1,8 @@
 // Un menú pequeño con el patrón de teclado de siempre (Interfaz §5):
 // ↑/↓, Home/End, Enter/Espacio para elegir y Esc para cerrar, que devuelve
-// el foco al botón. Lo usan el selector de petición y el del entorno.
+// el foco al botón, y escribir letras salta a la opción que empieza así
+// (typeahead). Lo usan los selectores de la barra (lenguaje, método,
+// petición) y el del entorno.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Check } from 'lucide-react';
 import { FOCUS_RING } from '../../../components/shared/controlClasses';
@@ -32,6 +34,7 @@ export function Menu({
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const typed = useRef({ text: '', at: 0 });
 
   useEffect(() => {
     if (!open) return;
@@ -64,6 +67,19 @@ export function Menu({
       if (e.key === 'Escape') e.preventDefault();
       e.stopPropagation();
       close(e.key === 'Escape');
+    } else if (e.key.length === 1 && e.key !== ' ' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      // Typeahead: la misma letra repetida recorre las que empiezan por ella.
+      const now = Date.now();
+      const prev = now - typed.current.at < 700 ? typed.current.text : '';
+      const text = prev === e.key.toLowerCase() ? prev : prev + e.key.toLowerCase();
+      typed.current = { text, at: now };
+      const from = text.length === 1 ? i + 1 : Math.max(0, i);
+      const found = [...nodes.slice(from), ...nodes.slice(0, from)]
+        .find((n) => (n.textContent ?? '').trim().toLowerCase().startsWith(text));
+      if (found) {
+        e.preventDefault();
+        found.focus();
+      }
     }
   };
 

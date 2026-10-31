@@ -234,6 +234,17 @@ del Cliente HTTP, `specs/cliente-http/` design A3):
   se recalculan con cada transacción del editor.
 - ProseMirror no maneja los eventos de las islas (`stopEvent`); el código
   sí es suyo. Excalidraw sigue con su NodeView de siempre.
+- Acciones del editor para la barra (31 oct 2026): `setLanguage(language)`
+  y `setCode(code)` en `NoteBlockProps`, solo en el modo inline y con el
+  editor editable. Las implementa `InlineExtensionBlockView` sobre su
+  `getPos()` con las transacciones puras de `extensionBlockPos.ts`
+  (`setBlockLanguageTr`, `setBlockCodeTr`). `setLanguage` hace lo mismo
+  que el selector de los bloques normales (`plaintext` quita el
+  lenguaje), conserva el scroll y devuelve el foco al código; si el
+  lenguaje nuevo no es de la extensión, el bloque pasa a ser normal, con
+  su selector. `setCode` cambia solo el tramo distinto, así el cursor se
+  queda y Deshacer lo revierte en un paso. Detalle en specs/cliente-http,
+  design §12.
 - "Nuevo bloque" inserta `template` en el cursor, sin editor aparte, y
   deja el cursor al final de la primera línea.
 - ⌘↵ (Ctrl+Enter) con el cursor dentro de un bloque inline se avisa por

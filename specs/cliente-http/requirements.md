@@ -1,6 +1,6 @@
 # Cliente HTTP — Requirements
 
-Estado: en curso. El enfoque y las decisiones del diseño los aprobó Jorge el 31 oct 2026. Están implementados el PR 1 (la extensión en las notas), el PR 2 (la herramienta de DevTools) y el cambio que la reemplaza por una pantalla propia (HT33–HT35, rama `feature/http-pantalla-propia`). Faltan las pruebas en el navegador y en la app de QA.
+Estado: en curso. El enfoque y las decisiones del diseño los aprobó Jorge el 31 oct 2026. Están implementados el PR 1 (la extensión en las notas), el PR 2 (la herramienta de DevTools) el cambio que la reemplaza por una pantalla propia (HT33–HT35, rama `feature/http-pantalla-propia`) y la barra del bloque con lenguaje, método y cURL (HT36–HT38, en la misma rama). Faltan las pruebas en el navegador y en la app de QA.
 
 ## Contexto
 
@@ -137,7 +137,7 @@ Además, del diseño:
 - Scripts antes y después de la petición, tests automáticos y encadenar peticiones (usar la respuesta de una en otra).
 - OAuth guiado, Digest, NTLM y certificados de cliente (mTLS).
 - WebSockets, gRPC, Server-Sent Events y respuestas en streaming.
-- Importar colecciones de Postman, Insomnia o Bruno, importar desde cURL y copiar como cURL.
+- Importar colecciones de Postman, Insomnia o Bruno, e importar desde cURL. *"Copiar como cURL" entró el 31 oct 2026 (HT37).*
 - Variables dentro de la nota (`@nombre = valor`), variables anidadas (`{{a}}` dentro del valor de otra) y variables comunes a todos los entornos.
 - Cuerpos desde un archivo (`< ./archivo.json`) y `multipart/form-data` con archivos.
 - Cookies guardadas entre peticiones. Cada petición va sola.
@@ -168,3 +168,11 @@ Pedido por Jorge: no encontraba el Cliente HTTP de DevTools (no tenía la extens
   - la lista se lee de disco al abrir la pantalla, con "Actualizar", y al cambiar las notas en la app (crear, editar, sincronizar). No vigila el disco.
 - HT35. **Ayuda.** La sección DEBERÁ tener su ayuda contextual propia (specs/ayuda-contextual AY30): la columna, el formulario, los entornos y secretos, ⌘↵, y que los bloques `http` de las notas también se envían desde la nota.
 - Opciones → Cliente HTTP, al pie, DEBERÁ apuntar a la pantalla ("Abrir Cliente HTTP"), no a DevTools. El aviso de R6 y la descripción de la extensión nombran la pantalla en vez de DevTools.
+
+## Cambio del 31 oct 2026: lenguaje, método y cURL en la barra del bloque
+
+Pedido por Jorge al probar: al pasar un bloque a HTTP se abría bien la petición, pero ya no podía cambiarle el lenguaje (a JSON o a Java, por ejemplo) sin quitar el formato de código y volver a ponerlo, porque los bloques de las extensiones no tienen el selector de lenguaje de los bloques normales. Pidió además poder cambiar el método (GET, POST, PUT…) y que se cambie el texto de la petición.
+
+- HT36. **Método.** MIENTRAS la nota se pueda editar, la barra del bloque DEBERÁ tener un selector con el método de la petición de la barra (la del cursor o la elegida, HT6) y los siete métodos de HT5. Al elegir otro, DEBERÁ reescribir solo el método en la línea de esa petición: la URL, el `HTTP/1.1`, las cabeceras, el cuerpo, los comentarios y las demás peticiones quedan igual. Una línea que es solo una URL recibe el método delante. Si con GET o HEAD la petición tiene cuerpo, el cuerpo NO DEBERÁ borrarse: sale el aviso de siempre (`getWithBody`, `headWithBody`) y se anuncia. El cambio se deshace con ⌘Z en un paso y el cursor se queda donde estaba.
+- HT37. **Copiar como cURL.** La barra DEBERÁ tener "Copiar como cURL", que copia la petición de la barra como comando `curl -X MÉTODO 'url' -H 'Nombre: valor' --data-raw '…'`, con las comillas simples escapadas para sh y zsh. Las variables y los secretos DEBERÁN quedar como `{{nombre}}`, NUNCA con su valor (HT18). Lleva el `Content-Type: application/json` que Logday agrega a un cuerpo JSON (decisión 6). HEAD va con `--head` y sin cuerpo, como se envía. Con un error de sintaxis, la acción no está disponible.
+- HT38. **Lenguaje del bloque.** MIENTRAS la nota se pueda editar, la etiqueta "HTTP" de la barra DEBERÁ ser un selector con los mismos lenguajes que el de los bloques de código normales. Al elegir otro, el bloque pasa a ese lenguaje y se ve como código normal, con su selector de siempre; el texto no cambia. Es una acción de la base de extensiones (specs/extensiones R24), así que sirve a cualquier bloque inline.

@@ -245,7 +245,7 @@ export function DailyList() {
       {/* Header. Con la lista al mínimo (200 px) no caben el título, la ayuda
           y los cuatro botones: "Hoy" queda solo con el ícono y el título se
           recorta, pero conserva el ancho para la ayuda (sin solaparse). */}
-      <div className="@container/dlh flex items-center justify-between gap-1 border-b border-[var(--border)] px-4 py-3">
+      <div className="@container/dlh flex items-center justify-between gap-1 border-b border-[var(--border)] px-3 py-3 @[15rem]/dlh:px-4">
         <div className="flex min-w-[3.25rem] items-center gap-1 overflow-hidden">
           <h2 className="truncate text-sm font-semibold text-[var(--text-primary)]">{t(language, 'dailys', 'title')}</h2>
           <DailysHelp />

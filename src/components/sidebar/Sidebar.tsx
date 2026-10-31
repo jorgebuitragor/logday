@@ -43,7 +43,7 @@ import { buildFolderTree } from '../../lib/folderTree';
 import { exportDailyMonthEntries } from '../../lib/dailyMonthExport';
 import { FolderTreeItem } from './FolderTreeItem';
 import { NoteTree } from './NoteTree';
-import { CollapsedExtensionSections, useExtensionSectionItems } from './ExtensionSections';
+import { CollapsedExtensionSections, SidebarStatusSlots, useExtensionSectionItems } from './ExtensionSections';
 import { ProjectTreeItem } from './ProjectTreeItem';
 import { RootDropLine } from './RootDropLine';
 import { ModalOverlay } from '../shared/ModalOverlay';
@@ -513,6 +513,11 @@ export function Sidebar() {
           <PanelLeft size={18} />
         </button>
         <div className="my-1 h-px w-6 bg-[var(--border)]" />
+        {/* De Panel a las vistas de Tareas, con scroll propio: con dos
+            extensiones con vista y el contador del Pomodoro, la columna no
+            cabe en 600 px de alto (specs/pomodoro, hallazgo 2). El contador,
+            Buscar y Opciones quedan fijos abajo. */}
+        <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden [scrollbar-width:none]">
         <button
           onClick={() => setSection('dashboard')}
           className={`rounded-lg p-2 transition ${
@@ -591,7 +596,8 @@ export function Sidebar() {
               <Icon size={18} />
             </button>
           ))}
-        <div className="flex-1" />
+        </div>
+        <SidebarStatusSlots collapsed />
         <button
           onClick={toggleSearch}
           className="rounded-lg p-2 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
@@ -1404,6 +1410,8 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="mt-auto border-t border-[var(--border)] px-2 py-2 space-y-0.5">
+        {/* R26: el estado de las extensiones (el contador del Pomodoro). */}
+        <SidebarStatusSlots collapsed={false} />
         <button
           onClick={toggleSettings}
           className="relative flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"

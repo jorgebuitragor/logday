@@ -64,6 +64,8 @@ export interface ExtensionModule {
   Settings?: ComponentType;                  // panel bajo su tarjeta
   View?: ComponentType;                      // vista de su sección
   dailyActions?: ComponentType<{ date: string; getText: () => Promise<string> }>; // botones junto a Copiar
+  NoteBlock?: ComponentType<NoteBlockProps>; // bloque propio en las notas (R24), con NoteBlockEditor
+  SidebarStatus?: ComponentType<{ collapsed: boolean }>; // estado en el menú lateral (R26)
   start?: () => () => void;                  // procesos propios; devuelve cómo pararlos (R7)
 }
 ```
@@ -275,6 +277,26 @@ Siguen el mismo modelo cuando tengan su primera extensión:
 - **Un ErrorBoundary global:** ya existe y cierra la app entera. Fue la
   causa del fallo de la vista previa de enlaces arreglado en v1.0.7.
 
+## Estado en el menú lateral (R26)
+
+La primera es el contador del Pomodoro (`specs/pomodoro/design.md` §3).
+
+- Punto `SidebarStatus` (`ComponentType<{ collapsed: boolean }>`). Si no
+  hay nada que mostrar, devuelve `null`.
+- Metadato `sidebarStatus: true` en el registro, para que el menú sepa
+  qué extensiones lo tienen sin cargar su código (R16).
+- `SidebarStatusSlots` (`ExtensionSections.tsx`) monta un `ExtensionSlot`
+  con `variant="inline"` por cada extensión activa que lo tenga:
+  - expandido: primer hijo del pie, antes de "Opciones";
+  - colapsado: después de la columna con scroll y antes de Buscar.
+- **Columna colapsada con scroll:** de Panel a las vistas de Tareas va en
+  un contenedor `flex-1 overflow-y-auto`; el estado, Buscar y Opciones
+  quedan fijos abajo. Con dos extensiones con vista y el contador, la
+  columna no cabía en 600 px de alto (Pomodoro, hallazgo 2).
+- **Abrir Opciones en la página de una extensión:** `openExtensionSettings(id)`
+  del store deja una señal (`settingsExtensionRequest`) y abre Opciones;
+  `SettingsModal` la consume y abre `ext:<id>`, como `openSettingsGitTab`.
+
 ## Atajo global y ventana propia (R25)
 
 La primera es la captura rápida (`specs/captura-rapida/design.md`).
@@ -287,4 +309,6 @@ La primera es la captura rápida (`specs/captura-rapida/design.md`).
 - Su capacidad (`capabilities/<id>.json`) da solo eventos: habla con la
   ventana principal por eventos de Tauri, y esta escribe con el store.
 - La bandeja se arma con `build_tray_menu`, que agrega las entradas de
-  las extensiones activas; `refresh_tray` la rehace.
+  las extensiones activas; `refresh_tray` la rehace. Las del Pomodoro van
+  entre "Nueva tarea" y "Salir", con su separador
+  (`extensions::pomodoro::tray_items`).

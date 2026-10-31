@@ -46,6 +46,14 @@ Estado: en progreso.
   del menú lateral: sin probar en la app, porque todavía ninguna
   extensión tiene vista. Están cubiertas por pruebas unitarias.
 
+## Estado en el menú lateral (R26)
+
+- [x] Punto `SidebarStatus`, metadato `sidebarStatus` y `SidebarStatusSlots`
+  en el pie del menú expandido y sobre Buscar en el colapsado, con la
+  columna colapsada con scroll. Lo estrena el Pomodoro (`specs/pomodoro`).
+- [x] `openExtensionSettings(id)`: Opciones abierto en la página de una
+  extensión (R21).
+
 ## Primera extensión
 
 - [x] `team-chat`, en modo local. Ver

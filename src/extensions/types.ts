@@ -2,7 +2,7 @@ import type { ComponentType } from 'react';
 import type { LucideIcon } from 'lucide-react';
 
 /** Mismo id en Desktop, Web y Mobile (specs/extensiones/design.md). */
-export type ExtensionId = 'team-chat' | 'mcp' | 'google-calendar' | 'outgoing-webhook' | 'granola' | 'openproject' | 'excalidraw' | 'quick-capture' | 'devtools';
+export type ExtensionId = 'team-chat' | 'mcp' | 'google-calendar' | 'outgoing-webhook' | 'granola' | 'openproject' | 'excalidraw' | 'quick-capture' | 'devtools' | 'pomodoro';
 
 export type ExtensionCategory = 'integration' | 'tool';
 export type LogdayApp = 'desktop' | 'web' | 'mobile';
@@ -41,6 +41,13 @@ export interface NoteBlockEditorProps {
   onClose: () => void;
 }
 
+/** Props del estado que una extensión pone en el menú lateral, abajo,
+ *  encima de "Opciones" (R26). */
+export interface SidebarStatusProps {
+  /** El menú está colapsado (48 px): solo íconos. */
+  collapsed: boolean;
+}
+
 /** Lo que aporta una extensión a cada punto de extensión. No es una API
  *  pública: se cambia cuando haga falta, porque todas viven en este repo. */
 export interface ExtensionModule {
@@ -53,11 +60,14 @@ export interface ExtensionModule {
   /** Bloque propio en las notas y su editor (R24). */
   NoteBlock?: ComponentType<NoteBlockProps>;
   NoteBlockEditor?: ComponentType<NoteBlockEditorProps>;
+  /** Estado siempre visible en el menú lateral (R26). Si no hay nada que
+   *  mostrar, devuelve `null`. */
+  SidebarStatus?: ComponentType<SidebarStatusProps>;
   /** Procesos propios; devuelve cómo pararlos (R7). */
   start?: () => () => void;
 }
 
-export type ExtensionPoint = 'Settings' | 'View' | 'dailyActions' | 'NoteBlock' | 'NoteBlockEditor';
+export type ExtensionPoint = 'Settings' | 'View' | 'dailyActions' | 'NoteBlock' | 'NoteBlockEditor' | 'SidebarStatus';
 
 /** Metadatos del registro: se dibujan sin cargar el código (R16). */
 export interface ExtensionDefinition {
@@ -78,6 +88,9 @@ export interface ExtensionDefinition {
    *  metadato para que el editor sepa qué bloques son de la extensión sin
    *  cargar su código. */
   noteBlock?: { language: string };
+  /** R26: si tiene `SidebarStatus`. Es metadato para que el menú lateral
+   *  no cargue el módulo solo para saberlo (R16). */
+  sidebarStatus?: boolean;
   /** Claves de sus secretos en el llavero (`ext:<id>:<clave>`). El
    *  llavero no se puede listar, así que "Quitar configuración" (R8)
    *  borra estas. */

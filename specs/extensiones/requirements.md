@@ -90,6 +90,14 @@ tengan su primera extensión.
   "Extensiones", con su icono y su nombre. Al desactivarla, la entrada
   DEBERÁ desaparecer y, si estaba abierta, Opciones DEBERÁ volver al
   catálogo.
+  - Una extensión DEBERÁ poder abrir Opciones directamente en su página
+    (por ejemplo, el botón "Opciones" de la vista del Pomodoro).
+- R26. Una extensión DEBERÁ poder mostrar un estado pequeño y siempre
+  visible en el menú lateral, abajo, encima de "Opciones", tanto con el
+  menú expandido como colapsado (por ejemplo, el contador del Pomodoro).
+  MIENTRAS no tenga nada que mostrar, NO DEBERÁ ocupar sitio. Su código
+  NO DEBERÁ cargarse con la extensión apagada (R16) y un error en él
+  DEBERÁ quedar aislado (R15).
 - R22. Una extensión DEBERÁ poder mostrar eventos de solo lectura en el
   Calendario de Logday (por ejemplo, las reuniones de Google Calendar),
   distintos de los eventos propios. Esos eventos NO DEBERÁN guardarse en

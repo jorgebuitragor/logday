@@ -1,4 +1,4 @@
-import { Bot, CalendarDays, ClipboardList, MessagesSquare, NotebookPen, PenTool, Webhook, Wrench, Zap } from 'lucide-react';
+import { Bot, CalendarDays, ClipboardList, Hourglass, MessagesSquare, NotebookPen, PenTool, Webhook, Wrench, Zap } from 'lucide-react';
 import type { ExtensionDefinition, ExtensionId } from './types';
 
 /** Extensiones que implementa Desktop (R4). Solo metadatos: el código de
@@ -98,6 +98,19 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     // D11: todo corre en el equipo, así que no lleva el aviso de R6.
     view: true,
     load: () => import('./devtools').then((m) => m.default),
+  },
+  {
+    id: 'pomodoro',
+    category: 'tool',
+    // Reloj de arena, no `Timer`: `Timer` ya es Horas extra (design §1).
+    icon: Hourglass,
+    apps: ['desktop'],
+    // PM14: no envía nada fuera del equipo, así que no lleva el aviso de R6.
+    view: true,
+    settings: true,
+    // PM10: el contador del menú lateral.
+    sidebarStatus: true,
+    load: () => import('./pomodoro').then((m) => m.default),
   },
 ];
 

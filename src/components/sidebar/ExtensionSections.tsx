@@ -2,6 +2,7 @@ import { useShallow } from 'zustand/react/shallow';
 import type { LucideIcon } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { useExtensions } from '../../extensions/useExtensions';
+import { ExtensionSlot } from '../../extensions/ExtensionSlot';
 import { extensionSection } from '../../extensions/state';
 import { extensionText } from '../../extensions/text';
 import type { ExtensionSection } from '../../extensions/types';
@@ -52,6 +53,22 @@ export function CollapsedExtensionSections() {
           </button>
         );
       })}
+    </>
+  );
+}
+
+/** El estado de las extensiones activas que lo tienen (R26), abajo y
+ *  encima de "Opciones" (en el colapsado, encima de Buscar). Se carga y se
+ *  aísla como cualquier punto de extensión (R15, R16); si una no tiene
+ *  nada que mostrar, devuelve `null` y no ocupa sitio. */
+export function SidebarStatusSlots({ collapsed }: { collapsed: boolean }) {
+  const defs = useExtensions().enabled.filter((def) => def.sidebarStatus);
+  if (defs.length === 0) return null;
+  return (
+    <>
+      {defs.map((def) => (
+        <ExtensionSlot key={def.id} id={def.id} point="SidebarStatus" props={{ collapsed }} variant="inline" />
+      ))}
     </>
   );
 }

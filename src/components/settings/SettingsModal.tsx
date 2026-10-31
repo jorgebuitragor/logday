@@ -28,6 +28,7 @@ export function SettingsModal() {
     language,
     isGitOpen, toggleGit,
     isSyncOpen, toggleSync,
+    settingsExtensionRequest, clearExtensionSettingsRequest,
   } = useAppStore();
 
   const [isStartupSelectorOpen, setIsStartupSelectorOpen] = useState(false);
@@ -87,6 +88,15 @@ export function SettingsModal() {
       toggleSync(); // limpiar la señal
     }
   }, [isSettingsOpen, isSyncOpen, toggleSync]);
+
+  // Abrir en la página de una extensión (`openExtensionSettings`, p. ej.
+  // el botón "Opciones" del Pomodoro).
+  useEffect(() => {
+    if (isSettingsOpen && settingsExtensionRequest) {
+      setSettingsTab(`ext:${settingsExtensionRequest}`);
+      clearExtensionSettingsRequest();
+    }
+  }, [isSettingsOpen, settingsExtensionRequest, clearExtensionSettingsRequest]);
 
   if (!isSettingsOpen) return null;
 

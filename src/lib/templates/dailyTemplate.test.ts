@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildDailyCopyText, dateFromISO } from '../colombianHolidays';
-import { LOGDAY_DAILY_TEMPLATE, dailyDateLabel, dailyTemplateContext, renderTemplate } from './dailyTemplate';
+import { DAILY_TEMPLATE_EXAMPLES, LOGDAY_DAILY_TEMPLATE, dailyDateLabel, dailyTemplateContext, renderTemplate, splitTemplate } from './dailyTemplate';
 
 const ctx = (todayISO: string, nowISO: string, prev = '- Revisé el PR', today = '- Desplegar', language: 'es' | 'en' = 'es') =>
   dailyTemplateContext({
@@ -60,5 +60,33 @@ describe('la plantilla de Logday', () => {
     const en = ctx('2026-11-02', '2026-11-02', '', '', 'en');
     expect(en['anterior.actividades']).toBe('- (no activities recorded)');
     expect(en['hoy.es_hoy']).toBe(true);
+  });
+});
+
+describe('ejemplos y recuadros', () => {
+  it('los ejemplos solo usan marcadores que existen', () => {
+    for (const lang of ['es', 'en'] as const) {
+      for (const ex of DAILY_TEMPLATE_EXAMPLES[lang]) {
+        expect(renderTemplate(ex.template, ctx('2026-11-02', '2026-11-02', '- a', '- b', lang)).unknown).toEqual([]);
+      }
+    }
+  });
+
+  it('«Fecha del Daily (con de hoy)» da el mensaje de siempre sin secciones', () => {
+    expect(ctx('2026-11-02', '2026-11-02')['hoy.dia']).toBe('de hoy, Lunes 2 de Noviembre');
+    expect(ctx('2026-11-02', '2026-11-05')['hoy.dia']).toBe('Lunes 2 de Noviembre');
+    expect(LOGDAY_DAILY_TEMPLATE).not.toContain('{{#');
+  });
+
+  it('splitTemplate separa texto y marcadores y vuelve a armar lo mismo', () => {
+    const t = 'Hola {{usuario.nombre}}:\n{{ hoy.fecha }}{{#x}}';
+    const parts = splitTemplate(t);
+    expect(parts).toEqual([
+      { kind: 'text', text: 'Hola ' },
+      { kind: 'marker', name: 'usuario.nombre' },
+      { kind: 'text', text: ':\n' },
+      { kind: 'marker', name: 'hoy.fecha' },
+      { kind: 'text', text: '{{#x}}' },
+    ]);
   });
 });

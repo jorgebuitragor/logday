@@ -106,30 +106,42 @@ export interface DailyContextInput {
   language: DailyTemplateLanguage;
   /** El nombre del usuario, o vacío. */
   userName?: string;
-  /** El momento actual, para `hoy.es_hoy` (en las pruebas). */
+  /** El momento actual, para `hoy.es_hoy` y `hoy.dia` (en las pruebas). */
   now?: Date;
 }
 
+const TODAY_PREFIX = { es: 'de hoy, ', en: 'today, ' };
+
 export function dailyTemplateContext(input: DailyContextInput): TemplateContext {
   const { language } = input;
+  const isToday = sameDay(input.todayDate, input.now ?? new Date());
+  const todayLabel = dailyDateLabel(input.todayDate, language);
   return {
     'anterior.fecha': dailyDateLabel(input.prevDate, language),
     'anterior.actividades': input.prevActivities.trim() || EMPTY[language].prev,
-    'hoy.fecha': dailyDateLabel(input.todayDate, language),
+    'hoy.fecha': todayLabel,
+    // "de hoy, Lunes 2 de Noviembre" si el Daily es de hoy: así "El día
+    // {{hoy.dia}}:" da el mensaje de siempre sin secciones, que un usuario
+    // que no programa no entendería.
+    'hoy.dia': isToday ? `${TODAY_PREFIX[language]}${todayLabel}` : todayLabel,
     'hoy.actividades': input.todayActivities.trim() || EMPTY[language].today,
-    'hoy.es_hoy': sameDay(input.todayDate, input.now ?? new Date()),
+    'hoy.es_hoy': isToday,
     'usuario.nombre': input.userName ?? '',
   };
 }
 
-/** Los marcadores, en el orden en que se ofrecen para insertar. */
+/** Los marcadores que se ofrecen para insertar, en orden. Las secciones
+ *  (`{{#hoy.es_hoy}}`) siguen funcionando, pero no se ofrecen. */
 export const DAILY_TEMPLATE_MARKERS = [
   'anterior.fecha',
   'anterior.actividades',
+  'hoy.dia',
   'hoy.fecha',
   'hoy.actividades',
   'usuario.nombre',
 ] as const;
+
+export type DailyTemplateMarker = (typeof DAILY_TEMPLATE_MARKERS)[number];
 
 // ── La plantilla de Logday ────────────────────────────────────────────────
 
@@ -142,6 +154,66 @@ export const LOGDAY_DAILY_TEMPLATE = [
   'El día {{anterior.fecha}}:',
   '{{anterior.actividades}}',
   '',
-  '{{#hoy.es_hoy}}El día de hoy, {{hoy.fecha}}:{{/hoy.es_hoy}}{{^hoy.es_hoy}}El día {{hoy.fecha}}:{{/hoy.es_hoy}}',
+  'El día {{hoy.dia}}:',
   '{{hoy.actividades}}',
 ].join('\n');
+
+// ── Ejemplos para empezar ─────────────────────────────────────────────────
+// Los nombres van en los textos de cada app (`templates.example*`). Aquí
+// solo el texto, porque i18next (Mobile) interpretaría las llaves.
+
+export const DAILY_TEMPLATE_EXAMPLES: Record<DailyTemplateLanguage, { id: 'usual' | 'short' | 'named'; template: string }[]> = {
+  es: [
+    { id: 'usual', template: LOGDAY_DAILY_TEMPLATE },
+    {
+      id: 'short',
+      template: ['{{anterior.fecha}}:', '{{anterior.actividades}}', '', '{{hoy.fecha}}:', '{{hoy.actividades}}'].join('\n'),
+    },
+    {
+      id: 'named',
+      template: [
+        'Daily de {{usuario.nombre}}',
+        '',
+        'Lo que hice ({{anterior.fecha}}):',
+        '{{anterior.actividades}}',
+        '',
+        'Lo que haré ({{hoy.fecha}}):',
+        '{{hoy.actividades}}',
+      ].join('\n'),
+    },
+  ],
+  en: [
+    { id: 'usual', template: LOGDAY_DAILY_TEMPLATE },
+    {
+      id: 'short',
+      template: ['{{anterior.fecha}}:', '{{anterior.actividades}}', '', '{{hoy.fecha}}:', '{{hoy.actividades}}'].join('\n'),
+    },
+    {
+      id: 'named',
+      template: [
+        "{{usuario.nombre}}'s daily",
+        '',
+        'What I did ({{anterior.fecha}}):',
+        '{{anterior.actividades}}',
+        '',
+        "What I'll do ({{hoy.fecha}}):",
+        '{{hoy.actividades}}',
+      ].join('\n'),
+    },
+  ],
+};
+
+/** Parte una plantilla en texto y marcadores, para dibujar los marcadores
+ *  como recuadros. Las secciones (`{{#x}}`, `{{/x}}`) quedan como texto. */
+export function splitTemplate(template: string): ({ kind: 'text'; text: string } | { kind: 'marker'; name: string })[] {
+  const out: ({ kind: 'text'; text: string } | { kind: 'marker'; name: string })[] = [];
+  let last = 0;
+  for (const m of template.matchAll(/\{\{\s*([\w.]+)\s*\}\}/g)) {
+    const at = m.index ?? 0;
+    if (at > last) out.push({ kind: 'text', text: template.slice(last, at) });
+    out.push({ kind: 'marker', name: m[1] });
+    last = at + m[0].length;
+  }
+  if (last < template.length) out.push({ kind: 'text', text: template.slice(last) });
+  return out;
+}

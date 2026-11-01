@@ -1,14 +1,17 @@
 // Opciones → Plantillas (logday-server specs/plantillas, v1): qué plantilla
-// usan el mensaje del Daily y el Excel de horas extra. FCV es la de siempre
-// y la predeterminada; Logday, la genérica; Propia, un texto con marcadores
-// o un .xlsx cargado. Se guarda en este equipo, sin sync.
+// usan el mensaje del Daily y el Excel de horas extra.
+// - Daily: la de Logday (el mensaje de siempre, predeterminada) o una propia,
+//   un texto con marcadores.
+// - Excel: Legacy (el de siempre, predeterminado), la de Logday (genérica) o
+//   un .xlsx cargado.
+// Se guarda en este equipo, sin sync.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, FileSpreadsheet, Upload } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import { getPreviousWorkingDay } from '../../lib/colombianHolidays';
-import { buildDailyMessage, type TemplateSource } from '../../lib/templates/choice';
-import { DAILY_TEMPLATE_MARKERS, FCV_DAILY_TEMPLATE, LOGDAY_DAILY_TEMPLATE, dailyTemplateContext, renderTemplate } from '../../lib/templates/dailyTemplate';
+import { buildDailyMessage } from '../../lib/templates/choice';
+import { DAILY_TEMPLATE_MARKERS, LOGDAY_DAILY_TEMPLATE, dailyTemplateContext, renderTemplate } from '../../lib/templates/dailyTemplate';
 import { OVERTIME_TEMPLATE_MARKERS } from '../../lib/templates/overtimeTemplate';
 import { StatusItem } from '../shared/FormControls';
 import { CHIP, FOCUS_RING, INPUT_CLS, PANEL_TITLE, SECONDARY_CLS } from '../shared/controlClasses';
@@ -16,15 +19,15 @@ import { CHIP, FOCUS_RING, INPUT_CLS, PANEL_TITLE, SECONDARY_CLS } from '../shar
 const SECTION_TITLE = 'mb-1 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]';
 const marker = (name: string) => `{{${name}}}`;
 
-/** Tres opciones como radios en tarjetas. */
-function SourcePicker({ label, value, onChange, options }: {
+/** Las opciones como radios en tarjetas. */
+function SourcePicker<T extends string>({ label, value, onChange, options }: {
   label: string;
-  value: TemplateSource;
-  onChange: (v: TemplateSource) => void;
-  options: { id: TemplateSource; title: string; desc: string; disabled?: boolean }[];
+  value: T;
+  onChange: (v: T) => void;
+  options: { id: T; title: string; desc: string; disabled?: boolean }[];
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="grid grid-cols-3 gap-2">
+    <div role="radiogroup" aria-label={label} className={`grid gap-2 ${options.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
       {options.map((o) => {
         const active = value === o.id;
         return (
@@ -53,7 +56,7 @@ function SourcePicker({ label, value, onChange, options }: {
 function DailyTemplateSection() {
   const { language, templates, setDailyTemplate } = useAppStore();
   const tt = (key: Parameters<typeof t<'templates'>>[2]) => t(language, 'templates', key);
-  const source = templates.daily?.source ?? 'fcv';
+  const source = templates.daily?.source ?? 'logday';
   const saved = templates.daily?.text ?? '';
   const [draft, setDraft] = useState(saved);
   const textRef = useRef<HTMLTextAreaElement>(null);
@@ -74,12 +77,11 @@ function DailyTemplateSection() {
     save(text);
   };
 
-  const choose = (next: TemplateSource) => {
-    // Al pasar a Propia por primera vez se parte de la que estaba elegida.
+  const choose = (next: 'logday' | 'custom') => {
+    // Al pasar a Propia por primera vez se parte del mensaje de siempre.
     if (next === 'custom' && !saved.trim()) {
-      const start = source === 'logday' ? LOGDAY_DAILY_TEMPLATE[language] : FCV_DAILY_TEMPLATE;
-      setDraft(start);
-      void setDailyTemplate({ source: 'custom', text: start });
+      setDraft(LOGDAY_DAILY_TEMPLATE);
+      void setDailyTemplate({ source: 'custom', text: LOGDAY_DAILY_TEMPLATE });
       return;
     }
     void setDailyTemplate({ source: next });
@@ -124,8 +126,7 @@ function DailyTemplateSection() {
         value={source}
         onChange={choose}
         options={[
-          { id: 'fcv', title: tt('sourceFcv'), desc: tt('sourceFcvDesc') },
-          { id: 'logday', title: tt('sourceLogday'), desc: tt('sourceLogdayDesc') },
+          { id: 'logday', title: tt('sourceLogday'), desc: tt('sourceLogdayDailyDesc') },
           { id: 'custom', title: tt('sourceCustom'), desc: tt('sourceCustomDailyDesc') },
         ]}
       />
@@ -134,10 +135,7 @@ function DailyTemplateSection() {
         <div className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <label htmlFor="daily-template-text" className={PANEL_TITLE}>{tt('editorLabel')}</label>
-            <div className="flex gap-1.5">
-              <button type="button" className={SECONDARY_CLS} onClick={() => edit(FCV_DAILY_TEMPLATE)}>{tt('startWithFcv')}</button>
-              <button type="button" className={SECONDARY_CLS} onClick={() => edit(LOGDAY_DAILY_TEMPLATE[language])}>{tt('startWithLogday')}</button>
-            </div>
+            <button type="button" className={SECONDARY_CLS} onClick={() => edit(LOGDAY_DAILY_TEMPLATE)}>{tt('startWithLogday')}</button>
           </div>
           <textarea
             id="daily-template-text"
@@ -185,7 +183,7 @@ function OvertimeTemplateSection() {
   const { language, templates, setOvertimeTemplateSource, loadOvertimeTemplate, downloadOvertimeTemplate } = useAppStore();
   const tt = (key: Parameters<typeof t<'templates'>>[2]) => t(language, 'templates', key);
   const overtime = templates.overtime;
-  const source = overtime?.source ?? 'fcv';
+  const source = overtime?.source ?? 'legacy';
   const hasFile = Boolean(overtime?.fileName);
   const loadedDate = overtime?.loadedAt
     ? new Date(overtime.loadedAt).toLocaleDateString(language === 'es' ? 'es-CO' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -202,8 +200,8 @@ function OvertimeTemplateSection() {
         value={source}
         onChange={(next) => void setOvertimeTemplateSource(next)}
         options={[
-          { id: 'fcv', title: tt('sourceFcv'), desc: tt('sourceFcvDesc') },
-          { id: 'logday', title: tt('sourceLogday'), desc: tt('sourceLogdayDesc') },
+          { id: 'legacy', title: tt('sourceLegacy'), desc: tt('sourceLegacyDesc') },
+          { id: 'logday', title: tt('sourceLogday'), desc: tt('sourceLogdayXlsxDesc') },
           { id: 'custom', title: tt('sourceCustom'), desc: hasFile ? tt('sourceCustomXlsxDesc') : tt('sourceCustomXlsxEmpty'), disabled: !hasFile },
         ]}
       />

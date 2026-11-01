@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildDailyCopyText, dateFromISO } from '../colombianHolidays';
-import { FCV_DAILY_TEMPLATE, LOGDAY_DAILY_TEMPLATE, dailyTemplateContext, renderTemplate } from './dailyTemplate';
+import { LOGDAY_DAILY_TEMPLATE, dailyDateLabel, dailyTemplateContext, renderTemplate } from './dailyTemplate';
 
 const ctx = (todayISO: string, nowISO: string, prev = '- Revisé el PR', today = '- Desplegar', language: 'es' | 'en' = 'es') =>
   dailyTemplateContext({
@@ -34,8 +34,8 @@ describe('renderTemplate', () => {
   });
 });
 
-describe('plantillas del Daily', () => {
-  it('la FCV escrita como plantilla da lo mismo que buildDailyCopyText', () => {
+describe('la plantilla de Logday', () => {
+  it('da lo mismo que buildDailyCopyText', () => {
     const now = new Date();
     const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     for (const [day, prev, today] of [
@@ -44,30 +44,21 @@ describe('plantillas del Daily', () => {
       ['2026-11-03', '  - con espacios  ', '- x'],
     ]) {
       const expected = buildDailyCopyText(dateFromISO('2026-10-30'), prev, dateFromISO(day), today);
-      const ours = renderTemplate(FCV_DAILY_TEMPLATE, dailyTemplateContext({
+      const ours = renderTemplate(LOGDAY_DAILY_TEMPLATE, dailyTemplateContext({
         prevDate: dateFromISO('2026-10-30'), prevActivities: prev, todayDate: dateFromISO(day), todayActivities: today, language: 'es',
       }));
       expect(ours.text).toBe(expected);
     }
   });
 
-  it('la de Logday en español, hoy y otro día', () => {
-    expect(renderTemplate(LOGDAY_DAILY_TEMPLATE.es, ctx('2026-11-02', '2026-11-02')).text).toBe(
-      'Avance del día anterior (Viernes 30 de Octubre):\n- Revisé el PR\n\nPlan de hoy (Lunes 2 de Noviembre):\n- Desplegar',
-    );
-    expect(renderTemplate(LOGDAY_DAILY_TEMPLATE.es, ctx('2026-11-02', '2026-11-05')).text).toContain('Plan del día (Lunes 2 de Noviembre):');
+  it('solo usa marcadores que existen', () => {
+    expect(renderTemplate(LOGDAY_DAILY_TEMPLATE, ctx('2026-11-02', '2026-11-02')).unknown).toEqual([]);
   });
 
-  it('la de Logday en inglés, con fechas en inglés y sin actividades', () => {
-    expect(renderTemplate(LOGDAY_DAILY_TEMPLATE.en, ctx('2026-11-02', '2026-11-02', '', '', 'en')).text).toBe(
-      'Previous workday (Friday, October 30):\n- (no activities recorded)\n\nToday (Monday, November 2):\n- (no activities yet)',
-    );
-  });
-
-  it('las dos plantillas incluidas solo usan marcadores que existen', () => {
-    const context = ctx('2026-11-02', '2026-11-02');
-    for (const t of [FCV_DAILY_TEMPLATE, LOGDAY_DAILY_TEMPLATE.es, LOGDAY_DAILY_TEMPLATE.en]) {
-      expect(renderTemplate(t, context).unknown).toEqual([]);
-    }
+  it('las fechas en inglés y el texto sin actividades', () => {
+    expect(dailyDateLabel(dateFromISO('2026-11-02'), 'en')).toBe('Monday, November 2');
+    const en = ctx('2026-11-02', '2026-11-02', '', '', 'en');
+    expect(en['anterior.actividades']).toBe('- (no activities recorded)');
+    expect(en['hoy.es_hoy']).toBe(true);
   });
 });

@@ -1,19 +1,22 @@
-// Qué plantilla usa cada salida (logday-server specs/plantillas, v1): FCV,
-// la de siempre y la predeterminada; Logday, la genérica; o una propia. Se
+// Qué plantilla usa cada salida (logday-server specs/plantillas, v1). Se
 // guarda en config.json, solo en este equipo (sin sync en la v1).
+// - Daily: la de Logday (el mensaje de siempre, predeterminada) o una propia.
+// - Excel de horas extra: Legacy (el de siempre, predeterminado), la de
+//   Logday (genérica) o un .xlsx propio.
 import { buildDailyCopyText } from '../colombianHolidays';
-import { LOGDAY_DAILY_TEMPLATE, dailyTemplateContext, renderTemplate, type DailyContextInput } from './dailyTemplate';
+import { dailyTemplateContext, renderTemplate, type DailyContextInput } from './dailyTemplate';
 
-export type TemplateSource = 'fcv' | 'logday' | 'custom';
+export type DailyTemplateSource = 'logday' | 'custom';
+export type OvertimeTemplateSource = 'legacy' | 'logday' | 'custom';
 
 export interface DailyTemplateChoice {
-  source: TemplateSource;
-  /** El texto de la propia. Se conserva al volver a una incluida. */
+  source: DailyTemplateSource;
+  /** El texto de la propia. Se conserva al volver a la de Logday. */
   text?: string;
 }
 
 export interface OvertimeTemplateChoice {
-  source: TemplateSource;
+  source: OvertimeTemplateSource;
   /** Nombre del archivo cargado y cuándo, para mostrarlo. El archivo vive
    *  en `<configDir>/plantillas/horas-extra.xlsx`. */
   fileName?: string;
@@ -27,12 +30,12 @@ export interface TemplatesConfig {
 
 export const customOvertimeTemplatePath = (configDir: string) => `${configDir}/plantillas/horas-extra.xlsx`;
 
-/** El mensaje del Daily con la plantilla elegida. La FCV sigue saliendo de
- *  `buildDailyCopyText`, igual que antes; una propia vacía, también. */
+/** El mensaje del Daily con la plantilla elegida. La de Logday sigue
+ *  saliendo de `buildDailyCopyText`, igual que antes; una propia vacía,
+ *  también. */
 export function buildDailyMessage(choice: DailyTemplateChoice | undefined, input: DailyContextInput): string {
-  const source = choice?.source ?? 'fcv';
-  const text = source === 'logday' ? LOGDAY_DAILY_TEMPLATE[input.language] : source === 'custom' ? (choice?.text ?? '') : '';
-  if (source === 'fcv' || !text.trim()) {
+  const text = choice?.source === 'custom' ? (choice.text ?? '') : '';
+  if (!text.trim()) {
     return buildDailyCopyText(input.prevDate, input.prevActivities, input.todayDate, input.todayActivities);
   }
   return renderTemplate(text, dailyTemplateContext(input)).text;

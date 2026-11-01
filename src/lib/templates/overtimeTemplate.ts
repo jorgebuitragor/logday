@@ -44,7 +44,7 @@ export interface OvertimeTemplateEntry {
 }
 
 export interface OvertimeTemplateData {
-  /** "Noviembre 2026", el mismo texto que usa el Excel de la FCV. */
+  /** "Noviembre 2026", el mismo texto que usa el Excel Legacy. */
   mes: string;
   colaborador: string;
   cedula: string;
@@ -65,7 +65,7 @@ type Value = string | number;
 // ── Valores ───────────────────────────────────────────────────────────────
 
 /** "YYYY-MM-DD" → número de serie de Excel, en UTC (como `parseFecha` del
- *  Excel de la FCV: con `Date` local se corre un día en UTC-5). */
+ *  Excel Legacy: con `Date` local se corre un día en UTC-5). */
 function excelDate(s: string): number | string {
   const [y, m, d] = s.split('-').map(Number);
   if (!y || !m || !d) return s;

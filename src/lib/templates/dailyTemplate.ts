@@ -88,7 +88,7 @@ const EMPTY = {
   en: { prev: '- (no activities recorded)', today: '- (no activities yet)' },
 };
 
-/** "Viernes 31 de Octubre" (como la FCV) o "Friday, October 31". */
+/** "Viernes 31 de Octubre" (como el mensaje de siempre) o "Friday, October 31". */
 export function dailyDateLabel(d: Date, language: DailyTemplateLanguage): string {
   const day = DAYS[language][d.getDay()];
   const month = MONTHS[language][d.getMonth()];
@@ -131,28 +131,12 @@ export const DAILY_TEMPLATE_MARKERS = [
   'usuario.nombre',
 ] as const;
 
-// ── La plantilla genérica de Logday (aprobada el 1 nov 2026) ──────────────
+// ── La plantilla de Logday ────────────────────────────────────────────────
 
-export const LOGDAY_DAILY_TEMPLATE: Record<DailyTemplateLanguage, string> = {
-  es: [
-    'Avance del día anterior ({{anterior.fecha}}):',
-    '{{anterior.actividades}}',
-    '',
-    'Plan {{#hoy.es_hoy}}de hoy{{/hoy.es_hoy}}{{^hoy.es_hoy}}del día{{/hoy.es_hoy}} ({{hoy.fecha}}):',
-    '{{hoy.actividades}}',
-  ].join('\n'),
-  en: [
-    'Previous workday ({{anterior.fecha}}):',
-    '{{anterior.actividades}}',
-    '',
-    '{{#hoy.es_hoy}}Today{{/hoy.es_hoy}}{{^hoy.es_hoy}}Plan{{/hoy.es_hoy}} ({{hoy.fecha}}):',
-    '{{hoy.actividades}}',
-  ].join('\n'),
-};
-
-/** La FCV escrita como plantilla: punto de partida para una propia. Da lo
- *  mismo que `buildDailyCopyText`, que es lo que se sigue usando para la FCV. */
-export const FCV_DAILY_TEMPLATE = [
+/** El mensaje de siempre escrito como plantilla: punto de partida para una
+ *  propia. Da lo mismo que `buildDailyCopyText`, que es lo que se sigue
+ *  usando cuando está elegida la de Logday. */
+export const LOGDAY_DAILY_TEMPLATE = [
   'Buenos días.',
   '',
   'El día {{anterior.fecha}}:',

@@ -28,7 +28,7 @@ import { parseDailyFile, serializeDailyFile } from '../lib/dailyFileFormat';
 import { generateOvertimeXlsx } from '../lib/overtimeExcel';
 import { fillOvertimeTemplate } from '../lib/templates/overtimeTemplate';
 import { base64ToBytes, bytesToBase64 as templateBytesToBase64, LOGDAY_OVERTIME_XLSX_BASE64, logdayOvertimeTemplate } from '../lib/templates/logdayOvertimeXlsx';
-import { buildDailyMessage, customOvertimeTemplatePath, type DailyTemplateChoice, type TemplateSource, type TemplatesConfig } from '../lib/templates/choice';
+import { buildDailyMessage, customOvertimeTemplatePath, type DailyTemplateChoice, type OvertimeTemplateSource, type TemplatesConfig } from '../lib/templates/choice';
 import { fs, pickFolder, pickFile, saveDialog, SearchResult } from '../lib/invoke';
 import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 import {
@@ -126,7 +126,8 @@ export interface AppState {
   overtimeMonths: string[];           // YYYY-MM[] con entradas, desc
   overtimeMeta: OvertimeMonthMeta;
   /** Plantillas del Daily y del Excel (logday-server specs/plantillas,
-   *  v1). Vacío: la FCV en las dos. Local, no se sincroniza. */
+   *  v1). Vacío: el mensaje de siempre y el Excel Legacy. Local, no se
+   *  sincroniza. */
   templates: TemplatesConfig;
 
   // Calendar Events
@@ -345,7 +346,7 @@ export interface AppState {
   exportOvertimeExcel: (yearMonth: string) => Promise<void>;
   setDailyTemplate: (choice: DailyTemplateChoice) => Promise<void>;
   /** 'custom' solo si ya hay un archivo cargado. */
-  setOvertimeTemplateSource: (source: TemplateSource) => Promise<void>;
+  setOvertimeTemplateSource: (source: OvertimeTemplateSource) => Promise<void>;
   /** Elige un .xlsx, lo copia a la carpeta de la app y lo activa. */
   loadOvertimeTemplate: () => Promise<void>;
   /** Guarda una copia de la de Logday o de la cargada donde elija el usuario. */
@@ -3994,12 +3995,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     const monthNames = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
     const mesLabel = `${monthNames[parseInt(month) - 1]} ${year}`;
     const colaborador = meta.colaborador || 'Colaborador';
-    // La FCV sale del código de siempre; Logday y la propia, del motor de
+    // Legacy sale del código de siempre; Logday y la propia, del motor de
     // plantillas (logday-server specs/plantillas).
-    const source = get().templates.overtime?.source ?? 'fcv';
+    const source = get().templates.overtime?.source ?? 'legacy';
     let bytes: Uint8Array;
     try {
-      if (source === 'fcv') {
+      if (source === 'legacy') {
         bytes = await generateOvertimeXlsx(entries, meta, mesLabel);
       } else {
         const template = source === 'logday'
@@ -4016,7 +4017,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     const dest = await saveDialog({
-      defaultPath: source === 'fcv' ? `Reporte Extras ${colaborador} - ${mesLabel}.xlsx` : `Horas extra ${colaborador} - ${mesLabel}.xlsx`,
+      defaultPath: source === 'legacy' ? `Reporte Extras ${colaborador} - ${mesLabel}.xlsx` : `Horas extra ${colaborador} - ${mesLabel}.xlsx`,
       filters: [{ name: 'Excel', extensions: ['xlsx'] }],
     });
     if (dest) {

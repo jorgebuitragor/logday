@@ -732,7 +732,7 @@ export function DailyEditor() {
 
   const previewText = useMemo(() => {
     if (!activeDailyDate || !prevDate) return '';
-    // La plantilla elegida en Opciones → Plantillas (la FCV si no hay).
+    // La plantilla elegida en Opciones → Plantillas (la de Logday si no hay).
     return buildDailyMessage(templates.daily, {
       prevDate, prevActivities: prevActs, todayDate: dateFromISO(activeDailyDate), todayActivities: todayActs,
       language, userName: overtimeMeta.colaborador,

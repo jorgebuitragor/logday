@@ -75,7 +75,8 @@ export interface AppConfig {
    *  (specs/extensiones R9, R10). */
   extensions?: ExtensionsConfig;
   /** Plantillas del Daily y del Excel de horas extra (logday-server
-   *  specs/plantillas, v1). Sin él, la FCV en las dos. Local. */
+   *  specs/plantillas, v1). Sin él, el mensaje de siempre y el Excel
+   *  Legacy. Local. */
   templates?: TemplatesConfig;
 }
 

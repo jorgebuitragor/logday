@@ -1,15 +1,19 @@
-// El panel de un entorno en Opciones → Cliente HTTP (Interfaz §4): nombre,
-// opciones, variables (con los secretos en el llavero) y hosts de
-// confianza. Los valores de los secretos solo cruzan una vez hacia Rust,
-// al guardarlos (R10, HT18).
-import { useEffect, useRef, useState } from 'react';
+// El panel de un entorno (Interfaz §4, en Opciones → Cliente HTTP y en el
+// panel Entornos de la pantalla, HT76): nombre, opciones, variables (con
+// los secretos en el llavero) y hosts de confianza. Un secreto cruza hacia
+// Rust al guardarlo (R10, HT18) y, solo con el ojo o "Copiar", vuelve al
+// webview: vive en el estado del componente y se olvida a los 30 s, al
+// cambiar de entorno o al cerrar el panel (HT77).
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { Copy, Info, KeyRound, Plus, Trash2, X } from 'lucide-react';
+import { CircleDot, Copy, Eye, EyeOff, Info, KeyRound, Plus, Trash2, X } from 'lucide-react';
 import { useAppStore } from '../../../store/appStore';
 import ToggleSwitch from '../../../components/shared/ToggleSwitch';
 import { CHIP, FOCUS_RING, ICON_BTN, INPUT_CLS, PANEL_TITLE, SECONDARY_CLS } from '../../../components/shared/controlClasses';
 import { Toggle } from '../../../components/shared/FormControls';
 import { setExtensionSecret } from '../../secrets';
+import { revealHttpSecret } from '../core/api';
+import { setActiveEnv } from '../store';
 import {
   EXTENSION_ID, duplicateEnvironment, envNameError, isValidHost, looksSecret, maskOf, newSecretKey, readHttpSettings,
   replaceEnvironment, trustedHosts, varNameError, withVariable, type HttpClientSettings, type HttpEnvironment, type HttpVariable,
@@ -77,17 +81,121 @@ function CommitInput({
   );
 }
 
+/** Cuánto se ve un secreto revelado (HT77). */
+export const REVEAL_MS = 30_000;
+
+/** El ojo de un secreto (HT77): lee el valor con el comando de Rust y lo
+ *  entrega a `onChange`, que lo guarda en el estado del componente. Nada
+ *  más lo guarda: ni el store, ni `config.json`, ni `localStorage`. Se
+ *  oculta solo a los `hideAfterMs`. */
+export function makeRevealer({ read, onChange, hideAfterMs = REVEAL_MS }: {
+  read: (key: string) => Promise<string>;
+  onChange: (value: string | null) => void;
+  hideAfterMs?: number;
+}) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let seq = 0;
+  const stop = () => {
+    seq += 1;
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
+  return {
+    /** Muestra el valor. Rechaza si el llavero falla. */
+    async show(key: string): Promise<void> {
+      stop();
+      const id = seq;
+      const value = await read(key);
+      if (id !== seq) return;
+      onChange(value);
+      timer = setTimeout(() => {
+        timer = undefined;
+        onChange(null);
+      }, hideAfterMs);
+    },
+    hide(): void {
+      stop();
+      onChange(null);
+    },
+    /** Al desmontar: sin volver a avisar. */
+    dispose: stop,
+  };
+}
+
+/** Lo que se ve de un secreto guardado: la pista o, con el ojo, el valor. */
+export function SecretShown({ v, tr, revealed, onToggle, onCopy, onChange }: {
+  v: HttpVariable & { secret: true };
+  tr: Tr;
+  revealed: string | null;
+  onToggle: () => void;
+  onCopy: () => void;
+  onChange: () => void;
+}) {
+  const shown = revealed !== null;
+  return (
+    <div className="flex min-w-0 items-center gap-1.5 text-[11px]">
+      <KeyRound size={12} className="shrink-0 text-[var(--text-hint)]" aria-hidden />
+      {shown
+        ? <span className="min-w-0 select-all truncate font-mono text-[var(--text-primary)]" title={tr('varSecretRevealedNote')}>{revealed}</span>
+        : <span className="truncate font-mono text-[var(--text-secondary)]">{maskOf(v.hint)}</span>}
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label={tr(shown ? 'varSecretHideAria' : 'varSecretShowAria', { name: v.name })}
+        aria-pressed={shown}
+        title={tr(shown ? 'varSecretHideAria' : 'varSecretShowAria', { name: v.name })}
+        className={`${ICON_BTN} shrink-0`}
+      >
+        {shown ? <EyeOff size={13} aria-hidden /> : <Eye size={13} aria-hidden />}
+      </button>
+      <button
+        type="button"
+        onClick={onCopy}
+        aria-label={tr('varSecretCopyAria', { name: v.name })}
+        title={tr('varSecretCopyAria', { name: v.name })}
+        className={`${ICON_BTN} shrink-0`}
+      >
+        <Copy size={13} aria-hidden />
+      </button>
+      <button type="button" onClick={onChange} className={TEXT_LINK}>{tr('varSecretChange')}</button>
+    </div>
+  );
+}
+
 function SecretValue({ v, tr, onSave }: { v: HttpVariable & { secret: true }; tr: Tr; onSave: (value: string) => Promise<boolean> }) {
+  const showToast = useAppStore((s) => s.showToast);
   const [editing, setEditing] = useState(v.hint === null);
   const [text, setText] = useState('');
-  useEffect(() => setEditing(v.hint === null), [v.hint]);
+  // HT77: el valor revelado vive solo aquí, en el estado del componente.
+  const [revealed, setRevealed] = useState<string | null>(null);
+  const revealer = useMemo(() => makeRevealer({ read: revealHttpSecret, onChange: setRevealed }), []);
+  useEffect(() => () => revealer.dispose(), [revealer]);
+  useEffect(() => {
+    setEditing(v.hint === null);
+    // Otro valor (o ninguno): lo revelado ya no vale.
+    revealer.hide();
+  }, [v.hint, v.key, revealer]);
+  const readError = () => showToast({ kind: 'error', title: tr('varSecretReadError') });
+
   if (!editing && v.hint !== null) {
     return (
-      <div className="flex min-w-0 items-center gap-2 text-[11px]">
-        <KeyRound size={12} className="shrink-0 text-[var(--text-hint)]" aria-hidden />
-        <span className="truncate font-mono text-[var(--text-secondary)]">{maskOf(v.hint)}</span>
-        <button type="button" onClick={() => setEditing(true)} className={TEXT_LINK}>{tr('varSecretChange')}</button>
-      </div>
+      <SecretShown
+        v={v}
+        tr={tr}
+        revealed={revealed}
+        onToggle={() => (revealed !== null ? revealer.hide() : void revealer.show(v.key).catch(readError))}
+        onCopy={() => {
+          // Se copia sin mostrarlo: el valor no pasa por la pantalla.
+          void revealHttpSecret(v.key)
+            .then((value) => navigator.clipboard.writeText(value))
+            .then(() => showToast({ kind: 'success', title: tr('varSecretCopied', { name: v.name }) }))
+            .catch(readError);
+        }}
+        onChange={() => {
+          revealer.hide();
+          setEditing(true);
+        }}
+      />
     );
   }
   const save = async () => {
@@ -113,9 +221,11 @@ function SecretValue({ v, tr, onSave }: { v: HttpVariable & { secret: true }; tr
   );
 }
 
-export function EnvironmentPanel({ env, tr, onDelete, onDeleteVar, onUnsecret }: {
+export function EnvironmentPanel({ env, tr, active = false, onDelete, onDeleteVar, onUnsecret }: {
   env: HttpEnvironment;
   tr: Tr;
+  /** Es el entorno activo (si no, "Usar este entorno"). */
+  active?: boolean;
   onDelete: () => void;
   onDeleteVar: (index: number) => void;
   onUnsecret: (index: number) => void;
@@ -216,6 +326,17 @@ export function EnvironmentPanel({ env, tr, onDelete, onDeleteVar, onUnsecret }:
           <Copy size={13} aria-hidden />
           {tr('envDuplicate')}
         </button>
+        {active ? (
+          <span className="flex items-center gap-1.5 px-1 py-1.5 text-xs text-[var(--text-secondary)]">
+            <CircleDot size={11} className="text-indigo-400" aria-hidden />
+            {tr('envIsActive')}
+          </span>
+        ) : (
+          <button type="button" onClick={() => void setActiveEnv(env.id)} className={SECONDARY_CLS}>
+            <CircleDot size={13} aria-hidden />
+            {tr('envMakeActive')}
+          </button>
+        )}
         <button type="button" onClick={onDelete} className={DANGER_BTN}>
           <Trash2 size={13} aria-hidden />
           {tr('envDelete')}

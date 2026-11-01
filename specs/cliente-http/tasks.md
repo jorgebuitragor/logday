@@ -316,6 +316,42 @@ Diseño en design §14; requisitos en requirements, "Cliente HTTP v2". Jorge apr
 - [ ] `core/import/openapi.ts`: OpenAPI 3.0 y 3.1 y Swagger 2.0, en JSON y YAML, con ejemplos generados del esquema (HT69).
 - [ ] Pruebas con Petstore 3 y 2, y un esquema con ciclos.
 
+## Entornos opcionales, avisos configurables y panel Entornos (31 oct 2026, HT70–HT77)
+
+Rama `feature/http-entornos`, desde `feature/http-v2-a1`. Pedido por Jorge al probar (requirements, "Cambio del 31 oct 2026: entornos opcionales, avisos configurables y panel Entornos"; design §15).
+
+- [x] Ajustes: `useEnvironments`, `confirmUntrustedSecrets`, `maskResponseSecrets` y `curlPaste`, con lo seguro si faltan; `activeEnvironment` sin entorno con los entornos apagados y `chosenEnvironment` (HT72).
+- [x] Resolución: `keepUnresolved` y `unresolved`, `confirmUntrusted`, `url.unresolved`; `resolveWith` con los ajustes, `unresolvedMessage` en la franja del bloque y del formulario (HT73, HT74).
+- [x] Envío: `allowUntrustedHost` con la confirmación apagada y `maskResponse` (HT74, HT75).
+- [x] Rust: `mask_response` (de serie `true`), `http_client_reveal_secret` con `revealable_key`, registrado en `lib.rs`; `cargo test` (HT75, HT77).
+- [x] cURL: `fromCurl(…, { keepValues })`, `planCurlPaste`, `convertCurlPaste` con `ask`, `askCurlChoice` y "Recordar mi elección"; el diálogo (`ui/CurlSecretsDialog.tsx`); la URL de la pantalla (HT70, HT71).
+- [x] Base (specs/extensiones R24): `NotePasteConversion.ask` y `handleExtensionPaste` asíncrono, sin tocar la nota hasta la respuesta.
+- [x] Panel Entornos: `EnvironmentsManager` (sale de `Settings.tsx`), `EnvironmentsScreen` en el lugar del formulario, el botón "Entornos", `EnvironmentChip.onConfigure`, "Definir en Entornos" y "Usar este entorno" (HT76).
+- [x] Secretos: el ojo y "Copiar" con `makeRevealer`, 30 s, y olvidarlo al cambiar de entorno o desmontar (HT77).
+- [x] Con los entornos apagados: sin chip ni botón, Opciones lo dice, Auth sin "Guardar como secreto" (HT72).
+- [x] Opciones: "Usar entornos", "Pegar un cURL" y "Avisos de seguridad".
+- [x] Textos es y en (§15.9) y la ayuda (`help4`). specs/extensiones R10 y R24 enmendados.
+- [x] Pruebas: `curl.test.ts` (sin sustituir), `model.test.ts` (los ajustes), `resolve.test.ts` (sin entornos, la URL, sin confirmar), `paste.test.ts` (los tres modos, preguntar, Esc y "Recordar"), `extensionPaste.test.ts` (preguntar: la nota no cambia, dos pasos de Deshacer, Esc, vista cerrada), `ui.test.tsx` (entornos apagados en el bloque, el envío y Opciones; los avisos apagados) y `environments.test.tsx` (el ojo con el comando simulado, 30 s, que no se persiste, el panel, el diálogo y los textos).
+- [x] `pnpm test`, `pnpm build`, `pnpm lint` (21 warnings, los de base), `cargo test http_client` (19) y `cargo check`.
+- [ ] Prueba en el navegador (mock de Tauri, `dist/qa.html`), en los temas claro, oscuro y sepia:
+  - pegar un cURL con un token en una nota y en la URL de la pantalla, con cada respuesta del diálogo, "Recordar mi elección", Esc, y ⌘Z dos veces;
+  - el diálogo con el teclado (el foco, Tab, Esc) y con el ratón;
+  - apagar "Usar entornos" con la pantalla abierta y una nota con un bloque: sin selector, el aviso, enviar con `{{x}}`; encender y que vuelvan los entornos;
+  - el panel Entornos: abrir desde el botón, desde "Configurar entornos…" y desde "Definir en Entornos"; crear, renombrar, duplicar, eliminar, activo y protegido; volver;
+  - el ojo: mostrar, que se oculte a los 30 s, al cambiar de pestaña de entorno y al volver a la petición; "Copiar" sin mostrar;
+  - los dos avisos apagados: un secreto a otro host sin preguntar, y un eco que devuelve el token (en el mock).
+- [ ] App de QA: el ojo con el llavero de macOS (el aviso del sistema la primera vez).
+
+### Diferencias con el pedido
+
+- **El panel ocupa el lugar del formulario** (con "Volver a la petición"), no una columna aparte: la tabla de variables no cabe en la columna de peticiones, y así es igual que Opciones. El formulario no se desmonta.
+- **Esc no cierra el panel:** ya cierra los menús y las confirmaciones de dentro.
+- **Esc en el diálogo, en la URL de la pantalla,** deja lo pegado en el campo URL (con los saltos de línea como espacios), que es lo que haría el campo sin la extensión.
+- **"Copiar" no revela:** lee el valor y lo copia sin pasarlo por la pantalla.
+- **La URL final y las redirecciones** se siguen enmascarando con "Ocultar en la respuesta…" apagado: son la petición, no la respuesta.
+- **Con los entornos apagados, una URL que solo es válida con la variable** (`{{baseUrl}}/x`) no se envía: se dice que lleva variables sin resolver.
+- **El aviso de "Abrir Entornos"** tras pegar un cURL sigue abriendo Opciones, también desde la pantalla.
+
 ## Al cerrar
 
 - [ ] Documentar en el vault (`02 Decisiones/`) la decisión de las peticiones en las notas y los secretos por variable, si Jorge lo aprueba como está.

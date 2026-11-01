@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { Schema, type Node as PMNode } from '@tiptap/pm/model';
 import { AllSelection, EditorState, NodeSelection, TextSelection } from '@tiptap/pm/state';
 import { history, undo } from '@tiptap/pm/history';
-import { convertPastedTr, pasteContext, pasteRawTr, planPaste, type PasteConverter, type PastePlan } from './extensionPaste';
+import {
+  convertPastedTr, handleExtensionPaste, pasteContext, pasteRawTr, planPaste, type PasteConverter, type PastePlan, type PasteView,
+} from './extensionPaste';
+import type { NotePasteConversion } from '../../extensions/types';
 import { fromCurl } from '../../extensions/http-client/core/curl';
 
 // Un esquema mínimo con párrafos, bloques de código e imágenes, como el de TipTap.
@@ -137,5 +140,89 @@ describe('las transacciones (dos pasos de Deshacer)', () => {
     let after = s;
     undo(after, (tr) => { after = after.apply(tr); });
     expect(blocks(after.doc)).toEqual([`code(http):${CURL}`]);
+  });
+});
+
+describe('preguntar antes de insertar (specs/cliente-http HT71)', () => {
+  const variables = fromCurl(CURL)!.code;
+  const keep = fromCurl(CURL, { keepValues: true })!.code;
+
+  /** Una vista mínima: el estado, `dispatch` y `focus`. */
+  function fakeView(state: EditorState) {
+    const view = {
+      state,
+      dispatch(tr: Parameters<PasteView['dispatch']>[0]) {
+        view.state = view.state.apply(tr);
+      },
+      focus: vi.fn(),
+      isDestroyed: false,
+    };
+    return view;
+  }
+
+  /** Un conversor que pregunta, y la respuesta que dará. */
+  function asking(answer: NotePasteConversion | null) {
+    let resolve!: (a: NotePasteConversion | null) => void;
+    const pending = new Promise<NotePasteConversion | null>((r) => {
+      resolve = r;
+    });
+    const converter: PasteConverter = { language: 'http', convert: () => ({ code: variables, ask: () => pending }) };
+    return { converter, answer: () => resolve(answer) };
+  }
+
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+
+  it('mientras pregunta, la nota no cambia (el texto con el valor solo está en memoria)', async () => {
+    const doc = docOf(para(''));
+    const view = fakeView(stateAt(doc, 1));
+    const ask = asking({ code: variables });
+    expect(handleExtensionPaste(view, CURL, false, [ask.converter])).toBe(true);
+    expect(view.state.doc.eq(doc)).toBe(true);
+    expect(view.state.doc.textContent).not.toContain('abc');
+    ask.answer();
+    await settle();
+    expect(blocks(view.state.doc)).toEqual([`code(http):${variables}`]);
+    expect(view.focus).toHaveBeenCalled();
+  });
+
+  it('"Cambiar por variables" y "Dejar los valores": dos pasos de Deshacer, como siempre', async () => {
+    for (const code of [variables, keep]) {
+      const doc = docOf(para(''));
+      const view = fakeView(stateAt(doc, 1));
+      const ask = asking({ code });
+      handleExtensionPaste(view, CURL, false, [ask.converter]);
+      ask.answer();
+      await settle();
+      expect(blocks(view.state.doc)).toEqual([`code(http):${code}`]);
+      let after = view.state;
+      undo(after, (tr) => { after = after.apply(tr); });
+      expect(blocks(after.doc)).toEqual([`paragraph:${CURL}`]);
+      undo(after, (tr) => { after = after.apply(tr); });
+      expect(after.doc.eq(doc)).toBe(true);
+    }
+  });
+
+  it('Esc (null): el texto tal cual, sin convertir, en un solo paso', async () => {
+    const doc = docOf(para(''));
+    const view = fakeView(stateAt(doc, 1));
+    const ask = asking(null);
+    handleExtensionPaste(view, CURL, false, [ask.converter]);
+    ask.answer();
+    await settle();
+    expect(blocks(view.state.doc)).toEqual([`paragraph:${CURL}`]);
+    let after = view.state;
+    undo(after, (tr) => { after = after.apply(tr); });
+    expect(after.doc.eq(doc)).toBe(true);
+  });
+
+  it('si el editor se cerró mientras preguntaba, no hace nada', async () => {
+    const doc = docOf(para(''));
+    const view = fakeView(stateAt(doc, 1));
+    const ask = asking({ code: variables });
+    handleExtensionPaste(view, CURL, false, [ask.converter]);
+    view.isDestroyed = true;
+    ask.answer();
+    await settle();
+    expect(view.state.doc.eq(doc)).toBe(true);
   });
 });

@@ -16,6 +16,12 @@ export interface ResolveContext {
   uuid: () => string;
   /** "Logday/1.1.0", para la cabecera automática. */
   userAgent: string;
+  /** HT72 y HT73, entornos apagados: una `{{variable}}` sin valor no bloquea el
+   *  envío; se deja tal cual y se avisa (`unresolved`). */
+  keepUnresolved?: boolean;
+  /** HT74: con `false`, un secreto a un host ajeno no pide confirmación.
+   *  De serie, `true`. */
+  confirmUntrusted?: boolean;
 }
 
 export interface WireRequest {
@@ -61,6 +67,8 @@ export type Resolved =
     host: string | null;
     trustedHosts: string[];
     needsConfirm: ConfirmReason[];
+    /** Las variables que se envían tal cual, como `{{nombre}}` (HT72). */
+    unresolved: string[];
   }
   | {
     ok: false;
@@ -68,6 +76,8 @@ export type Resolved =
     emptySecrets: string[];
     unknownSystem: string[];
     urlError?: UrlError;
+    /** Con los entornos apagados, las que quedaron como `{{nombre}}`. */
+    unresolved?: string[];
   };
 
 export const secretMarker = (key: string) => `{{$secret:${key}}}`;
@@ -114,6 +124,7 @@ export function resolveRequest(req: ParsedRequest, ctx: ResolveContext): Resolve
   const missing: string[] = [];
   const emptySecrets: string[] = [];
   const unknownSystem: string[] = [];
+  const unresolved: string[] = [];
   const secrets: string[] = [];
   const now = ctx.now();
   // Una sola vez por petición: el mismo {{$uuid}} en la URL y en el cuerpo
@@ -137,7 +148,9 @@ export function resolveRequest(req: ParsedRequest, ctx: ResolveContext): Resolve
       }
       const v = env?.vars.find((x) => x.name === name);
       if (!v) {
-        if (!missing.includes(name)) missing.push(name);
+        // Sin entornos, `null` deja el `{{nombre}}` en el texto.
+        const list = ctx.keepUnresolved ? unresolved : missing;
+        if (!list.includes(name)) list.push(name);
         return null;
       }
       if (!v.secret) return v.value;
@@ -171,7 +184,7 @@ export function resolveRequest(req: ParsedRequest, ctx: ResolveContext): Resolve
   }
 
   const url = checkUrl(wireUrl);
-  if (url.error) return { ok: false, missing, emptySecrets, unknownSystem, urlError: url.error };
+  if (url.error) return { ok: false, missing, emptySecrets, unknownSystem, urlError: url.error, unresolved };
 
   // Cabeceras automáticas (decisión 6), marcadas en la vista.
   if (wireBody !== null && !hasHeader(req.headers, 'content-type') && parseJson(wireBody).ok) {
@@ -186,7 +199,7 @@ export function resolveRequest(req: ParsedRequest, ctx: ResolveContext): Resolve
   const trusted = trustedHosts(env).map((h) => h.host);
   const needsConfirm: ConfirmReason[] = [];
   if (env?.protected && WRITE_METHODS.includes(req.method)) needsConfirm.push({ kind: 'protected', env: env.name });
-  if (secrets.length > 0 && url.host !== null && !trusted.includes(url.host)) {
+  if (ctx.confirmUntrusted !== false && secrets.length > 0 && url.host !== null && !trusted.includes(url.host)) {
     needsConfirm.push({ kind: 'untrusted_host', host: url.host, vars: [...secrets] });
   }
 
@@ -198,5 +211,6 @@ export function resolveRequest(req: ParsedRequest, ctx: ResolveContext): Resolve
     host: url.host,
     trustedHosts: trusted,
     needsConfirm,
+    unresolved,
   };
 }

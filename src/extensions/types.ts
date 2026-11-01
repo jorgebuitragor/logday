@@ -78,6 +78,11 @@ export interface NoteBlockEditorProps {
 export interface NotePasteConversion {
   code: string;
   onInserted?: () => void;
+  /** Preguntar antes de insertar (specs/cliente-http HT71): mientras
+   *  espera no se inserta nada, y el texto pegado solo vive en memoria.
+   *  Devuelve la conversión elegida, o `null` para pegar el texto tal
+   *  cual. */
+  ask?: () => Promise<NotePasteConversion | null>;
 }
 
 /** Props del estado que una extensión pone en el menú lateral, abajo,

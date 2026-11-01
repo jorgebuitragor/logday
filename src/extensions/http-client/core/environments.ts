@@ -25,12 +25,27 @@ export interface HttpEnvironment {
   vars: HttpVariable[];
 }
 
+/** HT70: qué hacer con los valores sensibles de un cURL pegado. */
+export type CurlPasteMode = 'ask' | 'variables' | 'keep';
+export const CURL_PASTE_MODES: readonly CurlPasteMode[] = ['ask', 'variables', 'keep'];
+
 export interface HttpClientSettings {
   activeEnvId: string | null;
   environments: HttpEnvironment[];
   timeoutSec: number;
   maxResponseMb: number;
   followRedirects: boolean;
+  /** HT72: con `false`, no hay selector de entorno ni se resuelven las
+   *  variables desde los entornos. Los entornos guardados se conservan. */
+  useEnvironments: boolean;
+  /** HT74: confirmar antes de enviar un secreto a un host que no es de
+   *  confianza (HT21). */
+  confirmUntrustedSecrets: boolean;
+  /** HT75: Rust oculta en la respuesta los secretos que devuelve el
+   *  servidor (HT31). */
+  maskResponseSecrets: boolean;
+  /** HT70: "Preguntar" de serie. */
+  curlPaste: CurlPasteMode;
   /** Los bloques de las notas que el usuario nunca compactó ni expandió
    *  arrancan compactos (bloque compacto). */
   compactOnOpen: boolean;
@@ -47,6 +62,10 @@ export const DEFAULT_SETTINGS: HttpClientSettings = {
   timeoutSec: LIMITS.timeoutSec.default,
   maxResponseMb: LIMITS.maxResponseMb.default,
   followRedirects: true,
+  useEnvironments: true,
+  confirmUntrustedSecrets: true,
+  maskResponseSecrets: true,
+  curlPaste: 'ask',
   compactOnOpen: false,
 };
 
@@ -109,11 +128,23 @@ export function readHttpSettings(raw: Record<string, unknown> | undefined): Http
     timeoutSec: clampInt(r.timeoutSec, LIMITS.timeoutSec.min, LIMITS.timeoutSec.max, LIMITS.timeoutSec.default),
     maxResponseMb: clampInt(r.maxResponseMb, LIMITS.maxResponseMb.min, LIMITS.maxResponseMb.max, LIMITS.maxResponseMb.default),
     followRedirects: r.followRedirects !== false,
+    // Los interruptores van encendidos si faltan: lo seguro (HT72–HT75).
+    useEnvironments: r.useEnvironments !== false,
+    confirmUntrustedSecrets: r.confirmUntrustedSecrets !== false,
+    maskResponseSecrets: r.maskResponseSecrets !== false,
+    curlPaste: (CURL_PASTE_MODES as readonly unknown[]).includes(r.curlPaste) ? (r.curlPaste as CurlPasteMode) : 'ask',
     compactOnOpen: r.compactOnOpen === true,
   };
 }
 
+/** El entorno con el que se resuelven las variables: ninguno si los
+ *  entornos están apagados (HT72), aunque haya uno elegido. */
 export const activeEnvironment = (s: HttpClientSettings): HttpEnvironment | null =>
+  s.useEnvironments ? s.environments.find((e) => e.id === s.activeEnvId) ?? null : null;
+
+/** El entorno elegido, aunque los entornos estén apagados (para Opciones y
+ *  el panel Entornos, que lo siguen mostrando). */
+export const chosenEnvironment = (s: HttpClientSettings): HttpEnvironment | null =>
   s.environments.find((e) => e.id === s.activeEnvId) ?? null;
 
 const sameName = (a: string, b: string) => a.trim().toLocaleLowerCase() === b.trim().toLocaleLowerCase();

@@ -50,6 +50,15 @@ pub struct SendInput {
     pub trusted_hosts: Vec<String>,
     /// El usuario confirmó enviar un secreto a un host ajeno.
     pub allow_untrusted_host: bool,
+    /// HT75: ocultar en las cabeceras y el cuerpo de la respuesta los
+    /// secretos que devuelve el servidor (HT31). Si el webview no lo manda,
+    /// se ocultan: lo seguro.
+    #[serde(default = "mask_by_default")]
+    pub mask_response: bool,
+}
+
+fn mask_by_default() -> bool {
+    true
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -417,6 +426,7 @@ pub struct Prepared {
     follow_redirects: bool,
     insecure_tls: bool,
     secrets: Vec<(String, String)>,
+    mask_response: bool,
     dropped: Vec<String>,
 }
 
@@ -494,6 +504,7 @@ pub fn prepare(input: &SendInput, secrets: Vec<(String, String)>) -> Result<Prep
         follow_redirects: input.follow_redirects,
         insecure_tls: input.insecure_tls,
         secrets: masks,
+        mask_response: input.mask_response,
         dropped,
     })
 }
@@ -622,7 +633,14 @@ pub async fn execute(p: Prepared) -> Result<SendOutput, SendError> {
     let body_bytes = bytes.len() as u64;
     let final_url = if redirects.is_empty() { p.masked_url.clone() } else { mask_secrets(url.as_str(), &p.secrets) };
 
-    let (response_headers, body) = mask_response(response_headers, classify_body(content_type.as_deref(), bytes, empty), &p.secrets);
+    // La URL final y las redirecciones se ocultan siempre: son lo que se
+    // envió. Las cabeceras y el cuerpo, salvo que el usuario lo apague (HT75).
+    let body = classify_body(content_type.as_deref(), bytes, empty);
+    let (response_headers, body) = if p.mask_response {
+        mask_response(response_headers, body, &p.secrets)
+    } else {
+        (response_headers, body)
+    };
 
     Ok(SendOutput {
         status: status.as_u16(),
@@ -758,6 +776,26 @@ pub fn http_client_cancel(request_id: String) -> bool {
     cancel(&request_id)
 }
 
+/// HT77: solo las claves de las variables secretas de esta extensión
+/// (`v_` y 8 hex), nunca las de otra extensión ni otra cuenta del llavero.
+pub fn revealable_key(key: &str) -> bool {
+    key.len() == 10 && key.starts_with("v_") && key[2..].chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
+}
+
+/// HT77: el valor de una variable secreta, para el ojo del panel Entornos.
+/// Es la única lectura de un secreto desde el webview, y solo la pide un
+/// clic del usuario; el webview lo guarda en el estado del componente, nunca
+/// en disco. Los errores son el código, sin el valor.
+#[tauri::command]
+pub async fn http_client_reveal_secret(app: AppHandle, key: String) -> Result<String, String> {
+    if !revealable_key(&key) {
+        return Err(super::SECRET_INVALID_NAME.to_string());
+    }
+    keychain(&app, move |service| read_secret(&service, EXTENSION_ID, &key))
+        .await
+        .map_err(str::to_string)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -780,6 +818,7 @@ mod tests {
             insecure_tls: false,
             trusted_hosts: vec![],
             allow_untrusted_host: false,
+            mask_response: true,
         }
     }
 
@@ -805,6 +844,24 @@ mod tests {
         // Sin secretos no cambia nada, y un binario no se toca.
         let bin = Body::Binary { base64: "dG9rM24=".into() };
         assert_eq!(mask_response(vec![], bin, &s).1, Body::Binary { base64: "dG9rM24=".into() });
+    }
+
+    #[test]
+    fn mask_response_es_de_serie_si_falta() {
+        let raw = r#"{"requestId":"r","method":"GET","url":"https://x.com","headers":[],"body":null,"timeoutMs":1000,
+            "maxResponseBytes":1048576,"followRedirects":true,"insecureTls":false,"trustedHosts":[],"allowUntrustedHost":false}"#;
+        let i: SendInput = serde_json::from_str(raw).unwrap();
+        assert!(i.mask_response);
+        let off = raw.replace("\"allowUntrustedHost\":false", "\"allowUntrustedHost\":false,\"maskResponse\":false");
+        assert!(!serde_json::from_str::<SendInput>(&off).unwrap().mask_response);
+    }
+
+    #[test]
+    fn solo_se_revelan_las_claves_de_las_variables() {
+        assert!(revealable_key("v_ab12cd34"));
+        for key in ["", "v_", "v_AB12CD34", "v_ab12cd3", "v_ab12cd345", "e_ab12cd34", "webhook", "v_ab12cd3g", "../v_ab12cd"] {
+            assert!(!revealable_key(key), "{key}");
+        }
     }
 
     #[test]
@@ -1145,6 +1202,16 @@ mod tests {
         echo.trusted_hosts = vec!["127.0.0.1".into()];
         let out = run(echo, secret("v_ab12cd34", "s3cr3t")).unwrap();
         assert_eq!(out.body, Body::Text { text: "Bearer {{$secret:v_ab12cd34}}".into(), lossy: false });
+        assert!(!out.final_url.contains("s3cr3t"));
+
+        // Con "Ocultar en la respuesta los secretos" apagado (HT75), el
+        // cuerpo vuelve tal cual; la URL final sigue con la marca.
+        let mut raw_echo = input(&format!("{base}/echo-auth?k={{{{$secret:v_ab12cd34}}}}"));
+        raw_echo.headers = vec![("Authorization".into(), "Bearer {{$secret:v_ab12cd34}}".into())];
+        raw_echo.trusted_hosts = vec!["127.0.0.1".into()];
+        raw_echo.mask_response = false;
+        let out = run(raw_echo, secret("v_ab12cd34", "s3cr3t")).unwrap();
+        assert_eq!(out.body, Body::Text { text: "Bearer s3cr3t".into(), lossy: false });
         assert!(!out.final_url.contains("s3cr3t"));
 
         // Puerto cerrado: error de conexión, solo con el host.

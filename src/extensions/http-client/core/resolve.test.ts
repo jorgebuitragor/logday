@@ -150,3 +150,39 @@ describe('Basic codificada por Logday (HT44)', () => {
     expect(r.wire.headers.map(([n]) => n)).toEqual(['Authorization', 'X-On', 'User-Agent']);
   });
 });
+
+describe('entornos apagados y avisos configurables (HT72, HT74)', () => {
+  it('sin entornos, una variable sin valor se envía tal cual y se avisa; las del sistema sí se ponen', () => {
+    const r = resolveRequest(req('GET https://x.com/u/{{id}}?t={{$timestamp}}\nAuthorization: Bearer {{token}}'), { ...ctx(null), keepUnresolved: true });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.wire.url).toBe('https://x.com/u/{{id}}?t=1793455500');
+    expect(r.wire.headers).toContainEqual(['Authorization', 'Bearer {{token}}']);
+    expect(r.unresolved).toEqual(['id', 'token']);
+    expect(r.secrets).toEqual([]);
+    // Sin la opción, faltan (HT16).
+    const blocked = resolveRequest(req('GET https://x.com/u/{{id}}'), ctx(null));
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) expect(blocked.missing).toEqual(['id']);
+  });
+
+  it('una URL que sin la variable no es válida lo dice, con las que faltan', () => {
+    const r = resolveRequest(req('GET {{baseUrl}}/u'), { ...ctx(null), keepUnresolved: true });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.urlError).toBe('invalid_url');
+      expect(r.unresolved).toEqual(['baseUrl']);
+    }
+  });
+
+  it('sin la confirmación de HT21, un secreto a un host ajeno no se pregunta', () => {
+    const code = 'GET https://otro.example.org/x\nAuthorization: Bearer {{token}}';
+    const on = resolveRequest(req(code), ctx());
+    expect(on.ok && on.needsConfirm.map((c) => c.kind)).toEqual(['untrusted_host']);
+    const off = resolveRequest(req(code), { ...ctx(), confirmUntrusted: false });
+    expect(off.ok && off.needsConfirm).toEqual([]);
+    // El entorno protegido se sigue confirmando (HT20 no cambia).
+    const prot = resolveRequest(req('POST https://otro.example.org/x'), { ...ctx({ ...env, protected: true }), confirmUntrusted: false });
+    expect(prot.ok && prot.needsConfirm.map((c) => c.kind)).toEqual(['protected']);
+  });
+});

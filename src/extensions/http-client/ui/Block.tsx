@@ -20,7 +20,7 @@ import { formatElapsed, isMac, makeTr, sendShortcut } from '../core/text';
 import { blockSignature, compactKey, compactSummary, initialCompact, loadCompact, moveCompact, saveCompact } from '../core/compact';
 import {
   blockKey, blockState, blockedMessage, cancelBlock, dismissResult, firstError, httpApi, issueMessage, openInView, openSettings,
-  readResult, requestCompactAll, resolveWith, selectRequest, sendRequest, useHttpStore,
+  readResult, requestCompactAll, resolveWith, selectRequest, sendRequest, unresolvedMessage, useHttpStore,
 } from '../store';
 import { CopyAsMenu } from './CopyAs';
 import { EnvironmentChip } from './EnvironmentChip';
@@ -444,6 +444,8 @@ function BlockFooter(props: NoteBlockProps) {
   const problem = problemText(b);
   const extra = problemCount(b) - 1;
   const warnings = (req?.issues ?? []).filter((i) => i.severity === 'warn');
+  // HT73: con los entornos apagados, avisa de lo que se envía tal cual.
+  const unresolved = problem ? null : unresolvedMessage(tr, b.resolved);
   const result = cached?.entry.value ?? null;
   const response = result?.response ?? null;
   const error = result?.error ?? null;
@@ -452,7 +454,7 @@ function BlockFooter(props: NoteBlockProps) {
   const resend = (extraOpts: { insecureOnce?: boolean } = {}) =>
     void sendRequest({ noteId: b.noteId, blockIndex: b.index, code: props.code, requestIndex: b.selected, returnFocus: document.activeElement, ...extraOpts });
 
-  const nothing = !problem && !pending && !inFlight && !response && !error && !result?.cancelled && warnings.length === 0;
+  const nothing = !problem && !pending && !inFlight && !response && !error && !result?.cancelled && warnings.length === 0 && !unresolved;
   if (nothing) return null;
 
   const missingVars = b.resolved && !b.resolved.ok && (b.resolved.missing.length > 0 || b.resolved.emptySecrets.length > 0);
@@ -500,6 +502,7 @@ function BlockFooter(props: NoteBlockProps) {
       {error && !inFlight && <SendFailure tr={tr} error={error} insecureEnv={!!b.env?.insecureTls} onRetry={resend} />}
       {result?.cancelled && !inFlight && <StatusItem kind="info">{tr('err.cancelled')}</StatusItem>}
       {warnings.map((w) => <StatusItem key={w.code} kind="info">{issueMessage(tr, w)}</StatusItem>)}
+      {unresolved && <StatusItem kind="warn">{unresolved}</StatusItem>}
       {response && (
         <ResponseView
           outcome={response}

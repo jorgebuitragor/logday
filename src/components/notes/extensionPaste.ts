@@ -126,9 +126,45 @@ export function convertPastedTr(state: EditorState, from: number, to: number, pl
   }
 }
 
-/** El pegado del editor de notas (`handlePaste`): `true` si lo atendió. */
+/** Lo que usa el pegado de la vista del editor (para probarlo sin DOM). */
+export type PasteView = Pick<EditorView, 'state' | 'dispatch' | 'focus' | 'isDestroyed'>;
+
+/** Los dos pasos: el texto tal cual y, en otro paso de Deshacer, lo
+ *  convertido. */
+function applyPlan(view: PasteView, text: string, plan: PastePlan): void {
+  const raw = pasteRawTr(view.state, text, plan.into === 'text');
+  view.dispatch(raw.tr);
+  const converted = convertPastedTr(view.state, raw.from, raw.to, plan);
+  // Si no se pudo convertir, queda el texto pegado: no se pierde nada.
+  if (!converted) return;
+  view.dispatch(converted);
+  try {
+    plan.conversion.onInserted?.();
+  } catch (err) {
+    console.error(`[pegar ${plan.language}]`, err);
+  }
+}
+
+/** Tras preguntar (`ask`): se pega donde está ahora el cursor, con lo
+ *  elegido, o tal cual con `null`. Si el cursor quedó en un bloque de otro
+ *  lenguaje, tal cual; si ya no es texto, nada. */
+function applyAnswer(view: PasteView, text: string, plan: PastePlan, answer: NotePasteConversion | null): void {
+  if (view.isDestroyed) return;
+  const context = pasteContext(view.state);
+  if (context === undefined) return;
+  if (!answer || (context !== null && context !== plan.language)) {
+    view.dispatch(pasteRawTr(view.state, text, context !== null).tr.scrollIntoView());
+  } else {
+    applyPlan(view, text, { ...plan, into: context === null ? 'block' : 'text', conversion: answer });
+  }
+  view.focus();
+}
+
+/** El pegado del editor de notas (`handlePaste`): `true` si lo atendió.
+ *  Con `ask`, devuelve `true` enseguida y pega al responder; mientras
+ *  tanto, la nota no cambia. */
 export function handleExtensionPaste(
-  view: EditorView,
+  view: PasteView,
   text: string,
   plain: boolean,
   converters: readonly PasteConverter[],
@@ -136,16 +172,16 @@ export function handleExtensionPaste(
   const context = pasteContext(view.state);
   const plan = planPaste(text, context, converters, plain);
   if (!plan) return false;
-  const raw = pasteRawTr(view.state, text, plan.into === 'text');
-  view.dispatch(raw.tr);
-  const converted = convertPastedTr(view.state, raw.from, raw.to, plan);
-  // Si no se pudo convertir, queda el texto pegado: no se pierde nada.
-  if (!converted) return true;
-  view.dispatch(converted);
-  try {
-    plan.conversion.onInserted?.();
-  } catch (err) {
-    console.error(`[pegar ${plan.language}]`, err);
+  const { ask } = plan.conversion;
+  if (ask) {
+    void ask()
+      .catch((err) => {
+        console.error(`[pegar ${plan.language}]`, err);
+        return null;
+      })
+      .then((answer) => applyAnswer(view, text, plan, answer));
+    return true;
   }
+  applyPlan(view, text, plan);
   return true;
 }

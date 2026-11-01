@@ -1517,3 +1517,61 @@ Al pegar un cURL, `-u usuario:contraseña` y `https://u:p@host` daban `Authoriza
 | **D3** | OpenAPI 3 y Swagger 2 | D2 | No |
 
 Orden: A1 → D1 → A2 → B1 → B2 → D2 → D3, con B3 cuando Jorge lo pida. Cada PR actualiza estos tres archivos y la ayuda (HT35).
+
+### 15. Entornos opcionales, avisos configurables y panel Entornos (31 oct 2026, HT70–HT77)
+
+Pedido por Jorge al probar (requirements, "Cambio del 31 oct 2026: entornos opcionales, avisos configurables y panel Entornos"). Rama `feature/http-entornos`, sobre A1.
+
+#### 15.1 Ajustes (`core/environments.ts`)
+
+Cuatro campos nuevos en `HttpClientSettings`, leídos por `readHttpSettings` con lo seguro si faltan o vienen mal: `useEnvironments` (`true`), `confirmUntrustedSecrets` (`true`), `maskResponseSecrets` (`true`) y `curlPaste: 'ask' | 'variables' | 'keep'` (`'ask'`). Son locales, como el resto (R9).
+
+- `activeEnvironment(s)` devuelve `null` con `useEnvironments` apagado, aunque `activeEnvId` siga elegido: así el bloque, la pantalla, la resolución y "Abrir Entornos" dejan de usarlo sin tocar los entornos. `chosenEnvironment(s)` da el elegido igual. Apagar no escribe nada más: `environments` y `activeEnvId` quedan, y "Quitar configuración" (HT22) sigue borrando todo.
+
+#### 15.2 Resolución (`core/resolve.ts` y `store.ts`)
+
+- `ResolveContext` suma `keepUnresolved` (HT72) y `confirmUntrusted` (HT74). Con `keepUnresolved`, una variable sin entorno no va a `missing`: `replaceVariables` deja `{{x}}` en el texto y el nombre va a `unresolved`, que el resultado `ok` siempre trae. Si por eso `checkUrl` da `invalid_url`, el fallo lleva `unresolved` y `blockedMessage` usa `url.unresolved`.
+- `resolveWith(req, env, settings = currentSettings())` arma el contexto con los ajustes; `unresolvedMessage` da el aviso de HT73, que la franja del bloque y la del formulario muestran como `warn` y no deshabilita Enviar.
+- **Decisión (HT73): avisar y permitir**, no bloquear. Apagar los entornos es pedir que no se resuelva nada; bloquear dejaría sin enviar justo lo que se quería. La única excepción es la URL, porque `{{baseUrl}}/x` no es una URL y Rust la rechazaría con un error menos claro.
+- `sendRequest` manda `allowUntrustedHost: true` con `confirmUntrustedSecrets` apagado (Rust tampoco rechaza el host ajeno) y `maskResponse: settings.maskResponseSecrets`.
+
+#### 15.3 Rust (`http_client.rs`)
+
+- `SendInput.mask_response` con `#[serde(default = "mask_by_default")]` (`true`): un webview viejo que no lo manda sigue ocultando. Con `false`, `execute` no llama a `mask_response`. `final_url` y la `location` de las redirecciones se enmascaran siempre: son la URL que se envió, no algo que devuelve el servidor. El historial (HT56, PR B2) enmascarará por su cuenta, sin mirar esta opción.
+- `http_client_reveal_secret(key) -> Result<String, String>` (HT77): `revealable_key` exige `v_` y 8 hex en minúsculas, y solo lee `ext:http-client:<clave>` con `read_secret` fuera del hilo principal (`keychain`). Los errores son el código (`secret_invalid_name`, `secret_not_found`, `keychain_error`), nunca el valor. Es la única lectura de un secreto desde el webview (specs/extensiones R10, enmendado).
+- Pruebas: `mask_response_es_de_serie_si_falta` (el JSON sin el campo y con `false`), `solo_se_revelan_las_claves_de_las_variables`, y en `servidor_local` el eco con `mask_response: false` (el cuerpo trae el secreto, la URL final no).
+
+#### 15.4 Pegar un cURL (`core/curl.ts`, `paste.ts`, `ui/CurlSecretsDialog.tsx`)
+
+- `fromCurl(text, { keepValues })`: con `keepValues` no pasa por `redactUrl`, `redactHeader` ni `redactPairs`, el JSON se formatea sin `secrets` y `replaced` queda vacío. `-u` sigue pasando por `basicCredentials` con un `take` que devuelve el valor, así que da `Basic usuario:contraseña` (siempre con `:`, para que Rust la codifique, HT44).
+- `planCurlPaste(text, mode)` da las dos versiones y el modo; sin valores sensibles el modo es `variables` (no hay nada que preguntar). `convertCurlPaste` devuelve la versión del modo, y con `ask` además `ask()`, que abre el diálogo y da la conversión elegida o `null` (Esc). "Recordar mi elección" escribe `curlPaste` con lo elegido; Esc nunca recuerda.
+- **Base (specs/extensiones R24):** `NotePasteConversion.ask?: () => Promise<NotePasteConversion | null>`. `handleExtensionPaste` devuelve `true` enseguida (el navegador no pega) y no despacha nada hasta la respuesta: así la nota no se guarda ni se sincroniza con el valor mientras el diálogo está abierto. Al responder (`applyAnswer`) vuelve a mirar el cursor: con una conversión, los dos pasos de siempre (`pasteRawTr` y `convertPastedTr`); con `null`, o si el cursor quedó en un bloque de otro lenguaje, solo el texto tal cual; si la vista se destruyó o la selección ya no es de texto, nada. Después, `view.focus()`. Recibe una `PasteView` (`state`, `dispatch`, `focus`, `isDestroyed`) para probarlo sin DOM.
+- **El diálogo** tiene su propia raíz de React (`askCurlSecrets`): el pegado llega desde el editor o desde la URL, fuera de un árbol de la extensión. Usa `ModalOverlay` y `ModalPanel` (portal a `body`, con el tema de `documentElement`), `role="dialog"` con `aria-modal`, el foco en "Cambiar por variables", Tab que no sale y Esc que cierra sin elegir. Uno a la vez; la parada de la extensión lo cierra sin elegir. `CurlSecretsPanel` es el contenido sin el portal, para probarlo con `react-dom/server`.
+- **En la URL de la pantalla:** sin preguntar, como antes (`setDraftCode` y el aviso). Preguntando, `askCurlChoice` y después lo mismo; con Esc, el texto va al campo URL con los saltos de línea como espacios, y el foco vuelve al campo.
+
+#### 15.5 El panel Entornos (`ui/Environments.tsx`)
+
+- `EnvironmentsManager` es lo que era la sección de entornos de `Settings.tsx` (el entorno activo, las pestañas, `EnvironmentPanel` y las confirmaciones de borrar con `useConfirmDelete`), sin cambios de comportamiento: lo usan Opciones y el panel. `idPrefix` evita ids repetidos. El entorno activo se cambia con `setActiveEnv` (que también lo anuncia).
+- `EnvironmentsScreen`: el título "Entornos", la explicación de siempre (`envsIntro`), "Volver a la petición" (con el foco al abrir) y el manager. **Decisión: ocupa el lugar del formulario**, no una columna ni una pestaña de la columna de peticiones (260 px no dan para la tabla de variables, y la columna va a tener Historial, HT58). El formulario se queda montado con `hidden` para no perder su pestaña. Elegir una petición o "Nueva petición" cierra el panel. Esc no lo cierra: ya cierra los menús y las confirmaciones de dentro.
+- `RequestForm` recibe `onOpenEnvironments`: el botón "Entornos" (`SlidersHorizontal`) junto al chip, "Configurar entornos…" y "Crear un entorno…" del chip (`EnvironmentChip.onConfigure`) y "Definir en Entornos" de una variable que falta. Sin él (en la barra del bloque), todo sigue llevando a Opciones.
+- `EnvironmentPanel` suma "Usar este entorno" (o "Entorno activo", si ya lo es) junto a Duplicar y Eliminar.
+
+#### 15.6 Ver y copiar un secreto (`EnvironmentPanel.tsx`)
+
+- `makeRevealer({ read, onChange, hideAfterMs })`: `show(key)` lee con `revealHttpSecret` (`core/api.ts`) y entrega el valor a `onChange`, que es el `setState` de `SecretValue`; a los 30 s (`REVEAL_MS`) entrega `null`. `hide()` lo oculta y `dispose()` (al desmontar) para el temporizador sin avisar. Una lectura que llega después de `hide` o `dispose` se descarta.
+- Se oculta al cambiar de entorno porque `EnvironmentPanel` lleva `key={env.id}`, y al salir del panel o de la pantalla porque se desmonta. También al cambiar la pista (otro valor guardado) y al pulsar "Cambiar".
+- `SecretShown` dibuja la pista o el valor (`select-all`, con la nota "Se oculta solo en 30 segundos"), el ojo (`aria-pressed`) y "Copiar".
+- **Decisión: "Copiar" no revela.** Lee el valor y lo escribe con `navigator.clipboard.writeText`, sin pasarlo al estado: se puede pegar un token sin que se vea en pantalla. Un error del llavero da un toast (`varSecretReadError`), sin el valor.
+
+#### 15.7 Con los entornos apagados, en el resto
+
+- `EnvironmentChip` no se dibuja; el botón "Entornos" de la pantalla tampoco. Opciones muestra "Los entornos están apagados…" en lugar del manager.
+- Auth (`AuthPanel.tsx`): no ofrece "Guardar como secreto" (no hay entorno donde guardarlo) y una `{{variable}}` dice "Con los entornos apagados, se envía tal cual".
+
+#### 15.8 Opciones → Cliente HTTP
+
+En este orden: **Entornos** ("Usar entornos" y, encendido, el manager), **Pegar un cURL** (el `Menu` "Valores sensibles", con los tres valores), **Avisos de seguridad** (los dos interruptores, con su explicación), **Peticiones** (lo de siempre) y el pie con "Abrir Cliente HTTP". "Restablecer valores" sigue siendo solo de las opciones de las peticiones.
+
+#### 15.9 Textos nuevos (`httpClient`, es y en)
+
+`curlAsk*` (el diálogo), `curlPaste*` (la opción), `useEnvironments`, `useEnvironmentsHelp`, `envsOff`, `securityTitle`, `confirmUntrustedToggle`, `confirmUntrustedHelp`, `maskResponseToggle`, `maskResponseHelp`, `varUnresolved`, `url.unresolved`, `varSentAsIs`, `varSecretShowAria`, `varSecretHideAria`, `varSecretCopyAria`, `varSecretCopied`, `varSecretReadError`, `varSecretRevealedNote`, `envIsActive`, `envMakeActive`, `envPanelOpen`, `envPanelBack` y `defineInEnvironments`. La ayuda (`help4`) nombra el botón Entornos, el ojo y que los avisos se pueden apagar.

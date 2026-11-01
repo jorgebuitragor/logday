@@ -16,6 +16,9 @@ export interface SendInput extends WireRequest {
   insecureTls: boolean;
   trustedHosts: string[];
   allowUntrustedHost: boolean;
+  /** HT75: ocultar en la respuesta los secretos que devuelve el servidor
+   *  (HT31). Si falta, Rust los oculta. */
+  maskResponse: boolean;
 }
 
 export interface RedirectHop {
@@ -83,6 +86,13 @@ export async function sendHttp(input: SendInput): Promise<SendOutput> {
 /** Devuelve si había algo que cancelar. */
 export function cancelHttp(requestId: string): Promise<boolean> {
   return invoke<boolean>('http_client_cancel', { requestId }).catch(() => false);
+}
+
+/** HT77: el valor de un secreto de la extensión, para el ojo del panel
+ *  Entornos. Solo claves `v_<hex>`; Rust rechaza cualquier otra. El valor
+ *  vive en el estado del componente que lo pidió y nunca se guarda. */
+export function revealHttpSecret(key: string): Promise<string> {
+  return invoke<string>('http_client_reveal_secret', { key });
 }
 
 export interface ErrorContext {

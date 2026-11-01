@@ -69,7 +69,10 @@ tengan su primera extensión.
 - R10. Los secretos de una extensión (tokens, URLs de webhook) DEBERÁN
   guardarse solo en el llavero del sistema operativo. NUNCA DEBERÁN ir
   en `config.json`, en `localStorage`, en los archivos de datos, en los backups de
-  configuración ni en el sync.
+  configuración ni en el sync. El webview no los lee, con una excepción:
+  el ojo de las variables secretas del Cliente HTTP, que muestra un valor
+  por un clic y lo olvida a los 30 s (specs/cliente-http HT77, 31 oct
+  2026, pedido por Jorge).
 
 ### Dónde aparece cada extensión
 
@@ -146,7 +149,10 @@ tengan su primera extensión.
   una petición de Cliente HTTP), solo con la extensión activa y con su
   código ya cargado. "Pegar sin formato" y los bloques de código de otro
   lenguaje pegan tal cual, y Deshacer deja el texto original (31 oct 2026,
-  pedido por Jorge).
+  pedido por Jorge). La conversión PODRÁ preguntar antes de insertar
+  (`ask`): mientras espera la respuesta no se inserta nada, y al
+  responder se pega donde está el cursor, con lo elegido o tal cual
+  (specs/cliente-http HT71, 31 oct 2026).
 - R25. Una extensión DEBERÁ poder registrar un atajo de teclado global y
   tener su propia ventana (por ejemplo, la captura rápida). La ventana se
   crea al activarla y se destruye al desactivarla, y NO DEBERÁ escribir

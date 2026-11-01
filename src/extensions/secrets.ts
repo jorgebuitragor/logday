@@ -1,6 +1,7 @@
 // Secretos de las extensiones en el llavero del SO (R10). El webview solo
 // escribe y borra: no hay un `get`, quien usa el secreto es el comando
-// Rust de cada extensión (src-tauri/src/extensions/).
+// Rust de cada extensión (src-tauri/src/extensions/). La excepción es el
+// ojo del Cliente HTTP (`revealHttpSecret`, specs/cliente-http HT77).
 import { invoke } from '@tauri-apps/api/core';
 import type { ExtensionId } from './types';
 

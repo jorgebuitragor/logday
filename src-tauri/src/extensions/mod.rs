@@ -3,7 +3,9 @@
 //! Aquí van los secretos genéricos (llavero del SO) y, en un archivo por
 //! extensión, los comandos que hablan con servicios externos. El webview
 //! nunca lee un secreto: lo escribe una vez con `ext_secret_set`, y lo usa
-//! el comando Rust de la extensión (R10, R17).
+//! el comando Rust de la extensión (R10, R17). La única excepción es el ojo
+//! del panel Entornos del Cliente HTTP (`http_client_reveal_secret`,
+//! specs/cliente-http HT77), solo para sus variables y por un clic.
 
 pub mod google_calendar;
 pub mod google_oauth;

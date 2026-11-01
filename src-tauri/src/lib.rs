@@ -680,6 +680,7 @@ pub fn run() {
             extensions::outgoing_webhook::outgoing_webhook_send,
             extensions::http_client::http_client_send,
             extensions::http_client::http_client_cancel,
+            extensions::http_client::http_client_reveal_secret,
             extensions::granola::granola_connect,
             extensions::granola::granola_disconnect,
             extensions::granola::granola_call,

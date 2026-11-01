@@ -124,6 +124,9 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     // HT2: envía lo que el usuario escribe a la URL que escribe, y solo
     // cuando pulsa Enviar. Es la excepción de R17: el host lo pone él.
     sendsDataExternally: { to: 'URLs del usuario' },
+    // HT33: su pantalla, con las peticiones de todas las notas y el
+    // formulario (Jorge, 31 oct 2026: antes era una herramienta de DevTools).
+    view: true,
     settings: true,
     // HT4: el código se edita en la nota; la extensión pone la barra y la
     // respuesta (specs/cliente-http, design A3).

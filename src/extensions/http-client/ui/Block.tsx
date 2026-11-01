@@ -1,16 +1,19 @@
-// El bloque ```http en la nota (Interfaz §1, HT4–HT16, HT20–HT25, HT30): la
+// El bloque ```http en la nota (Interfaz §1, HT4–HT16, HT20–HT25, HT30,
+// HT36–HT38): la
 // barra de encima (`part: 'header'`) y la franja de debajo (`'footer'`).
 // Son dos islas aparte dentro del NodeView; comparten el estado del store.
-import { useEffect, useMemo, useRef } from 'react';
-import { ChevronDown, CircleAlert, Send, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, ChevronDown, CircleAlert, Send, SquareTerminal, X } from 'lucide-react';
 import { useAppStore } from '../../../store/appStore';
-import { PANEL_TITLE, SECONDARY_CLS, SEND_BTN } from '../../../components/shared/controlClasses';
+import { CODE_LANGUAGE_OPTIONS } from '../../../lib/codeHighlight';
+import { ICON_BTN, PANEL_TITLE, SECONDARY_CLS, SEND_BTN } from '../../../components/shared/controlClasses';
 import { StatusItem } from '../../../components/shared/FormControls';
 import type { NoteBlockProps } from '../../types';
 import { subscribeNoteBlockRun } from '../../noteBlockEvents';
 import { announce } from '../announce';
 import { activeEnvironment, EXTENSION_ID, readHttpSettings } from '../core/environments';
-import { hasErrors, parseHttpBlock, requestAtOffset, requestLabel } from '../core/parse';
+import { setRequestMethod, toCurl } from '../core/edit';
+import { HTTP_METHODS, hasErrors, parseHttpBlock, requestAtOffset, requestLabel, type HttpMethod } from '../core/parse';
 import { isMac, makeTr, sendShortcut } from '../core/text';
 import {
   blockKey, blockState, blockedMessage, cancelBlock, dismissResult, firstError, issueMessage, openSettings,
@@ -101,6 +104,51 @@ function BlockHeader(props: NoteBlockProps) {
 
   const label = req?.name ? tr('blockLabelNamed', { name: req.name }) : tr('blockLabel');
 
+  // El método y "Copiar como cURL" leen el texto de ahora, no el de hace
+  // 300 ms (`useDebounced`): al elegir un método se ve en el acto.
+  const fresh = useMemo(() => parseHttpBlock(props.code), [props.code]);
+  const freshReq = fresh.requests[Math.min(b.selected, Math.max(0, fresh.requests.length - 1))] ?? null;
+  const canSetMethod = !!props.setCode && !!freshReq && !freshReq.issues.some((i) => i.code === 'missing_request_line');
+  const [curlCopied, setCurlCopied] = useState(false);
+  useEffect(() => {
+    if (!curlCopied) return;
+    const id = setTimeout(() => setCurlCopied(false), 1500);
+    return () => clearTimeout(id);
+  }, [curlCopied]);
+  const curlReady = !!freshReq && !hasErrors(freshReq.issues) && !hasErrors(fresh.issues);
+
+  // HT36: solo cambia el método en la línea de la petición de la barra.
+  const changeMethod = (method: HttpMethod) => {
+    const requestIndex = fresh.requests.indexOf(freshReq!);
+    const next = setRequestMethod(props.code, requestIndex, method);
+    if (next === props.code) return;
+    props.setCode?.(next);
+    // Con GET o HEAD el cuerpo se queda; el aviso de siempre sale en la
+    // franja, y aquí se anuncia.
+    const warn = parseHttpBlock(next).requests[requestIndex]?.issues.find((i) => i.code === 'get_with_body' || i.code === 'head_with_body');
+    announce(warn ? `${tr('methodPicker', { method })}. ${issueMessage(tr, warn)}` : tr('methodPicker', { method }));
+  };
+
+  // HT38: el lenguaje del bloque, como el selector de los bloques normales.
+  const changeLanguage = (value: string) => {
+    if (value === 'http') return;
+    const name = value === 'plaintext' ? tr('langPlain') : CODE_LANGUAGE_OPTIONS.find((o) => o.value === value)?.label ?? value;
+    props.setLanguage?.(value);
+    announce(tr('aLanguage', { name }));
+  };
+
+  // HT37: las variables y los secretos van como {{nombre}}.
+  const copyCurl = async () => {
+    if (!freshReq || !curlReady) return;
+    try {
+      await navigator.clipboard.writeText(toCurl(freshReq));
+      setCurlCopied(true);
+      announce(tr('aCurlCopied'));
+    } catch {
+      // Sin permiso del portapapeles: no hay nada más que hacer.
+    }
+  };
+
   return (
     <div
       ref={rootRef}
@@ -114,7 +162,43 @@ function BlockHeader(props: NoteBlockProps) {
       }}
       className="@container/httpblock flex items-center gap-2 border-b border-[var(--border)] px-2.5 py-1.5"
     >
-      <span className={`${PANEL_TITLE} font-mono`} aria-hidden>HTTP</span>
+      {props.setLanguage ? (
+        <Menu
+          label={tr('langPicker', { name: 'HTTP' })}
+          hint={tr('langHint')}
+          items={CODE_LANGUAGE_OPTIONS.map((o) => ({
+            key: o.value,
+            checked: o.value === 'http',
+            label: o.value === 'plaintext' ? tr('langPlain') : o.label,
+            onSelect: () => changeLanguage(o.value),
+          }))}
+          button={
+            <>
+              <span className={`${PANEL_TITLE} font-mono`}>HTTP</span>
+              <ChevronDown size={11} className="shrink-0" aria-hidden />
+            </>
+          }
+        />
+      ) : (
+        <span className={`${PANEL_TITLE} font-mono`} aria-hidden>HTTP</span>
+      )}
+      {canSetMethod && freshReq && (
+        <Menu
+          label={tr('methodPicker', { method: freshReq.method })}
+          items={HTTP_METHODS.map((m) => ({
+            key: m,
+            checked: m === freshReq.method,
+            label: <span className="font-mono text-[10px] font-semibold">{m}</span>,
+            onSelect: () => changeMethod(m),
+          }))}
+          button={
+            <>
+              <span className="font-mono text-[10px] font-semibold text-[var(--text-primary)]">{freshReq.method}</span>
+              <ChevronDown size={11} className="shrink-0" aria-hidden />
+            </>
+          }
+        />
+      )}
       {parsed.requests.length >= 2 && (
         <Menu
           label={tr('requestPicker')}
@@ -140,6 +224,16 @@ function BlockHeader(props: NoteBlockProps) {
         />
       )}
       <div className="flex-1" />
+      <button
+        type="button"
+        onClick={() => void copyCurl()}
+        disabled={!curlReady}
+        aria-label={curlCopied ? tr('copied') : tr('copyCurl')}
+        title={tr('copyCurl')}
+        className={`${ICON_BTN} min-h-7 min-w-7 justify-center`}
+      >
+        {curlCopied ? <Check size={14} className="text-emerald-400" aria-hidden /> : <SquareTerminal size={14} aria-hidden />}
+      </button>
       <EnvironmentChip />
       {inFlight ? (
         <button type="button" onClick={() => cancelBlock(key)} className={`${SECONDARY_CLS} py-1`}>

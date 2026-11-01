@@ -3,8 +3,7 @@
 // las herramientas, y restablecer sus opciones. Se monta fuera de la vista
 // (sin `DevtoolsContext`): lee del store y usa las funciones puras de
 // `model.ts`, las mismas que la columna, así que los cambios se ven al
-// momento si la vista está abierta detrás. Sin Cliente HTTP, su grupo y su
-// herramienta no aparecen (specs/cliente-http HT27).
+// momento si la vista está abierta detrás.
 import { useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { ChevronDown, ChevronUp, GripVertical, RotateCcw } from 'lucide-react';
@@ -14,8 +13,8 @@ import { Toggle } from '../../components/shared/FormControls';
 import { useRowDrag } from '../../components/shared/useRowDrag';
 import type { DevtoolsKey } from '../../lib/i18n';
 import {
-  DEVTOOLS_ID, RESET_ORDER_PATCH, availableGroups, availableToolsIn, hasCustomOrder, hasToolOptions, isToolHidden, moveGroup,
-  moveGroupTo, moveTool, moveToolTo, orderedTools, readDevtoolsSettings, setLayoutPatch, setToolHidden, visibleToolCount,
+  DEVTOOLS_ID, RESET_ORDER_PATCH, hasCustomOrder, hasToolOptions, isToolHidden, moveGroup, moveGroupTo, moveTool, moveToolTo,
+  orderedGroups, orderedTools, readDevtoolsSettings, setLayoutPatch, setToolHidden, visibleToolCount,
   type DevtoolsSettings, type DevtoolsSettingsPatch, type ToolGroup, type ToolId, type ToolListLayout,
 } from './model';
 import { Segmented } from './ui/controls';
@@ -33,17 +32,15 @@ function Subtitle({ children }: { children: string }) {
 }
 
 export default function DevtoolsSettingsPanel() {
-  const { language, raw, config, update, showToast } = useAppStore(
+  const { language, raw, update, showToast } = useAppStore(
     useShallow((s) => ({
       language: s.language,
       raw: s.extensions[DEVTOOLS_ID]?.settings,
-      config: s.extensions,
       update: s.updateExtensionSettings,
       showToast: s.showToast,
     })),
   );
   const settings = useMemo(() => readDevtoolsSettings(raw), [raw]);
-  const available = useMemo(() => availableToolsIn(config), [config]);
   const tr = useMemo(() => makeTr(language), [language]);
   const [announcement, setAnnouncement] = useState('');
 
@@ -54,17 +51,17 @@ export default function DevtoolsSettingsPanel() {
   };
 
   const az = settings.layout === 'az';
-  const groups = availableGroups(settings, available);
+  const groups = orderedGroups(settings);
   const groupName = (group: ToolGroup) => tr(`group.${group}` as DevtoolsKey);
-  const onlyOneVisible = visibleToolCount(settings, available) === 1;
+  const onlyOneVisible = visibleToolCount(settings) === 1;
 
   const moveGroupBy = (group: ToolGroup, index: number, delta: -1 | 1) => {
-    save((current) => moveGroup(current, group, delta, available));
+    save((current) => moveGroup(current, group, delta));
     setAnnouncement(tr('set.groupMoved', { name: groupName(group), n: index + 1 + delta, total: groups.length }));
   };
   const groupDrag = useRowDrag<HTMLDivElement>('[data-group-row]', (id, to) => {
     const group = id as ToolGroup;
-    save((current) => moveGroupTo(current, group, to, available));
+    save((current) => moveGroupTo(current, group, to));
     setAnnouncement(tr('set.groupMoved', { name: groupName(group), n: to + 1, total: groups.length }));
   });
 
@@ -97,7 +94,6 @@ export default function DevtoolsSettingsPanel() {
               group={group}
               name={groupName(group)}
               settings={settings}
-              available={available}
               tr={tr}
               save={save}
               announce={setAnnouncement}
@@ -156,12 +152,11 @@ export default function DevtoolsSettingsPanel() {
 
 /** La tarjeta de un grupo: su fila (asa y flechas) y la de cada herramienta. */
 function GroupCard({
-  group, name, settings, available, tr, save, announce, az, onlyOneVisible, cardClass, grip, first, last, onMove,
+  group, name, settings, tr, save, announce, az, onlyOneVisible, cardClass, grip, first, last, onMove,
 }: {
   group: ToolGroup;
   name: string;
   settings: DevtoolsSettings;
-  available: readonly ToolId[];
   tr: Tr;
   save: Save;
   announce: (message: string) => void;
@@ -228,7 +223,7 @@ function GroupCard({
       {tools.map((tool, index) => {
         const Icon = TOOL_ICON[tool];
         const toolName = nameOf(tool);
-        const hidden = isToolHidden(settings, tool, available);
+        const hidden = isToolHidden(settings, tool);
         const atTop = index === 0;
         const atBottom = index === tools.length - 1;
         return (
@@ -284,7 +279,7 @@ function GroupCard({
                 // D20: la última visible no se puede ocultar.
                 disabled={!hidden && onlyOneVisible}
                 onChange={(show) => {
-                  save((current) => setToolHidden(current, tool, !show, available));
+                  save((current) => setToolHidden(current, tool, !show));
                   announce(tr(show ? 'set.shownNow' : 'set.hiddenNow', { name: toolName }));
                 }}
               />

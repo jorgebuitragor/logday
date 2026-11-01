@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, Settings2, PanelLeft, SlidersHorizontal, Keyboard, FolderOpen, RefreshCw, GitBranch, Puzzle, Info } from 'lucide-react';
+import { X, Settings2, PanelLeft, SlidersHorizontal, LayoutTemplate, Keyboard, FolderOpen, RefreshCw, GitBranch, Puzzle, Info } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
@@ -12,6 +12,7 @@ import { ShortcutsSettingsTab } from './ShortcutsSettingsTab';
 import { DataSettingsTab } from './DataSettingsTab';
 import { AboutSettingsTab } from './AboutSettingsTab';
 import { ExtensionsSettingsTab } from './ExtensionsSettingsTab';
+import { TemplatesSettingsTab } from './TemplatesSettingsTab';
 import { ModalOverlay } from '../shared/ModalOverlay';
 import { ModalPanel } from '../shared/ModalPanel';
 import { useExtensions } from '../../extensions/useExtensions';
@@ -22,7 +23,7 @@ import type { Language } from '../../types/common';
 
 // `ext:<id>`: el panel de una extensión activa, con su propia entrada (R21
 // de specs/extensiones).
-type SettingsTab = 'general' | 'navigation' | 'work' | 'shortcuts' | 'data' | 'git' | 'sync' | 'extensions' | `ext:${ExtensionId}` | 'about';
+type SettingsTab = 'general' | 'navigation' | 'work' | 'templates' | 'shortcuts' | 'data' | 'git' | 'sync' | 'extensions' | `ext:${ExtensionId}` | 'about';
 
 /** Las entradas del grupo App. Navegación va segunda, junto a General
  *  (specs/navegacion-secciones NS21). */
@@ -31,6 +32,7 @@ export function appTabs(language: Language): { id: SettingsTab; label: string; i
     { id: 'general',    label: t(language, 'settings', 'tabGeneral'),    icon: Settings2 },
     { id: 'navigation', label: t(language, 'settings', 'tabNavigation'), icon: PanelLeft },
     { id: 'work',       label: t(language, 'settings', 'tabWork'),       icon: SlidersHorizontal },
+    { id: 'templates',  label: t(language, 'settings', 'tabTemplates'),  icon: LayoutTemplate },
     { id: 'shortcuts',  label: t(language, 'settings', 'tabShortcuts'),  icon: Keyboard },
   ];
 }
@@ -215,6 +217,9 @@ export function SettingsModal() {
 
             {/* ── WORK: Comportamiento · Notificaciones · Semana laboral · Accesibilidad ── */}
             {settingsTab === 'work' && <WorkSettingsTab />}
+
+            {/* ── TEMPLATES: Mensaje del Daily · Excel de horas extra ── */}
+            {settingsTab === 'templates' && <TemplatesSettingsTab />}
 
             {/* ── SHORTCUTS: Atajos de teclado ── */}
             {settingsTab === 'shortcuts' && <ShortcutsSettingsTab />}

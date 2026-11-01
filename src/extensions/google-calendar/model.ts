@@ -83,3 +83,37 @@ export type SyncStatus =
   | { state: 'loading' }
   | { state: 'ok'; at: string; count: number }
   | { state: 'error'; code: string; status?: number | null };
+
+// ─── Tarjeta de Inicio (specs/extensiones R27) ───
+
+/** "Mostrar en Inicio", encendido por defecto. Va en los mismos
+ *  `settings` locales que el resto. */
+export const showsOnHome = (raw: Record<string, unknown> | undefined) => raw?.showOnHome !== false;
+
+/** El día local de `now` como rango de un día (`to` excluido). */
+export function dayRange(now: Date): DateRange {
+  const from = localISODate(now);
+  return { from, to: addDays(from, 1) };
+}
+
+export const rangeIncludes = (range: DateRange | null, day: string) => !!range && range.from <= day && day < range.to;
+
+export interface HomeAgenda {
+  /** Hasta `max` eventos: los de todo el día primero y luego por hora. */
+  rows: ExternalEvent[];
+  /** Posición en `rows` del primero con hora desde ahora ("Siguiente"),
+   *  o -1. */
+  next: number;
+  /** Los que no caben. */
+  more: number;
+}
+
+/** Los eventos de `day` para la tarjeta. `nowTime` es la hora local
+ *  (HH:MM) para marcar el siguiente. */
+export function homeAgenda(events: readonly ExternalEvent[], day: string, nowTime: string, max = 5): HomeAgenda {
+  const today = events
+    .filter((e) => e.date === day)
+    .sort((a, b) => a.time.localeCompare(b.time) || a.title.localeCompare(b.title));
+  const rows = today.slice(0, max);
+  return { rows, next: rows.findIndex((e) => e.time !== '' && e.time >= nowTime), more: Math.max(0, today.length - max) };
+}

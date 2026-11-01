@@ -9,6 +9,7 @@ import { EVT_FINISHED, EVT_TRAY_ACTION, POMODORO_ID } from './model';
 import {
   activate, deactivate, handleFinish, refreshTaskInfo, skipPhase, syncNative, tick, togglePhase,
 } from './store';
+import HomeCard from './HomeCard';
 import Settings from './Settings';
 import SidebarStatus from './SidebarStatus';
 import View from './View';
@@ -59,6 +60,6 @@ function start(): () => void {
   };
 }
 
-const pomodoro: ExtensionModule = { View, Settings, SidebarStatus, start };
+const pomodoro: ExtensionModule = { View, Settings, SidebarStatus, HomeCard, start };
 
 export default pomodoro;

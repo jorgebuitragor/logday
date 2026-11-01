@@ -52,7 +52,7 @@ const nodeFs = 'node:fs';
 const { readFileSync } = (await import(/* @vite-ignore */ nodeFs)) as { readFileSync: (path: URL, encoding: 'utf8') => string };
 
 import type { DevtoolsContextValue } from '../../extensions/devtools/ui/context';
-import { availableTools, type ToolId } from '../../extensions/devtools/model';
+import type { ToolId } from '../../extensions/devtools/model';
 
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 const VOSEO = /\b(querés|podés|tenés|sabés|elegí|empezá|tocá|probá|escribí|activá|pegá|usá|buscá|pulsá|arrastrá|cambiá|mirá|dejá|guardá|abrí)\b/i;
@@ -303,7 +303,7 @@ describe('TaskShortcutsSheet con ⌘ o Ctrl (AY22)', () => {
 
 function devtools(tool: ToolId, mac = true, language: 'es' | 'en' = 'es'): DevtoolsContextValue {
   return {
-    tool, available: availableTools(false), language, tr: makeDevtoolsTr(language), mac,
+    tool, language, tr: makeDevtoolsTr(language), mac,
     settings: { lastTool: tool, options: {}, layout: 'groups' }, updateSettings: () => {}, openSettings: () => {},
     setOptions: () => {}, announce: () => {}, copyText: async () => true, saveNote: async () => null, openNote: () => {},
     openPicker: () => {}, actionsRef: { current: {} }, loadedFrom: null, clearLoaded: () => {}, takeFocus: () => false,
@@ -329,23 +329,6 @@ describe('DevTools (AY16, AY25)', () => {
     // Sin nada guardado, la herramienta por defecto.
     app.extensions = {};
     expect(text(renderToStaticMarkup(<DevtoolsHelp />))).toContain('Atajos');
-  });
-
-  it('Cliente HTTP: su ayuda y sus atajos solo con la extensión Cliente HTTP activa (specs/cliente-http HT27)', () => {
-    const tr = makeDevtoolsTr('es');
-    app.extensions = { devtools: { enabled: true, settings: { lastTool: 'http' } }, 'http-client': { enabled: true } };
-    const on = text(renderToStaticMarkup(<DevtoolsHelp />));
-    expect(on).toContain(`En esta herramienta ${tr('http.help1')}`);
-    expect(on).toContain(tr('help.k.runHttp'));
-    expect(on).toContain(tr('help.k.tabsHttp'));
-    // Apagada, la última herramienta (Cliente HTTP) ya no está: la ayuda es
-    // la de la herramienta por defecto, sin nada de Cliente HTTP.
-    app.extensions = { devtools: { enabled: true, settings: { lastTool: 'http' } } };
-    const off = text(renderToStaticMarkup(<DevtoolsHelp />));
-    expect(off).not.toContain('En esta herramienta');
-    expect(off).not.toContain('Cliente HTTP');
-    expect(off).toContain(tr('help.k.run'));
-    expect(text(body('http'))).not.toContain('En esta herramienta');
   });
 
   it('"En esta herramienta" arriba, luego lo general y los atajos', () => {
@@ -380,8 +363,8 @@ describe('DevTools (AY16, AY25)', () => {
     }
   });
 
-  it('las 9 herramientas de "En esta herramienta", con sus textos en es y en', () => {
-    expect(Object.keys(TOOL_HELP).sort()).toEqual(['barcode', 'cron', 'diff', 'http', 'jwt', 'list-compare', 'qr', 'regex', 'sql-list']);
+  it('las 8 herramientas de "En esta herramienta", con sus textos en es y en', () => {
+    expect(Object.keys(TOOL_HELP).sort()).toEqual(['barcode', 'cron', 'diff', 'jwt', 'list-compare', 'qr', 'regex', 'sql-list']);
     for (const [tool, keys] of Object.entries(TOOL_HELP)) {
       expect(keys!.length).toBeGreaterThanOrEqual(2);
       for (const key of keys!) {
@@ -470,8 +453,7 @@ describe('los textos (AY14)', () => {
     expect(sectionKeys('en', 'help').sort()).toEqual(sectionKeys('es', 'help').sort());
     expect(sectionKeys('es', 'help').length).toBe(23 + 7);
     expect(devtoolsHelp('en')).toEqual(devtoolsHelp('es'));
-    // 17 generales y atajos (más 2 con Cliente HTTP) y 22 de herramientas (más 3).
-    expect(devtoolsHelp('es').length).toBe(19 + 25);
+    expect(devtoolsHelp('es').length).toBe(17 + 22);
     expect(pomodoroHelp('en')).toEqual(pomodoroHelp('es'));
     expect(pomodoroHelp('es').length).toBe(9);
   });

@@ -6,18 +6,17 @@ import { useShallow } from 'zustand/react/shallow';
 import { invoke } from '@tauri-apps/api/core';
 import { ShieldCheck } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
-import { isExtensionEnabled } from '../state';
 import type { Note } from '../../types/note';
 import { ConfirmDeleteModal } from '../../components/shared/ConfirmDeleteModal';
 import {
-  DEFAULT_TOOL, DEVTOOLS_ID, HTTP_CLIENT_ID, availableTools, clearDrafts, queueLoad, readDevtoolsSettings, resolveToolList, takePendingLoad,
-  toolForBlock, type DevtoolsSettings, type DevtoolsSettingsPatch, type NoteCodeBlock, type ToolId,
+  DEVTOOLS_ID, clearDrafts, queueLoad, readDevtoolsSettings, resolveToolList, takePendingLoad, toolForBlock,
+  type DevtoolsSettings, type DevtoolsSettingsPatch, type NoteCodeBlock, type ToolId,
 } from './model';
 import { openNote as openNoteInApp, saveOutputAsNote } from './notes';
 import { cancelRegex } from './tools/regexRunner';
 import { DevtoolsContext, type DevtoolsContextValue, type FocusTarget, type OptionValue, type ToolActions } from './ui/context';
 import { isMac, localeOf, makeTr, shortDateTime, shortcutLabel, toolKey } from './ui/text';
-import { PICKER_TOOLS, fallbackTool } from './ui/meta';
+import { PICKER_TOOLS } from './ui/meta';
 import { Spinner } from './ui/controls';
 import { ToolNav } from './ui/ToolNav';
 import { NotePicker } from './ui/NotePicker';
@@ -52,17 +51,13 @@ const VIEWS: Record<ToolId, LazyTool> = {
   diff: lazy(() => import('./views/DiffTool')),
   'sql-list': lazy(() => import('./views/SqlListTool')),
   'list-compare': lazy(() => import('./views/ListCompareTool')),
-  // De la extensión Cliente HTTP (specs/cliente-http A10): su motor se
-  // carga con la herramienta, nunca con DevTools sola.
-  http: lazy(() => import('./views/HttpTool')),
 };
 
 export default function DevtoolsView() {
-  const { language, raw, config, update, showToast, openExtensionSettings } = useAppStore(
+  const { language, raw, update, showToast, openExtensionSettings } = useAppStore(
     useShallow((s) => ({
       language: s.language,
       raw: s.extensions[DEVTOOLS_ID]?.settings,
-      config: s.extensions,
       update: s.updateExtensionSettings,
       showToast: s.showToast,
       openExtensionSettings: s.openExtensionSettings,
@@ -71,14 +66,8 @@ export default function DevtoolsView() {
   const settings = useMemo(() => readDevtoolsSettings(raw), [raw]);
   const tr = useMemo(() => makeTr(language), [language]);
   const mac = useMemo(isMac, []);
-  // HT27: Cliente HTTP solo está con su extensión activa.
-  const httpOn = isExtensionEnabled(config, HTTP_CLIENT_ID);
-  const available = useMemo(() => availableTools(httpOn), [httpOn]);
 
-  const [chosen, setTool] = useState<ToolId>(settings.lastTool);
-  // Si la elegida ya no está (era Cliente HTTP y se apagó), se abre la de
-  // por defecto; `lastTool` no se toca hasta que se elija otra.
-  const tool = available.includes(chosen) ? chosen : DEFAULT_TOOL;
+  const [tool, setTool] = useState<ToolId>(settings.lastTool);
   // Cambia para volver a montar la herramienta (vaciar, traer de una nota).
   const [mountKey, setMountKey] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -169,7 +158,7 @@ export default function DevtoolsView() {
   const loadBlock = useCallback(
     (note: Note, block: NoteCodeBlock) => {
       setPickerOpen(false);
-      const target = toolForBlock(block, available) ?? fallbackTool(tool);
+      const target = toolForBlock(block) ?? (PICKER_TOOLS.has(tool) ? tool : 'json');
       queueLoad(target, block.code);
       // El borrador ya lleva el bloque; la herramienta se vuelve a montar.
       takePendingLoad(target);
@@ -179,7 +168,7 @@ export default function DevtoolsView() {
       goTo(target, 'input');
       announce(tr('loadedFrom', { title: note.title }));
     },
-    [announce, available, goTo, setOptions, tool, tr],
+    [announce, goTo, setOptions, tool, tr],
   );
 
   const clearAll = () => {
@@ -194,7 +183,6 @@ export default function DevtoolsView() {
   const ctx = useMemo<DevtoolsContextValue>(
     () => ({
       tool,
-      available,
       language,
       tr,
       mac,
@@ -222,7 +210,7 @@ export default function DevtoolsView() {
       switcherOpen,
       setSwitcherOpen,
     }),
-    [tool, available, language, tr, mac, settings, setOptions, updateSettings, openSettings, announce, copyText, saveNote, openNote, loaded, goTo, switcherOpen],
+    [tool, language, tr, mac, settings, setOptions, updateSettings, openSettings, announce, copyText, saveNote, openNote, loaded, goTo, switcherOpen],
   );
 
   // Atajos (design §7): todos con ⌘⇧ (Ctrl+Shift) para no chocar con los
@@ -236,7 +224,7 @@ export default function DevtoolsView() {
     if (e.altKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
       // D22: en el orden que se ve, con las de los grupos plegados y sin
       // las ocultas. Si la activa está oculta, ↓ va a la primera y ↑ a la última.
-      const { order } = resolveToolList(settings, (t) => tr(toolKey(t, 'name')), localeOf(language), available);
+      const { order } = resolveToolList(settings, (t) => tr(toolKey(t, 'name')), localeOf(language));
       const i = order.indexOf(tool);
       const down = e.key === 'ArrowDown';
       const next = i < 0 ? order[down ? 0 : order.length - 1] : order[(i + (down ? 1 : -1) + order.length) % order.length];
@@ -267,9 +255,6 @@ export default function DevtoolsView() {
   };
 
   const View = VIEWS[tool];
-  // D11: con Cliente HTTP en la lista, "todo se procesa en este equipo"
-  // dejaría de ser cierto.
-  const privacyNote = tr(httpOn ? 'privacyNoteWithHttp' : 'privacyNote');
 
   return (
     <DevtoolsContext.Provider value={ctx}>
@@ -288,7 +273,7 @@ export default function DevtoolsView() {
           <div className="border-t border-[var(--border)] px-3 py-2.5">
             <p className="flex items-start gap-1.5 text-[10px] leading-snug text-[var(--text-hint)]">
               <ShieldCheck size={11} className="mt-px shrink-0" aria-hidden />
-              {privacyNote}
+              {tr('privacyNote')}
             </p>
             <button
               type="button"
@@ -313,7 +298,7 @@ export default function DevtoolsView() {
           <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--border)] px-5 py-2.5 @xl/devtools:hidden">
             <p className="flex items-start gap-1.5 text-[10px] leading-snug text-[var(--text-hint)]">
               <ShieldCheck size={11} className="mt-px shrink-0" aria-hidden />
-              {privacyNote}
+              {tr('privacyNote')}
             </p>
             <button
               type="button"

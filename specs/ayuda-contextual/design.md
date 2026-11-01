@@ -221,18 +221,11 @@ Las teclas salen de `shortcut(spec)`. En macOS se ven como ⇧⌘F, ⌥⌘↓…
 | help.k.clear | `mod+shift+backspace` | Limpiar la entrada | Clear the input |
 | help.k.tabs | `alt+mod+1` … `alt+mod+4` | Cambiar de pestaña en Comparar listas | Switch tabs in Compare lists |
 
-Con la herramienta Cliente HTTP disponible (specs/cliente-http HT27), dos filas cambian de texto (`withHttp` en `HELP_SHORTCUTS`), porque esa herramienta también envía con ⌘↵ y tiene pestañas en la respuesta:
-
-| Clave | En lugar de | es | en |
-|---|---|---|---|
-| help.k.runHttp | help.k.run | Procesar, generar o enviar la petición | Process, generate or send the request |
-| help.k.tabsHttp | help.k.tabs | Cambiar de pestaña en Comparar listas y en la respuesta de Cliente HTTP | Switch tabs in Compare lists and in the HTTP client response |
-
 Base: `devtools/View.tsx:197-235`, `ui/OutputPanel.tsx:46,53`, `ui/CodeImage.tsx:84`, `views/ListCompareTool.tsx:95`.
 
 **DevTools: "En esta herramienta"** (`TOOL_HELP`)
 
-Solo estas 9 herramientas lo tienen. En las demás, la descripción bajo el título basta. La de Cliente HTTP solo se ve con esa extensión activa.
+Solo estas 8 herramientas lo tienen. En las demás, la descripción bajo el título basta.
 
 | Clave | es | en |
 |---|---|---|
@@ -258,9 +251,6 @@ Solo estas 9 herramientas lo tienen. En las demás, la descripción bajo el tít
 | barcode.help2 | En EAN, UPC e ITF-14 puedes omitir el dígito de control: se calcula y se agrega al final. | In EAN, UPC and ITF-14 you can leave out the check digit: it's calculated and added at the end. |
 | jwt.help1 | Pega el token; el prefijo «Bearer» se quita solo. | Paste the token; the "Bearer" prefix is removed. |
 | jwt.help2 | Se decodifica, pero la firma no se verifica: decodificarlo no prueba que sea auténtico. | It's decoded, but the signature isn't verified: decoding doesn't prove it's authentic. |
-| http.help1 | Escribe las cabeceras una por línea, como Nombre: valor. Las variables van como {{baseUrl}} y salen del entorno activo, que eliges arriba a la derecha. | Write one header per line, as Name: value. Variables go as {{baseUrl}} and come from the active environment, which you pick at the top right. |
-| http.help2 | Con un entorno protegido, POST, PUT, PATCH y DELETE piden confirmación antes de enviarse. También se pide si un secreto va a un host que no es de confianza. | With a protected environment, POST, PUT, PATCH and DELETE ask for confirmation before they are sent. So does a secret going to a host that isn't trusted. |
-| http.help3 | «Guardar en una nota» crea una nota con la petición en un bloque http, con los nombres de las variables y nunca sus valores. Lo que escribes aquí y la respuesta solo viven en la memoria. | "Save to a note" creates a note with the request in an http block, with the variable names and never their values. What you type here and the response only live in memory. |
 
 Base: `tools/regex.ts:28` y `MAX_MATCHES`, `tools/regexRunner.ts:7` (`REGEX_TIMEOUT_MS`), `tools/cron.ts:76-90`, `tools/lists.ts:14-16,103-125`, e `i18n.ts` (`devtools`: `diffEol`, `qrMarginLow`, `barcodeCheckDigit`, `jwtNotVerified`, `jwtBearerRemoved`).
 
@@ -434,3 +424,23 @@ Otros textos: `settings.shortcutHelp` ("Ayuda de la pantalla" / "Help for this s
   - los botones van con `px-1.5` y `gap-0.5`, y se quitó el `min-w-[2.75rem]` del título, que era para el botón de ayuda.
   - Los umbrales van en rem, así que crecen con el tamaño de letra de la app.
 
+
+## Cambio del 31 oct 2026: la ayuda del Cliente HTTP (AY30)
+
+- `helpTopics.ts`: `'ext:http-client'` → `'http-client'`. `ScreenHelp.tsx` carga con `lazy` el `default` de `extensions/http-client/ui/Help.tsx`, como DevTools y Pomodoro. El nombre en el botón es `extensions['http-client.name']` ("Ayuda: Cliente HTTP") y el título, `httpClient.helpTitle`.
+- El cuerpo son los puntos `help1`…`help6` de la sección `httpClient`, con `KeyedText` (`{send}` es ⌘↵ o Ctrl+Enter, de `sendShortcut`), y los atajos de `httpHelpRows`. `{{baseUrl}}` se ve tal cual: `splitKeys` y `interpolate` solo cambian las claves que reciben.
+
+| Clave | es | en |
+|---|---|---|
+| helpTitle | Cómo funciona el Cliente HTTP | How HTTP client works |
+| help1 | A la izquierda, «Peticiones» reúne los bloques http de todas tus notas, agrupados por nota. Elige una para cargarla en el formulario; «Abrir la nota» te lleva a ella. | On the left, "Requests" gathers the http blocks from all your notes, grouped by note. Pick one to load it into the form; "Open the note" takes you to it. |
+| help2 | Para crear una, escribe un bloque ```http en cualquier nota, o empieza con «Nueva petición» y usa «Guardar en una nota». | To create one, write an ```http block in any note, or start with "New request" and use "Save to a note". |
+| help3 | En el formulario van el método, la URL, las cabeceras (una por línea, como Nombre: valor) y el cuerpo. Las variables van como {{baseUrl}} y salen del entorno activo, que eliges arriba a la derecha. | The form has the method, the URL, the headers (one per line, as Name: value) and the body. Variables go as {{baseUrl}} and come from the active environment, which you pick at the top right. |
+| help4 | Los entornos y sus variables se definen en Opciones → Cliente HTTP. Los secretos van al llavero del sistema, nunca a la nota. Con un entorno protegido, POST, PUT, PATCH y DELETE piden confirmación, y también se pide si un secreto va a un host que no es de confianza. | Environments and their variables are set in Settings → HTTP client. Secrets go to the system keychain, never to the note. With a protected environment, POST, PUT, PATCH and DELETE ask for confirmation, and so does a secret going to a host that isn't trusted. |
+| help5 | Lo que cambias aquí y la respuesta solo viven en la memoria: la nota de la que vino la petición no cambia. Para guardarla, usa «Guardar en una nota». | What you change here and the response only live in memory: the note the request came from doesn't change. To keep it, use "Save to a note". |
+| help6 | Los bloques http también se envían desde la nota misma: pulsa Enviar en su barra, o {send} con el cursor dentro del bloque. | http blocks can also be sent from the note itself: press Send on their bar, or {send} with the cursor inside the block. |
+| helpKeySend | Enviar la petición | Send the request |
+| helpKeyUrl | Enviar, con el foco en la URL | Send, with the focus on the URL |
+| helpKeyCancel | Cancelar el envío en curso | Cancel the request in progress |
+
+Comprobado contra el código: ⌘↵ y Esc los maneja el `onKeyDown` de `RequestForm.tsx`, Enter el de la URL; ⌘↵ en el bloque de la nota es el de `MermaidAwareCodeBlock` (specs/cliente-http A3.3).

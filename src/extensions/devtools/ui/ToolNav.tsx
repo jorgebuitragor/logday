@@ -66,12 +66,11 @@ export function ToolNav({
   showKbd?: boolean;
   idPrefix: string;
 }) {
-  const { tr, shortcut, settings, language, updateSettings, openSettings, available } = useDevtools();
+  const { tr, shortcut, settings, language, updateSettings, openSettings } = useDevtools();
   const [query, setQuery] = useState('');
-  // Sin Cliente HTTP, su herramienta no está en la lista ni en la búsqueda.
   const resolved = useMemo(
-    () => resolveToolList(settings, (tool) => tr(toolKey(tool, 'name')), localeOf(language), available),
-    [settings, tr, language, available],
+    () => resolveToolList(settings, (tool) => tr(toolKey(tool, 'name')), localeOf(language)),
+    [settings, tr, language],
   );
 
   const blocks = useMemo(() => {

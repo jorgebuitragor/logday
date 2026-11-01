@@ -54,6 +54,15 @@ Estado: en progreso.
 - [x] `openExtensionSettings(id)`: Opciones abierto en la página de una
   extensión (R21).
 
+## Acciones de la barra en el modo inline (R24, 31 oct 2026)
+
+- [x] `setLanguage` y `setCode` en `NoteBlockProps`, implementadas en
+  `InlineExtensionBlockView` con `setBlockLanguageTr` y `setBlockCodeTr`
+  (`extensionBlockPos.ts`, con pruebas). Las estrena el Cliente HTTP
+  (specs/cliente-http HT36–HT38).
+- [ ] Probar en la app de QA (el lenguaje desde la barra, el scroll y el
+  foco, Deshacer).
+
 ## Primera extensión
 
 - [x] `team-chat`, en modo local. Ver

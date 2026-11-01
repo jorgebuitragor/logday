@@ -1070,6 +1070,9 @@ const dict = {
       consentCancel: 'Cancelar',
       removeConfig: 'Quitar configuración',
       openSettings: 'Configurar',
+      // R28: interruptor del apartado de la extensión y su aviso.
+      enabledLabel: 'Activada',
+      disabledToast: '{name} desactivada',
       removeConfigTitle: 'Quitar configuración',
       removeConfigMessage: 'Se borran la configuración de esta extensión y sus datos en el llavero del sistema, y queda desactivada. Tus tareas, notas y dailys no se tocan.',
       removeConfigConfirm: 'Quitar',
@@ -4018,6 +4021,8 @@ const dict = {
       consentCancel: 'Cancel',
       removeConfig: 'Remove settings',
       openSettings: 'Configure',
+      enabledLabel: 'On',
+      disabledToast: '{name} turned off',
       removeConfigTitle: 'Remove settings',
       removeConfigMessage: "This extension's settings and its data in the system keychain are deleted, and it is turned off. Your tasks, notes and dailys are not touched.",
       removeConfigConfirm: 'Remove',

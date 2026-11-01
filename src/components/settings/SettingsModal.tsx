@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { X, Settings2, PanelLeft, SlidersHorizontal, LayoutTemplate, Keyboard, FolderOpen, RefreshCw, GitBranch, Puzzle, Info } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
@@ -15,6 +16,7 @@ import { ExtensionsSettingsTab } from './ExtensionsSettingsTab';
 import { TemplatesSettingsTab } from './TemplatesSettingsTab';
 import { ModalOverlay } from '../shared/ModalOverlay';
 import { ModalPanel } from '../shared/ModalPanel';
+import ToggleSwitch from '../shared/ToggleSwitch';
 import { useExtensions } from '../../extensions/useExtensions';
 import { ExtensionSlot } from '../../extensions/ExtensionSlot';
 import { extensionText } from '../../extensions/text';
@@ -252,21 +254,53 @@ export function SettingsModal() {
 }
 
 
-/** Página propia del panel de una extensión: su nombre y descripción, y su
- *  `Settings` aislado en `ExtensionBoundary` (R15, R21). */
-function ExtensionSettingsPage({ def }: { def: ExtensionDefinition }) {
-  const language = useAppStore((s) => s.language);
+/** Página propia del panel de una extensión: su nombre y descripción, el
+ *  interruptor para desactivarla (R28) y su `Settings` aislado en
+ *  `ExtensionBoundary` (R15, R21). */
+export function ExtensionSettingsPage({ def }: { def: ExtensionDefinition }) {
+  const { language, showToast, openExtensionSettings, openExtensionsCatalog } = useAppStore(
+    useShallow((s) => ({
+      language: s.language,
+      showToast: s.showToast,
+      openExtensionSettings: s.openExtensionSettings,
+      openExtensionsCatalog: s.openExtensionsCatalog,
+    })),
+  );
+  const { disableWithUndo } = useExtensions();
   const Icon = def.icon;
+  const name = extensionText(language, def.id, 'name');
+
+  // Solo se dibuja con la extensión activa, así que el interruptor solo
+  // apaga. Sin confirmación: desactivar conserva la configuración (R7), y
+  // el aviso trae Deshacer. Al apagarla, SettingsModal vuelve al catálogo.
+  const handleDisable = async () => {
+    const undo = await disableWithUndo(def.id, {
+      reopen: openExtensionSettings,
+      needsConsent: openExtensionsCatalog,
+    });
+    showToast({
+      kind: 'info',
+      title: t(language, 'extensions', 'disabledToast').replace('{name}', name),
+      action: { label: t(language, 'toast', 'undo'), onClick: () => void undo() },
+    });
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-start gap-3">
         <div className="rounded-lg bg-indigo-500/10 p-2 text-indigo-400">
           <Icon size={16} />
         </div>
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-[var(--text-primary)]">{extensionText(language, def.id, 'name')}</h3>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">{name}</h3>
           <p className="mt-0.5 text-[11px] text-[var(--text-hint)]">{extensionText(language, def.id, 'description')}</p>
         </div>
+        {/* El texto visible da nombre al interruptor (la etiqueta envuelve
+            el botón). */}
+        <label className="flex shrink-0 cursor-pointer items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+          {t(language, 'extensions', 'enabledLabel')}
+          <ToggleSwitch checked onChange={(next) => { if (!next) void handleDisable(); }} />
+        </label>
       </div>
       <ExtensionSlot id={def.id} point="Settings" props={{}} />
     </div>

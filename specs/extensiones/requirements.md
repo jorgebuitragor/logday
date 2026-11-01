@@ -101,6 +101,17 @@ tengan su primera extensión.
   catálogo.
   - Una extensión DEBERÁ poder abrir Opciones directamente en su página
     (por ejemplo, el botón "Opciones" de la vista del Pomodoro).
+- R28. La página de cada extensión en Opciones (R21) DEBERÁ empezar con
+  una cabecera con su icono, su nombre, su descripción corta y un
+  interruptor "Activada" ("On" en inglés). Al apagarlo, la extensión
+  DEBERÁ desactivarse como desde el catálogo (R7), sin pedir
+  confirmación, porque su configuración se conserva; Opciones vuelve al
+  catálogo (R21). DEBERÁ aparecer un aviso "{nombre} desactivada" con
+  "Deshacer", que la reactiva sin volver a pedir el aviso ya aceptado
+  (R6) y abre otra vez su página. Si entretanto se quitó su
+  configuración (R8), Deshacer NO DEBERÁ saltarse el aviso: abre el
+  catálogo, donde se activa aceptándolo. (1 nov 2026, pedido por Jorge:
+  antes solo se podía apagar desde el catálogo.)
 - R26. Una extensión DEBERÁ poder mostrar un estado pequeño y siempre
   visible en el menú lateral, abajo (encima de "Opciones" o, en la Barra
   de íconos, al pie del panel), tanto con el menú expandido como

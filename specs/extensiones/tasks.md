@@ -77,6 +77,16 @@ Estado: en progreso.
 - [ ] Probar en la app de QA (el lenguaje desde la barra, el scroll y el
   foco, Deshacer).
 
+## Interruptor en la página de la extensión (R28, 1 nov 2026)
+
+- [x] Cabecera con interruptor "Activada" en `ExtensionSettingsPage`,
+  `disableWithUndo` en `actions.ts` y el aviso con Deshacer.
+- [x] Pruebas: `actions.test.ts` (configuración y aviso conservados,
+  Deshacer reabre, no salta un aviso borrado) y
+  `ExtensionSettingsPage.test.tsx` (cabecera en es y en).
+- [x] Prueba en el navegador con Tauri simulado: apagar desde la página,
+  volver al catálogo y Deshacer con la configuración intacta.
+
 ## Primera extensión
 
 - [x] `team-chat`, en modo local. Ver

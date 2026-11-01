@@ -25,7 +25,7 @@ function setup(initial: ExtensionsConfig = {}) {
     setEnabled,
     now: () => NOW,
   });
-  return { actions, setEnabled, config: () => config };
+  return { actions, setEnabled, config: () => config, replace: (next: ExtensionsConfig) => { config = next; } };
 }
 
 describe('useExtensions: activar con aviso (R6)', () => {
@@ -65,5 +65,39 @@ describe('useExtensions: activar con aviso (R6)', () => {
     expect(await actions.requestEnable('jira' as ExtensionId)).toBe('unknown');
     await actions.acceptConsent('jira' as ExtensionId);
     expect(setEnabled).not.toHaveBeenCalled();
+  });
+});
+
+describe('desactivar desde su apartado de Opciones, con Deshacer (R28)', () => {
+  const targets = () => ({ reopen: vi.fn(), needsConsent: vi.fn() });
+
+  it('desactiva conservando la configuración y el aviso aceptado (R7)', async () => {
+    const { actions, config } = setup({ 'team-chat': { enabled: true, consentAt: NOW, settings: { a: 1 } } });
+    await actions.disableWithUndo('team-chat', targets());
+    expect(config()['team-chat']).toEqual({ enabled: false, consentAt: NOW, settings: { a: 1 } });
+  });
+
+  it('Deshacer la reactiva sin volver a pedir el aviso y reabre su apartado', async () => {
+    const { actions, setEnabled, config } = setup({ 'team-chat': { enabled: true, consentAt: NOW, settings: { a: 1 } } });
+    const t = targets();
+    const undo = await actions.disableWithUndo('team-chat', t);
+    expect(await undo()).toBe('enabled');
+    expect(config()['team-chat']).toEqual({ enabled: true, consentAt: NOW, settings: { a: 1 } });
+    // Sin fecha nueva: el aviso aceptado se conserva tal cual.
+    expect(setEnabled).toHaveBeenLastCalledWith('team-chat', true);
+    expect(t.reopen).toHaveBeenCalledWith('team-chat');
+    expect(t.needsConsent).not.toHaveBeenCalled();
+  });
+
+  it('si entretanto se quitó la configuración, Deshacer no salta el aviso (R6)', async () => {
+    const { actions, config, replace } = setup({ 'team-chat': { enabled: true, consentAt: NOW } });
+    const t = targets();
+    const undo = await actions.disableWithUndo('team-chat', t);
+    // Lo que deja "Quitar configuración" (R8): sin su entrada ni `consentAt`.
+    replace({});
+    expect(await undo()).toBe('needs-consent');
+    expect(config()).toEqual({});
+    expect(t.needsConsent).toHaveBeenCalledWith('team-chat');
+    expect(t.reopen).not.toHaveBeenCalled();
   });
 });

@@ -35,7 +35,10 @@ export function ToastViewport() {
               <Icon size={16} />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-[var(--text-primary)]">{toast.title}</p>
+              {/* Pasa a otra línea en vez de cortarse: con "Deshacer" al
+                  lado, títulos como "Agentes de IA (MCP) desactivada" no
+                  cabían en una (specs/extensiones R28). */}
+              <p className="break-words text-sm font-medium text-[var(--text-primary)]">{toast.title}</p>
               {toast.description && (
                 <p className="mt-0.5 text-xs text-[var(--text-secondary)]">{toast.description}</p>
               )}

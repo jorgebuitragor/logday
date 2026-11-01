@@ -180,6 +180,20 @@ extensions?: Partial<Record<ExtensionId, {
   módulo. La pestaña es `ext:<id>` y muestra el icono, el nombre, la
   descripción y su `Settings` dentro de `ExtensionBoundary`. Si la
   extensión se desactiva con su página abierta, se vuelve al catálogo.
+- **Interruptor en la página de la extensión** (R28): `ExtensionSettingsPage`
+  (en `SettingsModal.tsx`, la única que dibuja las páginas `ext:<id>`)
+  pone a la derecha de la cabecera un `ToggleSwitch` dentro de un
+  `<label>` "Activada", que le da nombre. Como la página solo existe con
+  la extensión activa, el interruptor solo apaga. Usa
+  `disableWithUndo` de `actions.ts`: llama a `setExtensionEnabled(id,
+  false)` y devuelve el Deshacer del aviso (`showToast` con `action`).
+  Deshacer reactiva con `requestEnable`, que no pide el aviso si sigue
+  `consentAt` y no lo salta si se borró; después abre la página con
+  `openExtensionSettings` (que también abre Opciones si se cerró) o, si
+  falta el aviso, el catálogo con `openExtensionsCatalog`.
+  El título del aviso (`ToastViewport`) pasa a otra línea en vez de
+  cortarse: con "Deshacer" al lado, "Agentes de IA (MCP) desactivada"
+  no cabía en los 360 px del aviso.
 - **Dos grupos,** con un encabezado cada uno, y tarjetas en orden
   alfabético. Si un grupo no tiene extensiones en Desktop, no se
   muestra.

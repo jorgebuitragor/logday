@@ -1,6 +1,6 @@
 // El entorno activo, siempre a la vista en la barra de cada bloque
 // (Interfaz §1.3, HT19). Es uno solo para todas las peticiones; elegir
-// otro lo cambia en todos los bloques. Se comparte con DevTools (PR 2).
+// otro lo cambia en todos los bloques. Se comparte con la pantalla (HT33).
 import { ChevronDown, Server, ShieldAlert } from 'lucide-react';
 import { useAppStore } from '../../../store/appStore';
 import { EXTENSION_ID, readHttpSettings, activeEnvironment } from '../core/environments';

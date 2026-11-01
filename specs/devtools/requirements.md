@@ -12,7 +12,7 @@ Jorge la eligió el 30 oct 2026 entre las candidatas del grupo Herramientas, con
 
 ### Vista
 
-- D0. MIENTRAS la extensión esté activa, el menú lateral DEBERÁ tener la sección "DevTools" (R11). Su vista DEBERÁ listar las herramientas (por grupo, o de la A a la Z según D18) y abrir una a la vez. Los grupos son Formatos, Codificar, Generadores, Fechas, Texto, Listas y, con la extensión Cliente HTTP activa, Red (D25).
+- D0. MIENTRAS la extensión esté activa, el menú lateral DEBERÁ tener la sección "DevTools" (R11). Su vista DEBERÁ listar las herramientas (por grupo, o de la A a la Z según D18) y abrir una a la vez. Los grupos son Formatos, Codificar, Generadores, Fechas, Texto y Listas.
 
 ### Herramientas
 
@@ -21,6 +21,7 @@ Jorge la eligió el 30 oct 2026 entre las candidatas del grupo Herramientas, con
   - YAML: validar y formatear.
   - XML: formatear, minificar y validar que esté bien formado.
   - Convertir JSON → YAML, YAML → JSON y JSON → CSV. Para CSV, la entrada es un arreglo de objetos y las columnas son la unión de sus claves.
+  - Visor HTML: ver D26.
   - SI la entrada no es válida, la herramienta DEBERÁ decir qué falla y, si se sabe, en qué línea y columna. El error DEBERÁ ser el mismo en macOS, Windows y Linux, sin depender del motor del WebView.
   - Al leer YAML NO DEBERÁN ejecutarse tipos de JavaScript (`!!js/function`).
 - D2. **Codificar y decodificar.**
@@ -54,9 +55,8 @@ Jorge la eligió el 30 oct 2026 entre las candidatas del grupo Herramientas, con
 - D10. **Puente con Logday.**
   - "Guardar en una nota" DEBERÁ crear una nota nueva, en la raíz, con la salida en un bloque de código del lenguaje que corresponda, y avisar con un toast que permita abrirla.
   - "Traer de una nota" DEBERÁ dejar elegir una nota y uno de sus bloques de código, y cargarlo en la herramienta que corresponda a su lenguaje (o a su contenido, si no tiene lenguaje).
-- D11. DevTools NO DEBERÁ enviar nada fuera del equipo. Por eso no lleva el aviso de R6.
-  - La herramienta Cliente HTTP (D25) es de la extensión Cliente HTTP, que lleva su propio aviso de R6, y solo aparece con las dos activas. Envía una petición solo cuando el usuario pulsa Enviar (specs/cliente-http HT3).
-  - El pie de la lista DEBERÁ decirlo: "Todo se procesa en este equipo" sin Cliente HTTP, y "Todo se procesa en este equipo, salvo Cliente HTTP, que envía tus peticiones cuando pulsas Enviar" con ella.
+- D11. DevTools NO DEBERÁ enviar nada fuera del equipo, sin excepción. Por eso no lleva el aviso de R6, y el pie de la lista dice "Todo se procesa en este equipo".
+  - Restaurado el 31 oct 2026: entre el PR 2 del Cliente HTTP y este cambio tuvo la excepción de la herramienta Cliente HTTP (D25, retirado). Pedido por Jorge.
 - D12. Su código DEBERÁ cargarse solo cuando está activa (R16). Las dependencias nuevas DEBERÁN ser mínimas:
   - `cronstrue`, con el español cargado aparte;
   - `qrcode-generator`;
@@ -109,12 +109,26 @@ Pedido por Jorge el 31 oct 2026: «¿Por qué no existe un apartado de opciones 
 - D23. La página DEBERÁ tener "Restablecer las opciones de las herramientas", que borra las opciones recordadas de todas (D9) y conserva lo demás. Solo DEBERÁ verse si hay opciones guardadas.
 - D24. Las preferencias de D17–D23 son locales y no se sincronizan, como el resto de la configuración de la extensión. Una herramienta o un grupo que se agregue en una versión futura DEBERÁ aparecer al final de su grupo (o de la lista de grupos), visible y desplegado.
 
-### Red (specs/cliente-http)
+### Red (retirado el 31 oct 2026)
 
-- D25. MIENTRAS las extensiones DevTools y Cliente HTTP estén activas, la lista DEBERÁ tener el grupo "Red", al final (D24), con la herramienta "Cliente HTTP" (specs/cliente-http HT27 y HT28).
-  - Con Cliente HTTP apagada, la herramienta y su grupo NO DEBERÁN aparecer en la columna, el selector de la ventana angosta, la búsqueda, ⌥⌘↓/↑, la ayuda ni Opciones → DevTools, y un bloque ```` ```http ```` de "Traer de una nota" no se abre en ella. Lo guardado de ella (orden, oculta, plegado) se conserva para cuando vuelva.
-  - SI la última herramienta abierta era Cliente HTTP y ya no está, DevTools DEBERÁ abrir la de por defecto (JSON) sin cambiar lo guardado.
-  - Lo que se escribe en ella y su respuesta viven en memoria (D9): "Vaciar todas las herramientas" y desactivar DevTools o Cliente HTTP lo borran.
+- ~~D25. El grupo "Red", con la herramienta "Cliente HTTP" mientras DevTools y Cliente HTTP estuvieran activas.~~ **Retirado el 31 oct 2026, pedido por Jorge:** no la encontraba (no tenía Cliente HTTP activa) y le pareció confuso que una extensión con su propia opción en Extensiones viviera dentro de otra. El Cliente HTTP tiene ahora su propia pantalla (specs/cliente-http HT33–HT35), y DevTools vuelve a sus seis grupos y a D11 sin excepción.
+  - Lo guardado de entonces se lee sin romper y se ignora: `lastTool: 'http'` abre la herramienta por defecto (JSON), y `http` o `network` en `groupOrder`, `toolOrder`, `hidden` y `collapsed` se descartan al leer (`readDevtoolsSettings`) y desaparecen del archivo la próxima vez que se guardan esas listas.
+  - Un bloque ```` ```http ```` de "Traer de una nota" se trata como uno sin herramienta propia: se carga en la abierta, o en JSON.
+
+### Visor HTML
+
+Pedido por Jorge el 31 oct 2026: una herramienta para visualizar HTML. Eligió la opción aislada: la vista previa no ejecuta scripts ni carga nada de fuera por defecto, para que DevTools siga cumpliendo D11.
+
+- D26. **Visor HTML** (grupo Formatos, al final, D24).
+  - Editor del HTML y, al lado (debajo en ventana angosta), su vista previa, que se rehace 250 ms después de dejar de escribir (con el tope de D8).
+  - Acciones: Formatear (2 espacios, 4 o tab), Minificar, Copiar y Limpiar. Formatear y Minificar cambian el texto del editor.
+  - Ancho de la vista previa: Móvil (375 px), Tablet (768 px) o Completo. SI el ancho elegido no cabe, la página DEBERÁ escalarse para verse entera.
+  - Bajo el editor, el tamaño y las líneas. La herramienta DEBERÁ avisar de las etiquetas sin cerrar y de los cierres que no cierran nada, con su línea, sin contar los cierres opcionales (`<li>`, `<p>`, `<td>`…). No es un validador.
+  - La vista previa NO DEBERÁ ejecutar scripts, enviar formularios, abrir ventanas, navegar fuera del documento ni, por defecto, cargar nada de la red. Va en un iframe con `sandbox` vacío y una CSP propia, que el HTML del usuario no puede relajar.
+  - "Cargar recursos externos" DEBERÁ estar apagado al abrir la herramienta y no recordarse: encendido, la vista previa carga imágenes, estilos, fuentes y medios por `https:`, nunca scripts ni `http:`.
+  - Bajo la vista previa, el aviso "Vista previa aislada: sin scripts ni recursos externos." (o, con los externos, que esos se descargan de internet).
+  - Lo que se escribe vive en memoria (D9); se recuerdan el ancho y la indentación. Un bloque ```` ```html ```` de "Traer de una nota" se abre aquí (D10); uno ```` ```svg ````, en XML.
+  - La vista previa es un componente compartido (`HtmlPreview`): el Cliente HTTP lo reutilizará para las respuestas `text/html` (paquete B de su rediseño), con el mismo aislamiento.
 
 ## Decisiones (30 oct 2026)
 
@@ -145,6 +159,14 @@ Jorge aprobó el diseño de las opciones (D17–D24) con todas sus recomendacion
 - No se centralizan las opciones de cada herramienta (la indentación, por ejemplo): cada una recuerda la suya.
 - El arrastre de la página y el arreglo del foco de "Mover arriba / abajo" (con `aria-disabled`) van en el mismo PR, también en Opciones → Navegación (`SidebarSettings.tsx`).
 
+## Decisiones del Visor HTML (31 oct 2026)
+
+- La vista previa es aislada (la opción que eligió Jorge): sin scripts nunca, y sin red salvo que se pida.
+- "Cargar recursos externos" no se recuerda ni entre herramientas: cargar de internet deja ver a terceros qué se está mirando (los píxeles de seguimiento de un correo), así que es una decisión de cada vez.
+- Con los externos, solo `https:`. `http:` no: va sin cifrar, y en Windows la app se sirve desde `http://tauri.localhost`, así que abriría también las direcciones de la propia app.
+- Los enlaces de la vista previa no se abren, tampoco los `#ancla`: en un `srcdoc` se resuelven contra la URL de la app y navegarían el iframe (design, Adenda H).
+- Formatear y Minificar son tolerantes como el navegador: nunca dan error y no agregan los cierres que faltan.
+
 ## Fuera de alcance (por ahora)
 
 - Verificar la firma de un JWT (pediría la clave).
@@ -152,3 +174,4 @@ Jorge aprobó el diseño de las opciones (D17–D24) con todas sus recomendacion
 - Un editor de código con resaltado mientras se escribe (Monaco pesa varios MB).
 - Una herramienta fija al abrir, herramientas favoritas o recientes, y el ancho de la columna (decisiones del 31 oct 2026).
 - DevTools en Web y Mobile.
+- En el Visor HTML: ejecutar scripts, abrir los enlaces, un validador de HTML y resaltado mientras se escribe.

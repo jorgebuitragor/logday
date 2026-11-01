@@ -7,6 +7,9 @@ import type { ExtensionDefinition, ExtensionId, ExtensionModule } from './types'
 export interface ExtensionRuntime {
   /** Carga el módulo (una vez; si falla, se reintenta en la siguiente). */
   load: (id: ExtensionId) => Promise<ExtensionModule>;
+  /** El módulo si ya terminó de cargarse, sin esperar: para lo que tiene
+   *  que responder en el acto (pegar en una nota). Nunca lo carga (R16). */
+  peek: (id: ExtensionId) => ExtensionModule | undefined;
   /** Deja corriendo exactamente las extensiones de `ids`: arranca las
    *  nuevas y para las que ya no están. */
   sync: (ids: Iterable<ExtensionId>) => Promise<void>;
@@ -23,6 +26,7 @@ export function createExtensionRuntime(
   getDef: (id: ExtensionId) => ExtensionDefinition | undefined,
 ): ExtensionRuntime {
   const modules = new Map<ExtensionId, Promise<ExtensionModule>>();
+  const loaded = new Map<ExtensionId, ExtensionModule>();
   // Las que deberían estar corriendo, y la función que para cada una.
   const wanted = new Set<ExtensionId>();
   const stops = new Map<ExtensionId, () => void>();
@@ -34,9 +38,14 @@ export function createExtensionRuntime(
     if (!def) return Promise.reject(new Error(`Extensión desconocida: ${id}`));
     const promise = def.load();
     modules.set(id, promise);
-    promise.catch(() => {
-      if (modules.get(id) === promise) modules.delete(id);
-    });
+    promise.then(
+      (mod) => {
+        if (modules.get(id) === promise) loaded.set(id, mod);
+      },
+      () => {
+        if (modules.get(id) === promise) modules.delete(id);
+      },
+    );
     return promise;
   };
 
@@ -73,6 +82,7 @@ export function createExtensionRuntime(
 
   return {
     load,
+    peek: (id) => loaded.get(id),
     sync: async (ids) => {
       const next = new Set(ids);
       for (const id of [...wanted]) if (!next.has(id)) stop(id);

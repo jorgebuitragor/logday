@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { Schema } from '@tiptap/pm/model';
 import { EditorState, TextSelection } from '@tiptap/pm/state';
-import { blockIndexAt, changedRange, inlineRunTarget, setBlockCodeTr, setBlockLanguageTr } from './extensionBlockPos';
+import {
+  blockCodesOf, blockIndexAt, canStartCompact, changedRange, inlineRunTarget, revealsCompact, selectionInBlock, selectionOutsideTr,
+  setBlockCodeTr, setBlockLanguageTr,
+} from './extensionBlockPos';
 import { emitNoteBlockRun, subscribeNoteBlockRun, type NoteBlockRunEvent } from '../../extensions/noteBlockEvents';
 
 // Un esquema mínimo con párrafos y bloques de código, como el de TipTap.
@@ -116,5 +119,81 @@ describe('acciones de la barra de un bloque inline (R24: setLanguage, setCode)',
     expect(next.doc.child(1).type.name).toBe('codeBlock');
     expect(next.doc.child(1).textContent).toBe('');
     expect(setBlockCodeTr(state, starts[1], 'GET https://a')).toBeNull();
+  });
+});
+
+describe('bloque compacto: la nota (blockCodes, setCompact)', () => {
+  it('blockCodesOf: el texto de los bloques de ese lenguaje, en orden', () => {
+    expect(blockCodesOf(doc, 'http')).toEqual(['GET https://a', 'GET https://b\nAccept: */*']);
+    expect(blockCodesOf(doc, 'js')).toEqual(['x()']);
+    expect(blockCodesOf(doc, 'mermaid')).toEqual([]);
+  });
+
+  it('compactar con el cursor dentro: el cursor pasa al texto de después, sin tocar el documento', () => {
+    const state = at(starts[1] + 4);
+    const tr = selectionOutsideTr(state, starts[1]);
+    expect(tr).not.toBeNull();
+    expect(tr!.docChanged).toBe(false);
+    const next = state.apply(tr!);
+    // El siguiente texto es el del bloque js (otro lenguaje, no se compacta).
+    expect(next.selection.from).toBe(starts[2] + 1);
+    expect(next.doc.eq(state.doc)).toBe(true);
+  });
+
+  it('el último bloque: el cursor va al texto de antes; con el cursor fuera, nada', () => {
+    const state = at(starts[3] + 3);
+    const next = state.apply(selectionOutsideTr(state, starts[3])!);
+    expect(next.selection.from).toBeLessThan(starts[3]);
+    expect(selectionOutsideTr(at(2), starts[1])).toBeNull();
+    expect(selectionOutsideTr(at(2), starts[0])).toBeNull();
+  });
+
+  it('un bloque solo en la nota: queda seleccionado entero (fuera de su texto)', () => {
+    const solo = schema.node('doc', null, [code('http', 'GET https://a')]);
+    const state = EditorState.create({ doc: solo, selection: TextSelection.create(solo, 3) });
+    const next = state.apply(selectionOutsideTr(state, 0)!);
+    expect(next.selection.from).toBe(0);
+    expect(next.selection.$from.parent.type.name).toBe('doc');
+  });
+});
+
+describe('bloque compacto: cuándo se expande solo', () => {
+  // Una nota que empieza por un bloque http (el caso de "Servicio de
+  // pedidos"): al abrirla, ProseMirror deja la selección al principio,
+  // dentro del bloque.
+  const first = schema.node('doc', null, [code('http', 'GET https://api/pedidos'), para('notas')]);
+  const opened = EditorState.create({ doc: first });
+  const metaOnly = () => opened.tr.setMeta('focus', true);
+
+  it('al abrir la nota la selección queda dentro del primer bloque', () => {
+    expect(selectionInBlock(opened, 0)).toBe(true);
+  });
+
+  it('sin foco, nada lo expande: ni la selección inicial ni otras transacciones', () => {
+    expect(revealsCompact(opened, 0, false, metaOnly())).toBe(false);
+    expect(revealsCompact(opened, 0, false, opened.tr.setSelection(TextSelection.create(first, 3)))).toBe(false);
+    expect(revealsCompact(opened, 0, false, opened.tr.insertText('x', 3))).toBe(false);
+  });
+
+  it('con "Bloques compactos al abrir": sin foco, la selección dentro no impide arrancar compacto', () => {
+    expect(canStartCompact(opened, 0, false)).toBe(true);
+    // Con el foco y el cursor dentro (un bloque recién creado), no.
+    expect(canStartCompact(opened, 0, true)).toBe(false);
+    // Con el foco en otra parte, sí.
+    const elsewhere = EditorState.create({ doc: first, selection: TextSelection.create(first, first.child(0).nodeSize + 2) });
+    expect(canStartCompact(elsewhere, 0, true)).toBe(true);
+  });
+
+  it('con foco: lo expande una transacción que mueve la selección dentro o cambia el texto, no una de metadatos', () => {
+    expect(revealsCompact(opened, 0, true, metaOnly())).toBe(false);
+    const moved = opened.tr.setSelection(TextSelection.create(first, 4));
+    expect(revealsCompact(opened.apply(moved), 0, true, moved)).toBe(true);
+    const typed = opened.tr.insertText('x', 3);
+    expect(revealsCompact(opened.apply(typed), 0, true, typed)).toBe(true);
+  });
+
+  it('con foco, la selección en otra parte no lo expande', () => {
+    const out = opened.tr.setSelection(TextSelection.create(first, first.child(0).nodeSize + 2));
+    expect(revealsCompact(opened.apply(out), 0, true, out)).toBe(false);
   });
 });

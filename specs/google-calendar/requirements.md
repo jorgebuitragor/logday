@@ -46,6 +46,16 @@ lectura: Logday no crea, cambia ni borra eventos en Google.
 - G8. Las fechas y horas DEBERÁN mostrarse en hora local
   (`specs/fechas-creacion-edicion`).
 
+- G12. MIENTRAS la extensión esté activa, Inicio DEBERÁ tener al final
+  la tarjeta "Reuniones de hoy" (`specs/extensiones` R27): hasta cinco
+  eventos de hoy ("hora · título", los de todo el día primero), con
+  "Siguiente" en el primero que aún no empezó, "+N más" hacia el
+  Calendario y "Ver calendario →". Un evento con enlace se abre en Google
+  Calendar. Sin cuenta conectada, la tarjeta lo dice y lleva a Opciones;
+  si falla, deja los últimos que tenía con "Reintentar" (como G7). El
+  panel DEBERÁ tener "Mostrar en Inicio", encendido por defecto.
+  (Pedido de Jorge, 31 oct 2026.)
+
 ### Datos
 
 - G9. Los eventos de Google NO DEBERÁN guardarse en disco ni

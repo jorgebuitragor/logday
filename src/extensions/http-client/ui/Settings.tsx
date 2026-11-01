@@ -145,6 +145,12 @@ export default function HttpClientSettingsPanel() {
         )}
       </section>
 
+      <section className="space-y-2">
+        <p className="font-medium text-[var(--text-secondary)]">{tr('notesTitle')}</p>
+        <Toggle label={tr('compactOnOpen')} checked={settings.compactOnOpen} onChange={(v) => void update(EXTENSION_ID, { compactOnOpen: v })} />
+        <p className="text-[10px] text-[var(--text-hint)]">{tr('compactOnOpenHelp')}</p>
+      </section>
+
       <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-[var(--text-hint)]">
         <Info size={12} aria-hidden />
         {tr('viewHint')}

@@ -8,7 +8,7 @@
 // confirmaciones. Lo escrito y la respuesta viven en memoria; la nota de
 // la que vino solo cambia con "Guardar en la nota" (HT50).
 import { useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { ChevronDown, FilePlus, Globe, Save, Send, SlidersHorizontal, X } from 'lucide-react';
+import { ChevronDown, CodeXml, FilePlus, Globe, Save, Send, SlidersHorizontal, X } from 'lucide-react';
 import { useAppStore } from '../../../store/appStore';
 import type { Note } from '../../../types/note';
 import type { Language } from '../../../lib/i18n';
@@ -18,6 +18,7 @@ import { StatusItem } from '../../../components/shared/FormControls';
 import { lineInputCls } from '../../devtools/ui/classes';
 import { activeEnvironment, EXTENSION_ID, readHttpSettings } from '../core/environments';
 import { HTTP_METHODS, parseHttpBlock } from '../core/parse';
+import { requestForCode } from '../core/codegen';
 import { readRequestLine, writeRequestLine } from '../core/requestEdit';
 import { draftSplitsRequest, formIssues } from '../core/serialize';
 import { localeOf, saveShortcut, sendShortcut, type Tr } from '../core/text';
@@ -28,6 +29,7 @@ import {
   issueMessage, openSettings, readFormResult, resolveWith, saveDraftToNote, sendRequest, setDraftCode, unresolvedMessage, useHttpStore,
   type SendOptions,
 } from '../store';
+import { CodePanel, CopyAsMenu } from './CopyAs';
 import { EnvironmentChip } from './EnvironmentChip';
 import { LiveInput } from './KeyValueTable';
 import { FIELD_BTN, Menu } from './Menu';
@@ -111,6 +113,11 @@ export function RequestForm({
   const [reqTab, setReqTab] = useState<RequestTab>(initialTab);
   const [saved, setSaved] = useState<{ note: Note; code: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  // HT60 y HT61: "Copiar como…" usa lo escrito ahora; el panel "Código",
+  // lo de hace 300 ms, para no saltar a "con errores" a cada tecla.
+  const [codeOpen, setCodeOpen] = useState(false);
+  const copyReq = useMemo(() => (line.url.trim() && !draftSplitsRequest(code) ? requestForCode(code) : null), [line, code]);
+  const codeReq = useMemo(() => (hasUrl && !split ? requestForCode(shownCode) : null), [hasUrl, split, shownCode]);
 
   const urlRef = useRef<HTMLInputElement | null>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
@@ -120,6 +127,7 @@ export function RequestForm({
   const edit = (next: string) => {
     if (next !== code) setDraftCode(next);
   };
+  const codeId = `http-code-${uid}`;
 
   const fillFromCurl = (r: { code: string; replaced: string[] }) => {
     setDraftCode(r.code, { apiKey: null });
@@ -278,7 +286,20 @@ export function RequestForm({
         <div className="flex min-w-0 flex-col gap-2">
           <div className="flex min-h-[28px] flex-wrap items-center justify-between gap-2">
             <h3 className={PANEL_TITLE}>{tr('toolRequest')}</h3>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setCodeOpen((v) => !v)}
+                aria-expanded={codeOpen}
+                aria-controls={codeOpen ? codeId : undefined}
+                aria-label={tr('codePanel')}
+                title={tr('codePanel')}
+                className={ICON_BTN}
+              >
+                <CodeXml size={14} className="shrink-0" aria-hidden />
+                <span className="hidden @sm/tool:inline">{tr('codePanel')}</span>
+              </button>
+              <CopyAsMenu tr={tr} req={copyReq} withLabel />
               {origin && dirty && (
                 <button
                   type="button"
@@ -421,6 +442,7 @@ export function RequestForm({
             textRef={textRef}
             onGoToText={goToText}
           />
+          {codeOpen && <CodePanel tr={tr} req={codeReq} id={codeId} />}
         </div>
 
         {(problem || pending || inFlight || error || result?.entry.cancelled || warnings.length > 0 || loadedError || unresolved) && (

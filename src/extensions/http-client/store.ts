@@ -114,9 +114,13 @@ interface HttpStore {
   drafts: Record<string, Draft>;
   /** De dónde salió lo que se ve en la pantalla (HT34). */
   origin: FormOrigin | null;
+  /** ⌥/Alt+clic en compactar (bloque compacto): todos los bloques de esa
+   *  nota pasan a compactos o a expandidos. Cada barra lo atiende al
+   *  cambiar el objeto. */
+  compactAll: { noteId: string; compact: boolean } | null;
 }
 
-const initial = (): HttpStore => ({ blocks: {}, rev: 0, settingsEnvRequest: null, drafts: {}, origin: null });
+const initial = (): HttpStore => ({ blocks: {}, rev: 0, settingsEnvRequest: null, drafts: {}, origin: null, compactAll: null });
 
 export const httpApi = createStore<HttpStore>(() => initial());
 
@@ -141,6 +145,12 @@ const bumpCache = () => httpApi.setState((s) => ({ rev: s.rev + 1 }));
 
 export function selectRequest(key: string, index: number) {
   if (blockState(httpApi.getState(), key).selected !== index) patchBlock(key, { selected: index });
+}
+
+/** Compactar o expandir todos los bloques de la nota. */
+export function requestCompactAll(noteId: string, compact: boolean) {
+  httpApi.setState({ compactAll: { noteId, compact } });
+  announce(trNow()(compact ? 'aCompactAll' : 'aExpandAll'));
 }
 
 // ---------- Ajustes y entorno ----------

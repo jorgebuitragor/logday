@@ -2,7 +2,7 @@
 // índice entre los de su lenguaje y a qué bloque va un ⌘↵. Puro (solo
 // ProseMirror), para probarlo sin editor ni DOM.
 import type { Node as PMNode } from '@tiptap/pm/model';
-import { TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state';
+import { NodeSelection, Selection, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state';
 
 export const languageOf = (node: PMNode) => (node.type.name === 'codeBlock' ? String(node.attrs.language ?? '') : '');
 
@@ -85,3 +85,56 @@ export function setBlockCodeTr(state: EditorState, pos: number, code: string): T
   // (`deleteRange` se extiende al nodo): para borrar, `delete`.
   return range.text ? state.tr.insertText(range.text, from, to) : state.tr.delete(from, to);
 }
+
+/** El texto de cada bloque de `language`, en orden
+ *  (`NoteBlockProps.blockCodes`). */
+export function blockCodesOf(doc: PMNode, language: string): string[] {
+  const codes: string[] = [];
+  doc.descendants((node) => {
+    if (languageOf(node) === language) codes.push(node.textContent);
+    return node.type.name !== 'codeBlock';
+  });
+  return codes;
+}
+
+/** Compactar el bloque que empieza en `pos` con el cursor dentro
+ *  (`NoteBlockProps.setCompact`): el cursor pasa al primer texto después
+ *  del bloque o, si no hay, al último antes; si tampoco, el bloque queda
+ *  seleccionado entero. Sin tocar el texto, así Deshacer no lo ve. `null`
+ *  si el cursor ya estaba fuera. */
+export function selectionOutsideTr(state: EditorState, pos: number): Transaction | null {
+  const node = codeBlockAt(state, pos);
+  if (!node) return null;
+  const end = pos + node.nodeSize;
+  const { from, to } = state.selection;
+  const inside = (p: number) => p > pos && p < end;
+  if (!inside(from) && !inside(to)) return null;
+  const outside = (sel: Selection | null) => (sel && !inside(sel.from) ? sel : null);
+  const next = outside(Selection.findFrom(state.doc.resolve(end), 1, true))
+    ?? outside(Selection.findFrom(state.doc.resolve(pos), -1, true))
+    ?? NodeSelection.create(state.doc, pos);
+  return state.tr.setSelection(next);
+}
+
+/** La selección está en el texto del bloque que empieza en `pos`. */
+export function selectionInBlock(state: EditorState, pos: number): boolean {
+  const { $from } = state.selection;
+  return $from.parent.type.name === 'codeBlock' && $from.before() === pos;
+}
+
+/** Si un bloque compacto se expande porque el usuario puso el cursor
+ *  dentro: solo con el foco en el editor (no en la barra) y por una
+ *  transacción que mueve la selección o cambia el texto. Al abrir o
+ *  cambiar de nota la selección de ProseMirror queda al principio del
+ *  documento, dentro del bloque si la nota empieza por uno, y eso no es
+ *  el usuario; tampoco las transacciones que solo llevan metadatos (el
+ *  foco, el guardado). */
+export function revealsCompact(state: EditorState, pos: number, focused: boolean, tr: Transaction): boolean {
+  if (!focused || !selectionInBlock(state, pos)) return false;
+  return tr.selectionSet || tr.docChanged;
+}
+
+/** Si el bloque puede arrancar compacto al montarse: no, si el usuario
+ *  está escribiendo en él (un bloque recién creado, con el foco y el
+ *  cursor dentro). Sin foco, la selección dentro no cuenta. */
+export const canStartCompact = (state: EditorState, pos: number, focused: boolean) => !(focused && selectionInBlock(state, pos));

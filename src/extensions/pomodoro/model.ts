@@ -15,7 +15,7 @@ export type Phase = 'work' | 'short' | 'long';
  *  finished: Terminado, la fase siguiente espera a que la inicies (PM3). */
 export type TimerStatus = 'ready' | 'running' | 'paused' | 'finished';
 
-// ─── Opciones (PM1, PM3, PM5, PM15) ───
+// ─── Opciones (PM1, PM3, PM5, PM15, PM17) ───
 
 export interface PomodoroOptions {
   workMin: number;
@@ -31,11 +31,13 @@ export interface PomodoroOptions {
   showTrayTime: boolean;
   /** El contador del menú lateral (PM10, PM15). */
   showSidebarCounter: boolean;
+  /** La tarjeta de Inicio (PM17, specs/extensiones R27). */
+  showOnHome: boolean;
 }
 
 export const DEFAULT_OPTIONS: PomodoroOptions = {
   workMin: 25, shortMin: 5, longMin: 15, longEvery: 4, autoBreaks: false, autoWork: false, sound: true,
-  showTrayTime: true, showSidebarCounter: true,
+  showTrayTime: true, showSidebarCounter: true, showOnHome: true,
 };
 
 const boolOr = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fallback);
@@ -62,6 +64,7 @@ export function readOptions(raw: Record<string, unknown> | undefined): PomodoroO
     sound: boolOr(s.sound, DEFAULT_OPTIONS.sound),
     showTrayTime: boolOr(s.showTrayTime, DEFAULT_OPTIONS.showTrayTime),
     showSidebarCounter: boolOr(s.showSidebarCounter, DEFAULT_OPTIONS.showSidebarCounter),
+    showOnHome: boolOr(s.showOnHome, DEFAULT_OPTIONS.showOnHome),
   };
 }
 

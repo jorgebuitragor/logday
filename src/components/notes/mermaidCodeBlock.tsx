@@ -1,12 +1,16 @@
-import { useEffect, useState, type MutableRefObject } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import CodeBlockLowlight, { type CodeBlockLowlightOptions } from '@tiptap/extension-code-block-lowlight';
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import type { Node as PMNode } from '@tiptap/pm/model';
+import type { Transaction } from '@tiptap/pm/state';
 import { MermaidBlock } from './MermaidBlock';
 import { ExtensionSlot } from '../../extensions/ExtensionSlot';
 import type { ExtensionId } from '../../extensions/types';
 import { emitNoteBlockRun } from '../../extensions/noteBlockEvents';
-import { blockIndexAt, inlineRunTarget, languageOf, setBlockCodeTr, setBlockLanguageTr } from './extensionBlockPos';
+import {
+  blockCodesOf, blockIndexAt, canStartCompact, inlineRunTarget, languageOf, revealsCompact, selectionInBlock, selectionOutsideTr,
+  setBlockCodeTr, setBlockLanguageTr,
+} from './extensionBlockPos';
 
 // Bloques de código con lenguaje `mermaid`, dibujados dentro del documento.
 //
@@ -105,7 +109,13 @@ function ExtensionCodeBlockView({ node, editor, getPos, extension }: NodeViewPro
 
 /** El índice del bloque y el cursor cambian sin que cambie el nodo (se
  *  agrega un bloque arriba, se mueve el cursor): se recalculan con cada
- *  transacción del editor, y solo se vuelve a dibujar si cambian. */
+ *  transacción del editor, y solo se vuelve a dibujar si cambian.
+ *
+ *  Compacto (specs/cliente-http, bloque compacto): el código y la franja
+ *  se ocultan con CSS, pero siguen en el documento: el texto, la selección
+ *  y Deshacer no cambian. Si el usuario pone el cursor dentro (Deshacer,
+ *  ir a una línea, borrar desde el párrafo de abajo, una tecla con la
+ *  selección ahí), el bloque se expande: no escribe en algo que no se ve. La selección que deja abrir la nota no cuenta (`revealsCompact`). */
 function InlineExtensionBlockView({ node, editor, getPos, extension }: NodeViewProps) {
   const blocks = (extension.options as Options).extensionBlocks.current;
   const language = languageOf(node);
@@ -113,23 +123,82 @@ function InlineExtensionBlockView({ node, editor, getPos, extension }: NodeViewP
   const read = () => {
     const pos = posOf(getPos);
     if (typeof pos !== 'number') return { index: -1, cursor: null as number | null };
-    const { $from } = editor.state.selection;
-    const inside = $from.parent.type.name === 'codeBlock' && $from.before() === pos;
-    return { index: blockIndexAt(editor.state.doc, pos, language), cursor: inside ? $from.parentOffset : null };
+    const inside = selectionInBlock(editor.state, pos);
+    return { index: blockIndexAt(editor.state.doc, pos, language), cursor: inside ? editor.state.selection.$from.parentOffset : null };
   };
   const [where, setWhere] = useState(read);
+  const [compact, setCompactState] = useState(false);
+  // Mientras se anima, el cuerpo recorta lo que sobresale; quieto y
+  // expandido, no (los menús de la franja salen de la tarjeta).
+  const [animating, setAnimating] = useState(false);
+  // Lo que la barra decide al montarse (abrir la nota) se aplica sin
+  // animar: la nota no debe abrirse plegándose.
+  const [instant, setInstant] = useState(false);
+  const paintedRef = useRef(false);
+  const compactRef = useRef(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const revealRef = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Al terminar de expandirse porque el cursor entró: que el cursor se vea.
+  const finishAnimation = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = null;
+    setAnimating(false);
+    if (!revealRef.current) return;
+    revealRef.current = false;
+    if (editor.isDestroyed) return;
+    if (editor.view.hasFocus()) editor.view.focus();
+    editor.view.dispatch(editor.state.tr.scrollIntoView());
+  };
+  const changeCompact = (next: boolean) => {
+    if (compactRef.current === next) return;
+    compactRef.current = next;
+    setCompactState(next);
+    setInstant(!paintedRef.current);
+    if (!paintedRef.current) {
+      revealRef.current = false;
+      return;
+    }
+    setAnimating(true);
+    // Sin animación (reducida o apagada) no llega `transitionend`.
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(finishAnimation, 400);
+  };
+  const reveal = (tr: Transaction) => {
+    const pos = posOf(getPos);
+    if (!compactRef.current || typeof pos !== 'number' || !revealsCompact(editor.state, pos, editor.view.hasFocus(), tr)) return;
+    revealRef.current = true;
+    changeCompact(false);
+  };
+  const latest = useRef({ read, reveal });
+  latest.current = { read, reveal };
+
   useEffect(() => {
-    const onTransaction = () => {
-      const next = read();
+    const onTransaction = ({ transaction }: { transaction: Transaction }) => {
+      const next = latest.current.read();
       setWhere((prev) => (prev.index === next.index && prev.cursor === next.cursor ? prev : next));
+      latest.current.reveal(transaction);
     };
+    // Sin escuchar el foco: al hacer clic en otra parte del editor, el foco
+    // llega antes que la selección nueva y expandiría el bloque bajo el
+    // clic. Si el foco llega por Tab con la selección dentro, la primera
+    // tecla (flecha o texto) es una transacción y lo expande.
     editor.on('transaction', onTransaction);
     return () => {
       editor.off('transaction', onTransaction);
     };
-  // `read` lee siempre el estado actual del editor.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // `read` (por `latest`) lee siempre el estado actual del editor.
   }, [editor, language]);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      paintedRef.current = true;
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
   // Las acciones de la barra (R24). Se calcula la posición al usarlas: el
   // documento pudo cambiar desde el último render.
   const setLanguage = (next: string) => {
@@ -153,6 +222,26 @@ function InlineExtensionBlockView({ node, editor, getPos, extension }: NodeViewP
     const tr = setBlockCodeTr(editor.state, pos, next);
     if (tr) editor.view.dispatch(tr);
   };
+  const setCompact = (next: boolean, opts: { initial?: boolean } = {}) => {
+    if (next && opts.initial) {
+      // Al montarse: sin mover la selección (la nota se está abriendo) y
+      // sin compactar el bloque en el que el usuario está escribiendo.
+      const pos = posOf(getPos);
+      if (typeof pos !== 'number' || !canStartCompact(editor.state, pos, editor.view.hasFocus())) return;
+      changeCompact(true);
+      return;
+    }
+    if (next) {
+      // Primero el cursor sale (si estaba dentro); si no, se expandiría
+      // otra vez en el acto. El foco se queda en la barra.
+      const pos = posOf(getPos);
+      const tr = typeof pos === 'number' ? selectionOutsideTr(editor.state, pos) : null;
+      if (tr) editor.view.dispatch(tr);
+    }
+    revealRef.current = false;
+    changeCompact(next);
+  };
+  const blockCodes = () => blockCodesOf(editor.state.doc, language);
   const editable = editor.isEditable;
   const slotProps = (part: 'header' | 'footer') => ({
     code: node.textContent,
@@ -163,17 +252,37 @@ function InlineExtensionBlockView({ node, editor, getPos, extension }: NodeViewP
     cursor: where.cursor,
     setLanguage: editable ? setLanguage : undefined,
     setCode: editable ? setCode : undefined,
+    compact,
+    setCompact,
+    blockCodes,
   });
   return (
-    <NodeViewWrapper className="extension-node-view extension-node-inline" data-extension-block={language}>
+    <NodeViewWrapper
+      className="extension-node-view extension-node-inline"
+      data-extension-block={language}
+      data-compact={compact ? '' : undefined}
+    >
       <div contentEditable={false} suppressContentEditableWarning className="extension-block-ui">
         {id && <ExtensionSlot id={id} point="NoteBlock" props={slotProps('header')} />}
       </div>
-      <pre>
-        <NodeViewContent<'code'> as="code" className={`language-${language}`} />
-      </pre>
-      <div contentEditable={false} suppressContentEditableWarning className="extension-block-ui">
-        {id && <ExtensionSlot id={id} point="NoteBlock" props={slotProps('footer')} />}
+      <div
+        ref={bodyRef}
+        className="extension-block-body"
+        data-compact={compact ? '' : undefined}
+        data-animating={animating ? '' : undefined}
+        data-instant={instant ? '' : undefined}
+        onTransitionEnd={(e) => {
+          if (e.target === bodyRef.current) finishAnimation();
+        }}
+      >
+        <div className="extension-block-body-inner">
+          <pre className="extension-block-code">
+            <NodeViewContent<'code'> as="code" className={`language-${language}`} />
+          </pre>
+          <div contentEditable={false} suppressContentEditableWarning className="extension-block-ui">
+            {id && <ExtensionSlot id={id} point="NoteBlock" props={slotProps('footer')} />}
+          </div>
+        </div>
       </div>
     </NodeViewWrapper>
   );

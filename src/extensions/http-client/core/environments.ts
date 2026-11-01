@@ -46,6 +46,9 @@ export interface HttpClientSettings {
   maskResponseSecrets: boolean;
   /** HT70: "Preguntar" de serie. */
   curlPaste: CurlPasteMode;
+  /** Los bloques de las notas que el usuario nunca compactó ni expandió
+   *  arrancan compactos (bloque compacto). */
+  compactOnOpen: boolean;
 }
 
 export const LIMITS = {
@@ -63,6 +66,7 @@ export const DEFAULT_SETTINGS: HttpClientSettings = {
   confirmUntrustedSecrets: true,
   maskResponseSecrets: true,
   curlPaste: 'ask',
+  compactOnOpen: false,
 };
 
 export const VAR_NAME_RE = /^[A-Za-z_][A-Za-z0-9_.-]{0,63}$/;
@@ -129,6 +133,7 @@ export function readHttpSettings(raw: Record<string, unknown> | undefined): Http
     confirmUntrustedSecrets: r.confirmUntrustedSecrets !== false,
     maskResponseSecrets: r.maskResponseSecrets !== false,
     curlPaste: (CURL_PASTE_MODES as readonly unknown[]).includes(r.curlPaste) ? (r.curlPaste as CurlPasteMode) : 'ask',
+    compactOnOpen: r.compactOnOpen === true,
   };
 }
 

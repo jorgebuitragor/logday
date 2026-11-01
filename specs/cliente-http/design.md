@@ -822,7 +822,7 @@ De 1 a 300 segundos; de 1 a 50 MB.
 
 ### 7. Casos borde
 
-- **Bloque `http` con la extensión apagada** y luego encendida: TipTap arma los NodeView en el primer render (`NoteEditor.tsx:267`), así que una nota abierta cambia al volver a abrirla. Es lo mismo que pasa con Excalidraw.
+- **Bloque `http` con la extensión apagada** y luego encendida (o al revés) con la nota abierta: ~~TipTap arma los NodeView en el primer render, así que una nota abierta cambia al volver a abrirla~~. *Corregido el 1 nov 2026:* así, los bloques de la nota abierta se quedaban con la vista vieja y, como la barra de lenguaje salta los bloques de extensión, las etiquetas se corrían un lugar y cambiar el lenguaje de un bloque cambiaba el del bloque de al lado (podía convertir una petición en `json`). Ahora `useRedrawOnBlockChange` (`components/notes/extensionBlockRedraw.ts`) llama a `editor.createNodeViews()` cuando cambian los lenguajes de las extensiones activas, y ProseMirror redibuja el documento. Vale igual para Excalidraw.
 - **Dos bloques idénticos** en la misma nota tienen claves de caché distintas, porque cuentan su índice.
 - **Mover o borrar un bloque** desfasa los índices. La regla de `firstLine` (A8) evita mostrar la respuesta de otra petición.
 - **Una línea del cuerpo que empieza por ```` ``` ````** cierra la cerca del Markdown. En el editor no se puede escribir así dentro de un bloque. Al guardar desde DevTools se usa una cerca de 4 comillas invertidas, y `parseFencedBlocks` tiene que aceptarla (hallazgo 2).

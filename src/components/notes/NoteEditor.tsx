@@ -105,6 +105,7 @@ import { useLinkPreview } from '../../hooks/useLinkPreview';
 import { useExtensions } from '../../extensions/useExtensions';
 import { extensionRuntime } from '../../extensions/runtime';
 import { handleExtensionPaste, type PasteConverter } from './extensionPaste';
+import { blockLanguagesKey, useRedrawOnBlockChange } from './extensionBlockRedraw';
 import { ExtensionSlot } from '../../extensions/ExtensionSlot';
 import { extensionText } from '../../extensions/text';
 import type { ExtensionId } from '../../extensions/types';
@@ -279,6 +280,7 @@ export function NoteEditor() {
     blockLanguages[def.noteBlock!.language] = def.id;
     if (def.noteBlock!.inline) inlineLanguages[def.noteBlock!.language] = true;
   }
+  const blocksKey = blockLanguagesKey(blockLanguages, inlineLanguages);
   // Mermaid y estos bloques no cuentan como bloques de código normales
   // (los índices de la barra de lenguaje y del menú contextual los saltan).
   const specialFencesRef = useRef<Set<string>>(new Set(['mermaid']));
@@ -325,7 +327,10 @@ export function NoteEditor() {
     }
 
     return languages;
-  }, [mdContent]);
+    // `blocksKey`: los bloques de extensión que se saltan (los lee de
+    // `specialFencesRef`) cambian al encender o apagar una.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mdContent, blocksKey]);
 
   // ── Task-code decorations ────────────────────────────────────────────────
   const tasksRef = useRef<import('../../types/task').Task[]>(tasks);
@@ -550,6 +555,8 @@ export function NoteEditor() {
     },
   });
 
+  useRedrawOnBlockChange(editor, blocksKey);
+
   const recalcCodeBlockAnchors = useCallback(() => {
     if (viewMode === 'source') {
       setCodeBlockAnchors([]);
@@ -600,7 +607,7 @@ export function NoteEditor() {
     if (viewMode === 'source') return;
     const raf = requestAnimationFrame(() => recalcCodeBlockAnchors());
     return () => cancelAnimationFrame(raf);
-  }, [mermaidBlocks.length, recalcCodeBlockAnchors, viewMode]);
+  }, [mermaidBlocks.length, blocksKey, recalcCodeBlockAnchors, viewMode]);
 
   const topLevelPosAtIndex = useCallback((doc: { child: (i: number) => { nodeSize: number } }, index: number) => {
     let pos = 0;

@@ -1,6 +1,6 @@
 # Cliente HTTP — Design
 
-Estado: aprobado (31 oct 2026); los PR 1 y 2 están implementados, y la herramienta de DevTools del PR 2 se reemplazó por una pantalla propia (§11, HT33–HT35). Lo que está marcado como **nuevo** no existía en `develop` (9213ed2) cuando se escribió; todo lo demás se comprobó contra esa versión. Lo que la implementación hizo distinto está en `tasks.md`, "Diferencias con el diseño".
+Estado: aprobado (31 oct 2026); los PR 1 y 2 están implementados, y la herramienta de DevTools del PR 2 se reemplazó por una pantalla propia (§11, HT33–HT35). Lo que está marcado como **nuevo** no existía en `develop` (9213ed2) cuando se escribió; todo lo demás se comprobó contra esa versión. Lo que la implementación hizo distinto está en `tasks.md`, "Diferencias con el diseño". El Cliente HTTP v2 (HT40–HT69, aprobado el 31 oct 2026) está en §14.
 
 ## Arquitectura
 
@@ -137,6 +137,8 @@ Reglas, en este orden:
 7. Más de 20 secciones da `too_many_requests`. Se analizan las 20 primeras.
 8. `{{$secret:` escrito a mano da `reserved_syntax`: es la marca interna con la que el webview le pasa los secretos a Rust (A5).
 9. **Variables:** `\{\{\s*([A-Za-z_$][A-Za-z0-9_.-]*)\s*\}\}`. Unas llaves sin cerrar, o con otro contenido, quedan como texto.
+
+*Con el Cliente HTTP v2 (§14.3) cambian las reglas 4 y 5: la zona de la query admite comentarios y parámetros desactivados, y un comentario con forma de cabecera es una cabecera desactivada.*
 
 Pruebas (`parse.test.ts`): cada regla, una línea con solo la URL, las líneas `?` y `&`, `HTTP/1.1` al final, comentarios en cada zona, varias secciones con y sin nombre, las secciones vacías, `\r\n`, un cuerpo con líneas en blanco en medio, `requestAtOffset` en los bordes de cada sección y los números de línea de cada problema.
 
@@ -1236,7 +1238,7 @@ De izquierda a derecha: lenguaje, método, petición (con 2 o más), `flex-1`, c
 | `aLanguage` | El bloque ahora es {name} | The block is now {name} |
 | `aCurlCopied` | Comando cURL copiado | cURL command copied |
 
-### 13. Pegar un cURL (31 oct 2026, HT39–HT41)
+### 13. Pegar un cURL (31 oct 2026, HT39–HT39c)
 
 Pedido por Jorge (requirements, "Cambio del 31 oct 2026: pegar un cURL").
 
@@ -1269,6 +1271,249 @@ Una clase `Secrets` da un nombre de variable por valor (`X-API-Key` → `x_api_k
 | `aCurlFilled` | El cURL pegado rellenó el formulario. | The pasted cURL filled in the form. |
 | `curlSecretsTitle` | Valores ocultos | Values hidden |
 | `curlSecretsBody` | {n\|Se cambió un valor por\|Se cambiaron {n} valores por} {vars}. {n\|Guárdalo como secreto\|Guárdalos como secretos} en Entornos: en la nota solo queda el nombre. | {n\|A value was replaced with\|{n} values were replaced with} {vars}. Save {n\|it as a secret\|them as secrets} in Environments: the note only keeps the name. |
-| `curlBasicHint` | En {{basic_auth}} va usuario:contraseña en Base64. | {{basic_auth}} holds username:password in Base64. |
 | `curlSecretsAction` | Abrir Entornos | Open Environments |
 
+
+### 14. Cliente HTTP v2 (31 oct 2026, HT40–HT69)
+
+Aprobado por Jorge el 31 oct 2026 con las ocho decisiones como las recomienda el diseño (requirements, "Cliente HTTP v2"). Paquetes A (editor), B (respuesta) y D (importar y generar); C y E quedan fuera (§14.13). Skills de diseño usadas: `design:design-system` (extend), con criterios de `design:ux-copy` y `design:accessibility-review`.
+
+#### 14.1 La fuente de verdad y dónde va cada cosa
+
+El texto del bloque manda. Las vistas (tablas, Auth, tipo de cuerpo) lo leen con el parser y lo cambian con funciones puras que tocan solo las líneas de su zona, igual que `setRequestMethod`. No hay JSON lateral ni directivas propias; la única excepción local son los permisos de archivo (§14.5), que no viajan.
+
+| Función | Barra del bloque | Franja del bloque | Pantalla |
+|---|---|---|---|
+| Método, petición, entorno, Enviar | sí (ya existe) | — | sí |
+| Tablas, Auth, tipo de cuerpo | no: el texto ya está a la vista; solo "Editar en Cliente HTTP" | — | sí, en pestañas |
+| Elegir un archivo que falta | — | sí: es lo que impide enviar | sí, en la tabla del cuerpo |
+| Copiar como… | sí: el menú reemplaza al botón de cURL | — | sí, y el panel "Código" |
+| Árbol JSON, HTML, cookies, tiempos | — | sí (la misma `ResponseView`) | sí |
+| Historial e Importar | — | — | sí, en la columna |
+| Opciones del historial y de los archivos | — | — | Opciones → Cliente HTTP |
+
+Las tablas no van dentro de la nota: el bloque *es* el texto, y duplicarlo en otra vista volvería lento el editor. Para editar con tablas, se abre la petición en la pantalla y se guarda de vuelta (HT50).
+
+#### 14.2 Sintaxis
+
+Todo es de REST Client y JetBrains, salvo lo marcado **[solo Logday]**.
+
+```http
+### Subir foto
+POST {{baseUrl}}/users/{{userId}}/photo?lang=es
+&size=large
+# &debug=true
+Authorization: Bearer {{token}}
+# Accept-Language: en
+Content-Type: multipart/form-data; boundary=LogdayBoundary
+
+--LogdayBoundary
+Content-Disposition: form-data; name="file"; filename="foto.png"
+Content-Type: image/png
+
+< ./foto.png
+--LogdayBoundary--
+```
+
+| Elemento | Se escribe | Notas |
+|---|---|---|
+| Param activo | En la URL o en líneas `?`/`&` debajo | La tabla respeta el estilo; sin query, escribe en la URL. |
+| Param desactivado | `# &k=v` en la zona de la query | Para REST Client es un comentario. |
+| Cabecera desactivada | `# Nombre: valor` en la zona de las cabeceras | Un comentario de esa zona que encaja con `HEADER_RE`. `# TODO: x` cuenta como fila "TODO" (inofensivo). |
+| Bearer · Basic | `Authorization: Bearer {{token}}` · `Authorization: Basic {{user}}:{{password}}` (o con espacio) | Basic lo codifica Rust (HT44); un valor ya en Base64 va tal cual. |
+| API key | `X-API-Key: {{apiKey}}` o `&api_key={{apiKey}}` | Una cabecera o un param normal; Auth la reconoce. |
+| Form | `a=1&b=2`, o una línea por campo (`a=1` / `&b=2`) | Desactivado: `# &b=2` **[solo Logday]**, que se quita al enviar. |
+| Multipart | Partes con el boundary y `< ./ruta` | Boundary `LogdayBoundary` si lo pone Logday; CRLF en el cable. |
+| Archivo | El cuerpo es una línea `< ./archivo` | `<@` se envía sin poner variables, con aviso. |
+| Texto o XML | Tal cual, con su `Content-Type` | Subtipos: texto, XML, HTML, JavaScript y YAML. |
+
+**Rutas de archivo:** para Logday, `< ./foto.png` es una etiqueta; Rust nunca abre la ruta escrita. Al elegir un archivo se escribe `./<nombre>`, sin carpetas de este equipo. Una ruta absoluta escrita a mano se respeta, y el diálogo se abre en esa carpeta si existe. Se pierde solo lo que en una nota no tiene sentido: que REST Client la resuelva junto al `.http`.
+
+#### 14.3 Técnico del editor (paquete A)
+
+- **Parser (`core/parse.ts`)**, cambios:
+  - Zona de la query: tras la línea de la petición, las líneas `?`/`&`, los comentarios y los `#\s*[?&]k=v` (params desactivados); la zona termina en la última de esas líneas con un parámetro, así que un comentario detrás ya es de las cabeceras. La URL final se arma con `?` o `&` según haga falta, no pegando el texto.
+  - Zona de las cabeceras: un comentario `#` cuyo resto encaja con `HEADER_RE` es una fila desactivada.
+  - `ParsedRequest` suma `urlLine` (la URL como está en la línea de la petición), `query` (filas con nombre, valor, si está activa, si vive en la URL o en una línea aparte y su línea), `headerRows` (activas y desactivadas, en orden) y `disabledHeaders`, las líneas de cada zona y `bodyKind` (HT45).
+  - `variablesOf` no cuenta las filas desactivadas: una variable que falta en una fila desactivada no bloquea el envío.
+  - Las directivas `# @…` siguen siendo comentarios sin efecto.
+- **Ediciones (`core/requestEdit.ts`, aparte de `edit.ts` para no chocar con D1):** funciones puras `(code, requestIndex, …) → code` para la línea de la petición, cada fila de la query y de las cabeceras (editar, activar o desactivar, agregar, quitar, mover), Auth, y en A2 el tipo de cuerpo, los campos de form, las partes y el archivo. Las pruebas comprueban la ida y vuelta (`parse(aplicar(e))`) y que las líneas fuera de la zona no cambian.
+- **Resolución (`resolve.ts`):** salta las filas desactivadas; la vista previa marca la Basic "Codificada por Logday" (y, en A2, los archivos como `< foto.png (120 KB)`).
+- **El borrador de la pantalla:** el store cambia el formulario de campos por un borrador de texto por petición: `{ code, loadedCode, loadedSource, name, apiKey, conflict }` (y, en A2, el cuerpo guardado por tipo). `apiKey` es la fila que Auth acaba de escribir como API key, para reconocerla antes de que su valor sea una variable. La fila del método y la URL lee y cambia la línea de la petición (`readRequestLine`, `writeRequestLine`); el campo URL muestra la URL de esa línea, y las líneas `?`/`&` aparte están en la tabla. Vive en memoria por la misma clave que las respuestas (`view:<nota>:<bloque>:<petición>` o `view:new`), así que al ir de una petición a otra cada una conserva sus cambios. "Cambios sin guardar" es `code !== loadedCode`.
+- **Basic en Rust (HT44):** en `prepare`, una `Authorization` o `Proxy-Authorization` `Basic` cuyas credenciales, con las marcas de secreto quitadas, tienen `:` o un espacio, se codifica en Base64 después de poner los secretos; `usuario contraseña` pasa a `usuario:contraseña`. El TS hace la misma comprobación solo para la marca de la vista previa.
+- **Guardar en la nota (HT50):**
+  1. leer la nota de disco por su ruta;
+  2. ubicar el bloque con `parseFencedBlocks(content, 'http')[blockIndex]` y la sección con `parseHttpBlock(code).requests[requestIndex]`;
+  3. comparar su `source` con `loadedSource`;
+  4. reemplazar las líneas de la sección (la línea `###` de la nota se conserva);
+  5. escribir como lo haría el editor (`lib/noteExternalEdit.ts`): el `Y.Text` del `.ydoc` (o sembrado desde el Markdown si la nota aún no lo tiene, igual que `NoteEditor`), `applyTextEdit`, `syncNoteContent` para el `.ydoc` y el servidor, y `updateNote` para el `.md` y el store. La pantalla y el editor de notas no se muestran a la vez (`App.tsx`), así que no hay un `Y.Doc` abierto que pisar; si lo hubiera (la nota está registrada en `registerOpenNoteDoc`), no se escribe y se avisa.
+
+#### 14.4 La pantalla (paquete A)
+
+```
+┌ columna ──────────────┬──────────────────────────────────────────────────────────────┐
+│ [Peticiones|Historial]│ [🌐] Subir foto                                ⛁ Staging ▾   │
+│ [+ Nueva] [⤓ Importar]│      De «API de usuarios» · Abrir la nota · ● Cambios sin guardar│
+│ [🔍 Buscar…        ]  │ PETICIÓN     [⌨ Código] [💾 Guardar en la nota] [📄+ Nueva nota]│
+│                       │ [POST ▾] [ {{baseUrl}}/users/{{userId}}/photo?lang=es ] [Enviar]│
+│                       │ [Params 3] [Cabeceras 3] [Auth · Bearer] [Cuerpo · JSON] [Texto]│
+│                       │ ☑ lang   es                                             🗑   │
+│                       │ ☑ size   large                     (en una línea aparte) 🗑   │
+│                       │ ☐ debug  true                                           🗑   │
+│                       │ [+ Agregar parámetro]                                         │
+└───────────────────────┴──────────────────────────────────────────────────────────────┘
+```
+
+- **Pestañas:** el segmentado de `ResponseView`, con `role="tablist"`, roving tabindex y ←/→, Inicio y Fin. Cada etiqueta lleva su resumen en `--text-hint`: las filas *activas* ("Params 3"), el tipo de Auth ("Auth · Bearer"), el tipo de cuerpo. Con un error, `CircleAlert` rojo y el sr "con errores".
+- **Tabla editable (`KeyValueTable`):** `<table>` con `<caption class="sr-only">` y las columnas Activa · Nombre · Valor · acciones.
+  - Casilla: el `Checkbox` de DevTools, sin texto visible, con `aria-label` "Enviar {nombre}", dentro de una celda de 28 px que también la activa.
+  - Campos `INPUT_CLS font-mono` sin autocorrección; una fila desactivada va en `--text-hint`, sin tachado.
+  - Eliminar: `ICON_BTN` con `Trash2`, sin confirmar (es un borrador en memoria).
+  - "+ Agregar parámetro" / "+ Agregar cabecera" enfoca el nombre de una fila nueva; Enter en el valor de la última fila también.
+  - Marcas: "en una línea aparte" (`CHIP`) en un param de una línea `&`, y `KeyRound` con el sr "de Auth" en la fila que escribió Auth.
+- **Auth:** Tipo (el `Menu` de la app con forma de campo, no un `<select>` nativo), y los campos de cada tipo: Token; Usuario y Contraseña, con "Logday lo codifica en Base64 al enviar."; API key con Nombre, Valor y "Va en" Cabecera | Query. Cada valor es un combobox (`VariableCombobox`) que sugiere las variables del entorno activo, primero las secretas; escribir `{{` abre la lista. Al lado, su estado: `KeyRound` "secreto de {entorno}" con la pista, "no definida en {entorno}" o "variable normal". Un valor literal (salvo el usuario de Basic) muestra "Este valor quedaría escrito en la nota, que se sincroniza." con "Guardar como secreto", que abre en línea Nombre, Entorno, "Guardar en el llavero" y "Cancelar"; sin entornos, crea uno. "Ninguna" quita la `Authorization` (pide confirmar en línea si no era una variable) o la fila de la API key.
+- **Cuerpo (A2):** el selector de tipo (segmentado; `Menu` en angosto) y, según el tipo, el `textarea` (JSON con "Formatear" y "JSON válido" o su error), `KeyValueTable` (Form; Multipart con la columna Tipo) o la ficha de archivo. Ninguno: "Esta petición no tiene cuerpo.". HEAD: deshabilitado, con el aviso de siempre. Hasta A2, la pestaña Cuerpo es el `textarea` de hoy.
+- **Texto:** el `textarea` mono con el texto de la petición sin `###`. Una línea `###` da el aviso de siempre (`toolBodySeparator`).
+- **Cabecera:** "● Cambios sin guardar" (punto `bg-amber-400`) junto a "Abrir la nota". "Guardar en la nota" (`SECONDARY_CLS` con `Save`, ⌘S) aparece solo con origen nota y cambios; "Guardar en una nota" pasa a ser "Nueva nota" (`FilePlus`).
+- **Columna:** una petición con cambios sin guardar lleva el mismo punto, con el sr "cambios sin guardar".
+- **El bloque:** la barra suma "Editar en Cliente HTTP" (`ICON_BTN` con `PanelRight`), que abre la pantalla con esa petición cargada; la franja suma la ficha de un archivo que falta (A2). Nada más cambia en el bloque.
+- **Conversión al cambiar de tipo de cuerpo (A2):** un JSON plano de escalares pasa a campos o partes; Form ↔ Multipart; Form → JSON (valores de texto); cualquiera → Texto o JSON conserva el texto; → Archivo pide el archivo; → Ninguno quita el cuerpo y el `Content-Type`. Lo que no se convierte queda vacío, con el anterior en memoria y el aviso "El cuerpo de {tipo} se guardó: vuelve a {tipo} para recuperarlo.".
+
+#### 14.5 Archivos y permisos (A2, HT48–HT49)
+
+```
+ [📎 foto.png · 120 KB]  Elegido en este equipo        [Cambiar] [✕]
+ [📎 ./foto.png]         ⚠ Sin elegir en este equipo    [Elegir archivo…]
+ [📎 ./foto.png]         ⊘ Ya no está en ~/Descargas    [Elegir otra vez]
+ [📎 video.mov · 80 MB]  ⊘ Pasa de 50 MB                 [Cambiar]
+```
+
+- `FileChip`: ficha mono de 11 px con `Paperclip`, borde y `--bg-input`; el `title` lleva la ruta con `~`. En la franja del bloque, el aviso "Elige ./foto.png en este equipo para enviar esta petición." con "Elegir archivo…".
+- Comandos de Rust: `http_client_pick_file(scope, reference) -> FileGrant` (el diálogo se abre **desde Rust**, con `tauri_plugin_dialog` y un *oneshot*, para que ni una nota ni el webview registren una ruta que el usuario no eligió), `http_client_files(scope)` (con `exists` y `size` al momento) y `http_client_forget_file(id)`. `FileGrant = { id: "f_<8hex>", scope, reference, name, size, displayPath, exists }`; `scope` es el `noteId`, o `view:new`.
+- Se guardan en `app_local_data_dir()/http-client/files.json`: local, sin sync, fuera de `config.json` y de los backups. Al guardar en una nota, los permisos de `view:new` pasan a ese `noteId`. "Quitar configuración" borra el archivo.
+- Envío: `SendInput` suma `body_segments` (`Text { text } | File { grant }`) y `scope`. TS parte el cuerpo en cada línea `< ref` (CRLF si es multipart; sin las líneas `#` si es form). Rust comprueba que cada permiso existe y es de ese `scope`, lee los archivos con el tope, pone los secretos solo en los segmentos de texto y concatena con `compose_body` (pura y probada). Sin la feature `multipart` de reqwest: las cabeceras de cada parte las escribe el usuario.
+- Errores nuevos: `file_not_chosen` (con la etiqueta, nunca la ruta), `file_missing`, `file_too_large` y `file_unreadable`. El `Content-Type` de una parte se deduce de la extensión con una tabla pequeña, y se puede cambiar.
+
+#### 14.6 La respuesta (paquete B)
+
+```
+│ [✓ 200 OK]  [143 ms ▾] · 1,2 KB · hace 2 min                       ⧉ ⤓ ⋯ ✕ │
+│   Espera     ███████████████████████░░░  121 ms                             │
+│   Descarga                           ██   22 ms   127.0.0.1:8080 · HTTP/1.1 │
+│ [Cuerpo] [Cabeceras 9] [Cookies 2] [Petición]                               │
+│ [Árbol|Formateado|Sin formato]   [🔍 Filtrar: texto o $.ruta     ] 3 de 40  │
+│ ▾ {4}                                                                       │
+│   ▾ data [2]                                                                │
+```
+
+- **Tiempos (B1):** el tiempo del resumen es un botón (`aria-expanded`) que despliega la franja (`TimingStrip`): etiqueta, barra `h-1.5` sobre `--bg-hover` y los ms; el significado va en el texto, no en el color; un grupo por salto con su estado. En Rust: `Instant` antes de `send()`, al volver (cabeceras) y al último `chunk()`; `resp.remote_addr()` y `resp.version()`. `SendOutput` suma `timing: { hops: [{ waitMs, downloadMs, dnsMs?, connectMs? }], totalMs }` y `remoteAddr`.
+- **Árbol (`JsonTree`) y filtro (`core/jsonPath.ts`, puro, sin `eval`):** claves en `--syntax-property`, textos en `--syntax-string`, números en `--syntax-number`, `true`/`false`/`null` en `--syntax-function`. Las acciones del nodo ("Copiar el valor", "Copiar la ruta") aparecen al pasar el ratón o con el foco. La coincidencia va en `<mark>` con `bg-amber-500/25`. El filtro lleva el total y, si la ruta está mal, el error con la posición. JSONPath lo reutilizará C.
+- **HTML:** "Código | Vista previa" con `HtmlPreview` (iframe en fondo blanco, a propósito) y la nota de que no se carga nada externo. Depende del PR de `HtmlPreview` de DevTools.
+- **Cookies:** `core/cookies.ts` (`parseSetCookie`, puro), en una tabla con las marcas como `CHIP` y la caducidad en la fecha local o "de sesión". Sin Rust.
+- **Historial (B2):** lo escribe Rust al terminar cada envío si `SendInput.history` trae el texto sin resolver, el origen y el entorno (es el único que tiene los valores de los secretos y puede enmascararlos). JSON Lines con *append* y un `Mutex`, compactado al pasar el tope. Comandos `http_client_history_list(query, before, limit)`, `_delete(id)` y `_clear()`. En la columna, las pestañas Peticiones | Historial (recuerdan la última, preferencia local); cada fila con el método, la ruta, el estado, la hora y el `title` con la URL y el entorno; vacío "Todavía no has enviado nada…"; apagado "El historial está apagado." con "Activar en Opciones".
+- **B3:** "Medir la conexión" usa un cliente de un solo uso (`pool_max_idle_per_host(0)`) con un `Resolve` propio que mide la resolución y un `connector_layer` que mide la conexión (TCP y TLS juntos), con `tower` como dependencia directa (ya está en `Cargo.lock`). "Descargar entero a un archivo" escribe por trozos con el progreso por un `tauri::ipc::Channel`, que servirá para SSE.
+- **"⋯ Más acciones"** suma "Guardar la respuesta completa…" y, si se cortó, "Descargar entero a un archivo…". En el bloque, las Cookies y la franja de tiempos salen solo si hay datos.
+
+#### 14.7 Copiar como… y Código (paquete D, HT60–HT61)
+
+`core/codegen.ts`, puro: un generador por lenguaje sobre `ParsedRequest` v2, con `toCurl` movido ahí sin cambiar su salida. En la barra, el botón `SquareTerminal` pasa a `ICON_BTN` con `ChevronDown` que abre el `Menu`, con el lenguaje en texto (sin íconos de marca) y la pista "Las variables quedan como {{nombre}}."; al copiar, `Check` 1,5 s y "Copiado como {lenguaje}". El panel "Código" de la pantalla es una `section` con el segmentado de lenguajes y el `PRE` de `ResponseView`. Pruebas por instantáneas, con un entorno que tiene un secreto para comprobar que ningún valor resuelto aparece. Sin Rust.
+
+#### 14.8 Importar (paquete D, HT62–HT69)
+
+- **Modal** (`ImportModal`, sobre `ModalPanel`) en tres pasos: elegir ("Elegir archivo…", "Elegir carpeta de Bruno…"), vista previa (formato y colección, carpeta de destino editable, el resumen, los secretos con su casilla y su pista, los avisos) e Importar (`SEND_BTN`, con `aria-disabled` por encima de los límites). Se abre desde la columna, junto a "Nueva petición" (`ICON_BTN` con `Import`), y desde su estado vacío.
+- **Código:** `core/import/{detect,postman,insomnia,bruno,openapi,write}.ts`. Cada formato es puro: `parse → ImportPlan { folders, notes: [{ path, title, markdown }], environments, secrets: [{ env, name, value }], warnings }`. `write.ts` aplica el plan con `createNoteFolder`, `createNoteWith({ folder })`, `updateExtensionSettings` y `setExtensionSecret`. Los secretos del plan viven en memoria mientras el modal está abierto y se borran al cerrarlo; la pista se calcula en TS solo para mostrarla.
+- **Bruno:** un parser pequeño de `.bru` (`meta`, el método, `headers` con `~` para desactivar, `params:query`, `body:*`, `auth:*`, `vars`; `script` y `tests` se omiten). La carpeta se elige con `open({ directory: true })` y se lee con los comandos de lectura de la app.
+- Las filas desactivadas de Postman (`disabled: true`), Insomnia y Bruno (`~`) se escriben con la sintaxis de §14.2: por eso D2 depende de A1. OpenAPI y YAML usan `js-yaml` 3.15, que ya es dependencia, cargado solo al importar. Sin Rust.
+
+#### 14.9 Opciones → Cliente HTTP
+
+Suma la sección **Historial** ("Guardar el historial de lo enviado", con la ayuda "Sin secretos ni respuestas: el texto de la petición, el estado y los tiempos."; "Conservar [500] entradas · [30] días"; "Borrar el historial…"), **Archivos** ("Archivos elegidos en este equipo para enviar: {n}" con "Olvidar todos…") y, en B3, **Tiempos** ("Medir la conexión (DNS, conexión y TLS)", apagada, "Cada envío abre una conexión nueva."). Los dos "…" confirman con `ConfirmDeleteModal`.
+
+#### 14.10 Componentes nuevos y tokens
+
+| Nuevo | Se parece a | Por qué hace falta |
+|---|---|---|
+| `KeyValueTable` (Params, Cabeceras, Form, Multipart) | Las variables de Opciones | Casilla de activa, columna opcional de tipo, filas de solo lectura y ligada al texto. Genérica, para que Opciones pueda pasarse a ella. |
+| `VariableCombobox` | `AppSelect` y el `Menu` | Texto libre con sugerencias de variables. |
+| `JsonTree` | `CodeText` de DevTools | No hay ningún árbol en la app. |
+| `FileChip` | `CHIP` y la tarjeta binaria | Estados y acciones. |
+| `TimingStrip` | — | Nuevo, con tokens existentes. |
+| `ImportModal` | `ConsentModal` y `ModalPanel` | Flujo de tres pasos con vista previa. |
+
+Sin tokens nuevos: `--bg-input`, `--bg-hover`, `--border`, `--border-card`, `--text-*`, `--syntax-*`, los tintes `amber`, `red` y `emerald` ya medidos en los 7 temas, y el acento solo en anillos, barras e íconos. Clases de `controlClasses.ts`. El fondo blanco de la vista previa HTML es una excepción a propósito.
+
+#### 14.11 Teclado y accesibilidad
+
+| Dónde | Tecla | Acción |
+|---|---|---|
+| Pestañas de la petición, la respuesta y la columna | ←/→, Inicio/Fin | Roving tabindex |
+| `KeyValueTable` | Tab / ⇧Tab | Casilla → nombre → valor → eliminar, fila a fila (no es un `grid` ARIA: en un formulario confunde) |
+| `KeyValueTable` | Espacio en la casilla | Activa o desactiva y lo anuncia ("Accept: desactivada") |
+| `KeyValueTable` | Enter en el valor de la última fila | Agrega una fila y enfoca su nombre |
+| `KeyValueTable` | ⌥⇧↑ / ⌥⇧↓ | Mueve la fila (el orden importa en las cabeceras repetidas) |
+| `JsonTree` | ↑/↓, →/←, Inicio/Fin, `*`, ⌘C, ⌘⇧C | Recorrer, desplegar o subir, extremos, desplegar hermanos, copiar valor o ruta |
+| Filtro del árbol | Esc | Limpia; un segundo Esc vuelve al árbol |
+| Pantalla | ⌘S · ⌘↵ | Guardar en la nota · Enviar |
+| `VariableCombobox` | ↑/↓, Enter, Esc | Patrón combobox con `aria-activedescendant` |
+
+- Árbol: `role="tree"` con `treeitem`, `aria-level`, `aria-setsize`, `aria-posinset` y `aria-expanded`; el nombre accesible es "clave: valor" o "data, arreglo de 2".
+- Tablas: cada campo con su `aria-label` con el nombre de la fila ("Valor de Accept"); errores con `aria-invalid` y `aria-describedby`. Al eliminar una fila, el foco va a la siguiente, o a "+ Agregar" si era la última.
+- Anuncios en la región viva de `announce.ts`: "Fila desactivada", "Copiado como Python", "Guardado en la nota", "Se crearon 6 notas", "{n} coincidencias" (con 400 ms de pausa), "Archivo elegido: foto.png".
+- Objetivos de 28 px (`min-h-7 min-w-7`) en los íconos de las filas. Contraste: solo pares ya medidos; `<mark>` hay que medirlo en sepia y alto contraste en la QA.
+
+#### 14.12 Textos (`httpClient`, es y en)
+
+Con tú y sin voseo, con los términos de siempre ("petición", "entorno", "llavero"). Cada PR suma los suyos, con las mismas claves en los dos idiomas.
+
+| PR | Clave | es | en |
+|---|---|---|---|
+| A1 | `tabParams` · `tabHeadersReq` · `tabAuth` · `tabBodyReq` · `tabText` | Params · Cabeceras · Auth · Cuerpo · Texto | Params · Headers · Auth · Body · Text |
+| A1 | `addParam` · `addHeader` | Agregar parámetro · Agregar cabecera | Add parameter · Add header |
+| A1 | `rowEnable` · `rowDisabledA` · `rowOwnLine` | Enviar {name} · {name}: desactivada · en una línea aparte | Send {name} · {name}: turned off · on its own line |
+| A1 | `tableReadOnly` · `goToText` | Corrige el texto para editar la tabla: {message} · Ir al texto | Fix the text to edit the table: {message} · Go to text |
+| A1 | `authNone` · `authOther` · `authSentAs` · `authBasicHelp` · `authApiKeyIn` | Ninguna · Otra · Se envía como {header} · Logday lo codifica en Base64 al enviar. · Va en | None · Other · Sent as {header} · Logday encodes it in Base64 when sending. · Goes in |
+| A1 | `authLiteral` · `authSaveSecret` · `authSaveToKeychain` · `markEncoded` | Este valor quedaría escrito en la nota, que se sincroniza. · Guardar como secreto · Guardar en el llavero · Codificada por Logday | This value would be written in the note, which syncs. · Save as secret · Save to keychain · Encoded by Logday |
+| A1 | `saveToThisNote` · `newNote` · `unsaved` · `editInView` | Guardar en la nota · Nueva nota · Cambios sin guardar · Editar en Cliente HTTP | Save to note · New note · Unsaved changes · Edit in HTTP client |
+| A1 | `conflictTitle` · `conflictReplace` · `conflictAsNew` | La nota cambió desde que abriste esta petición · Reemplazar en la nota · Guardar como petición nueva | The note changed since you opened this request · Replace in note · Save as new request |
+| A2 | `addField` · `addPart` · `bodyKind.*` · `bodyNone` · `bodyStashed` · `formatJson` | Agregar campo · Agregar parte · Ninguno, JSON, Form, Multipart, Texto, Archivo · Esta petición no tiene cuerpo. · El cuerpo de {kind} se guardó: vuelve a {kind} para recuperarlo. · Formatear | Add field · Add part · None, JSON, Form, Multipart, Text, File · This request has no body. · The {kind} body was kept: switch back to {kind} to get it back. · Format |
+| A2 | `fileChoose` · `fileChange` · `fileChooseAgain` · `fileChosenHere` · `fileNotChosen` · `fileGone` · `fileTooBig` · `fileVariablesIgnored` | Elegir archivo… · Cambiar · Elegir otra vez · Elegido en este equipo · Elige {ref} en este equipo para enviar esta petición. · Ya no está en {dir} · Pasa de {limit} · Logday no pone variables dentro de un archivo (<@): se envía tal cual. | Choose file… · Change · Choose again · Chosen on this computer · Choose {ref} on this computer to send this request. · It's no longer in {dir} · It's over {limit} · Logday doesn't fill in variables inside a file (<@): it's sent as is. |
+| A2 | `err.file_not_chosen` · `err.file_missing` · `err.file_too_large` · `err.file_unreadable` | Falta elegir {ref} en este equipo. No se envió nada. · No se encontró el archivo de {ref}. Elígelo otra vez. · El cuerpo con archivos pasa de {limit}. · No se pudo leer el archivo de {ref}. | {ref} hasn't been chosen on this computer. Nothing was sent. · The file for {ref} wasn't found. Choose it again. · The body with files is over {limit}. · Couldn't read the file for {ref}. |
+| B1 | `viewTree` · `treeFilter` · `treeMatches` · `treeNoMatches` · `treePathError` · `treeShowMore` · `copyValue` · `copyPath` | Árbol · Filtrar: texto o $.ruta · {n\|1 coincidencia\|{n} coincidencias} · Nada coincide con «{query}». · La ruta no es válida en la posición {pos}: {reason} · Mostrar {n} más · Copiar el valor · Copiar la ruta | Tree · Filter: text or $.path · {n\|1 match\|{n} matches} · Nothing matches "{query}". · The path isn't valid at position {pos}: {reason} · Show {n} more · Copy value · Copy path |
+| B1 | `htmlCode` · `htmlPreview` · `htmlPreviewNote` · `tabCookies` · `cookieSession` | Código · Vista previa · Sin scripts ni red: no se cargan imágenes, estilos ni fuentes externos. · Cookies {n} · de sesión | Code · Preview · No scripts or network: external images, styles and fonts aren't loaded. · Cookies {n} · session |
+| B1/B3 | `timeWait` · `timeDownload` · `timeDns` · `timeConnect` · `timeWaitHelp` · `timeFreshNote` | Espera · Descarga · DNS · Conexión y TLS · Hasta las cabeceras: incluye la conexión si se abrió una nueva. · Con conexión nueva: los tiempos son algo más altos que con una reutilizada. | Waiting · Download · DNS · Connection and TLS · Until the headers: includes connecting if a new connection was opened. · With a new connection: times are a bit higher than with a reused one. |
+| B2/B3 | `saveFullResponse` · `downloadFull` | Guardar la respuesta completa… · Descargar entero a un archivo… | Save full response… · Download all of it to a file… |
+| B2 | `historyTab` · `historyEmpty` · `historyOff` · `historyFrom` · `historyResend` · `historyDelete` · `historyClear` | Historial · Todavía no has enviado nada. Lo que envíes aparece aquí, sin secretos ni respuestas. · El historial está apagado. · Del historial · {time} · Volver a enviar · Eliminar del historial · Borrar el historial… | History · You haven't sent anything yet. What you send shows up here, without secrets or responses. · History is turned off. · From history · {time} · Send again · Remove from history · Clear history… |
+| B2 | `historyClearTitle` · `historyClearMessage` · `historyClearConfirm` | Borrar el historial · Se borran las {n} entradas de este equipo. Las notas no se tocan. · Borrar historial | Clear history · All {n} entries on this computer are deleted. Your notes aren't touched. · Clear history |
+| D1 | `copyAs` · `copyAsHint` · `aCopiedAs` · `codePanel` · `codegenJavaMultipart` | Copiar como… · Las variables quedan como {{nombre}}. · Copiado como {lang} · Código · HttpClient de Java no trae multipart. | Copy as… · Variables stay as {{name}}. · Copied as {lang} · Code · Java's HttpClient has no multipart support. |
+| D2 | `importTitle` · `importIntro` · `importPickFile` · `importPickFolder` · `importDest` · `importSummary` | Importar colección · Postman, Insomnia, Bruno, OpenAPI o Swagger. No se envía nada al importar. · Elegir archivo… · Elegir carpeta de Bruno… · Carpeta de destino · Se crearán: {notes} · {requests} · {envs} · {vars} | Import collection · Postman, Insomnia, Bruno, OpenAPI or Swagger. Nothing is sent when importing. · Choose file… · Choose Bruno folder… · Destination folder · Will create: {notes} · {requests} · {envs} · {vars} |
+| D2 | `importSecrets` · `importSecretsHint` · `importKeep` · `importLeaveEmpty` · `importScripts` · `importScriptsCopy` · `importScriptsWarn` | Secretos encontrados ({n}) · Se guardan solo en este equipo · Guardar en el llavero · Dejar vacío · {n\|1 script omitido\|{n} scripts omitidos} (no se ejecutan). · Copiarlos a la nota como texto · Pueden tener tokens escritos a mano. | Secrets found ({n}) · Stored on this computer only · Save to keychain · Leave empty · {n\|1 script skipped\|{n} scripts skipped} (they don't run). · Copy them to the note as text · They may contain tokens typed by hand. |
+| D2 | `importUnknown` · `importTooBig` · `importTooMany` · `importProgress` · `importDone` · `importOpenFolder` · `importUndo` · `importButton` | Este archivo no es una colección que Logday sepa importar. · El archivo pasa de 20 MB. · Tiene {n} peticiones; el máximo es 2000. · Creando notas… {done} de {total} · Se crearon {n} notas en «{folder}» · Abrir la carpeta · Deshacer la importación · Importar | This file isn't a collection Logday can import. · The file is over 20 MB. · It has {n} requests; the maximum is 2,000. · Creating notes… {done} of {total} · Created {n} notes in "{folder}" · Open folder · Undo import · Import |
+
+Estados vacíos y errores: tabla vacía ("Sin parámetros. Agrega uno o escríbelo en la URL."), Auth Ninguna, cuerpo Ninguno, filtro sin resultados, JSON de más de 5 MB ("El árbol se muestra hasta 5 MB; usa Formateado."), historial vacío o apagado, los errores y límites de la importación, el archivo sin elegir, que ya no está o que es grande, el conflicto al guardar en la nota, y un error del llavero al guardar un secreto (el toast de siempre, y el campo conserva lo escrito).
+
+#### 14.13 Para no cerrar la puerta a C y E
+
+- Las directivas `# @…` (REST Client: `# @name login`, `# @no-redirect`) se conservan como comentarios sin efecto; C las usará para nombrar y encadenar peticiones.
+- Las variables admiten `.` (`{{login.response.body.$.token}}`), y el JSONPath de B1 será el motor de C.
+- Los scripts importados quedan como bloques ```js opcionales (HT67).
+- El selector de cuerpo deja sitio para "GraphQL" (E), y el `Channel` de "Descargar a archivo" es el mecanismo de *streaming* de SSE. Un método nuevo (`WS`, `SSE`) sigue dando `unsupported_method` hasta entonces.
+- El historial guarda el texto sin resolver: servirá para "ejecutar todas" de C sin cambiar el formato.
+
+#### 14.14 Hallazgo: Basic al pegar un cURL
+
+Al pegar un cURL, `-u usuario:contraseña` y `https://u:p@host` daban `Authorization: Basic {{basic_auth}}` y pedían guardar en el secreto el valor **ya en Base64** (`curlBasicHint`): un paso manual que nadie espera y que falla en silencio (401) si se guarda `usuario:contraseña` tal cual. Con HT44 pasan a `Authorization: Basic {{username}}:{{password}}`, con dos variables (`password` es secreta por su nombre), y Rust codifica al enviar. Se quita la clave `curlBasicHint`. Un `-u usuario` sin contraseña da `Basic {{username}}:`, como curl, que la pide.
+
+#### 14.15 Orden de los PR
+
+| PR | Contenido | Depende de | Rust |
+|---|---|---|---|
+| **A1** | Parser v2 (query y cabeceras desactivadas, tipo de cuerpo), ediciones de filas, borrador de texto en la pantalla, pestañas Params, Cabeceras, Auth y Texto, `KeyValueTable`, `VariableCombobox`, "Guardar como secreto", "Editar en Cliente HTTP", Guardar en la nota (HT50) y el arreglo de §14.14 | PR #58 | Poco: Basic (HT44) en `prepare` |
+| **D1** | `codegen.ts`, "Copiar como…" y el panel "Código" | A1 (sin él, sale con lo de hoy) | No |
+| **A2** | Cuerpo: tipos, Form, Multipart y Archivo; permisos de archivo, `FileChip` y la franja del bloque | A1 | Sí: comandos de archivos, `files.json`, `body_segments`, `compose_body`, errores |
+| **B1** | Árbol y filtro, HTML, Cookies y tiempos | PR de `HtmlPreview` (solo HTML) | Sí: `timing` y `remoteAddr` |
+| **B2** | Historial y sus Opciones, "Guardar la respuesta completa" | B1 | Sí: escribir, listar, borrar, compactar y enmascarar |
+| **B3** (opcional) | "Medir la conexión" y "Descargar entero a un archivo" | B1 | Sí: cliente de un solo uso, `Resolve`, `connector_layer`, `Channel` |
+| **D2** | Importar Postman, Insomnia y Bruno | A1; A2 para los archivos | No |
+| **D3** | OpenAPI 3 y Swagger 2 | D2 | No |
+
+Orden: A1 → D1 → A2 → B1 → B2 → D2 → D3, con B3 cuando Jorge lo pida. Cada PR actualiza estos tres archivos y la ayuda (HT35).

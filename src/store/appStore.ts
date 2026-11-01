@@ -149,6 +149,10 @@ export interface AppState {
   animationsEnabled: boolean;
   helpButtonsEnabled: boolean;
 
+  // Inicio (specs/extensiones R27)
+  /** El aviso de "Extensiones" al final de Inicio se descartó. Local. */
+  homeExtensionsHintDismissed: boolean;
+
   // Menú lateral (specs/navegacion-secciones)
   sidebarStyle: SidebarStyle;
   /** `undefined`: el orden por defecto. */
@@ -284,7 +288,8 @@ export interface AppState {
   createNoteFolder: (name: string, parent?: string) => Promise<void>;
   renameNoteFolder: (folder: string, newName: string) => Promise<void>;
   deleteNoteFolder: (folder: string) => Promise<void>;
-  createNote: () => Promise<Note>;
+  /** Sin carpeta, en la carpeta abierta (o en la raíz). */
+  createNote: (folder?: string) => Promise<Note>;
   /** Nota con título y contenido, sin abrirla (la crea el agente por MCP,
    *  specs/agentes-mcp). Mismo camino que importar: el `.md` y el sync. */
   createNoteWith: (input: { title: string; content?: string; folder?: string; tags?: string[] }) => Promise<Note>;
@@ -370,6 +375,14 @@ export interface AppState {
   /** Señal para que Opciones abra la pestaña Navegación. */
   sidebarSettingsRequest: boolean;
   clearSidebarSettingsRequest: () => void;
+  /** Abre Opciones en el catálogo de extensiones ("Ver extensiones" de
+   *  Inicio, specs/extensiones R27). */
+  openExtensionsCatalog: () => void;
+  /** Señal para que Opciones abra la pestaña Extensiones. */
+  extensionsCatalogRequest: boolean;
+  clearExtensionsCatalogRequest: () => void;
+  /** "Ocultar este aviso" del aviso de extensiones en Inicio (R27). */
+  dismissHomeExtensionsHint: () => Promise<void>;
   setTrashAutoPurgeEnabled: (enabled: boolean) => Promise<void>;
   listTrash: () => Promise<trash.TrashListItem[]>;
   /** `silent`: sin aviso (al deshacer un borrado de varias tareas, que avisa una vez). */
@@ -489,8 +502,8 @@ async function persistConfig(get: SyncGet): Promise<void> {
   const {
     configDir, basePath, startupScreen, language, confirmDestructiveActions,
     notificationsEnabled, defaultReminderMinutes, workWeekDays, holidaysAsNonWork,
-    animationsEnabled, helpButtonsEnabled, trashAutoPurgeEnabled, sidebarStyle, sidebarSections, activeProject, activeNoteFolder,
-    notesView, notesViewDefault, tasksViewDefault, noteSortBy, noteSortDir, taskSortBy, extensions,
+    animationsEnabled, helpButtonsEnabled, homeExtensionsHintDismissed, trashAutoPurgeEnabled, sidebarStyle, sidebarSections,
+    activeProject, activeNoteFolder, notesView, notesViewDefault, tasksViewDefault, noteSortBy, noteSortDir, taskSortBy, extensions,
   } = get();
   if (!configDir || !basePath) return;
   await saveConfig(configDir, {
@@ -504,6 +517,8 @@ async function persistConfig(get: SyncGet): Promise<void> {
     holidaysAsNonWork,
     animationsEnabled,
     helpButtonsEnabled,
+    // Solo se escribe si se descartó: las configs de siempre no cambian.
+    ...(homeExtensionsHintDismissed ? { homeExtensionsHintDismissed } : {}),
     trashAutoPurgeEnabled,
     // `sidebarLabelsVisible` ya no se escribe (NS5): al guardar se cae.
     sidebarStyle,
@@ -2250,6 +2265,13 @@ const noteUpdatedThrottle = new NoteUpdatedThrottle();
 // Último guardado de cada nota (ver flushNoteUpdated).
 const noteSavesInFlight = new Map<string, Promise<void>>();
 
+/** Espera a que termine el último guardado de una nota, si hay uno: quien
+ *  la reescribe desde fuera del editor (lib/noteExternalEdit.ts) lee el
+ *  `.md` después de ese guardado, no antes. */
+export function waitForNoteSave(noteId: string): Promise<void> {
+  return noteSavesInFlight.get(noteId) ?? Promise.resolve();
+}
+
 // ── Store ──────────────────────────────────────────────────────
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -2287,6 +2309,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   sidebarStyle: DEFAULT_SIDEBAR_STYLE,
   sidebarSections: undefined,
   sidebarSettingsRequest: false,
+  extensionsCatalogRequest: false,
+  homeExtensionsHintDismissed: false,
   theme: (localStorage.getItem('theme') as Theme) || 'system',
   customThemes: (() => {
     try {
@@ -2302,8 +2326,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   })(),
   startupScreen: 'dashboard',
   extensions: {},
-  notesView: 'list',
-  notesViewDefault: 'list',
+  notesView: 'tree',
+  notesViewDefault: 'tree',
   tasksViewDefault: 'list',
   noteSortBy: 'updated',
   noteSortDir: 'desc',
@@ -2440,14 +2464,16 @@ export const useAppStore = create<AppState>((set, get) => ({
             holidaysAsNonWork: cfg.holidaysAsNonWork ?? true,
             animationsEnabled: cfg.animationsEnabled ?? true,
             helpButtonsEnabled: cfg.helpButtonsEnabled ?? true,
+            homeExtensionsHintDismissed: cfg.homeExtensionsHintDismissed === true,
             trashAutoPurgeEnabled: cfg.trashAutoPurgeEnabled ?? true,
             // NS5: una config con `sidebarLabelsVisible` y sin estilo
             // abre con la Barra de íconos, la predeterminada.
             sidebarStyle: parseSidebarStyle(cfg.sidebarStyle, cfg.sidebarLabelsVisible),
             sidebarSections: parseSidebarSections(cfg.sidebarSections),
             // La vista de Opciones se usa la primera vez; después, la última usada.
-            notesViewDefault: cfg.notesViewDefault ?? 'list',
-            notesView: cfg.notesView ?? cfg.notesViewDefault ?? 'list',
+            // Sin ninguna guardada, el árbol (Jorge, 31 oct 2026).
+            notesViewDefault: cfg.notesViewDefault ?? 'tree',
+            notesView: cfg.notesView ?? cfg.notesViewDefault ?? 'tree',
             // Tareas abre en la vista de Opciones; la última usada no se
             // recuerda (NS22).
             ...initialTasksView(cfg),
@@ -3194,10 +3220,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadNoteFolders();
   },
 
-  createNote: async () => {
+  createNote: async (inFolder?: string) => {
     const { basePath, activeNoteFolder } = get();
     if (!basePath) throw new Error('No base path');
-    const folder = activeNoteFolder ?? '';
+    const folder = inFolder ?? activeNoteFolder ?? '';
     const id = uuidv4();
     const note: Note = {
       id,
@@ -4080,6 +4106,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   openSidebarSettings: () => set({ isSettingsOpen: true, sidebarSettingsRequest: true }),
   clearSidebarSettingsRequest: () => set({ sidebarSettingsRequest: false }),
+
+  openExtensionsCatalog: () => set({ isSettingsOpen: true, extensionsCatalogRequest: true }),
+  clearExtensionsCatalogRequest: () => set({ extensionsCatalogRequest: false }),
+
+  dismissHomeExtensionsHint: async () => {
+    set({ homeExtensionsHintDismissed: true });
+    await persistConfig(get);
+  },
 
   setTrashAutoPurgeEnabled: async (enabled) => {
     set({ trashAutoPurgeEnabled: enabled });

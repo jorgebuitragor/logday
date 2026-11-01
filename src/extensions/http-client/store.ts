@@ -1,11 +1,13 @@
 // Estado del Cliente HTTP en memoria: qué petición está elegida en cada
 // bloque, lo que está en curso, las confirmaciones pendientes, las
-// respuestas (en la caché de A8) y el formulario de la pantalla propia
-// (HT33). Nada de esto va a disco (HT11). La barra y la franja de un
-// bloque son dos islas aparte: comparten esto.
+// respuestas (en la caché de A8) y los borradores de la pantalla propia
+// (HT33, HT40). Nada de esto va a disco (HT11), salvo con "Guardar en la
+// nota" (HT50). La barra y la franja de un bloque son dos islas aparte:
+// comparten esto.
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 import { useAppStore } from '../../store/appStore';
+import { extensionSection } from '../state';
 import { announce } from './announce';
 import { cancelHttp, sendErrorMessage, sendHttp, type SendError, type SendOutput } from './core/api';
 import { bodyBytes } from './core/body';
@@ -13,7 +15,9 @@ import { ResponseCache, cacheKey } from './core/cache';
 import { activeEnvironment, EXTENSION_ID, readHttpSettings, type HttpClientSettings, type HttpEnvironment } from './core/environments';
 import { hasErrors, parseHttpBlock, type ParsedRequest, type ParseIssue } from './core/parse';
 import { resolveRequest, type ConfirmReason, type Resolved, type SentPreview } from './core/resolve';
-import { EMPTY_FORM, type HttpForm } from './core/serialize';
+import { saveRequestInNote, type SaveMode } from './core/noteSave';
+import { formatFence, parseFencedBlocks } from '../../lib/fencedBlocks';
+import { editNoteContent } from '../../lib/noteExternalEdit';
 import { formatElapsed, listVars, makeTr, type Tr } from './core/text';
 import type { HttpClientKey } from '../../lib/i18n';
 
@@ -76,14 +80,39 @@ export interface FormOrigin {
   label: string;
 }
 
+/** Lo que se edita en la pantalla (HT40, design §14.3): el texto de una
+ *  petición, sin la línea `###`. Las pestañas son vistas de este texto. */
+export interface Draft {
+  code: string;
+  /** El texto al cargarla o al guardarla: si `code` es distinto, hay
+   *  cambios sin guardar. */
+  loadedCode: string;
+  /** El `source` de su sección en la nota al cargarla o guardarla, para
+   *  saber si la nota cambió desde entonces (HT50). `null` en una nueva. */
+  loadedSource: string | null;
+  /** El nombre de `###`, para "Guardar como petición nueva". */
+  name: string | null;
+  /** La fila que Auth escribió como API key: se reconoce aunque su valor
+   *  todavía no sea una variable (requestEdit.ts, `AuthContext`). */
+  apiKey: { place: 'header' | 'query'; name: string } | null;
+  /** HT50: la nota cambió desde que se cargó; se pregunta qué hacer. */
+  conflict: boolean;
+}
+
+export const EMPTY_DRAFT: Draft = { code: '', loadedCode: '', loadedSource: null, name: null, apiKey: null, conflict: false };
+
+export const isDirty = (d: Draft | undefined) => !!d && d.code !== d.loadedCode;
+
 interface HttpStore {
   blocks: Record<string, BlockState>;
   /** Sube con cada cambio de la caché, para volver a dibujar. */
   rev: number;
   /** Opciones → Cliente HTTP abre con este entorno elegido. */
   settingsEnvRequest: string | null;
-  /** El formulario de la pantalla y de dónde salió (HT33, HT34). */
-  form: HttpForm;
+  /** Los borradores de la pantalla, por petición (`formNoteId`): al ir de
+   *  una a otra, cada una conserva sus cambios, como su respuesta. */
+  drafts: Record<string, Draft>;
+  /** De dónde salió lo que se ve en la pantalla (HT34). */
   origin: FormOrigin | null;
   /** ⌥/Alt+clic en compactar (bloque compacto): todos los bloques de esa
    *  nota pasan a compactos o a expandidos. Cada barra lo atiende al
@@ -91,7 +120,7 @@ interface HttpStore {
   compactAll: { noteId: string; compact: boolean } | null;
 }
 
-const initial = (): HttpStore => ({ blocks: {}, rev: 0, settingsEnvRequest: null, form: EMPTY_FORM, origin: null, compactAll: null });
+const initial = (): HttpStore => ({ blocks: {}, rev: 0, settingsEnvRequest: null, drafts: {}, origin: null, compactAll: null });
 
 export const httpApi = createStore<HttpStore>(() => initial());
 
@@ -134,6 +163,9 @@ let userAgent = 'Logday';
 export const setUserAgent = (ua: string) => {
   userAgent = ua;
 };
+
+/** El User-Agent que agrega Logday, para mostrarlo en Cabeceras (HT42). */
+export const currentUserAgent = () => userAgent;
 
 export function resolveWith(req: ParsedRequest, env: HttpEnvironment | null): Resolved {
   return resolveRequest(req, {
@@ -348,27 +380,122 @@ function resetSlot(origin: FormOrigin | null) {
   httpApi.setState({ blocks, rev: s.rev + 1 });
 }
 
-export function setFormField<K extends keyof HttpForm>(field: K, value: HttpForm[K]) {
-  httpApi.setState((s) => ({ form: { ...s.form, [field]: value } }));
+/** El borrador que se ve en la pantalla. */
+export function currentDraft(s: HttpStore = httpApi.getState()): Draft {
+  return s.drafts[formNoteId(s.origin)] ?? EMPTY_DRAFT;
 }
 
-/** Pegar un cURL en la URL (HT39): el formulario entero pasa a ser esa
- *  petición. La procedencia no cambia, como al escribir en los campos. */
-export function setForm(form: HttpForm) {
-  httpApi.setState({ form });
+function patchDraft(patch: Partial<Draft>) {
+  httpApi.setState((s) => {
+    const id = formNoteId(s.origin);
+    return { drafts: { ...s.drafts, [id]: { ...(s.drafts[id] ?? EMPTY_DRAFT), ...patch } } };
+  });
 }
 
-/** Elegir una petición de la columna: el formulario pasa a ser ella. Lo
- *  que se escribió en el anterior se olvida; las respuestas, no. */
-export function loadForm(form: HttpForm, origin: FormOrigin) {
-  httpApi.setState({ form, origin });
+/** Cada edición de la pantalla (una tabla, Auth, el texto, un cURL pegado
+ *  en la URL, HT39c) reescribe el texto del borrador. La procedencia no
+ *  cambia. */
+export function setDraftCode(code: string, extra: Partial<Pick<Draft, 'apiKey'>> = {}) {
+  patchDraft({ code, ...extra });
 }
 
-/** "Nueva petición": el formulario vacío, sin nota, y sin la respuesta de
+/** Elegir una petición de la columna (o "Editar en Cliente HTTP" desde el
+ *  bloque): la pantalla pasa a ella. Si ya tenía cambios sin guardar, se
+ *  conservan; si no, se carga lo que dice la nota ahora. */
+export function loadDraft(origin: FormOrigin, loaded: { code: string; source: string; name: string | null }) {
+  httpApi.setState((s) => {
+    const id = formNoteId(origin);
+    const prev = s.drafts[id];
+    const draft = isDirty(prev)
+      ? prev
+      : { ...EMPTY_DRAFT, code: loaded.code, loadedCode: loaded.code, loadedSource: loaded.source, name: loaded.name };
+    return { origin, drafts: { ...s.drafts, [id]: draft } };
+  });
+}
+
+/** "Editar en Cliente HTTP" desde la barra del bloque (HT50): la pantalla
+ *  con esa petición cargada. */
+export async function openInView(origin: FormOrigin, loaded: { code: string; source: string; name: string | null }) {
+  loadDraft(origin, loaded);
+  await useAppStore.getState().setSection(extensionSection(EXTENSION_ID));
+}
+
+/** "Nueva petición": el borrador vacío, sin nota, y sin la respuesta de
  *  la petición nueva anterior. */
 export function newForm() {
   resetSlot(null);
-  httpApi.setState({ form: EMPTY_FORM, origin: null });
+  httpApi.setState((s) => ({ origin: null, drafts: { ...s.drafts, [formNoteId(null)]: EMPTY_DRAFT } }));
+}
+
+export type SaveToNoteResult = 'saved' | 'conflict' | 'new_note' | 'missing' | 'open' | 'unchanged' | 'failed';
+
+/** HT50, "Guardar en la nota": reescribe en la nota solo la sección de la
+ *  petición. Con `replace`, si la sección cambió desde que se cargó, no
+ *  escribe y deja el conflicto para que se elija. `append` sin sitio en el
+ *  bloque (o sin el bloque) crea una nota nueva. */
+export async function saveDraftToNote(mode: SaveMode, newNoteTitle: string): Promise<SaveToNoteResult> {
+  const { origin } = httpApi.getState();
+  const draft = currentDraft();
+  if (!origin) return 'failed';
+  const id = formNoteId(origin);
+  let outcome: ReturnType<typeof saveRequestInNote> | null = null;
+  const result = await editNoteContent(origin.filePath, origin.noteId, (content) => {
+    outcome = saveRequestInNote(content, {
+      blockIndex: origin.blockIndex,
+      requestIndex: origin.requestIndex,
+      loadedSource: draft.loadedSource ?? '',
+      name: draft.name,
+    }, draft.code, mode);
+    return outcome.ok ? outcome.content : null;
+  }).catch(() => null);
+  if (!result) return 'failed';
+  if (result.status === 'missing' || result.status === 'open') return result.status;
+  const done = outcome as ReturnType<typeof saveRequestInNote> | null;
+  if (result.status === 'declined' && done && !done.ok) {
+    if (done.reason === 'conflict') {
+      patchDraft({ conflict: true });
+      return 'conflict';
+    }
+    // El bloque ya no está o tiene 20 peticiones: va a una nota nueva.
+    if (mode === 'replace') {
+      patchDraft({ conflict: true });
+      return 'conflict';
+    }
+    const note = await useAppStore.getState().createNoteWith({ title: newNoteTitle, content: formatFence('http', draft.code) }).catch(() => null);
+    if (!note) return 'failed';
+    // La pantalla pasa a la petición de la nota nueva; la de antes vuelve
+    // a lo que dice su nota.
+    const nextOrigin: FormOrigin = { noteId: note.id, title: note.title, filePath: note.filePath, blockIndex: 0, requestIndex: 0, label: origin.label };
+    httpApi.setState((s) => {
+      const drafts = { ...s.drafts };
+      delete drafts[id];
+      const block = parseFencedBlocks(note.content, 'http')[0];
+      const source = block ? parseHttpBlock(block.code).requests[0]?.source ?? null : null;
+      drafts[formNoteId(nextOrigin)] = { ...draft, loadedCode: draft.code, loadedSource: source, conflict: false };
+      return { origin: nextOrigin, drafts };
+    });
+    return 'new_note';
+  }
+  // `unchanged`: la nota ya decía eso; cuenta como guardado.
+  if (!done || !done.ok) return 'failed';
+  // La petición ahora es la de la nota: la sección nueva si se agregó.
+  const nextOrigin: FormOrigin = { ...origin, requestIndex: done.requestIndex, label: mode === 'append' && draft.name ? `${draft.name} (2)` : origin.label };
+  const nextId = formNoteId(nextOrigin);
+  httpApi.setState((s) => {
+    const drafts = { ...s.drafts };
+    const saved: Draft = { ...draft, loadedCode: draft.code, loadedSource: done.source, conflict: false, name: mode === 'append' && draft.name ? `${draft.name} (2)` : draft.name };
+    if (nextId !== id) {
+      // El borrador de la petición de antes vuelve a lo que dice la nota.
+      delete drafts[id];
+    }
+    drafts[nextId] = saved;
+    return { origin: nextOrigin, drafts };
+  });
+  return 'saved';
+}
+
+export function dismissConflict() {
+  patchDraft({ conflict: false });
 }
 
 /** El entorno activo para todas las peticiones (HT19). */

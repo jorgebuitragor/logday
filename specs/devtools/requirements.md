@@ -21,6 +21,7 @@ Jorge la eligió el 30 oct 2026 entre las candidatas del grupo Herramientas, con
   - YAML: validar y formatear.
   - XML: formatear, minificar y validar que esté bien formado.
   - Convertir JSON → YAML, YAML → JSON y JSON → CSV. Para CSV, la entrada es un arreglo de objetos y las columnas son la unión de sus claves.
+  - Visor HTML: ver D26.
   - SI la entrada no es válida, la herramienta DEBERÁ decir qué falla y, si se sabe, en qué línea y columna. El error DEBERÁ ser el mismo en macOS, Windows y Linux, sin depender del motor del WebView.
   - Al leer YAML NO DEBERÁN ejecutarse tipos de JavaScript (`!!js/function`).
 - D2. **Codificar y decodificar.**
@@ -114,6 +115,21 @@ Pedido por Jorge el 31 oct 2026: «¿Por qué no existe un apartado de opciones 
   - Lo guardado de entonces se lee sin romper y se ignora: `lastTool: 'http'` abre la herramienta por defecto (JSON), y `http` o `network` en `groupOrder`, `toolOrder`, `hidden` y `collapsed` se descartan al leer (`readDevtoolsSettings`) y desaparecen del archivo la próxima vez que se guardan esas listas.
   - Un bloque ```` ```http ```` de "Traer de una nota" se trata como uno sin herramienta propia: se carga en la abierta, o en JSON.
 
+### Visor HTML
+
+Pedido por Jorge el 31 oct 2026: una herramienta para visualizar HTML. Eligió la opción aislada: la vista previa no ejecuta scripts ni carga nada de fuera por defecto, para que DevTools siga cumpliendo D11.
+
+- D26. **Visor HTML** (grupo Formatos, al final, D24).
+  - Editor del HTML y, al lado (debajo en ventana angosta), su vista previa, que se rehace 250 ms después de dejar de escribir (con el tope de D8).
+  - Acciones: Formatear (2 espacios, 4 o tab), Minificar, Copiar y Limpiar. Formatear y Minificar cambian el texto del editor.
+  - Ancho de la vista previa: Móvil (375 px), Tablet (768 px) o Completo. SI el ancho elegido no cabe, la página DEBERÁ escalarse para verse entera.
+  - Bajo el editor, el tamaño y las líneas. La herramienta DEBERÁ avisar de las etiquetas sin cerrar y de los cierres que no cierran nada, con su línea, sin contar los cierres opcionales (`<li>`, `<p>`, `<td>`…). No es un validador.
+  - La vista previa NO DEBERÁ ejecutar scripts, enviar formularios, abrir ventanas, navegar fuera del documento ni, por defecto, cargar nada de la red. Va en un iframe con `sandbox` vacío y una CSP propia, que el HTML del usuario no puede relajar.
+  - "Cargar recursos externos" DEBERÁ estar apagado al abrir la herramienta y no recordarse: encendido, la vista previa carga imágenes, estilos, fuentes y medios por `https:`, nunca scripts ni `http:`.
+  - Bajo la vista previa, el aviso "Vista previa aislada: sin scripts ni recursos externos." (o, con los externos, que esos se descargan de internet).
+  - Lo que se escribe vive en memoria (D9); se recuerdan el ancho y la indentación. Un bloque ```` ```html ```` de "Traer de una nota" se abre aquí (D10); uno ```` ```svg ````, en XML.
+  - La vista previa es un componente compartido (`HtmlPreview`): el Cliente HTTP lo reutilizará para las respuestas `text/html` (paquete B de su rediseño), con el mismo aislamiento.
+
 ## Decisiones (30 oct 2026)
 
 Son las que recomendó el diseño (ver `design.md`):
@@ -143,6 +159,14 @@ Jorge aprobó el diseño de las opciones (D17–D24) con todas sus recomendacion
 - No se centralizan las opciones de cada herramienta (la indentación, por ejemplo): cada una recuerda la suya.
 - El arrastre de la página y el arreglo del foco de "Mover arriba / abajo" (con `aria-disabled`) van en el mismo PR, también en Opciones → Navegación (`SidebarSettings.tsx`).
 
+## Decisiones del Visor HTML (31 oct 2026)
+
+- La vista previa es aislada (la opción que eligió Jorge): sin scripts nunca, y sin red salvo que se pida.
+- "Cargar recursos externos" no se recuerda ni entre herramientas: cargar de internet deja ver a terceros qué se está mirando (los píxeles de seguimiento de un correo), así que es una decisión de cada vez.
+- Con los externos, solo `https:`. `http:` no: va sin cifrar, y en Windows la app se sirve desde `http://tauri.localhost`, así que abriría también las direcciones de la propia app.
+- Los enlaces de la vista previa no se abren, tampoco los `#ancla`: en un `srcdoc` se resuelven contra la URL de la app y navegarían el iframe (design, Adenda H).
+- Formatear y Minificar son tolerantes como el navegador: nunca dan error y no agregan los cierres que faltan.
+
 ## Fuera de alcance (por ahora)
 
 - Verificar la firma de un JWT (pediría la clave).
@@ -150,3 +174,4 @@ Jorge aprobó el diseño de las opciones (D17–D24) con todas sus recomendacion
 - Un editor de código con resaltado mientras se escribe (Monaco pesa varios MB).
 - Una herramienta fija al abrir, herramientas favoritas o recientes, y el ancho de la columna (decisiones del 31 oct 2026).
 - DevTools en Web y Mobile.
+- En el Visor HTML: ejecutar scripts, abrir los enlaces, un validador de HTML y resaltado mientras se escribe.

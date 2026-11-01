@@ -21,6 +21,7 @@ const app = vi.hoisted(() => ({
   },
   openExtensionSettings: () => {},
   showToast: () => '',
+  activeNote: null as null | { id: string; title: string; filePath: string },
 }));
 
 vi.mock('../../store/appStore', () => {
@@ -49,7 +50,7 @@ vi.mock('./core/api', async (orig) => {
 
 const { default: HttpNoteBlock } = await import('./ui/Block');
 const { default: Settings } = await import('./ui/Settings');
-const { ResponseView } = await import('./ui/ResponseView');
+const { ResponseView, rememberHtmlMode } = await import('./ui/ResponseView');
 const { CodePanel, copyAsItems } = await import('./ui/CopyAs');
 const { makeTr } = await import('./core/text');
 const store = await import('./store');
@@ -182,6 +183,19 @@ describe('barra del bloque: lenguaje, método y "Copiar como…" (HT36–HT38, H
     expect(block('GET {{baseUrl}}', 'header', null, editable)).not.toMatch(disabled);
     // También sin las acciones del editor (otra vista): copiar no cambia la nota.
     expect(block('GET https://x.com', 'header')).toContain('aria-label="Copiar como…"');
+  });
+
+  it('"Editar en Cliente HTTP" (HT50): solo con la nota abierta en el editor', () => {
+    expect(block('GET https://x.com', 'header', null, editable)).not.toContain('Editar en Cliente HTTP');
+    app.activeNote = { id: 'n1', title: 'API', filePath: '/datos/notes/n1.md' };
+    try {
+      const html = block('GET https://x.com', 'header', null, editable);
+      expect(html).toMatch(/<button[^>]*aria-label="Editar en Cliente HTTP"[^>]*title="Editar en Cliente HTTP"/);
+      // De otra nota (otro id), no.
+      expect(block('GET https://x.com', 'header', null, { ...editable, noteId: 'otra' })).not.toContain('Editar en Cliente HTTP');
+    } finally {
+      app.activeNote = null;
+    }
   });
 
   it('en inglés, los mismos controles', () => {
@@ -334,12 +348,91 @@ describe('franja del bloque', () => {
     expect(cut).toContain('Certificado sin verificar');
   });
 
-  it('el HTML se muestra como texto, nunca como página', () => {
+  it('el HTML se ve en la vista previa aislada, nunca en la página', () => {
     const code = 'GET https://x.com';
     primeResponse(code, output({ headers: [['content-type', 'text/html']], body: { kind: 'text', text: '<script>alert(1)</script>', lossy: false } }));
     const html = block(code, 'footer');
     expect(html).not.toContain('<script>');
-    expect(html).toContain('&lt;');
+    expect(html).toContain('<iframe');
+    expect(html).toContain('sandbox=""');
+  });
+});
+
+describe('respuesta HTML (HT53)', () => {
+  const PAGE = '<!DOCTYPE html><html><head><title>Hola</title></head><body><h1>Hola</h1><script>alert(1)</script><a href="https://evil.example">x</a></body></html>';
+  const htmlOut = (over: Partial<SendOutput> = {}) =>
+    output({ headers: [['content-type', 'text/html; charset=utf-8']], body: { kind: 'text', text: PAGE, lossy: false }, bodyBytes: PAGE.length, ...over });
+  const respond = (out: SendOutput) => renderToStaticMarkup(
+    <ResponseView
+      now={Date.now()}
+      outcome={{ envName: null, sentAt: Date.now(), preview: { method: 'GET', url: 'https://x.com', headers: [], body: null }, output: out }}
+    />,
+  );
+  // El texto sin etiquetas ni los cortes del resaltado.
+  const plain = (html: string) => html.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+  const pressed = (html: string, label: string) => new RegExp(`aria-pressed="true"[^>]*>${label}<`).test(html);
+
+  beforeEach(() => rememberHtmlMode('preview'));
+
+  it('por defecto, Vista previa: iframe sin permisos, CSP sin red y enlaces neutralizados', () => {
+    const html = respond(htmlOut());
+    expect(pressed(html, 'Vista previa')).toBe(true);
+    expect(text(html)).toContain('Vista previa Código Sin formato');
+    expect(html).toContain('sandbox=""');
+    expect(html).toContain('title="Vista previa de la respuesta HTML"');
+    // El documento va en srcdoc (escapado), con la CSP primero y sin el href.
+    expect(html).toMatch(/srcDoc="[^"]*Content-Security-Policy[^"]*default-src &#x27;none&#x27;/i);
+    expect(html).not.toContain(' href=&quot;https://evil.example');
+    expect(html).toContain('data-logday-href=&quot;https://evil.example');
+    expect(html).not.toContain('<script>');
+    expect(text(html)).toContain('Vista previa aislada: sin scripts ni recursos externos.');
+    expect(text(html)).toContain('Cargar recursos externos');
+    // El interruptor empieza apagado: no se recuerda.
+    expect(html).toMatch(/role="switch"[^>]*aria-checked="false"/);
+    expect(text(html)).not.toContain('la página está incompleta');
+  });
+
+  it('Código: formateado y resaltado, sin iframe', () => {
+    rememberHtmlMode('code');
+    const html = respond(htmlOut());
+    expect(pressed(html, 'Código')).toBe(true);
+    expect(html).not.toContain('<iframe');
+    expect(html).toContain('hljs-');
+    expect(text(html)).not.toContain('Cargar recursos externos');
+    // Sangrado: el original no tiene saltos de línea; el formateado, sí.
+    expect(html).toContain('\n  ');
+  });
+
+  it('Sin formato: el cuerpo tal cual', () => {
+    rememberHtmlMode('raw');
+    const html = respond(htmlOut());
+    expect(pressed(html, 'Sin formato')).toBe(true);
+    expect(html).not.toContain('<iframe');
+    expect(plain(html)).toContain(PAGE);
+  });
+
+  it('sin content-type, si empieza por <!doctype html> también es una página', () => {
+    const html = respond(htmlOut({ headers: [] }));
+    expect(html).toContain('<iframe');
+  });
+
+  it('cortada por el tope o no UTF-8: vista previa con lo que llegó, y avisa', () => {
+    const cut = text(respond(htmlOut({ truncated: true, body: { kind: 'text', text: '<html><body><h1>Hol', lossy: true } })));
+    expect(cut).toContain('La vista previa usa solo lo que llegó: la página está incompleta.');
+    expect(cut).toContain('El cuerpo no es UTF-8 válido');
+    expect(respond(htmlOut({ truncated: true }))).toContain('<iframe');
+  });
+
+  it('JSON, texto y binario siguen como antes, sin iframe', () => {
+    const json = respond(output());
+    expect(json).not.toContain('<iframe');
+    expect(text(json)).toContain('Formateado Sin formato');
+    const plain = respond(output({ headers: [['content-type', 'text/plain']], body: { kind: 'text', text: '<html>no</html>', lossy: false } }));
+    expect(plain).not.toContain('<iframe');
+    expect(plain).toContain('&lt;html&gt;no&lt;/html&gt;');
+    const bin = respond(output({ headers: [['content-type', 'text/html']], body: { kind: 'binary', base64: 'AQID' } }));
+    expect(bin).not.toContain('<iframe');
+    expect(text(bin)).toContain('Respuesta binaria');
   });
 });
 
@@ -365,6 +458,21 @@ describe('la petición enviada enmascara los secretos', () => {
     expect(html).toContain('No enviada: Content-Length (la calcula Logday)');
     expect(html).toContain('Redirección: 301 → https://api.example.com/v2/u');
     expect(html).toContain('Staging · Enviada a las');
+  });
+
+  it('una Basic que codifica Logday lleva su marca (HT44)', () => {
+    const html = text(renderToStaticMarkup(
+      <ResponseView
+        initialTab="request"
+        now={Date.now()}
+        outcome={{
+          envName: 'Staging', sentAt: Date.now(),
+          preview: { method: 'GET', url: 'https://x.com', body: null, headers: [{ name: 'Authorization', value: 'Basic ana:••••…a1b2', secret: true, auto: false, encoded: true }] },
+          output: output(),
+        }}
+      />,
+    ));
+    expect(html).toContain('Authorization: Basic ana:••••…a1b2 secreto Codificada por Logday');
   });
 });
 

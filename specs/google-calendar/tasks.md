@@ -13,3 +13,7 @@ Estado: en progreso.
 - [x] Módulo, panel y guía; textos en es y en.
 - [x] Pruebas, build, lint y `cargo test`.
 - [ ] QA con el cliente interno de la FCV.
+- [x] Tarjeta "Reuniones de hoy" en Inicio (G12): `HomeCard.tsx`,
+  `fetchToday`/`refreshToday` con su store, `homeAgenda` y el interruptor
+  "Mostrar en Inicio" (31 oct 2026, rama `feature/inicio-extensiones`).
+- [ ] Prueba visual de la tarjeta en la app de QA, con una cuenta real.

@@ -8,8 +8,8 @@
 //    ningún formulario y no se abre ni se navega otra ventana.
 // 2. La CSP de `previewCsp`, en una `<meta>` que es lo primero del `<head>`:
 //    nada de red (o solo imágenes, estilos y fuentes por https si el usuario
-//    lo pide; ver `rebaseAttr` para las rutas relativas). Va antes de todo lo del usuario, así que rige para todo lo que
-//    se carga después. Una CSP del usuario no la puede relajar: con varias
+//    lo pide; ver `rebaseAttr` para las rutas relativas). Va antes de todo
+//    lo del usuario, así que rige para todo lo que se carga después. Una CSP del usuario no la puede relajar: con varias
 //    políticas, el navegador exige que un recurso las cumpla todas, así que
 //    otra `<meta>` solo restringe más. Y sin scripts nadie la puede quitar.
 // 3. El saneado (`sanitizePreviewHtml`): la CSP no cubre la navegación (y

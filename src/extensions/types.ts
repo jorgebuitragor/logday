@@ -51,6 +51,19 @@ export interface NoteBlockProps {
    *  texto del bloque. Cambia solo el tramo distinto, así el cursor se
    *  queda en su sitio y Deshacer lo revierte en un paso. */
   setCode?: (code: string) => void;
+  /** Solo en el modo inline: el bloque está compacto. La nota oculta el
+   *  código y la franja (siguen en el documento) y solo queda la barra. */
+  compact?: boolean;
+  /** Solo en el modo inline: compacta o expande el bloque. Recordarlo es
+   *  cosa de la extensión. Al compactar con el cursor dentro, el cursor
+   *  sale del bloque; si el usuario vuelve a ponerlo dentro (Deshacer, ir
+   *  a una línea), la nota lo expande sola, sin avisar a la extensión.
+   *  `initial`: el estado con que arranca al montarse; no mueve la
+   *  selección y no compacta si el usuario está escribiendo en el bloque. */
+  setCompact?: (compact: boolean, opts?: { initial?: boolean }) => void;
+  /** Solo en el modo inline: el texto de cada bloque de ese lenguaje en la
+   *  nota, en orden (el de `index` es este). Se calcula al llamarla. */
+  blockCodes?: () => string[];
 }
 
 /** Props del editor de ese bloque, que se abre al crearlo o editarlo. */
@@ -129,7 +142,8 @@ export interface ExtensionDefinition {
     language: string;
     /** Modo inline: el código se ve y se edita en la nota, y la extensión
      *  dibuja una barra encima y una franja debajo (`part`). Sin editor
-     *  aparte (specs/cliente-http, design A3). */
+     *  aparte (specs/cliente-http, design A3). La barra puede compactar el
+     *  bloque (`NoteBlockProps.setCompact`). */
     inline?: boolean;
     /** Lo que inserta "Nuevo bloque" en el modo inline. */
     template?: string;

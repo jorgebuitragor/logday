@@ -319,7 +319,7 @@ Casi todas las herramientas **procesan en vivo**, con un debounce de 150 ms. `�
     - el chip del lenguaje: `rounded-md bg-[var(--bg-hover)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-secondary)]`, o "Sin lenguaje";
     - las 3 primeras líneas en `pre` mono `text-[11px] text-[var(--text-secondary)] line-clamp-3`;
     - a la derecha, la acción.
-  - La acción depende del lenguaje: `json` → "Abrir en JSON", `yaml`/`yml` → "Abrir en YAML", `xml`/`html` → "Abrir en XML". Si no hay herramienta para ese lenguaje (`plaintext`, `bash`, `sql`, `csv`…) → "Cargar en {herramienta actual}".
+  - La acción depende del lenguaje: `json` → "Abrir en JSON", `yaml`/`yml` → "Abrir en YAML", `xml`/`svg` → "Abrir en XML", `html` → "Abrir en Visor HTML" (desde D26, Adenda H; antes iba a XML). Si no hay herramienta para ese lenguaje (`plaintext`, `bash`, `sql`, `csv`…) → "Cargar en {herramienta actual}".
   - Se leen todos los bloques con un recorrido de cercas de cualquier lenguaje. Ojo: hoy `parseFencedBlocks` pide un lenguaje concreto, así que hace falta una variante que no lo exija.
 - Al elegir un bloque:
   - se cierra el modal y se cambia de herramienta si hace falta;
@@ -1943,3 +1943,72 @@ Notas:
 - "Mover arriba", "Mover abajo" y "Restablecer orden" son las mismas palabras de `sectionNav`, para que el término sea el mismo en las dos listas.
 - En inglés, Opciones es "Settings", como `sectionNav.settings` y `optionsTitle` de Pomodoro.
 - `help.p6` va en la ayuda general, tras `help.p5` (`GENERAL_HELP` en `ui/Help.tsx`).
+
+# Adenda H: Visor HTML (31 oct 2026)
+
+Pedido por Jorge (D26), con la vista previa aislada. Esta adenda manda sobre §4 y §6.2 donde no coincidan.
+
+## H.1 Registro
+
+- Id `html-preview` (`html` ya es Entidades HTML), al final de Formatos (D24). Nombre "Visor HTML" / "HTML viewer"; ícono `AppWindow`.
+- Tiene "Traer de una nota" (`PICKER_TOOLS`) y "En esta herramienta" (`TOOL_HELP`, `html-preview.help1–3`). No tiene "Guardar en una nota": la salida es una imagen, no un texto.
+- `LANGUAGE_TOOL`: `html`, `htm` y `xhtml` pasan a `html-preview` (antes `html` iba a XML, que no acepta `<br>` ni atributos sin comillas); `svg` sigue en XML. Un bloque sin lenguaje que empieza con `<!DOCTYPE html` o `<html` también va al visor.
+- Se recuerdan `width` (`mobile`, `tablet`, `full`; por defecto `full`) e `indent` (`2`, `4`, `tab`). "Cargar recursos externos" es estado del componente: apagado cada vez que se abre la herramienta.
+
+## H.2 Pantalla (`views/HtmlPreviewTool.tsx`)
+
+- `ToolFrame` con la barra de opciones: Ancho (`Segmented`: Móvil, Tablet, Completo, con `title` "375 px" y "768 px"), Indentación y el `Toggle` "Cargar recursos externos".
+- Cuerpo: el grid de siempre (`@3xl/tool:grid-cols-2`, declarado en el `<section>` de `View.tsx`, que es el contenedor `@container/tool`): en ventana angosta, el editor arriba y la vista previa debajo.
+- Panel "HTML": `PanelHeader` con Formatear (`AlignLeft`), Minificar (`FoldVertical`), Copiar (⌘⇧C) y Limpiar (⌘⇧⌫); el `textarea` de las demás herramientas (`textareaCls`, `h-[60vh] min-h-[16rem]`); debajo, "3,2 KB · 42 líneas".
+- Panel "Vista previa": `HtmlPreview` del mismo alto, o `EmptyOutput` ("La vista previa aparece aquí." y "Probar con un ejemplo") si no hay HTML. Si el ancho no cabe, "Escalada al 62 %" en el encabezado. Debajo, el aviso con `ShieldCheck` (o `TriangleAlert` con los externos).
+- La vista previa usa `useDebounced(input, 250)`. Por encima de `MAX_LIVE_CHARS` (D8) se rehace con "Procesar" o ⌘↵, como las demás.
+- Zona de estado: hasta 3 avisos de estructura (`checkHtml`) con su línea, y "Hay N avisos más de estructura".
+
+## H.3 Formatear, minificar y avisos (`tools/htmlFormat.ts`)
+
+Puras y tolerantes, sobre el tokenizador compartido (`src/lib/htmlTokenizer.ts`) y un árbol aproximado:
+- vacíos (`br`, `img`…) sin cierre; `<x/>` solo cierra en SVG y MathML;
+- `<li>`, `<p>`, `<td>`, `<tr>`, `<option>`… se cierran solos con el siguiente, hasta un contenedor (`ul`, `table`…);
+- un cierre cierra la abierta más cercana con su nombre; las que quedan en medio, sin cierre propio, son "sin cerrar".
+
+Formatear: un bloque por línea con su sangría; el contenido de línea (texto y `a`, `b`, `span`…) queda junto en una línea, con los espacios juntados. `pre` y `textarea` no se tocan; `style` y `script` se vuelven a sangrar. No agrega los cierres que faltan. Minificar: sin comentarios, sin los espacios junto a un bloque y con uno solo entre palabras; `pre`, `textarea`, `style` y `script` intactos (estos dos, sin los espacios de los bordes). Los atributos se escriben como estaban (comillas, mayúsculas, sin comillas).
+
+## H.4 Aislamiento (`components/shared/HtmlPreview.tsx`, `lib/htmlPreviewDoc.ts`)
+
+`HtmlPreview({ html, allowExternal, width, title, heightClass, onScale })` es compartido: el Cliente HTTP lo usará para las respuestas `text/html` (paquete B de su rediseño). Tres capas:
+
+1. **`<iframe sandbox="" srcdoc>`**, sin ningún `allow-*`: no corren scripts (tampoco las URL `javascript:`), no se envían formularios, no se abren ventanas ni se navega la de la app, y el documento tiene un origen opaco (no ve nada de la app). `referrerpolicy="no-referrer"`, fondo blanco en cualquier tema.
+2. **CSP** en una `<meta>` que es lo primero del `<head>`: `default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; base-uri 'none'; form-action 'none'`. Con los externos, `https:` en estilos, imágenes, fuentes y medios; nunca scripts ni `http:`. Más `x-dns-prefetch-control: off` y `referrer: no-referrer`.
+   - El documento lo abrimos nosotros: `<!DOCTYPE html><html><head>` + las metas + un `<style>` + el HTML del usuario, sin cerrar el `<head>`. El navegador ignora el `<!DOCTYPE>`, `<html>` y `<head>` del usuario (pasa sus atributos de `<html>` al nuestro), y lo de su `<head>` queda después de la CSP. Si empieza con contenido, cierra el `<head>` y abre el `<body>` solo. Siempre en modo estándar.
+   - Una CSP del usuario no relaja la nuestra: con varias políticas, un recurso tiene que cumplirlas todas. Y sin scripts nadie puede quitarla del DOM.
+3. **Saneado** (`sanitizePreviewHtml`), porque la CSP no cubre la navegación (`navigate-to` no existe en WebKit): un clic en `<a href="https://…">` navegaría el propio iframe.
+   - `href` (y `xlink:href`, y cualquier `x:href`) pasa a `data-logday-href` en todos los elementos menos `<link>`; en `a` y `area` se suma un `title` con el destino, y un estilo los sigue mostrando como enlaces (`cursor: not-allowed`). Se conservan las referencias internas de SVG (`<use href="#icono">`), que no navegan. Los `#ancla` de los enlaces también se quitan: en un `srcdoc` se resuelven contra la URL de la app y cargarían la app en el iframe.
+   - Se quitan `<base>` (además de `base-uri 'none'`), los `<meta http-equiv>` que no sean `content-security-policy`, `content-type`, `content-language` o `x-ua-compatible` (refresh, set-cookie…) y los `<link>` que no sean hojas de estilo o que sean pistas de recursos (`dns-prefetch`, `preconnect`, `preload`…: la CSP no siempre frena el DNS). `srcdoc` y `ping` se renombran, y también `attributeName` cuando anima un `href` (`<set attributeName="href" to="https://…">`: SMIL corre sin scripts).
+   - El tokenizador sigue los estados del estándar en lo que decide qué es una etiqueta. Donde no imita al navegador (el árbol, el contenido SVG/MathML) se equivoca hacia el lado seguro: dentro de `<svg>`/`<math>` no hay texto crudo, y en lo que no es texto ni etiqueta (comentarios, contenido de `style`/`script`/`textarea`, CDATA) una segunda pasada (`neutralizeLoose`) renombra `href`, `srcdoc`, `http-equiv`, `ping` y `attributeName` por si el navegador ve ahí una etiqueta.
+- **CSP de la app:** `src-tauri/tauri.conf.json` tiene `"csp": null` (y la config de QA de `AGENTS.md` no la cambia), así que no hay `frame-src` ni `child-src` que frene el iframe. Si algún día se pone una, los `srcdoc` no se piden a ninguna URL, pero conviene comprobarlo en WebKit y WebView2.
+- **Ancho simulado:** con Móvil o Tablet, el iframe mide 375 o 768 px. Un `ResizeObserver` mide el marco; si no cabe, `transform: scale(ancho disponible / ancho)` desde la esquina, y el alto se divide por la escala para llenar el marco.
+- **Pruebas:** `src/lib/htmlPreviewDoc.test.ts` (CSP primera y con o sin externos, `<base>`, `meta refresh`, todas las formas de `href`, SVG, comentarios, HTML con y sin `<html>`/`<head>`, vacío) y `src/extensions/devtools/htmlTool.test.tsx` (formatear, minificar, avisos, el `sandbox=""` del iframe con `react-dom/server` y la herramienta dibujada).
+
+## H.5 Textos (sección `devtools` de `i18n.ts`)
+
+| Clave | es | en |
+|---|---|---|
+| `html-preview.name` | Visor HTML | HTML viewer |
+| `html-preview.desc` | Escribe o pega HTML y mira cómo se ve, sin ejecutar scripts ni cargar nada de internet. | Type or paste HTML and see how it looks, without running scripts or loading anything from the internet. |
+| `html-preview.placeholder` | Pega o escribe HTML | Paste or type HTML |
+| `htmlSource` / `htmlPreview` | HTML / Vista previa | HTML / Preview |
+| `htmlPreviewFrame` | Vista previa del HTML (el `title` del iframe) | HTML preview |
+| `htmlPreviewEmpty` | La vista previa aparece aquí. | The preview shows up here. |
+| `htmlWidth`, `htmlWidthMobile`, `htmlWidthTablet`, `htmlWidthFull` | Ancho, Móvil, Tablet, Completo | Width, Mobile, Tablet, Full width |
+| `htmlExternal` | Cargar recursos externos | Load external resources |
+| `htmlIsolated` | Vista previa aislada: sin scripts ni recursos externos. | Isolated preview: no scripts or external resources. |
+| `htmlIsolatedExternal` | Vista previa aislada: sin scripts. Las imágenes, los estilos y las fuentes de https:// se descargan de internet. | Isolated preview: no scripts. Images, styles and fonts from https:// are downloaded from the internet. |
+| `htmlScaled` | Escalada al {pct} % | Scaled to {pct}% |
+| `htmlStats` | {size} · {lines} línea(s) | {size} · {lines} line(s) |
+| `htmlFormatted`, `htmlMinified` | HTML formateado. / HTML minificado. (anuncio) | HTML formatted. / HTML minified. |
+| `htmlUnclosed` | La etiqueta <{tag}> de la línea {line} no se cierra. | The <{tag}> tag on line {line} is never closed. |
+| `htmlStray` | Línea {line}: </{tag}> no cierra ninguna etiqueta abierta. | Line {line}: </{tag}> doesn't close any open tag. |
+| `htmlMoreIssues` | Hay {count} avisos más de estructura. | There are {count} more structure warnings. |
+| `html-preview.help1` | La vista previa no ejecuta scripts ni envía formularios, y los enlaces no se abren: sirve para ver cómo se ve la página, no para usarla. | The preview doesn't run scripts or send forms, and links don't open: it's for seeing how the page looks, not for using it. |
+| `html-preview.help2` | No carga nada de internet: las imágenes y los estilos externos no aparecen. «Cargar recursos externos» trae imágenes, estilos y fuentes por https (nunca scripts) y se apaga al salir de la herramienta. | Nothing is loaded from the internet: external images and styles don't show up. "Load external resources" brings images, styles and fonts over https (never scripts) and turns off when you leave the tool. |
+| `html-preview.help3` | Formatear y Minificar cambian el texto del editor. Con Móvil o Tablet, la página se dibuja a 375 o 768 px de ancho y se escala si no cabe. | Format and Minify change the text in the editor. With Mobile or Tablet, the page is drawn 375 or 768 px wide and scaled down if it doesn't fit. |

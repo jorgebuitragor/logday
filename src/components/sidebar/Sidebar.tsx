@@ -16,7 +16,6 @@ import {
   PanelLeft,
   Settings,
   FileText,
-  Notebook,
   CalendarDays,
   Pencil,
   Trash2,
@@ -43,7 +42,10 @@ import { buildFolderTree } from '../../lib/folderTree';
 import { exportDailyMonthEntries } from '../../lib/dailyMonthExport';
 import { FolderTreeItem } from './FolderTreeItem';
 import { NoteTree } from './NoteTree';
-import { ExtensionSections } from './ExtensionSections';
+import { SidebarStatusSlots } from './ExtensionSections';
+import { SectionNav } from './SectionNav';
+import { SidebarHelpButton } from '../help/SidebarHelp';
+import { useSectionItems } from './sections';
 import { ProjectTreeItem } from './ProjectTreeItem';
 import { RootDropLine } from './RootDropLine';
 import { ModalOverlay } from '../shared/ModalOverlay';
@@ -114,7 +116,6 @@ export function Sidebar() {
     deleteOvertimeMonth,
     language,
     confirmDestructiveActions,
-    sidebarLabelsVisible,
     notesView,
     setNotesView,
     createNote,
@@ -125,40 +126,13 @@ export function Sidebar() {
   const [showNewProject, setShowNewProject] = useState(false);
   const newProjectInputRef = useRef<HTMLInputElement>(null);
 
-  // Oculta el label del tab activo del menú de secciones si, con el
-  // sidebar angosto, no entra en su botón sin desbordarse — se mide el
-  // ancho real en vez de un umbral fijo porque el largo del texto varía
-  // por idioma (p. ej. "Overtime" en inglés es más largo que "Extras").
-  // Se decide en base al label MÁS ANCHO de los cuatro (no solo el del
-  // tab activo): si no, un texto corto como "Notas" seguía entrando a
-  // un ancho donde uno más largo como "Tareas" ya no — el mismo ancho
-  // de sidebar mostraba u ocultaba el texto según qué pestaña estuviera
-  // activa, inconsistente al cambiar de tab sin tocar el resize.
-  const [activeSectionLabelFits, setActiveSectionLabelFits] = useState(true);
-  const sectionGridRef = useRef<HTMLDivElement>(null);
-  const sectionBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
-
-  // Margen de aire: si el texto entra pero raspando el borde del botón
-  // se ve apretado (encontrado probando con "Tareas" a 170px: entraba
-  // por 3px y se veía mal) — exigir este colchón lo oculta antes de
-  // llegar a ese punto, no solo cuando desborda de verdad.
-  const LABEL_FIT_MARGIN_PX = 8;
-
-  useEffect(() => {
-    const checkFit = () => {
-      const btns = Object.values(sectionBtnRefs.current).filter((b): b is HTMLButtonElement => b !== null);
-      if (btns.length === 0) { setActiveSectionLabelFits(true); return; }
-      const btnWidth = btns[0].clientWidth;
-      const widestLabel = Math.max(...btns.map((b) => b.querySelector('span')?.scrollWidth ?? 0));
-      setActiveSectionLabelFits(widestLabel + LABEL_FIT_MARGIN_PX <= btnWidth);
-    };
-    checkFit();
-    const grid = sectionGridRef.current;
-    if (!grid) return;
-    const observer = new ResizeObserver(checkFit);
-    observer.observe(grid);
-    return () => observer.disconnect();
-  }, [sidebarLabelsVisible, language]);
+  const { home, items: sectionItems } = useSectionItems();
+  const sidebarStyle = useAppStore((s) => s.sidebarStyle);
+  const isIconBar = sidebarStyle === 'icons';
+  // El título del panel en la Barra de íconos: la sección activa (NS2).
+  const activeSectionLabel = activeSection === home.id
+    ? home.label
+    : sectionItems.find((i) => i.id === activeSection)?.label ?? '';
 
   useEffect(() => {
     if (showNewProject) setTimeout(() => newProjectInputRef.current?.focus(), 50);
@@ -395,6 +369,20 @@ export function Sidebar() {
     setFolderCtx(null);
   };
 
+  const handleNewNoteInFolder = () => {
+    if (!folderCtx) return;
+    const folder = folderCtx.folder;
+    setFolderCtx(null);
+    // La carpeta (y sus padres) se abren para que la nota nueva se vea.
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      const parts = folder.split('/');
+      for (let i = 1; i <= parts.length; i += 1) next.add(parts.slice(0, i).join('/'));
+      return next;
+    });
+    void createNote(folder);
+  };
+
   const handleNewSubfolder = () => {
     if (!folderCtx) return;
     setSubfolderParent(folderCtx.folder);
@@ -488,191 +476,134 @@ export function Sidebar() {
     { id: 'calendar', label: t(language, 'sidebar', 'viewCalendar'), Icon: Calendar },
   ];
 
+  const footerRow = 'relative flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]';
+  const updateDot = (updateStatus === 'available' || updateStatus === 'downloading' || updateStatus === 'ready');
+  const columnBtn = 'rounded-lg p-2 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500';
+  // Ayuda, Buscar y Opciones, fijos al pie de la columna (NS4, design §1;
+  // specs/ayuda-contextual AY24).
+  const columnFooter = (
+    <>
+      <SidebarHelpButton variant="column" className={columnBtn} />
+      <button onClick={toggleSearch} className={columnBtn} title={t(language, 'sidebar', 'search')} aria-label={t(language, 'sectionNav', 'search')}>
+        <Search size={18} />
+      </button>
+      <button onClick={toggleSettings} className={`relative ${columnBtn}`} title={t(language, 'sidebar', 'settingsBtn')} aria-label={t(language, 'sectionNav', 'settings')}>
+        <Settings size={18} />
+        {updateDot && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-indigo-400" />}
+      </button>
+    </>
+  );
+
   if (isSidebarCollapsed) {
+    // NS4: en los dos estilos, la columna de íconos sola. Las secciones salen
+    // de la misma lista que el menú expandido; las vistas de Tareas van
+    // debajo, dentro del mismo scroll, y lo que no cabe pasa a "Más".
+    // `data-help-edge` (HELP_EDGE_ATTR): la ayuda se abre a la derecha de
+    // este borde, fuera del menú (specs/ayuda-contextual AY28).
     return (
-      <div className="flex h-full w-12 flex-col items-center gap-2 border-r border-[var(--border)] bg-[var(--bg-panel)] py-3">
+      <div data-help-edge="" className="flex h-full w-12 flex-col items-center gap-2 border-r border-[var(--border)] bg-[var(--bg-panel)] py-3">
         <button
           onClick={toggleSidebar}
-          className="rounded-lg p-2 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-          title={t(language, 'sidebar', 'expand')}
+          className={columnBtn}
+          title={t(language, 'sectionNav', 'expand')}
+          aria-label={t(language, 'sectionNav', 'expand')}
         >
           <PanelLeft size={18} />
         </button>
         <div className="my-1 h-px w-6 bg-[var(--border)]" />
-        <button
-          onClick={() => setSection('dashboard')}
-          className={`rounded-lg p-2 transition ${
-            activeSection === 'dashboard'
-              ? 'text-indigo-400 bg-indigo-500/10'
-              : 'text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
-          }`}
-          title={t(language, 'sidebar', 'dashboard')}
-        >
-          <svg viewBox="0 0 64 64" className="h-[18px] w-[18px]" role="img" aria-label="Logday">
-            <rect x="0" y="0" width="64" height="64" rx="15" fill="var(--accent)" />
-            <path d="M19 13.5h19L47 21.5V48.5a2 2 0 0 1-2 2H19a2 2 0 0 1-2-2V15.5a2 2 0 0 1 2-2z" fill="#ffffff" />
-            <path d="M38 13.5L47 21.5h-9z" fill="var(--accent)" fillOpacity={0.24} />
-            <path d="M20 36h4l3-8.5 4.5 13L44 25" fill="none" stroke="var(--accent)" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-        <div className="my-1 h-px w-6 bg-[var(--border)]" />
-        <button
-          onClick={() => setSection('dailys')}
-          className={`rounded-lg p-2 transition ${
-            activeSection === 'dailys'
-              ? 'text-indigo-400 bg-indigo-500/10'
-              : 'text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
-          }`}
-          title={t(language, 'sidebar', 'dailys')}
-        >
-          <CalendarDays size={18} />
-        </button>
-        <button
-          onClick={() => setSection('tasks')}
-          className={`rounded-lg p-2 transition ${
-            activeSection === 'tasks'
-              ? 'text-indigo-400 bg-indigo-500/10'
-              : 'text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
-          }`}
-          title={t(language, 'sidebar', 'tasks')}
-        >
-          <CheckSquare size={18} />
-        </button>
-        <button
-          onClick={() => setSection('notes')}
-          className={`rounded-lg p-2 transition ${
-            activeSection === 'notes'
-              ? 'text-indigo-400 bg-indigo-500/10'
-              : 'text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
-          }`}
-          title={t(language, 'sidebar', 'notes')}
-        >
-          <Notebook size={18} />
-        </button>
-        <button
-          onClick={() => setSection('overtime')}
-          className={`rounded-lg p-2 transition ${
-            activeSection === 'overtime'
-              ? 'text-indigo-400 bg-indigo-500/10'
-              : 'text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
-          }`}
-          title={t(language, 'sidebar', 'overtime_long')}
-        >
-          <Timer size={18} />
-        </button>
-        <ExtensionSections collapsed />
-        <div className="my-1 h-px w-6 bg-[var(--border)]" />
-        {activeSection === 'tasks' &&
-          views.map(({ id, Icon, label }) => (
-            <button
-              key={id}
-              onClick={() => setView(id)}
-              className={`rounded-lg p-2 transition ${
-                currentView === id
-                  ? 'text-indigo-400 bg-indigo-500/10'
-                  : 'text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
-              }`}
-              title={label}
-            >
-              <Icon size={18} />
-            </button>
-          ))}
-        <div className="flex-1" />
-        <button
-          onClick={toggleSearch}
-          className="rounded-lg p-2 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-          title={t(language, 'sidebar', 'search')}
-        >
-          <Search size={18} />
-        </button>
-        <button
-          onClick={toggleSettings}
-          className="relative rounded-lg p-2 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-          title={t(language, 'sidebar', 'settingsBtn')}
-        >
-          <Settings size={18} />
-          {(updateStatus === 'available' || updateStatus === 'downloading' || updateStatus === 'ready') && (
-            <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-indigo-400" />
-          )}
-        </button>
+        <SectionNav
+          variant="icons"
+          collapsed
+          after={activeSection === 'tasks' ? (
+            <>
+              <div className="my-1 h-px w-6 bg-[var(--border)]" />
+              {views.map(({ id, Icon, label }) => (
+                <button
+                  key={id}
+                  onClick={() => setView(id)}
+                  aria-label={label}
+                  aria-pressed={currentView === id}
+                  className={`rounded-lg p-2 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+                    currentView === id
+                      ? 'text-indigo-400 bg-indigo-500/10'
+                      : 'text-[var(--text-hint)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+                  }`}
+                  title={label}
+                >
+                  <Icon size={18} />
+                </button>
+              ))}
+            </>
+          ) : undefined}
+        />
+        <SidebarStatusSlots collapsed />
+        {columnFooter}
       </div>
     );
   }
 
-  return (
-    <div className="flex h-full shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)] text-xs" style={{ width: 'var(--logday-sidebar-w)' }}>
-      {/* App header */}
-      <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
-        <button
-          onClick={() => setSection('dashboard')}
-          className="flex items-center gap-2"
-          title={t(language, 'sidebar', 'dashboard')}
-        >
-          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--accent)]">
-            <svg viewBox="0 0 64 64" className="h-5 w-5" role="img" aria-label="Logday">
-              <path d="M19 13.5h19L47 21.5V48.5a2 2 0 0 1-2 2H19a2 2 0 0 1-2-2V15.5a2 2 0 0 1 2-2z" fill="#ffffff" />
-              <path d="M38 13.5L47 21.5h-9z" fill="var(--accent)" fillOpacity={0.24} />
-              <path d="M20 36h4l3-8.5 4.5 13L44 25" fill="none" stroke="var(--accent)" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
-          <span className="brand-wordmark text-base">log<span className="accent">day</span></span>
-        </button>
-        <div className="flex items-center gap-0.5">
-          <button
-            onClick={toggleSearch}
-            className="rounded p-1 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-            title={t(language, 'sidebar', 'search')}
-          >
-            <Search size={14} />
-          </button>
-          <button
-            onClick={toggleSidebar}
-            className="rounded p-1 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-          >
-            <PanelLeftClose size={14} />
-          </button>
-        </div>
-      </div>
+  const collapseButton = (
+    <button
+      onClick={toggleSidebar}
+      className="rounded p-1 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+      title={t(language, 'sectionNav', 'collapse')}
+      aria-label={t(language, 'sectionNav', 'collapse')}
+    >
+      <PanelLeftClose size={14} />
+    </button>
+  );
 
-      {/* Section toggle */}
-      <div ref={sectionGridRef} className="grid grid-cols-4 border-b border-[var(--border)] px-2 py-2 gap-1">
-        {(
-          [
-            { id: 'dailys',   Icon: CalendarDays, labelKey: 'dailys'   },
-            { id: 'tasks',    Icon: CheckSquare,  labelKey: 'tasks'    },
-            { id: 'notes',    Icon: Notebook,     labelKey: 'notes'    },
-            { id: 'overtime', Icon: Timer,        labelKey: 'overtime' },
-          ] as const
-        ).map(({ id, Icon, labelKey }) => {
-          const isActive = activeSection === id;
-          const label = t(language, 'sidebar', labelKey);
-          return (
+  return (
+    <div data-help-edge="" className="flex h-full shrink-0 border-r border-[var(--border)] bg-[var(--bg-panel)] text-xs" style={{ width: 'var(--logday-sidebar-w)' }}>
+      {/* Barra de íconos (NS2): la columna de 44 px con Inicio, las
+          secciones y, al pie, Buscar y Opciones. */}
+      {isIconBar && (
+        <div className="flex w-11 shrink-0 flex-col items-center gap-1 border-r border-[var(--border)] pb-3">
+          <SectionNav variant="icons" />
+          {columnFooter}
+        </div>
+      )}
+      <div className="flex min-w-0 flex-1 flex-col">
+      {isIconBar ? (
+        // El panel lleva como título la sección activa (NS2).
+        <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-[var(--border)] px-3">
+          <h2 className="truncate text-sm font-medium text-[var(--text-primary)]">{activeSectionLabel}</h2>
+          {collapseButton}
+        </div>
+      ) : (
+        <>
+          {/* App header */}
+          <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
             <button
-              key={id}
-              ref={(el) => { sectionBtnRefs.current[id] = el; }}
-              onClick={() => setSection(id)}
-              className={`flex h-[42px] flex-col items-center justify-center gap-0.5 rounded-lg transition-[background-color,color] duration-200 ${
-                isActive
-                  ? 'bg-indigo-500/15 text-indigo-400 font-medium'
-                  : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]'
-              }`}
-              title={label}
+              onClick={() => setSection('dashboard')}
+              className="flex items-center gap-2"
+              title={t(language, 'sidebar', 'dashboard')}
             >
-              <Icon size={14} className="shrink-0" />
-              {sidebarLabelsVisible && (
-                <span
-                  className={`whitespace-nowrap text-[10px] leading-tight transition-all duration-200 ${
-                    isActive && activeSectionLabelFits ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden'
-                  }`}
-                >
-                  {label}
-                </span>
-              )}
+              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--accent)]">
+                <svg viewBox="0 0 64 64" className="h-5 w-5" role="img" aria-label="Logday">
+                  <path d="M19 13.5h19L47 21.5V48.5a2 2 0 0 1-2 2H19a2 2 0 0 1-2-2V15.5a2 2 0 0 1 2-2z" fill="#ffffff" />
+                  <path d="M38 13.5L47 21.5h-9z" fill="var(--accent)" fillOpacity={0.24} />
+                  <path d="M20 36h4l3-8.5 4.5 13L44 25" fill="none" stroke="var(--accent)" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <span className="brand-wordmark text-base">log<span className="accent">day</span></span>
             </button>
-          );
-        })}
-      </div>
-      <ExtensionSections collapsed={false} />
+            <div className="flex items-center gap-0.5">
+              <button
+                onClick={toggleSearch}
+                className="rounded p-1 text-[var(--text-hint)] transition hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+                title={t(language, 'sidebar', 'search')}
+                aria-label={t(language, 'sectionNav', 'search')}
+              >
+                <Search size={14} />
+              </button>
+              {collapseButton}
+            </div>
+          </div>
+          {/* Lista con nombres (NS3). */}
+          <SectionNav variant="list" />
+        </>
+      )}
 
       {/* TASKS SECTION */}
       {activeSection === 'tasks' && (
@@ -929,21 +860,16 @@ export function Sidebar() {
               {t(language, 'sidebar', 'folders')}
             </button>
             <div className="flex items-center gap-0.5">
-              {notesView === 'tree' && (
-                <button
-                  onClick={() => void createNote()}
-                  className="rounded p-0.5 text-[var(--text-hint)] transition hover:text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)]"
-                  title={t(language, 'notes', 'newNote')}
-                >
-                  <FilePlus size={12} />
-                </button>
-              )}
+              {/* "Nueva nota" va como fila visible debajo (en el árbol); aquí
+                  queda solo "Nueva carpeta", con su propio ícono: el "+" a
+                  secas confundía (Jorge, 31 oct 2026). */}
               <button
                 onClick={() => setShowCreateFolderModal(true)}
                 className="rounded p-0.5 text-[var(--text-hint)] transition hover:text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)]"
                 title={t(language, 'sidebar', 'newFolder')}
+                aria-label={t(language, 'sidebar', 'newFolder')}
               >
-                <Plus size={12} />
+                <FolderPlus size={12} />
               </button>
               {/* Cambia entre la vista de lista (estilo Notas) y la de árbol
                   (estilo Obsidian); se recuerda la última usada. */}
@@ -957,6 +883,16 @@ export function Sidebar() {
               </button>
             </div>
           </div>
+
+          {notesView === 'tree' && (
+            <button
+              onClick={() => void createNote()}
+              className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-indigo-400 transition hover:bg-indigo-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            >
+              <FilePlus size={12} />
+              {t(language, 'notes', 'newNote')}
+            </button>
+          )}
 
           {isFoldersOpen && notesView === 'tree' && (
             <div className="mt-1">
@@ -1040,6 +976,15 @@ export function Sidebar() {
             style={areaCtxLayout.style}
             onMouseDown={(e) => e.stopPropagation()}
           >
+            {activeSection === 'notes' && (
+              <button
+                onClick={() => { setAreaCtx(null); void createNote(); }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
+              >
+                <FilePlus size={13} />
+                {t(language, 'notes', 'newNote')}
+              </button>
+            )}
             <button
               onClick={() => { setAreaCtx(null); setShowCreateFolderModal(true); }}
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
@@ -1111,6 +1056,13 @@ export function Sidebar() {
             >
               <Pencil size={13} />
               {t(language, 'sidebar', 'renameFolder')}
+            </button>
+            <button
+              onClick={handleNewNoteInFolder}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
+            >
+              <FilePlus size={13} />
+              {t(language, 'sidebar', 'newNoteInFolder')}
             </button>
             <button
               onClick={handleNewSubfolder}
@@ -1384,18 +1336,24 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="mt-auto border-t border-[var(--border)] px-2 py-2 space-y-0.5">
-        <button
-          onClick={toggleSettings}
-          className="relative flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[var(--text-muted)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
-        >
-          <span className="relative">
-            <Settings size={14} />
-            {(updateStatus === 'available' || updateStatus === 'downloading' || updateStatus === 'ready') && (
-              <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-indigo-400" />
-            )}
-          </span>
-          <span>{t(language, 'settings', 'title')}</span>
-        </button>
+        {/* R26: el estado de las extensiones (el contador del Pomodoro). */}
+        <SidebarStatusSlots collapsed={false} />
+        {/* En la Barra de íconos, Ayuda y Opciones están en la columna. */}
+        {!isIconBar && <SidebarHelpButton variant="row" className={footerRow} />}
+        {!isIconBar && (
+          <button
+            onClick={toggleSettings}
+            className={footerRow}
+          >
+            <span className="relative">
+              <Settings size={14} />
+              {updateDot && (
+                <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-indigo-400" />
+              )}
+            </span>
+            <span>{t(language, 'settings', 'title')}</span>
+          </button>
+        )}
         {basePath && (
           <p className="truncate px-3 text-[10px] text-[var(--text-faint)]" title={basePath}>
             {basePath}
@@ -1573,6 +1531,7 @@ export function Sidebar() {
           />
         );
       })()}
+      </div>
     </div>
   );
 }

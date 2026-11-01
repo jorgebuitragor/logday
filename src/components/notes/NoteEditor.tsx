@@ -41,6 +41,7 @@ import {
   Share2,
   Smile,
 } from 'lucide-react';
+import { NotesEmptyState } from './NotesEmptyState';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { TextSelection } from '@tiptap/pm/state';
 import type { Mark } from '@tiptap/pm/model';
@@ -72,6 +73,7 @@ import python from 'highlight.js/lib/languages/python';
 import sql from 'highlight.js/lib/languages/sql';
 import typescript from 'highlight.js/lib/languages/typescript';
 import yaml from 'highlight.js/lib/languages/yaml';
+import http from 'highlight.js/lib/languages/http';
 import * as Y from 'yjs';
 import {
   readPersistedUpdate, getContentText, applyTextEdit, applyEditorEdit, rebaseText, mapTextIndex,
@@ -101,6 +103,9 @@ import { EMOJI_CATALOG, normalizeEmojiSearchTerm } from '../../lib/emojiCatalog'
 import { createTaskCodePlugin, normalizeEditorMarkdown } from '../../lib/noteEditorMarkdown';
 import { useLinkPreview } from '../../hooks/useLinkPreview';
 import { useExtensions } from '../../extensions/useExtensions';
+import { extensionRuntime } from '../../extensions/runtime';
+import { handleExtensionPaste, type PasteConverter } from './extensionPaste';
+import { blockLanguagesKey, useRedrawOnBlockChange } from './extensionBlockRedraw';
 import { ExtensionSlot } from '../../extensions/ExtensionSlot';
 import { extensionText } from '../../extensions/text';
 import type { ExtensionId } from '../../extensions/types';
@@ -110,7 +115,9 @@ import { formatFence, parseFencedBlocks } from '../../lib/fencedBlocks';
 // `common` de lowlight trae 37 lenguajes, la mayoría no seleccionables desde
 // la UI. Si un bloque trae un lenguaje no registrado (nota importada, etc.),
 // @tiptap/extension-code-block-lowlight cae a highlightAuto() sin romper.
-const lowlight = createLowlight({ bash, go, java, javascript, json, plaintext, python, sql, typescript, yaml });
+// `http` colorea los bloques del Cliente HTTP, con la extensión activa o
+// apagada (specs/cliente-http, design A3.6).
+const lowlight = createLowlight({ bash, go, http, java, javascript, json, plaintext, python, sql, typescript, yaml });
 const BLOCK_MENU_ESTIMATED_SIZE = { width: 220, height: 260 };
 
 type BlockMenuType =
@@ -268,7 +275,12 @@ export function NoteEditor() {
   const { enabled: enabledExtensions } = useExtensions();
   const blockExtensions = enabledExtensions.filter((def) => def.noteBlock);
   const blockLanguages: Record<string, ExtensionId> = {};
-  for (const def of blockExtensions) blockLanguages[def.noteBlock!.language] = def.id;
+  const inlineLanguages: Record<string, boolean> = {};
+  for (const def of blockExtensions) {
+    blockLanguages[def.noteBlock!.language] = def.id;
+    if (def.noteBlock!.inline) inlineLanguages[def.noteBlock!.language] = true;
+  }
+  const blocksKey = blockLanguagesKey(blockLanguages, inlineLanguages);
   // Mermaid y estos bloques no cuentan como bloques de código normales
   // (los índices de la barra de lenguaje y del menú contextual los saltan).
   const specialFencesRef = useRef<Set<string>>(new Set(['mermaid']));
@@ -277,8 +289,22 @@ export function NoteEditor() {
   const extensionBlocksRef = useRef<ExtensionBlocks | null>(null);
   extensionBlocksRef.current = {
     byLanguage: blockLanguages,
+    inline: inlineLanguages,
+    noteId: activeNote?.id,
     edit: (language, index) => openExtensionBlockRef.current(language, index),
   };
+  // R24 (`convertPaste`): las extensiones activas que pueden convertir un
+  // texto pegado en su bloque (Cliente HTTP: un cURL, specs/cliente-http
+  // HT39). Se leen al pegar, con el módulo ya cargado: nunca se carga aquí.
+  const pasteConvertersRef = useRef<() => PasteConverter[]>(() => []);
+  pasteConvertersRef.current = () => blockExtensions.flatMap((def) => {
+    const convert = extensionRuntime.peek(def.id)?.convertPaste;
+    return convert ? [{ language: def.noteBlock!.language, convert }] : [];
+  });
+  // ⇧⌘V (y ⌥⇧⌘V, "Pegar y mantener el estilo"): pegar sin formato pega
+  // tal cual, sin convertir. El evento de pegar no dice si iba Mayúsculas,
+  // así que se anota en el keydown.
+  const plainPasteAtRef = useRef(0);
   const codeBlockLanguages = useMemo(() => {
     const lines = mdContent.split('\n');
     const languages: string[] = [];
@@ -301,7 +327,10 @@ export function NoteEditor() {
     }
 
     return languages;
-  }, [mdContent]);
+    // `blocksKey`: los bloques de extensión que se saltan (los lee de
+    // `specialFencesRef`) cambian al encender o apagar una.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mdContent, blocksKey]);
 
   // ── Task-code decorations ────────────────────────────────────────────────
   const tasksRef = useRef<import('../../types/task').Task[]>(tasks);
@@ -449,11 +478,20 @@ export function NoteEditor() {
         spellcheck: 'false',
       },
       handleKeyDown(_view, event) {
+        if ((event.metaKey || event.ctrlKey) && event.shiftKey && (event.code === 'KeyV' || event.key.toLowerCase() === 'v')) {
+          plainPasteAtRef.current = Date.now();
+        }
         // Close task-ref popup on Escape; handle Enter/ArrowDown/ArrowUp via React state
         if (event.key === 'Escape') {
           setTaskRefQuery(null);
           setTaskRefAnchor(null);
         }
+      },
+      handlePaste(view, event) {
+        const plain = Date.now() - plainPasteAtRef.current < 1500;
+        plainPasteAtRef.current = 0;
+        const text = event.clipboardData?.getData('text/plain') ?? '';
+        return handleExtensionPaste(view, text, plain, pasteConvertersRef.current());
       },
       handleClick(_view, _pos, event) {
         const target = (event.target as HTMLElement).closest('[data-task-code]') as HTMLElement | null;
@@ -517,6 +555,8 @@ export function NoteEditor() {
     },
   });
 
+  useRedrawOnBlockChange(editor, blocksKey);
+
   const recalcCodeBlockAnchors = useCallback(() => {
     if (viewMode === 'source') {
       setCodeBlockAnchors([]);
@@ -567,7 +607,7 @@ export function NoteEditor() {
     if (viewMode === 'source') return;
     const raf = requestAnimationFrame(() => recalcCodeBlockAnchors());
     return () => cancelAnimationFrame(raf);
-  }, [mermaidBlocks.length, recalcCodeBlockAnchors, viewMode]);
+  }, [mermaidBlocks.length, blocksKey, recalcCodeBlockAnchors, viewMode]);
 
   const topLevelPosAtIndex = useCallback((doc: { child: (i: number) => { nodeSize: number } }, index: number) => {
     let pos = 0;
@@ -1142,8 +1182,16 @@ export function NoteEditor() {
 
   // Lo que se ve en pantalla se resuelve igual que siempre — síncrono,
   // directo desde `activeNote.content` — sin esperar nada del canal CRDT.
+  //
+  // `useEditor` crea el editor al renderizar y lo destruye si los efectos
+  // del componente no corren en ~1 ms (supone que el render se descartó).
+  // Cuando NoteEditor se monta al resolver su `lazy` (abrir una nota desde
+  // el Inicio recién abierta la app), React corre los efectos más tarde: el
+  // editor de este render ya está destruido (`commands` lanza) y TipTap
+  // crea otro. Se salta este y se carga la nota en el nuevo, que llega en
+  // el siguiente render y vuelve a disparar este efecto por `editor`.
   useEffect(() => {
-    if (!activeNote || !editor) return;
+    if (!activeNote || !editor || editor.isDestroyed) return;
     const normalizedContent = normalizeEditorMarkdown(activeNote.content || '');
     setTitle(activeNote.title);
     setViewMode('wysiwyg');
@@ -1320,6 +1368,10 @@ export function NoteEditor() {
   // `setTimeout` de `schedulesSave` no se cancela solo con React — si no se
   // hace flush acá, la última edición dentro de la ventana de debounce de
   // 600ms se perdería del todo al cambiar de nota rápido.
+  // Solo al desmontar, no cuando cambia `editor`: TipTap puede reemplazar el
+  // editor al montar (ver el efecto que carga la nota) y esta limpieza
+  // destruiría el Y.Doc que la hidratación acaba de llenar. Lo que lee del
+  // editor va por `editorRef`, que siempre apunta al vigente.
   useEffect(() => {
     return () => {
       disposedRef.current = true;
@@ -1360,7 +1412,7 @@ export function NoteEditor() {
       else ydoc?.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor]);
+  }, []);
 
   useEffect(() => {
     if (skipNextContentSaveRef.current) {
@@ -1641,10 +1693,41 @@ export function NoteEditor() {
     syncMarkdownToEditor(nextMarkdown);
   }, [mdContent, syncMarkdownToEditor]);
 
+  // Bloque inline nuevo (specs/cliente-http HT9): se inserta su plantilla
+  // en el cursor, sin editor aparte, y el cursor queda al final de la
+  // primera línea (la URL).
+  const insertInlineBlock = (language: string, template: string) => {
+    setShowDiagramMenu(false);
+    const text = template.replace(/^\n+|\n+$/g, '');
+    if (viewMode === 'source' || !editor) {
+      syncMarkdownToEditor(insertBlockAtSelection(mdContent, formatFence(language, text)));
+      return;
+    }
+    const from = editor.state.selection.from;
+    editor.chain().focus().insertContentAt(editor.state.selection, {
+      type: 'codeBlock', attrs: { language }, content: text ? [{ type: 'text', text }] : [],
+    }).run();
+    let target: number | null = null;
+    editor.state.doc.descendants((node, pos) => {
+      if (target !== null) return false;
+      if (node.type.name === 'codeBlock' && node.attrs.language === language && pos + node.nodeSize >= from) {
+        target = pos;
+        return false;
+      }
+      return node.type.name !== 'codeBlock';
+    });
+    if (target !== null) editor.commands.setTextSelection((target as number) + 1 + text.split('\n')[0].length);
+  };
+
   // R24: abrir el editor del bloque de una extensión (nuevo si `index` es null).
   openExtensionBlockRef.current = (language, index) => {
     const id = blockLanguages[language];
     if (!id) return;
+    const def = blockExtensions.find((d) => d.id === id);
+    if (def?.noteBlock?.inline) {
+      if (index === null) insertInlineBlock(language, def.noteBlock.template ?? '');
+      return;
+    }
     const block = index === null ? undefined : parseFencedBlocks(mdContent, language)[index];
     setShowDiagramMenu(false);
     setExtBlockEditor({ id, language, index: block ? index : null, code: block?.code ?? '' });
@@ -1812,15 +1895,7 @@ export function NoteEditor() {
   };
 
   if (activeSection !== 'notes') return null;
-  if (!activeNote) {
-    return (
-      <div className="flex flex-1 items-center justify-center bg-[var(--bg-base)]">
-        <div className="text-center">
-          <p className="text-sm text-[var(--text-hint)]">{tFn(language, 'notes', 'selectOrCreate')}</p>
-        </div>
-      </div>
-    );
-  }
+  if (!activeNote) return <NotesEmptyState />;
 
   const moveTargets = ['', ...noteFolders].filter((f) => f !== activeNote.folder);
 

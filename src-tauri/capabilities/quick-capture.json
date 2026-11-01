@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "quick-capture",
+  "description": "Ventana de la captura rápida (specs/captura-rapida): solo eventos para hablar con la ventana principal. No lee ni escribe archivos.",
+  "windows": ["quick-capture"],
+  "permissions": [
+    "core:event:default",
+    "core:window:default"
+  ]
+}

@@ -103,13 +103,16 @@ export interface AccentPalette {
   '--accent-inline': string;
   '--accent-link': string;
   '--accent-code': string;
+  '--accent-solid': string;
+  '--accent-on': string;
 }
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * clamp(t, 0, 1);
 }
 
-// Fondos base reales de los temas dark/light (post-fix de contraste,
+// Fondos base de los temas dark/light (post-fix de contraste; el dark es el
+// de antes del 31 oct 2026, que siguen usando los personalizados,
 // ver specs/temas-consistencia-visual y specs/temas-personalizacion),
 // usados solo para verificar contraste al derivar un tema personalizado.
 const DARK_BG_BASE = '#121212';
@@ -144,6 +147,7 @@ export function deriveAccentPalette(hex: string, base: 'dark' | 'light', intensi
       '--accent-inline': inline,
       '--accent-link': accent,
       '--accent-code': code,
+      ...solidButton(strong),
     };
   }
 
@@ -172,11 +176,21 @@ export function deriveAccentPalette(hex: string, base: 'dark' | 'light', intensi
     '--accent-inline': inline,
     '--accent-link': strong,
     '--accent-code': code,
+    ...solidButton(strong),
   };
 }
 
-// Escalas de referencia: los valores reales de los temas dark/light ya
-// afinados (contraste verificado, ver specs/temas-consistencia-visual).
+/** El botón principal relleno (`--accent-solid`) y su texto: blanco o casi
+ *  negro, el que más contraste dé con el acento. */
+function solidButton(solid: string): Pick<AccentPalette, '--accent-solid' | '--accent-on'> {
+  const on = contrastRatio(solid, '#ffffff') >= contrastRatio(solid, '#111827') ? '#ffffff' : '#111827';
+  return { '--accent-solid': solid, '--accent-on': on };
+}
+
+// Escalas de referencia: los valores de los temas dark/light ya afinados
+// (contraste verificado, ver specs/temas-consistencia-visual). La de dark es
+// la del Oscuro de antes del 31 oct 2026 (negro neutro): se conserva para
+// que los temas personalizados ya creados no cambien de aspecto.
 // Se reutiliza únicamente su luminosidad (L) por cada escalón, re-coloreada
 // con el tono/saturación que el usuario elige para su tema personalizado —
 // así un tema custom hereda la misma jerarquía de contraste probada, solo

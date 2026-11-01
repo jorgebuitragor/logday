@@ -10,6 +10,8 @@ import { completedLocalDate, filterTasks, sortColumn } from '../../lib/taskListi
 import { addDaysISO } from '../../lib/localDate';
 import { TaskMeta } from './TaskMeta';
 import { TaskFilterBar } from './TaskFilterBar';
+import { TaskShortcutsSheet } from './TaskShortcutsSheet';
+import { useTaskShortcutsRequest } from './taskShortcutsRequest';
 
 const COLUMN_DEFS: { status: TaskStatus; color: string; border: string; Icon: React.ElementType }[] = [
   { status: 'todo',        color: 'text-zinc-400',  border: 'border-zinc-600/30',  Icon: Circle },
@@ -137,6 +139,10 @@ export function KanbanBoard() {
   const [ghostPos, setGhostPos] = useState({ x: 0, y: 0 });
   const [targetStatus, setTargetStatus] = useState<TaskStatus | null>(null);
   const [emptyCtxMenu, setEmptyCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  // La hoja de atajos, desde "Ver todos los atajos" de la ayuda del menú
+  // lateral (AY17).
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  useTaskShortcutsRequest(currentView === 'kanban', () => setShowShortcuts(true));
 
   // Filtro común (búsqueda y tags; el estado son las columnas) y el mismo
   // orden que la lista. El proyecto lo da la barra lateral.
@@ -201,7 +207,7 @@ export function KanbanBoard() {
       {/* Header + filtros */}
       <div className="border-b border-[var(--border)] px-6 pt-4 pb-3 space-y-2.5">
         {/* El proyecto, como en la lista: se ve que el tablero está filtrado. */}
-        <h1 className="text-lg font-semibold text-[var(--text-primary)] capitalize">{activeProject ?? t(language, 'tasks', 'kanbanTitle')}</h1>
+        <h1 className="truncate text-lg font-semibold text-[var(--text-primary)] capitalize">{activeProject ?? t(language, 'tasks', 'kanbanTitle')}</h1>
 
         <TaskFilterBar showStatus={false} />
       </div>
@@ -292,6 +298,7 @@ export function KanbanBoard() {
           onClose={() => setEmptyCtxMenu(null)}
         />
       )}
+      {showShortcuts && <TaskShortcutsSheet onClose={() => setShowShortcuts(false)} />}
     </div>
   );
 }

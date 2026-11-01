@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
-import { RefreshCw, Download, ExternalLink, Scale, Sparkles } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { RefreshCw, Download, ExternalLink, Scale, Sparkles, Compass } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import { getVersion } from '@tauri-apps/api/app';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import { fs } from '../../lib/invoke';
+import { TourModal } from '../tour/TourModal';
 import {
   APP_COPYRIGHT, LICENSE_URL, RELEASES_URL, REPO_URL, appUpdatedAt, fetchRelease,
 } from '../../lib/releases';
@@ -37,6 +38,14 @@ export function AboutSettingsTab() {
   // que el chequeo en segundo plano ignora a propósito (ver
   // specs/actualizaciones-automaticas/requirements.md "Chequeo").
   const [manualCheck, setManualCheck] = useState<'idle' | 'checking' | 'upToDate' | 'error'>('idle');
+  // "Ver el recorrido" (specs/onboarding OB15). Al cerrarlo, el foco vuelve
+  // al botón que lo abrió.
+  const [tourOpen, setTourOpen] = useState(false);
+  const tourButtonRef = useRef<HTMLButtonElement | null>(null);
+  const closeTour = () => {
+    setTourOpen(false);
+    tourButtonRef.current?.focus();
+  };
 
   useEffect(() => {
     let alive = true;
@@ -164,6 +173,21 @@ export function AboutSettingsTab() {
       </label>
     </div>
   </div>
+
+  {/* Recorrido */}
+  <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3">
+    <p className="min-w-0 text-xs text-[var(--text-secondary)]">{t(language, 'tour', 'aboutTourDesc')}</p>
+    <button
+      ref={tourButtonRef}
+      type="button"
+      onClick={() => setTourOpen(true)}
+      className="flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border-card)] bg-[var(--bg-elevated)] px-3 py-1.5 text-xs text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+    >
+      <Compass size={12} />
+      {t(language, 'tour', 'aboutTour')}
+    </button>
+  </div>
+  {tourOpen && <TourModal onClose={closeTour} />}
 
   {/* License section */}
   <div>

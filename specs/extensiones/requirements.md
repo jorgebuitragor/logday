@@ -58,7 +58,9 @@ tengan su primera extensión.
   configuración DEBERÁ conservarse, para que al reactivarla siga igual.
 - R8. Cada extensión con configuración DEBERÁ ofrecer "Quitar
   configuración", que borra su configuración y sus secretos, previa
-  confirmación.
+  confirmación. Los secretos son los de claves fijas y también los que
+  dependen de su configuración (por ejemplo, uno por variable secreta en
+  el Cliente HTTP).
 - R9. La activación y la configuración no secreta DEBERÁN guardarse en
   las preferencias locales del equipo y NO DEBERÁN sincronizarse. Es el
   mismo criterio de "Preferencias de UI siempre locales". Una extensión
@@ -67,13 +69,24 @@ tengan su primera extensión.
 - R10. Los secretos de una extensión (tokens, URLs de webhook) DEBERÁN
   guardarse solo en el llavero del sistema operativo. NUNCA DEBERÁN ir
   en `config.json`, en `localStorage`, en los archivos de datos, en los backups de
-  configuración ni en el sync.
+  configuración ni en el sync. El webview no los lee, con una excepción:
+  el ojo de las variables secretas del Cliente HTTP, que muestra un valor
+  por un clic y lo olvida a los 30 s (specs/cliente-http HT77, 31 oct
+  2026, pedido por Jorge).
 
 ### Dónde aparece cada extensión
 
 - R11. Una extensión con vista propia (por ejemplo, Agenda o DevTools)
   DEBERÁ aparecer como una sección del menú lateral solo mientras esté
-  activada, después de las secciones fijas y separada de ellas.
+  activada, en el menú de secciones de los dos estilos (Barra de íconos
+  y Lista con nombres) y en el colapsado. Va en el orden del usuario: al
+  activarla se agrega al final, visible, y al desactivarla conserva su
+  lugar por si vuelve. Si no cabe, o si el usuario la oculta, va en
+  "Más" (`specs/navegacion-secciones` NS7, NS11, NS12).
+  (Cambiado el 30 oct 2026: como lista aparte, debajo de la fila de
+  botones, no se leía como una sección más. Cambiado otra vez el 31 oct
+  2026, con `specs/navegacion-secciones`: la fila se retiró porque ya no
+  cabían las secciones.)
 - R12. Una extensión sin vista propia DEBERÁ aparecer solo en los puntos
   de la app donde actúa. Por ejemplo, "Enviar al chat" junto a Copiar en
   el daily.
@@ -86,6 +99,42 @@ tengan su primera extensión.
   "Extensiones", con su icono y su nombre. Al desactivarla, la entrada
   DEBERÁ desaparecer y, si estaba abierta, Opciones DEBERÁ volver al
   catálogo.
+  - Una extensión DEBERÁ poder abrir Opciones directamente en su página
+    (por ejemplo, el botón "Opciones" de la vista del Pomodoro).
+- R28. La página de cada extensión en Opciones (R21) DEBERÁ empezar con
+  una cabecera con su icono, su nombre, su descripción corta y un
+  interruptor "Activada" ("On" en inglés). Al apagarlo, la extensión
+  DEBERÁ desactivarse como desde el catálogo (R7), sin pedir
+  confirmación, porque su configuración se conserva; Opciones vuelve al
+  catálogo (R21). DEBERÁ aparecer un aviso "{nombre} desactivada" con
+  "Deshacer", que la reactiva sin volver a pedir el aviso ya aceptado
+  (R6) y abre otra vez su página. Si entretanto se quitó su
+  configuración (R8), Deshacer NO DEBERÁ saltarse el aviso: abre el
+  catálogo, donde se activa aceptándolo. (1 nov 2026, pedido por Jorge:
+  antes solo se podía apagar desde el catálogo.)
+- R26. Una extensión DEBERÁ poder mostrar un estado pequeño y siempre
+  visible en el menú lateral, abajo (encima de "Opciones" o, en la Barra
+  de íconos, al pie del panel), tanto con el menú expandido como
+  colapsado (por ejemplo, el contador del Pomodoro).
+  MIENTRAS no tenga nada que mostrar, NO DEBERÁ ocupar sitio. Su código
+  NO DEBERÁ cargarse con la extensión apagada (R16) y un error en él
+  DEBERÁ quedar aislado (R15).
+- R27. Una extensión activa DEBERÁ poder poner una tarjeta en Inicio,
+  al final, después de "Esta semana" (por ejemplo, el Pomodoro o las
+  reuniones de hoy de Google Calendar), con una opción "Mostrar en Inicio"
+  en su página de Opciones, encendida por defecto y guardada en su
+  configuración local. MIENTRAS no tenga nada que mostrar, o el usuario la
+  apague, NO DEBERÁ ocupar sitio. Su código NO DEBERÁ cargarse con la
+  extensión apagada (R16) y un error en ella DEBERÁ quedar aislado (R15).
+  - MIENTRAS no haya ninguna extensión activa, Inicio DEBERÁ mostrar al
+    final un aviso pequeño de que existen, con un botón que abre el
+    catálogo en Opciones. El aviso DEBERÁ poder ocultarse, y eso se
+    recuerda en la configuración local (no se sincroniza).
+  - (Pedido y decisiones de Jorge, 31 oct 2026: las tarjetas van al final
+    de Inicio; el aviso, solo sin ninguna activa y descartable; el primer
+    cambio trae Pomodoro y Google Calendar con su interruptor. Quedan para
+    después Granola, "Enviar el daily" desde Inicio, los avisos de una
+    línea de OpenProject, MCP y Webhook, y la tarjeta del Cliente HTTP.)
 - R22. Una extensión DEBERÁ poder mostrar eventos de solo lectura en el
   Calendario de Logday (por ejemplo, las reuniones de Google Calendar),
   distintos de los eventos propios. Esos eventos NO DEBERÁN guardarse en
@@ -98,7 +147,28 @@ tengan su primera extensión.
 - R24. Una extensión DEBERÁ poder tener su propio tipo de bloque en las
   notas (un bloque de código con su lenguaje, como ```excalidraw), que
   ella dibuja y edita. Con la extensión apagada, el bloque se ve como un
-  bloque de código normal y no se pierde nada.
+  bloque de código normal y no se pierde nada. Hay dos modos: el bloque
+  que la extensión dibuja entero y edita en un editor aparte (Excalidraw),
+  y el modo inline, en el que el código se ve y se edita en la nota y la
+  extensión le pone una barra encima y una franja debajo (Cliente HTTP).
+  En el modo inline, la barra DEBERÁ poder cambiar el lenguaje del bloque
+  (sin eso no hay forma de hacerlo: el selector de los bloques normales
+  no está en los de las extensiones) y reemplazar su texto, con acciones
+  que le da el editor (31 oct 2026, pedido por Jorge al probar).
+  Una extensión con bloque PODRÁ además convertir un texto pegado en la
+  nota en un bloque suyo (`convertPaste`; por ejemplo, un comando cURL en
+  una petición de Cliente HTTP), solo con la extensión activa y con su
+  código ya cargado. "Pegar sin formato" y los bloques de código de otro
+  lenguaje pegan tal cual, y Deshacer deja el texto original (31 oct 2026,
+  pedido por Jorge). La conversión PODRÁ preguntar antes de insertar
+  (`ask`): mientras espera la respuesta no se inserta nada, y al
+  responder se pega donde está el cursor, con lo elegido o tal cual
+  (specs/cliente-http HT71, 31 oct 2026).
+- R25. Una extensión DEBERÁ poder registrar un atajo de teclado global y
+  tener su propia ventana (por ejemplo, la captura rápida). La ventana se
+  crea al activarla y se destruye al desactivarla, y NO DEBERÁ escribir
+  en disco por su cuenta: le pide a la ventana principal que lo haga con
+  las acciones del store (R18).
 
 ### Robustez
 
@@ -110,7 +180,9 @@ tengan su primera extensión.
   abrir la app.
 - R17. Las peticiones de red de una extensión DEBERÁN salir desde Rust,
   solo a los hosts que la extensión declara. Nunca desde el webview a
-  hosts arbitrarios.
+  hosts arbitrarios. Excepción: el Cliente HTTP (`specs/cliente-http`)
+  envía a la URL que escribe el usuario, y solo cuando él pulsa Enviar;
+  sigue saliendo desde Rust, solo por http y https y con sus límites.
 
 ### Datos
 

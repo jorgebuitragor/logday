@@ -43,6 +43,8 @@ export interface ExtensionDefinition {
   sendsDataExternally?: { to: string };   // dispara el aviso de R6
   view?: boolean;                         // si tiene vista: sección en el menú (R11)
   secretKeys?: string[];                  // claves en el llavero, para R8
+  dynamicSecretKeys?: (settings?) => string[]; // las que dependen de la configuración, para R8
+  noteBlock?: { language: string; inline?: boolean; template?: string }; // R24
   load: () => Promise<ExtensionModule>;   // import() dinámico
 }
 ```
@@ -53,7 +55,10 @@ export interface ExtensionDefinition {
   menú es el nombre de la extensión.
 - **`secretKeys`:** el llavero no se puede listar, así que cada
   extensión declara las claves de sus secretos y "Quitar configuración"
-  borra esas.
+  borra esas. Si las claves dependen de su configuración (una por
+  variable secreta del Cliente HTTP), declara además
+  `dynamicSecretKeys(settings)`, una función pura que el registro importa
+  sin cargar el módulo (R16).
 - Una extensión solo está en el registro de Desktop si Desktop la
   implementa (R4).
 
@@ -64,6 +69,9 @@ export interface ExtensionModule {
   Settings?: ComponentType;                  // panel bajo su tarjeta
   View?: ComponentType;                      // vista de su sección
   dailyActions?: ComponentType<{ date: string; getText: () => Promise<string> }>; // botones junto a Copiar
+  NoteBlock?: ComponentType<NoteBlockProps>; // bloque propio en las notas (R24), con NoteBlockEditor
+  SidebarStatus?: ComponentType<{ collapsed: boolean }>; // estado en el menú lateral (R26)
+  HomeCard?: ComponentType<object>;          // tarjeta al final de Inicio (R27)
   start?: () => () => void;                  // procesos propios; devuelve cómo pararlos (R7)
 }
 ```
@@ -134,8 +142,9 @@ extensions?: Partial<Record<ExtensionId, {
   - No hay un `get` hacia el webview: quien usa el secreto es el comando
     Rust de la extensión (R10, R17).
 - **Quitar configuración** (R8): borra los secretos
-  `ext:<id>:<clave>` de cada clave de `secretKeys` y después
-  `extensions[id]`. Si el llavero falla, la configuración queda y se
+  `ext:<id>:<clave>` de cada clave de `secretKeys` y de
+  `dynamicSecretKeys(settings)` (`secretKeysToClear` en `state.ts`), y
+  después `extensions[id]`. Si el llavero falla, la configuración queda y se
   puede reintentar.
 
 ## Menú lateral
@@ -150,17 +159,15 @@ extensions?: Partial<Record<ExtensionId, {
     un backup.
   - Las vistas de las extensiones activas aparecen como opciones de la
     pantalla de inicio.
-- **`Sidebar.tsx`:** después de las secciones fijas, una línea
-  separadora y un botón por extensión activa con `view`, con su icono y
-  su etiqueta. Si no hay ninguna activa con vista, no aparece la
-  separadora.
+- **Menú lateral:** `useExtensionSectionItems()` (`ExtensionSections.tsx`)
+  da las extensiones activas con `view`, con su icono y su nombre, y
+  `useSectionItems()` las suma a las secciones fijas en el orden del
+  usuario (`specs/navegacion-secciones`). La separadora entre las fijas y
+  las extensiones solo se dibuja si no están mezcladas.
 - **`setSection('ext:<id>')`** dibuja `<ExtensionBoundary><View/></ExtensionBoundary>`
   en el área principal.
 - **Al desactivar** una extensión con su vista abierta, `setSection('dashboard')`
   (R14). Igual al quitar su configuración.
-- Las secciones de extensiones están en `ExtensionSections.tsx`: en el
-  menú expandido, una fila por extensión debajo de la cuadrícula de
-  secciones fijas; en el colapsado, un icono después de Extras.
 
 ## Opciones → Extensiones
 
@@ -173,6 +180,20 @@ extensions?: Partial<Record<ExtensionId, {
   módulo. La pestaña es `ext:<id>` y muestra el icono, el nombre, la
   descripción y su `Settings` dentro de `ExtensionBoundary`. Si la
   extensión se desactiva con su página abierta, se vuelve al catálogo.
+- **Interruptor en la página de la extensión** (R28): `ExtensionSettingsPage`
+  (en `SettingsModal.tsx`, la única que dibuja las páginas `ext:<id>`)
+  pone a la derecha de la cabecera un `ToggleSwitch` dentro de un
+  `<label>` "Activada", que le da nombre. Como la página solo existe con
+  la extensión activa, el interruptor solo apaga. Usa
+  `disableWithUndo` de `actions.ts`: llama a `setExtensionEnabled(id,
+  false)` y devuelve el Deshacer del aviso (`showToast` con `action`).
+  Deshacer reactiva con `requestEnable`, que no pide el aviso si sigue
+  `consentAt` y no lo salta si se borró; después abre la página con
+  `openExtensionSettings` (que también abre Opciones si se cerró) o, si
+  falta el aviso, el catálogo con `openExtensionsCatalog`.
+  El título del aviso (`ToastViewport`) pasa a otra línea en vez de
+  cortarse: con "Deshacer" al lado, "Agentes de IA (MCP) desactivada"
+  no cabía en los 360 px del aviso.
 - **Dos grupos,** con un encabezado cada uno, y tarjetas en orden
   alfabético. Si un grupo no tiene extensiones en Desktop, no se
   muestra.
@@ -217,11 +238,46 @@ escribir en disco. El primer oyente es el webhook saliente
 los dibujan y los editan como a Mermaid. La primera es Excalidraw
 (`specs/excalidraw/`).
 
+**Modo inline** (`noteBlock: { language, inline: true, template }`, el
+del Cliente HTTP, `specs/cliente-http/` design A3):
+
+- El NodeView deja el código visible y editable en un `<pre>`, entre dos
+  islas `contentEditable={false}` (`.extension-block-ui`). En cada una va
+  el `NoteBlock` de la extensión con `part: 'header'` o `'footer'`, además
+  de `noteId`, `index` (el n-ésimo bloque de ese lenguaje) y `cursor` (la
+  posición del cursor dentro del bloque, o `null`). El índice y el cursor
+  se recalculan con cada transacción del editor.
+- ProseMirror no maneja los eventos de las islas (`stopEvent`); el código
+  sí es suyo. Excalidraw sigue con su NodeView de siempre.
+- Acciones del editor para la barra (31 oct 2026): `setLanguage(language)`
+  y `setCode(code)` en `NoteBlockProps`, solo en el modo inline y con el
+  editor editable. Las implementa `InlineExtensionBlockView` sobre su
+  `getPos()` con las transacciones puras de `extensionBlockPos.ts`
+  (`setBlockLanguageTr`, `setBlockCodeTr`). `setLanguage` hace lo mismo
+  que el selector de los bloques normales (`plaintext` quita el
+  lenguaje), conserva el scroll y devuelve el foco al código; si el
+  lenguaje nuevo no es de la extensión, el bloque pasa a ser normal, con
+  su selector. `setCode` cambia solo el tramo distinto, así el cursor se
+  queda y Deshacer lo revierte en un paso. Detalle en specs/cliente-http,
+  design §12.
+- "Nuevo bloque" inserta `template` en el cursor, sin editor aparte, y
+  deja el cursor al final de la primera línea.
+- ⌘↵ (Ctrl+Enter) con el cursor dentro de un bloque inline se avisa por
+  el bus `src/extensions/noteBlockEvents.ts`, con el elemento del NodeView
+  para que cada bloque reconozca el suyo. Fuera, Mod-Enter hace lo de
+  siempre.
+- El resumen de la lista de notas no quita los bloques inline: su texto
+  se lee bien.
+- `parseFencedBlocks` compara el lenguaje exacto y acepta cercas de 3 o
+  más comillas invertidas; `formatFence` alarga la cerca si el contenido
+  trae una línea con comillas invertidas.
+
 ## Red (R17)
 
 - Cada extensión que habla con un servicio tiene sus comandos en
   `src-tauri/src/extensions/<id>.rs`.
 - La lista de hosts permitidos está en el código Rust de esa extensión.
+  La excepción es el Cliente HTTP (R17): el host lo escribe el usuario.
 - Se usa `reqwest` (ya es dependencia) con timeout y sin redirecciones,
   salvo que el spec de la extensión diga otra cosa.
 - El webview nunca hace `fetch` a esos servicios.
@@ -274,3 +330,82 @@ Siguen el mismo modelo cuando tengan su primera extensión:
   quien no usa ninguna.
 - **Un ErrorBoundary global:** ya existe y cierra la app entera. Fue la
   causa del fallo de la vista previa de enlaces arreglado en v1.0.7.
+
+## Estado en el menú lateral (R26)
+
+La primera es el contador del Pomodoro (`specs/pomodoro/design.md` §3).
+
+- Punto `SidebarStatus` (`ComponentType<{ collapsed: boolean }>`). Si no
+  hay nada que mostrar, devuelve `null`.
+- Metadato `sidebarStatus: true` en el registro, para que el menú sepa
+  qué extensiones lo tienen sin cargar su código (R16).
+- `SidebarStatusSlots` (`ExtensionSections.tsx`) monta un `ExtensionSlot`
+  con `variant="inline"` por cada extensión activa que lo tenga:
+  - expandido: primer hijo del pie (en la Lista, antes de "Opciones"; en
+    la Barra de íconos, al pie del panel);
+  - colapsado: después de la columna con scroll y antes de Buscar.
+- **Columna colapsada con scroll:** las secciones y las vistas de Tareas
+  van en un contenedor `flex-1 overflow-y-auto`; el estado, Buscar y
+  Opciones quedan fijos abajo. Con dos extensiones con vista y el
+  contador, la columna no cabía en 600 px de alto (Pomodoro, hallazgo 2).
+  Desde `specs/navegacion-secciones`, además, lo que no cabe pasa a "Más".
+- **Abrir Opciones en la página de una extensión:** `openExtensionSettings(id)`
+  del store deja una señal (`settingsExtensionRequest`) y abre Opciones;
+  `SettingsModal` la consume y abre `ext:<id>`, como `openSettingsGitTab`.
+
+## Tarjetas en Inicio (R27)
+
+Las primeras son la del Pomodoro (`specs/pomodoro` PM17) y "Reuniones de
+hoy" de Google Calendar (`specs/google-calendar` G12).
+
+- Punto `HomeCard` (`ComponentType<HomeCardProps>`, `HomeCardProps =
+  object`): cada tarjeta lee lo suyo de su store. Si no hay nada que
+  mostrar, o su "Mostrar en Inicio" está apagado, devuelve `null`.
+- Metadato `homeCard: { order }` en el registro, para que Inicio sepa qué
+  extensiones la tienen, y en qué orden, sin cargar su código (R16).
+  Pomodoro 10, Google Calendar 20.
+- `ExtensionHomeCards` (`components/dashboard/ExtensionHomeCards.tsx`) va
+  después de "Esta semana". Monta un `ExtensionSlot` con `variant="block"`
+  por cada extensión activa con tarjeta, por `order`, en una rejilla
+  `repeat(auto-fit, minmax(min(100%, 18rem), 1fr))` (una, dos o tres por
+  fila según el ancho), con un `h2` solo para lectores de pantalla
+  ("Extensiones"). Sin ninguna, no dibuja nada.
+  - Una tarjeta que devuelve `null` no crea ningún elemento, así que no
+    deja hueco. Si ninguna dibuja nada, la rejilla queda vacía y se oculta
+    con `:empty`, y la sección, con `:has(> div:empty)`.
+- `HomeCardShell` (`components/dashboard/HomeCardShell.tsx`): el marco y la
+  cabecera de las tarjetas propias de Inicio (`rounded-2xl`, ícono 16
+  `text-indigo-400`, `h3 text-sm font-semibold`, `dash-enter dash-d4`), con
+  un texto pequeño junto al título y un enlace opcional a la derecha como
+  "Ver calendario →". Las extensiones lo usan para parecer de Inicio.
+- "Mostrar en Inicio": cada extensión lo guarda en sus `settings` locales
+  (`showOnHome`, encendido salvo `false`) y lo pone en su página de
+  Opciones.
+- **Aviso "Extensiones"** (`ExtensionsHomeHint`, en el mismo archivo): a
+  todo el ancho, con borde punteado, solo si no hay ninguna extensión
+  activa (aunque sea una sin tarjeta) y no se descartó.
+  - Nombra cuatro del registro, en una lista sin controles: Pomodoro,
+    Google Calendar, DevTools y Captura rápida.
+  - "Ver extensiones" llama a `openExtensionsCatalog()` del store: abre
+    Opciones con la señal `extensionsCatalogRequest`, y `SettingsModal`
+    abre la pestaña Extensiones (como `openSidebarSettings`).
+  - "Ocultar este aviso" (✕) llama a `dismissHomeExtensionsHint()`:
+    `homeExtensionsHintDismissed: true` en `config.json`, que no se
+    sincroniza (solo se escribe la clave si se descartó). El foco pasa al
+    control anterior al aviso, para que no caiga al `body`.
+
+## Atajo global y ventana propia (R25)
+
+La primera es la captura rápida (`specs/captura-rapida/design.md`).
+
+- El atajo lo registra Rust con `tauri-plugin-global-shortcut`, así que
+  el webview no necesita permisos del plugin. El manejador del plugin es
+  uno solo, en `lib.rs`, y despacha a la extensión.
+- La ventana usa el mismo bundle; `main.tsx` la reconoce por su etiqueta
+  y carga solo su componente, sin `App` ni el store.
+- Su capacidad (`capabilities/<id>.json`) da solo eventos: habla con la
+  ventana principal por eventos de Tauri, y esta escribe con el store.
+- La bandeja se arma con `build_tray_menu`, que agrega las entradas de
+  las extensiones activas; `refresh_tray` la rehace. Las del Pomodoro van
+  entre "Nueva tarea" y "Salir", con su separador
+  (`extensions::pomodoro::tray_items`).

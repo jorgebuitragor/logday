@@ -3,7 +3,7 @@ import { Puzzle } from 'lucide-react';
 import type { ExtensionDefinition, ExtensionsConfig } from './types';
 import {
   enabledExtensions, extensionIdOfSection, isExtensionEnabled, needsConsent, parseExtensionsConfig,
-  resolveSection, withExtensionEnabled, withExtensionSettings, withoutExtension,
+  resolveSection, secretKeysToClear, withExtensionEnabled, withExtensionSettings, withoutExtension,
 } from './state';
 
 // Un registro falso: una integración sin vista y una herramienta con vista.
@@ -100,5 +100,19 @@ describe('pantalla de inicio y secciones (R13)', () => {
   it('reconoce las secciones de extensión', () => {
     expect(extensionIdOfSection('ext:team-chat')).toBe('team-chat');
     expect(extensionIdOfSection('notes')).toBeNull();
+  });
+});
+
+describe('secretos que borra "Quitar configuración" (R8)', () => {
+  it('las claves fijas y las que dependen de la configuración, sin repetir', () => {
+    const def = {
+      ...chat,
+      secretKeys: ['token'],
+      dynamicSecretKeys: (settings?: Record<string, unknown>) => (settings?.keys as string[] | undefined) ?? [],
+    } as ExtensionDefinition;
+    expect(secretKeysToClear(def, { enabled: true, settings: { keys: ['v_1', 'token'] } })).toEqual(['token', 'v_1']);
+    expect(secretKeysToClear(def, undefined)).toEqual(['token']);
+    expect(secretKeysToClear(chat, { enabled: true })).toEqual([]);
+    expect(secretKeysToClear(undefined, undefined)).toEqual([]);
   });
 });

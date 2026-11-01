@@ -1,26 +1,43 @@
-import { useEffect, useRef, useState } from 'react';
-import { X, Settings2, SlidersHorizontal, Keyboard, FolderOpen, RefreshCw, GitBranch, Puzzle, Info } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
+import { X, Settings2, PanelLeft, SlidersHorizontal, LayoutTemplate, Keyboard, FolderOpen, RefreshCw, GitBranch, Puzzle, Info } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import { GitSettingsTab } from './GitSettingsTab';
 import { SyncSettingsTab } from './SyncSettingsTab';
 import { GeneralSettingsTab } from './GeneralSettingsTab';
+import { NavigationSettingsTab } from './NavigationSettingsTab';
 import { WorkSettingsTab } from './WorkSettingsTab';
 import { ShortcutsSettingsTab } from './ShortcutsSettingsTab';
 import { DataSettingsTab } from './DataSettingsTab';
 import { AboutSettingsTab } from './AboutSettingsTab';
 import { ExtensionsSettingsTab } from './ExtensionsSettingsTab';
+import { TemplatesSettingsTab } from './TemplatesSettingsTab';
 import { ModalOverlay } from '../shared/ModalOverlay';
 import { ModalPanel } from '../shared/ModalPanel';
+import ToggleSwitch from '../shared/ToggleSwitch';
 import { useExtensions } from '../../extensions/useExtensions';
 import { ExtensionSlot } from '../../extensions/ExtensionSlot';
 import { extensionText } from '../../extensions/text';
 import type { ExtensionDefinition, ExtensionId } from '../../extensions/types';
+import type { Language } from '../../types/common';
 
 // `ext:<id>`: el panel de una extensión activa, con su propia entrada (R21
 // de specs/extensiones).
-type SettingsTab = 'general' | 'work' | 'shortcuts' | 'data' | 'git' | 'sync' | 'extensions' | `ext:${ExtensionId}` | 'about';
+type SettingsTab = 'general' | 'navigation' | 'work' | 'templates' | 'shortcuts' | 'data' | 'git' | 'sync' | 'extensions' | `ext:${ExtensionId}` | 'about';
+
+/** Las entradas del grupo App. Navegación va segunda, junto a General
+ *  (specs/navegacion-secciones NS21). */
+export function appTabs(language: Language): { id: SettingsTab; label: string; icon: LucideIcon }[] {
+  return [
+    { id: 'general',    label: t(language, 'settings', 'tabGeneral'),    icon: Settings2 },
+    { id: 'navigation', label: t(language, 'settings', 'tabNavigation'), icon: PanelLeft },
+    { id: 'work',       label: t(language, 'settings', 'tabWork'),       icon: SlidersHorizontal },
+    { id: 'templates',  label: t(language, 'settings', 'tabTemplates'),  icon: LayoutTemplate },
+    { id: 'shortcuts',  label: t(language, 'settings', 'tabShortcuts'),  icon: Keyboard },
+  ];
+}
 
 export function SettingsModal() {
   const {
@@ -28,10 +45,11 @@ export function SettingsModal() {
     language,
     isGitOpen, toggleGit,
     isSyncOpen, toggleSync,
+    settingsExtensionRequest, clearExtensionSettingsRequest,
+    sidebarSettingsRequest, clearSidebarSettingsRequest,
+    extensionsCatalogRequest, clearExtensionsCatalogRequest,
   } = useAppStore();
 
-  const [isStartupSelectorOpen, setIsStartupSelectorOpen] = useState(false);
-  const startupSelectorRef = useRef<HTMLDivElement | null>(null);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
   const { enabled: enabledExtensions } = useExtensions();
   // En orden alfabético, como las tarjetas del catálogo.
@@ -48,29 +66,16 @@ export function SettingsModal() {
     if (settingsTab.startsWith('ext:') && !openExtension) setSettingsTab('extensions');
   }, [settingsTab, openExtension]);
 
-  // Cerrar con Escape
+  // Cerrar con Escape. Un menú abierto dentro (el de la pantalla de
+  // inicio) se cierra primero: escucha en captura y corta el evento.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || !isSettingsOpen) return;
-      if (isStartupSelectorOpen) {
-        setIsStartupSelectorOpen(false);
-        return;
-      }
       toggleSettings();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [isSettingsOpen, isStartupSelectorOpen, toggleSettings]);
-
-  useEffect(() => {
-    const onPointerDown = (e: MouseEvent) => {
-      if (!isStartupSelectorOpen) return;
-      if (startupSelectorRef.current?.contains(e.target as Node)) return;
-      setIsStartupSelectorOpen(false);
-    };
-    window.addEventListener('mousedown', onPointerDown);
-    return () => window.removeEventListener('mousedown', onPointerDown);
-  }, [isStartupSelectorOpen]);
+  }, [isSettingsOpen, toggleSettings]);
 
   // Navegar al tab git cuando se activa isGitOpen desde el sidebar
   useEffect(() => {
@@ -88,6 +93,31 @@ export function SettingsModal() {
     }
   }, [isSettingsOpen, isSyncOpen, toggleSync]);
 
+  // Abrir en la página de una extensión (`openExtensionSettings`, p. ej.
+  // el botón "Opciones" del Pomodoro).
+  useEffect(() => {
+    if (isSettingsOpen && settingsExtensionRequest) {
+      setSettingsTab(`ext:${settingsExtensionRequest}`);
+      clearExtensionSettingsRequest();
+    }
+  }, [isSettingsOpen, settingsExtensionRequest, clearExtensionSettingsRequest]);
+
+  // "Ordenar secciones…" del menú "Más" abre Navegación, que empieza por
+  // el menú lateral (specs/navegacion-secciones NS21).
+  useEffect(() => {
+    if (!isSettingsOpen || !sidebarSettingsRequest) return;
+    setSettingsTab('navigation');
+    clearSidebarSettingsRequest();
+  }, [isSettingsOpen, sidebarSettingsRequest, clearSidebarSettingsRequest]);
+
+  // "Ver extensiones" del aviso de Inicio abre el catálogo
+  // (specs/extensiones R27).
+  useEffect(() => {
+    if (!isSettingsOpen || !extensionsCatalogRequest) return;
+    setSettingsTab('extensions');
+    clearExtensionsCatalogRequest();
+  }, [isSettingsOpen, extensionsCatalogRequest, clearExtensionsCatalogRequest]);
+
   if (!isSettingsOpen) return null;
 
   // Barra lateral agrupada en vez de pestañas arriba: con más secciones
@@ -98,11 +128,7 @@ export function SettingsModal() {
   const NAV_GROUPS: { label?: string; items: { id: SettingsTab; label: string; icon: LucideIcon; nested?: boolean }[] }[] = [
     {
       label: t(language, 'settings', 'groupApp'),
-      items: [
-        { id: 'general',   label: t(language, 'settings', 'tabGeneral'),   icon: Settings2 },
-        { id: 'work',      label: t(language, 'settings', 'tabWork'),      icon: SlidersHorizontal },
-        { id: 'shortcuts', label: t(language, 'settings', 'tabShortcuts'), icon: Keyboard },
-      ],
+      items: appTabs(language),
     },
     {
       label: t(language, 'settings', 'groupDataConnection'),
@@ -185,17 +211,17 @@ export function SettingsModal() {
           {/* Content */}
           <div className="flex-1 min-w-0 min-h-0 overflow-y-auto px-5 py-5 space-y-6">
 
-            {/* ── GENERAL: Idioma · Tema · Fuente · Pantalla de inicio ── */}
-            {settingsTab === 'general' && (
-              <GeneralSettingsTab
-                isStartupSelectorOpen={isStartupSelectorOpen}
-                setIsStartupSelectorOpen={setIsStartupSelectorOpen}
-                startupSelectorRef={startupSelectorRef}
-              />
-            )}
+            {/* ── GENERAL: Idioma · Tema · Fuente ── */}
+            {settingsTab === 'general' && <GeneralSettingsTab />}
 
-            {/* ── WORK: Comportamiento · Vista de notas · Notificaciones · Semana laboral · Accesibilidad ── */}
+            {/* ── NAVIGATION: Menú lateral · Pantalla de inicio · Vistas de notas y tareas ── */}
+            {settingsTab === 'navigation' && <NavigationSettingsTab />}
+
+            {/* ── WORK: Comportamiento · Notificaciones · Semana laboral · Accesibilidad ── */}
             {settingsTab === 'work' && <WorkSettingsTab />}
+
+            {/* ── TEMPLATES: Mensaje del Daily · Excel de horas extra ── */}
+            {settingsTab === 'templates' && <TemplatesSettingsTab />}
 
             {/* ── SHORTCUTS: Atajos de teclado ── */}
             {settingsTab === 'shortcuts' && <ShortcutsSettingsTab />}
@@ -228,21 +254,53 @@ export function SettingsModal() {
 }
 
 
-/** Página propia del panel de una extensión: su nombre y descripción, y su
- *  `Settings` aislado en `ExtensionBoundary` (R15, R21). */
-function ExtensionSettingsPage({ def }: { def: ExtensionDefinition }) {
-  const language = useAppStore((s) => s.language);
+/** Página propia del panel de una extensión: su nombre y descripción, el
+ *  interruptor para desactivarla (R28) y su `Settings` aislado en
+ *  `ExtensionBoundary` (R15, R21). */
+export function ExtensionSettingsPage({ def }: { def: ExtensionDefinition }) {
+  const { language, showToast, openExtensionSettings, openExtensionsCatalog } = useAppStore(
+    useShallow((s) => ({
+      language: s.language,
+      showToast: s.showToast,
+      openExtensionSettings: s.openExtensionSettings,
+      openExtensionsCatalog: s.openExtensionsCatalog,
+    })),
+  );
+  const { disableWithUndo } = useExtensions();
   const Icon = def.icon;
+  const name = extensionText(language, def.id, 'name');
+
+  // Solo se dibuja con la extensión activa, así que el interruptor solo
+  // apaga. Sin confirmación: desactivar conserva la configuración (R7), y
+  // el aviso trae Deshacer. Al apagarla, SettingsModal vuelve al catálogo.
+  const handleDisable = async () => {
+    const undo = await disableWithUndo(def.id, {
+      reopen: openExtensionSettings,
+      needsConsent: openExtensionsCatalog,
+    });
+    showToast({
+      kind: 'info',
+      title: t(language, 'extensions', 'disabledToast').replace('{name}', name),
+      action: { label: t(language, 'toast', 'undo'), onClick: () => void undo() },
+    });
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-start gap-3">
         <div className="rounded-lg bg-indigo-500/10 p-2 text-indigo-400">
           <Icon size={16} />
         </div>
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-[var(--text-primary)]">{extensionText(language, def.id, 'name')}</h3>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">{name}</h3>
           <p className="mt-0.5 text-[11px] text-[var(--text-hint)]">{extensionText(language, def.id, 'description')}</p>
         </div>
+        {/* El texto visible da nombre al interruptor (la etiqueta envuelve
+            el botón). */}
+        <label className="flex shrink-0 cursor-pointer items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+          {t(language, 'extensions', 'enabledLabel')}
+          <ToggleSwitch checked onChange={(next) => { if (!next) void handleDisable(); }} />
+        </label>
       </div>
       <ExtensionSlot id={def.id} point="Settings" props={{}} />
     </div>

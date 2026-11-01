@@ -2,6 +2,8 @@ import { Language } from './common';
 import { Theme, CustomTheme } from './theme';
 import { OvertimeMonthMeta } from './overtime';
 import type { ExtensionSection, ExtensionsConfig } from '../extensions/types';
+import type { SavedSection, SidebarStyle } from '../components/sidebar/sectionOrder';
+import type { TemplatesConfig } from '../lib/templates/choice';
 
 export type ViewMode = 'list' | 'kanban' | 'calendar';
 /** Secciones fijas del menú lateral. */
@@ -43,12 +45,28 @@ export interface AppConfig {
   workWeekDays?: 5 | 6;
   holidaysAsNonWork?: boolean;
   animationsEnabled?: boolean;
+  /** El botón (?) de ayuda junto al título de las pantallas (specs/ayuda-contextual AY23). */
+  helpButtonsEnabled?: boolean;
+  /** Se descartó el aviso de "Extensiones" al final de Inicio
+   *  (specs/extensiones R27). Local, no se sincroniza. */
+  homeExtensionsHintDismissed?: boolean;
   trashAutoPurgeEnabled?: boolean;
+  /** Antes de specs/navegacion-secciones: los textos de la fila de
+   *  secciones. Ya no se lee ni se escribe (NS5); queda en el tipo porque
+   *  aparece en configs viejas. */
   sidebarLabelsVisible?: boolean;
+  /** Estilo de las secciones del menú (NS1). Sin él, la Barra de íconos. */
+  sidebarStyle?: SidebarStyle;
+  /** Orden y visibilidad de las secciones (NS7, NS9). Sin él, el orden
+   *  por defecto. */
+  sidebarSections?: SavedSection[];
   /** Vista de notas elegida en Opciones; se usa la primera vez. */
   notesViewDefault?: NotesView;
   /** Última vista usada (el botón de la barra lateral); se recuerda. */
   notesView?: NotesView;
+  /** Vista con que abre Tareas al iniciar la app (specs/navegacion-secciones
+   *  NS22). La vista actual no se guarda. */
+  tasksViewDefault?: ViewMode;
   noteSortBy?: NoteSortBy;
   noteSortDir?: NoteSortDir;
   taskSortBy?: TaskSortBy;
@@ -56,6 +74,10 @@ export interface AppConfig {
    *  Local, no se sincroniza; los secretos van en el llavero
    *  (specs/extensiones R9, R10). */
   extensions?: ExtensionsConfig;
+  /** Plantillas del Daily y del Excel de horas extra (logday-server
+   *  specs/plantillas, v1). Sin él, el mensaje de siempre y el Excel
+   *  Legacy. Local. */
+  templates?: TemplatesConfig;
 }
 
 export interface BackupSettings {

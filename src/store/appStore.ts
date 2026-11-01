@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 import { invoke } from '@tauri-apps/api/core';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import TauriWebSocket from '@tauri-apps/plugin-websocket';
 import { check as checkUpdateRemote, Update as TauriUpdate } from '@tauri-apps/plugin-updater';
 import { getVersion } from '@tauri-apps/api/app';
@@ -12,7 +11,7 @@ import { Note } from '../types/note';
 import { OvertimeEntry, OvertimeMonthMeta } from '../types/overtime';
 import { CalendarEvent } from '../types/calendar';
 import { AbsenceDay, AbsenceType } from '../types/absence';
-import { Theme, BuiltInTheme, CustomTheme } from '../types/theme';
+import { Theme, CustomTheme } from '../types/theme';
 import { GitConfig, GitStatus, GitRemoteStatus } from '../types/git';
 import { SyncConfig, SyncConnectionStatus } from '../types/sync';
 import { AppConfig, ViewMode, ActiveSection, StartupScreen, Shortcuts, DEFAULT_SHORTCUTS, NotesView, NoteSortBy, NoteSortDir, TaskSortBy } from '../types/config';
@@ -21,14 +20,17 @@ import type { ExtensionId, ExtensionsConfig } from '../extensions/types';
 import { EXTENSIONS, getExtension } from '../extensions/registry';
 import {
   parseExtensionsConfig, resolveSection, withExtensionEnabled, withExtensionSettings, withoutExtension,
-  extensionSection,
+  extensionSection, secretKeysToClear,
 } from '../extensions/state';
 import { clearExtensionSecret } from '../extensions/secrets';
-import { deriveCustomThemeVars } from '../lib/themeColor';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
 import { parseDailyFile, serializeDailyFile } from '../lib/dailyFileFormat';
 import { generateOvertimeXlsx } from '../lib/overtimeExcel';
+import { fillOvertimeTemplate } from '../lib/templates/overtimeTemplate';
+import { base64ToBytes, bytesToBase64 as templateBytesToBase64, LOGDAY_OVERTIME_XLSX_BASE64, logdayOvertimeTemplate } from '../lib/templates/logdayOvertimeXlsx';
+import { buildDailyMessage, customOvertimeTemplatePath, type DailyTemplateChoice, type OvertimeTemplateSource, type TemplatesConfig } from '../lib/templates/choice';
 import { fs, pickFolder, pickFile, saveDialog, SearchResult } from '../lib/invoke';
+import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 import {
   login as syncLogin, refreshToken as refreshTokenRemote, SyncApiError, normalizeServerUrl, syncChangesRemote, SyncChange,
   createTaskRemote, patchTaskRemote, deleteTaskRemote,
@@ -60,6 +62,7 @@ import { applyIncomingDailyContentState, applyDailyEditorEdit, deleteDailyConten
 import { parseFrontmatter, serializeTask, parseNote, serializeNote } from '../lib/markdown';
 import { withNormalizedProgress } from '../lib/taskProgress';
 import { t } from '../lib/i18n';
+import { DEFAULT_SIDEBAR_STYLE, parseSidebarSections, parseSidebarStyle, type SavedSection, type SidebarStyle } from '../components/sidebar/sectionOrder';
 import { emitAppEvent } from '../lib/appEvents';
 import { appUpdatedAt, fetchRelease, recordAppUpdatedAt } from '../lib/releases';
 import { localISODate, localISOMonth, nowInstant, stampSortKey } from '../lib/localDate';
@@ -67,10 +70,11 @@ import {
   NoteUpdatedThrottle, applyUndoRestore, newNoteStamps, newTaskStamps, stampNoteSave, undoRestore, withCompletedAt,
 } from '../lib/entityStamps';
 import { EMPTY_TASK_FILTER, type TaskFilter } from '../lib/taskListing';
+import { initialTasksView } from '../lib/viewDefaults';
+import { createBaseFolders, initialLanguage, inspectFolder, type PickedFolder } from '../lib/onboarding';
 import {
   toISO,
   getPreviousWorkingDay,
-  buildDailyCopyText,
   dateFromISO,
 } from '../lib/colombianHolidays';
 
@@ -121,6 +125,10 @@ export interface AppState {
   overtimeMonth: string;              // YYYY-MM
   overtimeMonths: string[];           // YYYY-MM[] con entradas, desc
   overtimeMeta: OvertimeMonthMeta;
+  /** Plantillas del Daily y del Excel (logday-server specs/plantillas,
+   *  v1). Vacío: el mensaje de siempre y el Excel Legacy. Local, no se
+   *  sincroniza. */
+  templates: TemplatesConfig;
 
   // Calendar Events
   calendarEvents: CalendarEvent[];
@@ -146,9 +154,16 @@ export interface AppState {
 
   // Accesibilidad
   animationsEnabled: boolean;
+  helpButtonsEnabled: boolean;
 
-  // Menú lateral
-  sidebarLabelsVisible: boolean;
+  // Inicio (specs/extensiones R27)
+  /** El aviso de "Extensiones" al final de Inicio se descartó. Local. */
+  homeExtensionsHintDismissed: boolean;
+
+  // Menú lateral (specs/navegacion-secciones)
+  sidebarStyle: SidebarStyle;
+  /** `undefined`: el orden por defecto. */
+  sidebarSections: SavedSection[] | undefined;
 
   // Papelera de reciclaje
   trashAutoPurgeEnabled: boolean;
@@ -161,6 +176,8 @@ export interface AppState {
   extensions: ExtensionsConfig;
   notesView: NotesView;
   notesViewDefault: NotesView;
+  /** Vista con que abre Tareas (NS22); `currentView` no se guarda. */
+  tasksViewDefault: ViewMode;
   noteSortBy: NoteSortBy;
   noteSortDir: NoteSortDir;
   taskSortBy: TaskSortBy;
@@ -208,7 +225,14 @@ export interface AppState {
   // ── Actions ──────────────────────────────────────────────────
 
   init: () => Promise<void>;
-  setupBasePath: () => Promise<void>;
+  /** Bienvenida, paso 2 (specs/onboarding OB6–OB8): abre el diálogo y
+   *  comprueba la carpeta, sin tocar `isConfigured` ni la config. `null` si
+   *  se cancela. */
+  pickBaseFolder: () => Promise<PickedFolder | null>;
+  /** OB3, OB9: crea las carpetas, guarda la config (con lo elegido en la
+   *  bienvenida), abre la app y carga los datos. Si no puede preparar la
+   *  carpeta, lanza el error y la bienvenida sigue abierta. */
+  completeOnboarding: (path: string) => Promise<void>;
   changeBasePath: () => Promise<void>;
   checkForUpdates: () => Promise<boolean>;
   installUpdate: () => Promise<void>;
@@ -261,6 +285,7 @@ export interface AppState {
   selectNoteFolder: (folder: string | null) => Promise<void>;
   setNotesView: (view: NotesView) => void;
   setNotesViewDefault: (view: NotesView) => void;
+  setTasksViewDefault: (view: ViewMode) => void;
   setNoteSort: (by: NoteSortBy, dir: NoteSortDir) => void;
   setTaskSort: (by: TaskSortBy) => void;
   setTaskFilter: (patch: Partial<TaskFilter>) => void;
@@ -270,7 +295,8 @@ export interface AppState {
   createNoteFolder: (name: string, parent?: string) => Promise<void>;
   renameNoteFolder: (folder: string, newName: string) => Promise<void>;
   deleteNoteFolder: (folder: string) => Promise<void>;
-  createNote: () => Promise<Note>;
+  /** Sin carpeta, en la carpeta abierta (o en la raíz). */
+  createNote: (folder?: string) => Promise<Note>;
   /** Nota con título y contenido, sin abrirla (la crea el agente por MCP,
    *  specs/agentes-mcp). Mismo camino que importar: el `.md` y el sync. */
   createNoteWith: (input: { title: string; content?: string; folder?: string; tags?: string[] }) => Promise<Note>;
@@ -318,6 +344,13 @@ export interface AppState {
   setOvertimeMeta: (meta: Partial<OvertimeMonthMeta>) => void;
   replaceOvertimeMetaSnapshot: (meta: OvertimeMonthMeta) => void;
   exportOvertimeExcel: (yearMonth: string) => Promise<void>;
+  setDailyTemplate: (choice: DailyTemplateChoice) => Promise<void>;
+  /** 'custom' solo si ya hay un archivo cargado. */
+  setOvertimeTemplateSource: (source: OvertimeTemplateSource) => Promise<void>;
+  /** Elige un .xlsx, lo copia a la carpeta de la app y lo activa. */
+  loadOvertimeTemplate: () => Promise<void>;
+  /** Guarda una copia de la de Logday o de la cargada donde elija el usuario. */
+  downloadOvertimeTemplate: (which: 'logday' | 'custom') => Promise<void>;
 
   // Calendar Events
   loadCalendarEvents: () => Promise<void>;
@@ -347,7 +380,23 @@ export interface AppState {
   setWorkWeekDays: (days: 5 | 6) => Promise<void>;
   setHolidaysAsNonWork: (enabled: boolean) => Promise<void>;
   setAnimationsEnabled: (enabled: boolean) => Promise<void>;
-  setSidebarLabelsVisible: (visible: boolean) => Promise<void>;
+  setHelpButtonsEnabled: (enabled: boolean) => Promise<void>;
+  setSidebarStyle: (style: SidebarStyle) => Promise<void>;
+  /** `undefined` vuelve al orden y la visibilidad por defecto. */
+  setSidebarSections: (sections: SavedSection[] | undefined) => Promise<void>;
+  /** Abre Opciones en Navegación ("Ordenar secciones…"). */
+  openSidebarSettings: () => void;
+  /** Señal para que Opciones abra la pestaña Navegación. */
+  sidebarSettingsRequest: boolean;
+  clearSidebarSettingsRequest: () => void;
+  /** Abre Opciones en el catálogo de extensiones ("Ver extensiones" de
+   *  Inicio, specs/extensiones R27). */
+  openExtensionsCatalog: () => void;
+  /** Señal para que Opciones abra la pestaña Extensiones. */
+  extensionsCatalogRequest: boolean;
+  clearExtensionsCatalogRequest: () => void;
+  /** "Ocultar este aviso" del aviso de extensiones en Inicio (R27). */
+  dismissHomeExtensionsHint: () => Promise<void>;
   setTrashAutoPurgeEnabled: (enabled: boolean) => Promise<void>;
   listTrash: () => Promise<trash.TrashListItem[]>;
   /** `silent`: sin aviso (al deshacer un borrado de varias tareas, que avisa una vez). */
@@ -386,6 +435,11 @@ export interface AppState {
   gitFetch: () => Promise<void>;
   toggleGit: () => void;
   openSettingsGitTab: () => void;
+  /** Abre Opciones en la página de una extensión (R21). La señal la
+   *  consume `SettingsModal`, como `isGitOpen`. */
+  settingsExtensionRequest: ExtensionId | null;
+  openExtensionSettings: (id: ExtensionId) => void;
+  clearExtensionSettingsRequest: () => void;
 
   // Sync (logday-server)
   syncConnect: (serverUrl: string, email: string, password: string) => Promise<void>;
@@ -462,8 +516,9 @@ async function persistConfig(get: SyncGet): Promise<void> {
   const {
     configDir, basePath, startupScreen, language, confirmDestructiveActions,
     notificationsEnabled, defaultReminderMinutes, workWeekDays, holidaysAsNonWork,
-    animationsEnabled, trashAutoPurgeEnabled, sidebarLabelsVisible, activeProject, activeNoteFolder,
-    notesView, notesViewDefault, noteSortBy, noteSortDir, taskSortBy, extensions,
+    animationsEnabled, helpButtonsEnabled, homeExtensionsHintDismissed, trashAutoPurgeEnabled, sidebarStyle, sidebarSections,
+    activeProject, activeNoteFolder, notesView, notesViewDefault, tasksViewDefault, noteSortBy, noteSortDir, taskSortBy, extensions,
+    templates,
   } = get();
   if (!configDir || !basePath) return;
   await saveConfig(configDir, {
@@ -476,16 +531,24 @@ async function persistConfig(get: SyncGet): Promise<void> {
     workWeekDays,
     holidaysAsNonWork,
     animationsEnabled,
+    helpButtonsEnabled,
+    // Solo se escribe si se descartó: las configs de siempre no cambian.
+    ...(homeExtensionsHintDismissed ? { homeExtensionsHintDismissed } : {}),
     trashAutoPurgeEnabled,
-    sidebarLabelsVisible,
+    // `sidebarLabelsVisible` ya no se escribe (NS5): al guardar se cae.
+    sidebarStyle,
+    sidebarSections,
     lastOpenedProject: activeProject ?? undefined,
     lastOpenedNoteFolder: activeNoteFolder ?? undefined,
     notesView,
     notesViewDefault,
+    tasksViewDefault,
     noteSortBy,
     noteSortDir,
     taskSortBy,
     extensions,
+    // Solo si se eligió alguna: las configs de siempre no cambian.
+    ...(templates.daily || templates.overtime ? { templates } : {}),
   });
 }
 
@@ -598,59 +661,10 @@ export function applyAnimationsToDOM(enabled: boolean) {
   document.documentElement.classList.toggle('no-animations', !enabled);
 }
 
-const CUSTOM_THEME_VARS = [
-  '--bg-base', '--bg-panel', '--bg-surface', '--bg-secondary', '--bg-hover', '--bg-elevated', '--bg-input',
-  '--border', '--border-card', '--border-high',
-  '--text-primary', '--text-body', '--text-secondary', '--text-tertiary', '--text-muted', '--text-hint', '--text-faint',
-  '--accent', '--accent-strong', '--accent-soft', '--accent-ink', '--accent-inline', '--accent-link', '--accent-code',
-] as const;
-
-const TINTED_BUILTIN_THEMES: BuiltInTheme[] = ['high-contrast', 'visual-rest', 'sepia', 'oled', 'nordic'];
-
-export function applyCustomThemeToDOM(customTheme: CustomTheme | null) {
-  const root = document.documentElement.style;
-  if (!customTheme) {
-    CUSTOM_THEME_VARS.forEach((v) => root.removeProperty(v));
-    return;
-  }
-  const vars = deriveCustomThemeVars(customTheme);
-  Object.entries(vars).forEach(([k, v]) => root.setProperty(k, v));
-}
-
-export function applyThemeToDOM(theme: Theme, animate = false, customThemes: CustomTheme[] = []) {
-  let resolved: BuiltInTheme;
-  let custom: CustomTheme | null = null;
-
-  if (theme.startsWith('custom:')) {
-    custom = customThemes.find((t) => `custom:${t.id}` === theme) ?? null;
-    resolved = custom?.base ?? 'dark';
-  } else {
-    resolved = theme === 'system'
-      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-      : (theme as BuiltInTheme);
-  }
-
-  if (animate) {
-    document.documentElement.classList.add('theme-animating');
-    window.setTimeout(() => {
-      document.documentElement.classList.remove('theme-animating');
-    }, 280);
-  }
-
-  document.documentElement.dataset.theme = resolved;
-  applyCustomThemeToDOM(custom);
-  document.documentElement.classList.toggle(
-    'theme-tinted',
-    custom !== null || TINTED_BUILTIN_THEMES.includes(resolved),
-  );
-
-  try {
-    const nativeTheme = theme === 'system' ? null : (resolved === 'dark' ? 'dark' : 'light');
-    void getCurrentWindow().setTheme(nativeTheme).catch(() => {});
-  } catch {
-    // Puede ejecutarse fuera del contexto Tauri (tests o navegador)
-  }
-}
+// Los temas se aplican desde `lib/theme.ts`, que también usa la ventana
+// de la captura rápida sin cargar el store (specs/captura-rapida).
+import { applyCustomThemeToDOM, applyThemeToDOM } from '../lib/theme';
+export { applyCustomThemeToDOM, applyThemeToDOM };
 
 // ── Sync (logday-server): escritura con cola offline ───────────────
 // Al crear/editar/borrar una entidad localmente, si sync está
@@ -2268,6 +2282,13 @@ const noteUpdatedThrottle = new NoteUpdatedThrottle();
 // Último guardado de cada nota (ver flushNoteUpdated).
 const noteSavesInFlight = new Map<string, Promise<void>>();
 
+/** Espera a que termine el último guardado de una nota, si hay uno: quien
+ *  la reescribe desde fuera del editor (lib/noteExternalEdit.ts) lee el
+ *  `.md` después de ese guardado, no antes. */
+export function waitForNoteSave(noteId: string): Promise<void> {
+  return noteSavesInFlight.get(noteId) ?? Promise.resolve();
+}
+
 // ── Store ──────────────────────────────────────────────────────
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -2300,8 +2321,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   workWeekDays: 5 as (5 | 6),
   holidaysAsNonWork: true,
   animationsEnabled: true,
+  helpButtonsEnabled: true,
   trashAutoPurgeEnabled: true,
-  sidebarLabelsVisible: true,
+  sidebarStyle: DEFAULT_SIDEBAR_STYLE,
+  sidebarSections: undefined,
+  sidebarSettingsRequest: false,
+  extensionsCatalogRequest: false,
+  homeExtensionsHintDismissed: false,
   theme: (localStorage.getItem('theme') as Theme) || 'system',
   customThemes: (() => {
     try {
@@ -2317,13 +2343,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   })(),
   startupScreen: 'dashboard',
   extensions: {},
-  notesView: 'list',
-  notesViewDefault: 'list',
+  notesView: 'tree',
+  notesViewDefault: 'tree',
+  tasksViewDefault: 'list',
   noteSortBy: 'updated',
   noteSortDir: 'desc',
   taskSortBy: 'due',
   taskFilter: EMPTY_TASK_FILTER,
-  language: (localStorage.getItem('language') as Language) || 'es',
+  // Sin idioma guardado, el del sistema (specs/onboarding OB5); con carpeta
+  // configurada, `init` lo cambia por el de config.json.
+  language: initialLanguage(localStorage.getItem('language'), typeof navigator !== 'undefined' ? navigator.language : undefined),
   fontSize: Number(localStorage.getItem('fontSize')) || 17,
   isSettingsOpen: false,
   shortcuts: (() => {
@@ -2346,6 +2375,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   gitRemoteStatus: 'unknown' as GitRemoteStatus,
   lastCommitTime: null,
   isGitOpen: false,
+  settingsExtensionRequest: null,
   syncConfig: (() => {
     try {
       return {
@@ -2392,6 +2422,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try { return { colaborador: '', cedula: '', ...JSON.parse(localStorage.getItem('overtimeMeta') || '{}') }; }
     catch { return { colaborador: '', cedula: '' }; }
   })(),
+  templates: {},
   calendarEvents: [],
   activeCalendarEvent: null,
   absenceDays: [],
@@ -2450,11 +2481,21 @@ export const useAppStore = create<AppState>((set, get) => ({
             workWeekDays: (cfg.workWeekDays as (5 | 6)) ?? 5,
             holidaysAsNonWork: cfg.holidaysAsNonWork ?? true,
             animationsEnabled: cfg.animationsEnabled ?? true,
+            helpButtonsEnabled: cfg.helpButtonsEnabled ?? true,
+            homeExtensionsHintDismissed: cfg.homeExtensionsHintDismissed === true,
             trashAutoPurgeEnabled: cfg.trashAutoPurgeEnabled ?? true,
-            sidebarLabelsVisible: cfg.sidebarLabelsVisible ?? true,
+            templates: cfg.templates ?? {},
+            // NS5: una config con `sidebarLabelsVisible` y sin estilo
+            // abre con la Barra de íconos, la predeterminada.
+            sidebarStyle: parseSidebarStyle(cfg.sidebarStyle, cfg.sidebarLabelsVisible),
+            sidebarSections: parseSidebarSections(cfg.sidebarSections),
             // La vista de Opciones se usa la primera vez; después, la última usada.
-            notesViewDefault: cfg.notesViewDefault ?? 'list',
-            notesView: cfg.notesView ?? cfg.notesViewDefault ?? 'list',
+            // Sin ninguna guardada, el árbol (Jorge, 31 oct 2026).
+            notesViewDefault: cfg.notesViewDefault ?? 'tree',
+            notesView: cfg.notesView ?? cfg.notesViewDefault ?? 'tree',
+            // Tareas abre en la vista de Opciones; la última usada no se
+            // recuerda (NS22).
+            ...initialTasksView(cfg),
             noteSortBy: cfg.noteSortBy ?? 'updated',
             noteSortDir: cfg.noteSortDir ?? 'desc',
             taskSortBy: cfg.taskSortBy ?? 'due',
@@ -2525,22 +2566,45 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  setupBasePath: async () => {
+  pickBaseFolder: async () => {
     const picked = await pickFolder();
-    if (!picked) return;
+    if (!picked) return null;
+    return inspectFolder(picked, fs.exists);
+  },
 
-    const basePath = picked;
+  completeOnboarding: async (basePath) => {
+    await createBaseFolders(basePath, fs.createDir);
 
-    await fs.createDir(`${basePath}/projects/inbox`);
-    await fs.createDir(`${basePath}/notes`);
-    await fs.createDir(`${basePath}/dailys`);
+    // `persistConfig` no escribe sin `basePath`: el estilo del menú y la
+    // pantalla de inicio elegidos en la bienvenida esperaban en el store y
+    // se guardan ahora. Si no se puede escribir la config, la bienvenida
+    // sigue abierta (OB9).
+    set({ basePath });
+    try {
+      await persistConfig(get);
+    } catch (e) {
+      set({ basePath: null });
+      throw e;
+    }
 
-    set({ basePath, isConfigured: true });
-    await persistConfig(get);
-    await get().loadProjects();
-    await get().loadNoteFolders();
-    await get().loadTasks(null);
-    await get().loadNotes(null);
+    const startupScreen = resolveSection(get().startupScreen, get().extensions, EXTENSIONS);
+    set({ isConfigured: true, startupScreen, activeSection: startupScreen });
+
+    // La carpeta puede traer datos (OB8): se carga lo mismo que en `init`.
+    try {
+      await Promise.all([get().loadProjects(), get().loadNoteFolders()]);
+      await Promise.all([
+        get().loadTasks(null),
+        get().loadNotes(null),
+        get().loadDailyMonths(),
+        get().loadOvertimeMonths(),
+        get().loadCalendarEvents(),
+        get().loadAbsenceDays(),
+      ]);
+    } catch (e) {
+      console.error('Onboarding load error:', e);
+    }
+    if (get().trashAutoPurgeEnabled) startTrashPurgeInterval(get);
   },
 
   changeBasePath: async () => {
@@ -3082,6 +3146,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     persistConfig(get).catch(() => {});
   },
 
+  // Como la de notas, se aplica también ahora. `setView` no la toca.
+  setTasksViewDefault: (view) => {
+    set({ tasksViewDefault: view, currentView: view });
+    persistConfig(get).catch(() => {});
+  },
+
   setNoteSort: (by, dir) => {
     set({ noteSortBy: by, noteSortDir: dir });
     persistConfig(get).catch(() => {});
@@ -3169,10 +3239,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadNoteFolders();
   },
 
-  createNote: async () => {
+  createNote: async (inFolder?: string) => {
     const { basePath, activeNoteFolder } = get();
     if (!basePath) throw new Error('No base path');
-    const folder = activeNoteFolder ?? '';
+    const folder = inFolder ?? activeNoteFolder ?? '';
     const id = uuidv4();
     const note: Note = {
       id,
@@ -3653,8 +3723,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { dailyEntries } = get();
     const prevActivities = dailyEntries[prevISO] || '';
     const todayActivities = dailyEntries[date] || '';
-    const text = buildDailyCopyText(prevDate, prevActivities, todayDate, todayActivities);
-    return text;
+    const { templates, language, overtimeMeta } = get();
+    return buildDailyMessage(templates.daily, {
+      prevDate, prevActivities, todayDate, todayActivities, language, userName: overtimeMeta.colaborador,
+    });
   },
 
   deleteDailyEntry: async (date) => {
@@ -3922,20 +3994,92 @@ export const useAppStore = create<AppState>((set, get) => ({
     const meta = get().overtimeMeta;
     const monthNames = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
     const mesLabel = `${monthNames[parseInt(month) - 1]} ${year}`;
-    const bytes = await generateOvertimeXlsx(entries, meta, mesLabel);
     const colaborador = meta.colaborador || 'Colaborador';
+    // Legacy sale del código de siempre; Logday y la propia, del motor de
+    // plantillas (logday-server specs/plantillas).
+    const source = get().templates.overtime?.source ?? 'legacy';
+    let bytes: Uint8Array;
+    try {
+      if (source === 'legacy') {
+        bytes = await generateOvertimeXlsx(entries, meta, mesLabel);
+      } else {
+        const template = source === 'logday'
+          ? logdayOvertimeTemplate()
+          : base64ToBytes(await fs.readBinary(customOvertimeTemplatePath(get().configDir!)));
+        bytes = fillOvertimeTemplate(template, { mes: mesLabel, colaborador: meta.colaborador, cedula: meta.cedula, entries });
+      }
+    } catch (err) {
+      get().showToast({
+        kind: 'error',
+        title: t(language, 'templates', 'exportError'),
+        description: `${t(language, 'templates', 'exportErrorDesc')} (${err instanceof Error ? err.message : String(err)})`,
+      });
+      return;
+    }
     const dest = await saveDialog({
-      defaultPath: `Reporte Extras ${colaborador} - ${mesLabel}.xlsx`,
+      defaultPath: source === 'legacy' ? `Reporte Extras ${colaborador} - ${mesLabel}.xlsx` : `Horas extra ${colaborador} - ${mesLabel}.xlsx`,
       filters: [{ name: 'Excel', extensions: ['xlsx'] }],
     });
     if (dest) {
-      const b64 = btoa(String.fromCharCode(...bytes));
+      const b64 = templateBytesToBase64(bytes);
       await fs.writeBinary(dest, b64);
       get().showToast({
         kind: 'success',
         title: t(language, 'toast', 'overtimeExported'),
         description: dest.split('/').pop() ?? dest,
       });
+    }
+  },
+
+  setDailyTemplate: async (choice) => {
+    set((s) => ({ templates: { ...s.templates, daily: { ...s.templates.daily, ...choice } } }));
+    await persistConfig(get);
+  },
+
+  setOvertimeTemplateSource: async (source) => {
+    const current = get().templates.overtime;
+    if (source === 'custom' && !current?.fileName) return;
+    set((s) => ({ templates: { ...s.templates, overtime: { ...current, source } } }));
+    await persistConfig(get);
+  },
+
+  loadOvertimeTemplate: async () => {
+    const { configDir, language } = get();
+    if (!configDir) return;
+    const picked = await openFileDialog({ multiple: false, filters: [{ name: 'Excel', extensions: ['xlsx'] }] });
+    if (typeof picked !== 'string') return;
+    try {
+      // Sin validar (v1): si el archivo no sirve, se avisa al exportar.
+      const data = await fs.readBinary(picked);
+      await fs.createDir(`${configDir}/plantillas`);
+      await fs.writeBinary(customOvertimeTemplatePath(configDir), data);
+    } catch (err) {
+      get().showToast({ kind: 'error', title: t(language, 'templates', 'loadError'), description: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+    set((s) => ({
+      templates: {
+        ...s.templates,
+        overtime: { source: 'custom', fileName: picked.split(/[\\/]/).pop() ?? picked, loadedAt: nowInstant() },
+      },
+    }));
+    await persistConfig(get);
+    get().showToast({ kind: 'success', title: t(language, 'templates', 'loaded') });
+  },
+
+  downloadOvertimeTemplate: async (which) => {
+    const { configDir, language, templates } = get();
+    const dest = await saveDialog({
+      defaultPath: which === 'logday' ? 'Plantilla horas extra (Logday).xlsx' : templates.overtime?.fileName ?? 'Plantilla horas extra.xlsx',
+      filters: [{ name: 'Excel', extensions: ['xlsx'] }],
+    });
+    if (!dest) return;
+    try {
+      const data = which === 'logday' ? LOGDAY_OVERTIME_XLSX_BASE64 : await fs.readBinary(customOvertimeTemplatePath(configDir!));
+      await fs.writeBinary(dest, data);
+      get().showToast({ kind: 'success', title: t(language, 'templates', 'downloaded'), description: dest.split('/').pop() ?? dest });
+    } catch (err) {
+      get().showToast({ kind: 'error', title: t(language, 'templates', 'downloadError'), description: err instanceof Error ? err.message : String(err) });
     }
   },
 
@@ -4038,8 +4182,29 @@ export const useAppStore = create<AppState>((set, get) => ({
     await persistConfig(get);
   },
 
-  setSidebarLabelsVisible: async (visible) => {
-    set({ sidebarLabelsVisible: visible });
+  setHelpButtonsEnabled: async (enabled) => {
+    set({ helpButtonsEnabled: enabled });
+    await persistConfig(get);
+  },
+
+  setSidebarStyle: async (style) => {
+    set({ sidebarStyle: style });
+    await persistConfig(get);
+  },
+
+  setSidebarSections: async (sections) => {
+    set({ sidebarSections: sections });
+    await persistConfig(get);
+  },
+
+  openSidebarSettings: () => set({ isSettingsOpen: true, sidebarSettingsRequest: true }),
+  clearSidebarSettingsRequest: () => set({ sidebarSettingsRequest: false }),
+
+  openExtensionsCatalog: () => set({ isSettingsOpen: true, extensionsCatalogRequest: true }),
+  clearExtensionsCatalogRequest: () => set({ extensionsCatalogRequest: false }),
+
+  dismissHomeExtensionsHint: async () => {
+    set({ homeExtensionsHintDismissed: true });
     await persistConfig(get);
   },
 
@@ -4068,7 +4233,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   removeExtensionConfig: async (id) => {
-    const keys = getExtension(id)?.secretKeys ?? [];
+    // Las fijas del registro y las que dependen de la configuración (HT22).
+    const keys = secretKeysToClear(getExtension(id), get().extensions[id]);
     // Primero los secretos: si el llavero falla, la configuración queda y
     // el usuario puede reintentar.
     await Promise.all(keys.map((key) => clearExtensionSecret(id, key)));
@@ -4231,6 +4397,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   toggleGit: () => set((s) => ({ isGitOpen: !s.isGitOpen })),
   openSettingsGitTab: () => set({ isGitOpen: true, isSettingsOpen: true }),
+  openExtensionSettings: (id) => set({ settingsExtensionRequest: id, isSettingsOpen: true }),
+  clearExtensionSettingsRequest: () => set({ settingsExtensionRequest: null }),
 
   // ── Sync (logday-server) ──────────────────────────────────────
 

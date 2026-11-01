@@ -1,0 +1,199 @@
+import { describe, expect, it } from 'vitest';
+import { Schema } from '@tiptap/pm/model';
+import { EditorState, TextSelection } from '@tiptap/pm/state';
+import {
+  blockCodesOf, blockIndexAt, canStartCompact, changedRange, inlineRunTarget, revealsCompact, selectionInBlock, selectionOutsideTr,
+  setBlockCodeTr, setBlockLanguageTr,
+} from './extensionBlockPos';
+import { emitNoteBlockRun, subscribeNoteBlockRun, type NoteBlockRunEvent } from '../../extensions/noteBlockEvents';
+
+// Un esquema mínimo con párrafos y bloques de código, como el de TipTap.
+const schema = new Schema({
+  nodes: {
+    doc: { content: 'block+' },
+    paragraph: { group: 'block', content: 'text*' },
+    codeBlock: { group: 'block', content: 'text*', code: true, attrs: { language: { default: null } } },
+    text: {},
+  },
+});
+
+const code = (language: string, text: string) => schema.node('codeBlock', { language }, text ? schema.text(text) : []);
+const para = (text: string) => schema.node('paragraph', null, text ? schema.text(text) : []);
+const doc = schema.node('doc', null, [
+  para('hola'),
+  code('http', 'GET https://a'),
+  code('js', 'x()'),
+  code('http', 'GET https://b\nAccept: */*'),
+]);
+
+// Posiciones de inicio de cada bloque de nivel superior.
+const starts: number[] = [];
+doc.forEach((_node, offset) => starts.push(offset));
+
+const at = (pos: number) => EditorState.create({ doc, selection: TextSelection.create(doc, pos) });
+const isHttp = (language: string) => language === 'http';
+
+describe('⌘↵ en un bloque inline (design A3.3)', () => {
+  it('cuenta los bloques de cada lenguaje por separado', () => {
+    expect(blockIndexAt(doc, starts[1], 'http')).toBe(0);
+    expect(blockIndexAt(doc, starts[3], 'http')).toBe(1);
+    expect(blockIndexAt(doc, starts[2], 'js')).toBe(0);
+  });
+
+  it('dentro de un bloque inline lo atiende, con el índice y el cursor', () => {
+    // El cursor en el segundo bloque http, tras "GET https://b\nAc".
+    const pos = starts[3] + 1 + 'GET https://b\nAc'.length;
+    expect(inlineRunTarget(at(pos), isHttp)).toEqual({ language: 'http', index: 1, offset: 16, pos: starts[3] });
+  });
+
+  it('fuera de un bloque inline, no: en un párrafo o en otro lenguaje', () => {
+    expect(inlineRunTarget(at(2), isHttp)).toBeNull();
+    expect(inlineRunTarget(at(starts[2] + 2), isHttp)).toBeNull();
+    // Con la extensión apagada ningún lenguaje es inline.
+    expect(inlineRunTarget(at(starts[1] + 2), () => false)).toBeNull();
+  });
+
+  it('el bus reparte el evento a los oyentes y dice si alguien lo atendió', () => {
+    const got: NoteBlockRunEvent[] = [];
+    const event: NoteBlockRunEvent = { language: 'http', noteId: 'n1', index: 0, offset: 3, dom: null };
+    expect(emitNoteBlockRun(event)).toBe(false);
+    const off = subscribeNoteBlockRun((e) => got.push(e));
+    expect(emitNoteBlockRun(event)).toBe(true);
+    off();
+    emitNoteBlockRun(event);
+    expect(got).toEqual([event]);
+  });
+});
+
+describe('acciones de la barra de un bloque inline (R24: setLanguage, setCode)', () => {
+  const apply = (state: EditorState, tr: ReturnType<typeof setBlockCodeTr>) => (tr ? state.apply(tr) : state);
+
+  it('setLanguage cambia solo el lenguaje de ese bloque y deja el cursor', () => {
+    const cursor = starts[3] + 5;
+    const state = at(cursor);
+    const next = apply(state, setBlockLanguageTr(state, starts[3], 'JSON'));
+    expect(next.doc.child(3).attrs.language).toBe('json');
+    expect(next.doc.child(3).textContent).toBe('GET https://b\nAccept: */*');
+    expect(next.doc.child(1).attrs.language).toBe('http');
+    expect(next.selection.from).toBe(cursor);
+  });
+
+  it('setLanguage: Texto quita el lenguaje; con el cursor fuera, va al código del bloque', () => {
+    const state = at(2);
+    const next = apply(state, setBlockLanguageTr(state, starts[1], 'plaintext'));
+    expect(next.doc.child(1).attrs.language).toBeNull();
+    expect(next.selection.from).toBe(starts[1] + 1);
+  });
+
+  it('setLanguage: el mismo lenguaje o una posición que no es un bloque, nada', () => {
+    const state = at(2);
+    expect(setBlockLanguageTr(state, starts[1], 'http')).toBeNull();
+    expect(setBlockLanguageTr(state, starts[0], 'json')).toBeNull();
+  });
+
+  it('changedRange: solo el tramo distinto', () => {
+    expect(changedRange('GET https://a', 'POST https://a')).toEqual({ from: 0, to: 2, text: 'POS' });
+    expect(changedRange('x\nGET https://a', 'x\nPUT https://a')).toEqual({ from: 2, to: 4, text: 'PU' });
+    expect(changedRange('https://a', 'POST https://a')).toEqual({ from: 0, to: 0, text: 'POST ' });
+    expect(changedRange('abc', '')).toEqual({ from: 0, to: 3, text: '' });
+    expect(changedRange('igual', 'igual')).toBeNull();
+    // No parte un emoji.
+    expect(changedRange('a😀', 'a😃')).toEqual({ from: 1, to: 3, text: '😃' });
+  });
+
+  it('setCode reemplaza el texto del bloque y el cursor sigue en su sitio', () => {
+    // El cursor al final de "GET https://b\nAccept".
+    const cursor = starts[3] + 1 + 'GET https://b\nAccept'.length;
+    const state = at(cursor);
+    const next = apply(state, setBlockCodeTr(state, starts[3], 'DELETE https://b\nAccept: */*'));
+    expect(next.doc.child(3).textContent).toBe('DELETE https://b\nAccept: */*');
+    expect(next.doc.child(3).attrs.language).toBe('http');
+    expect(next.selection.from).toBe(cursor + 'DELETE'.length - 'GET'.length);
+    expect(next.doc.child(1).textContent).toBe('GET https://a');
+  });
+
+  it('setCode vacío deja el bloque, sin texto; el mismo texto, nada', () => {
+    const state = at(2);
+    const next = apply(state, setBlockCodeTr(state, starts[1], ''));
+    expect(next.doc.childCount).toBe(4);
+    expect(next.doc.child(1).type.name).toBe('codeBlock');
+    expect(next.doc.child(1).textContent).toBe('');
+    expect(setBlockCodeTr(state, starts[1], 'GET https://a')).toBeNull();
+  });
+});
+
+describe('bloque compacto: la nota (blockCodes, setCompact)', () => {
+  it('blockCodesOf: el texto de los bloques de ese lenguaje, en orden', () => {
+    expect(blockCodesOf(doc, 'http')).toEqual(['GET https://a', 'GET https://b\nAccept: */*']);
+    expect(blockCodesOf(doc, 'js')).toEqual(['x()']);
+    expect(blockCodesOf(doc, 'mermaid')).toEqual([]);
+  });
+
+  it('compactar con el cursor dentro: el cursor pasa al texto de después, sin tocar el documento', () => {
+    const state = at(starts[1] + 4);
+    const tr = selectionOutsideTr(state, starts[1]);
+    expect(tr).not.toBeNull();
+    expect(tr!.docChanged).toBe(false);
+    const next = state.apply(tr!);
+    // El siguiente texto es el del bloque js (otro lenguaje, no se compacta).
+    expect(next.selection.from).toBe(starts[2] + 1);
+    expect(next.doc.eq(state.doc)).toBe(true);
+  });
+
+  it('el último bloque: el cursor va al texto de antes; con el cursor fuera, nada', () => {
+    const state = at(starts[3] + 3);
+    const next = state.apply(selectionOutsideTr(state, starts[3])!);
+    expect(next.selection.from).toBeLessThan(starts[3]);
+    expect(selectionOutsideTr(at(2), starts[1])).toBeNull();
+    expect(selectionOutsideTr(at(2), starts[0])).toBeNull();
+  });
+
+  it('un bloque solo en la nota: queda seleccionado entero (fuera de su texto)', () => {
+    const solo = schema.node('doc', null, [code('http', 'GET https://a')]);
+    const state = EditorState.create({ doc: solo, selection: TextSelection.create(solo, 3) });
+    const next = state.apply(selectionOutsideTr(state, 0)!);
+    expect(next.selection.from).toBe(0);
+    expect(next.selection.$from.parent.type.name).toBe('doc');
+  });
+});
+
+describe('bloque compacto: cuándo se expande solo', () => {
+  // Una nota que empieza por un bloque http (el caso de "Servicio de
+  // pedidos"): al abrirla, ProseMirror deja la selección al principio,
+  // dentro del bloque.
+  const first = schema.node('doc', null, [code('http', 'GET https://api/pedidos'), para('notas')]);
+  const opened = EditorState.create({ doc: first });
+  const metaOnly = () => opened.tr.setMeta('focus', true);
+
+  it('al abrir la nota la selección queda dentro del primer bloque', () => {
+    expect(selectionInBlock(opened, 0)).toBe(true);
+  });
+
+  it('sin foco, nada lo expande: ni la selección inicial ni otras transacciones', () => {
+    expect(revealsCompact(opened, 0, false, metaOnly())).toBe(false);
+    expect(revealsCompact(opened, 0, false, opened.tr.setSelection(TextSelection.create(first, 3)))).toBe(false);
+    expect(revealsCompact(opened, 0, false, opened.tr.insertText('x', 3))).toBe(false);
+  });
+
+  it('con "Bloques compactos al abrir": sin foco, la selección dentro no impide arrancar compacto', () => {
+    expect(canStartCompact(opened, 0, false)).toBe(true);
+    // Con el foco y el cursor dentro (un bloque recién creado), no.
+    expect(canStartCompact(opened, 0, true)).toBe(false);
+    // Con el foco en otra parte, sí.
+    const elsewhere = EditorState.create({ doc: first, selection: TextSelection.create(first, first.child(0).nodeSize + 2) });
+    expect(canStartCompact(elsewhere, 0, true)).toBe(true);
+  });
+
+  it('con foco: lo expande una transacción que mueve la selección dentro o cambia el texto, no una de metadatos', () => {
+    expect(revealsCompact(opened, 0, true, metaOnly())).toBe(false);
+    const moved = opened.tr.setSelection(TextSelection.create(first, 4));
+    expect(revealsCompact(opened.apply(moved), 0, true, moved)).toBe(true);
+    const typed = opened.tr.insertText('x', 3);
+    expect(revealsCompact(opened.apply(typed), 0, true, typed)).toBe(true);
+  });
+
+  it('con foco, la selección en otra parte no lo expande', () => {
+    const out = opened.tr.setSelection(TextSelection.create(first, first.child(0).nodeSize + 2));
+    expect(revealsCompact(opened.apply(out), 0, true, out)).toBe(false);
+  });
+});

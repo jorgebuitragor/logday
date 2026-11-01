@@ -4,13 +4,16 @@ import { useAppStore } from '../../store/appStore';
 import type { Language } from '../../types/common';
 import { ModalOverlay } from '../shared/ModalOverlay';
 import { ModalPanel } from '../shared/ModalPanel';
+import { IS_MAC } from '../sidebar/sections';
+import { modKey } from '../help/helpKeys';
 
 // Hoja de atajos y de la sintaxis de la captura rápida (tecla `?` en la
 // lista). Antes solo había una pista de 3 atajos al pie de la lista y la
 // sintaxis #/@/fecha solo se veía con el campo enfocado.
 //
 // El contenido es una tabla por idioma y no claves sueltas de i18n: son
-// pares tecla/descripción que solo tienen sentido juntos.
+// pares tecla/descripción que solo tienen sentido juntos. `{mod}` es ⌘ en
+// macOS y Ctrl en Windows y Linux (specs/ayuda-contextual AY22).
 
 type Row = [keys: string, what: string];
 type Section = { title: string; rows: Row[] };
@@ -27,7 +30,7 @@ const SHEET: Record<Language, Section[]> = {
         ['0', 'Quitar la fecha'],
         ['d', 'Elegir la fecha en un calendario'],
         ['n', 'Ir a la captura rápida'],
-        ['⌘ clic  ·  ⇧ clic', 'Seleccionar varias (los atajos actúan sobre todas)'],
+        ['{mod} clic  ·  ⇧ clic', 'Seleccionar varias (los atajos actúan sobre todas)'],
         ['Esc', 'Soltar la selección o cerrar el panel'],
         ['?', 'Esta hoja'],
       ],
@@ -40,7 +43,7 @@ const SHEET: Record<Language, Section[]> = {
         ['… mañana', 'Fecha al final: hoy, mañana, pasado mañana, viernes, 15/11'],
         ['2026-11-15', 'Fecha completa, en cualquier lugar'],
         ['Tab', 'Completar la sugerencia'],
-        ['⌘ Enter', 'Pasar a la ventana con todos los campos'],
+        ['{mod} Enter', 'Pasar a la ventana con todos los campos'],
       ],
     },
     {
@@ -63,7 +66,7 @@ const SHEET: Record<Language, Section[]> = {
         ['0', 'Remove the date'],
         ['d', 'Pick the date on a calendar'],
         ['n', 'Go to quick add'],
-        ['⌘ click  ·  ⇧ click', 'Select several (shortcuts apply to all)'],
+        ['{mod} click  ·  ⇧ click', 'Select several (shortcuts apply to all)'],
         ['Esc', 'Clear the selection or close the panel'],
         ['?', 'This sheet'],
       ],
@@ -76,7 +79,7 @@ const SHEET: Record<Language, Section[]> = {
         ['… tomorrow', 'Date at the end: today, tomorrow, friday, 15/11'],
         ['2026-11-15', 'Full date, anywhere'],
         ['Tab', 'Complete the suggestion'],
-        ['⌘ Enter', 'Open the window with all fields'],
+        ['{mod} Enter', 'Open the window with all fields'],
       ],
     },
     {
@@ -89,6 +92,15 @@ const SHEET: Record<Language, Section[]> = {
     },
   ],
 };
+
+/** La hoja en un idioma, con la tecla de modificación del sistema. */
+export function shortcutSheet(language: Language, isMac: boolean): Section[] {
+  const mod = modKey(isMac);
+  return SHEET[language].map((section) => ({
+    ...section,
+    rows: section.rows.map(([keys, what]): Row => [keys.replace('{mod}', mod), what]),
+  }));
+}
 
 const TITLE: Record<Language, string> = { es: 'Atajos y captura rápida', en: 'Shortcuts and quick add' };
 const CLOSE: Record<Language, string> = { es: 'Cerrar', en: 'Close' };
@@ -116,7 +128,7 @@ export function TaskShortcutsSheet({ onClose }: { onClose: () => void }) {
             </button>
           </div>
           <div className="max-h-[70vh] space-y-4 overflow-y-auto">
-            {SHEET[language].map((section) => (
+            {shortcutSheet(language, IS_MAC).map((section) => (
               <section key={section.title}>
                 <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-hint)]">{section.title}</h3>
                 <dl className="grid grid-cols-[minmax(9rem,auto)_1fr] gap-x-4 gap-y-1.5 text-xs">

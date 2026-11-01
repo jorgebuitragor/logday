@@ -241,16 +241,22 @@ export function DailyList() {
 
   return (<>
     <div className="flex h-full shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]" style={{ width: 'var(--logday-list-w)' }}>
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
-        <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t(language, 'dailys', 'title')}</h2>
-        <div className="flex items-center gap-1">
+      {/* Header. El título se recorta y los botones no se encogen. A 288 px
+          (el ancho por defecto) caben "Fecha" y "Hoy" con su nombre; más
+          angosta, primero "Fecha" (por debajo de ~280 px) y luego "Hoy" (de
+          ~245 px) quedan solo con el ícono, y a 200 px el título se lee
+          entero. El nombre sigue para los lectores y en el title. Medido en
+          Chromium con la letra por defecto (17 px); los umbrales van en rem,
+          así que crecen con ella. */}
+      <div className="@container/dlh flex items-center justify-between gap-1 border-b border-[var(--border)] px-4 py-3">
+        <h2 className="min-w-0 truncate text-sm font-semibold text-[var(--text-primary)]">{t(language, 'dailys', 'title')}</h2>
+        <div className="flex shrink-0 items-center gap-0.5">
           {/* Selector de fecha – dropdown con posición fija */}
           <div className="relative">
             <button
               ref={pickerBtnRef}
               onClick={handleOpenPicker}
-              className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition ${
+              className={`flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs transition ${
                 showDatePicker
                   ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]'
                   : 'text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
@@ -258,7 +264,7 @@ export function DailyList() {
               title={t(language, 'dailys', 'addPreviousDateTitle')}
             >
               <CalendarPlus size={13} />
-              {t(language, 'dailys', 'dateBtn')}
+              <span className="sr-only @[14.5rem]/dlh:not-sr-only">{t(language, 'dailys', 'dateBtn')}</span>
             </button>
           </div>
           {/* Dropdown renderizado con position:fixed para evitar clipping */}
@@ -283,25 +289,25 @@ export function DailyList() {
           )}
           <button
             onClick={() => setShowAbsenceModal(true)}
-            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             title={t(language, 'absence', 'markButton')}
           >
             <CalendarOff size={14} />
           </button>
           <button
             onClick={() => setShowAbsenceListModal(true)}
-            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs text-[var(--text-hint)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             title={t(language, 'absence', 'listButton')}
           >
             <ListChecks size={14} />
           </button>
           <button
             onClick={createTodayDaily}
-            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-indigo-400 transition hover:bg-indigo-500/10"
+            className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs text-indigo-400 transition hover:bg-indigo-500/10"
             title={t(language, 'dailys', 'createTodayTitle')}
           >
             <Plus size={14} />
-            {t(language, 'dailys', 'todayBtn')}
+            <span className="sr-only @[12.5rem]/dlh:not-sr-only">{t(language, 'dailys', 'todayBtn')}</span>
           </button>
         </div>
       </div>

@@ -8,12 +8,12 @@ export function WorkSettingsTab() {
   const {
     language,
     confirmDestructiveActions, setConfirmDestructiveActions,
-    notesViewDefault, setNotesViewDefault,
     notificationsEnabled, setNotificationsEnabled,
     defaultReminderMinutes, setDefaultReminderMinutes,
     workWeekDays, setWorkWeekDays,
     holidaysAsNonWork, setHolidaysAsNonWork,
     animationsEnabled, setAnimationsEnabled,
+    helpButtonsEnabled, setHelpButtonsEnabled,
   } = useAppStore();
 
   const [isReminderMenuOpen, setIsReminderMenuOpen] = useState(false);
@@ -49,32 +49,6 @@ export function WorkSettingsTab() {
         </span>
         <ToggleSwitch checked={confirmDestructiveActions} onChange={setConfirmDestructiveActions} size="lg" />
       </div>
-    </div>
-  </div>
-
-  {/* Vista de notas */}
-  <div>
-    <p className="mb-1 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
-      {t(language, 'settings', 'notesViewDefault')}
-    </p>
-    <p className="mb-3 text-[11px] text-[var(--text-hint)]">{t(language, 'settings', 'notesViewDefaultHint')}</p>
-    <div className="flex gap-2">
-      {([
-        { value: 'list', label: t(language, 'settings', 'notesViewOptionList') },
-        { value: 'tree', label: t(language, 'settings', 'notesViewOptionTree') },
-      ] as const).map((opt) => (
-        <button
-          key={opt.value}
-          onClick={() => setNotesViewDefault(opt.value)}
-          className={`flex-1 rounded-xl border px-4 py-3 text-sm font-medium transition ${
-            notesViewDefault === opt.value
-              ? 'border-indigo-500/60 bg-indigo-500/10 text-indigo-400'
-              : 'border-[var(--border-card)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:border-[var(--border-high)] hover:text-[var(--text-secondary)]'
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
     </div>
   </div>
 
@@ -211,6 +185,32 @@ export function WorkSettingsTab() {
             : t(language, 'settings', 'animationsDisabled')}
         </span>
         <ToggleSwitch checked={animationsEnabled} onChange={setAnimationsEnabled} size="lg" />
+      </div>
+    </div>
+  </div>
+
+  {/* Ayuda (specs/ayuda-contextual AY23) */}
+  <div>
+    <p className="mb-3 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]">
+      {t(language, 'settings', 'helpSection')}
+    </p>
+    <div
+      onClick={() => void setHelpButtonsEnabled(!helpButtonsEnabled)}
+      className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-4 py-3 text-left transition hover:bg-[var(--bg-hover)] cursor-pointer"
+    >
+      <div>
+        <p className="text-xs font-medium text-[var(--text-secondary)]">{t(language, 'settings', 'helpButtonsTitle')}</p>
+        <p className="mt-0.5 text-[10px] text-[var(--text-hint)]">{t(language, 'settings', 'helpButtonsDesc')}</p>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className={`text-[10px] font-semibold uppercase tracking-wider ${
+          helpButtonsEnabled ? 'text-[var(--accent)]' : 'text-[var(--text-hint)]'
+        }`}>
+          {helpButtonsEnabled
+            ? t(language, 'settings', 'animationsEnabled')
+            : t(language, 'settings', 'animationsDisabled')}
+        </span>
+        <ToggleSwitch checked={helpButtonsEnabled} onChange={setHelpButtonsEnabled} size="lg" />
       </div>
     </div>
   </div>

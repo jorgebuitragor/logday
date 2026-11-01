@@ -3,7 +3,9 @@ import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/appStore';
 import { ExtensionBoundary } from './ExtensionBoundary';
 import { extensionRuntime } from './runtime';
-import type { DailyActionProps, ExtensionId, ExtensionPoint, NoteBlockEditorProps, NoteBlockProps } from './types';
+import type {
+  DailyActionProps, ExtensionId, ExtensionPoint, HomeCardProps, NoteBlockEditorProps, NoteBlockProps, SidebarStatusProps,
+} from './types';
 
 interface PointProps {
   Settings: object;
@@ -11,6 +13,8 @@ interface PointProps {
   dailyActions: DailyActionProps;
   NoteBlock: NoteBlockProps;
   NoteBlockEditor: NoteBlockEditorProps;
+  SidebarStatus: SidebarStatusProps;
+  HomeCard: HomeCardProps;
 }
 
 const Nothing = () => null;

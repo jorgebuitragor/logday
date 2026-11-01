@@ -9,34 +9,52 @@
 }
 
 /* ── Theme variables ───────────────────────────────────────── */
+/* Oscuro (31 oct 2026): un punto intermedio entre el negro neutro de antes
+   y un grafito con tono índigo como el nórdico, con los textos secundarios
+   más claros; Jorge lo encontraba difícil de leer. Contraste contra
+   --bg-base: texto >= 5.6:1, acento 5.9:1 (specs/temas-consistencia-visual). */
 :root {
-  --bg-base:     #121212;
-  --bg-panel:    #141414;
-  --bg-surface:  #1c1c1c;
+  --bg-base:     #17181e;
+  --bg-panel:    #1a1a22;
+  --bg-surface:  #22222a;
   --bg-secondary: var(--bg-surface);
-  --bg-hover:    #242424;
-  --bg-elevated: #181818;
-  --bg-input:    #161616;
+  --bg-hover:    #2a2b34;
+  --bg-elevated: #1e1e27;
+  --bg-input:    #1a1b23;
 
-  --border:      #2a2a2a;
-  --border-card: #333333;
-  --border-high: #4a4a4a;
+  --border:      #31323d;
+  --border-card: #3a3b46;
+  --border-high: #535562;
 
-  --text-primary:   #f2f2f2;
-  --text-body:      #e4e4e4;
-  --text-secondary: #c8c8c8;
-  --text-tertiary:  #aaaaaa;
-  --text-muted:     #888888;
-  --text-hint:      #848484;
-  --text-faint:     #7e7e7e;
+  --text-primary:   #eff0f6;
+  --text-body:      #e2e5ec;
+  --text-secondary: #caced8;
+  --text-tertiary:  #b1b4c3;
+  --text-muted:     #9ea2b0;
+  --text-hint:      #969aaa;
+  --text-faint:     #8e91a1;
 
   --accent:         #818cf8;
   --accent-strong:  #6366f1;
   --accent-soft:    rgba(129, 140, 248, 0.22);
   --accent-ink:     #c7d2fe;
+  /* Botón principal relleno: el acento sólido y el texto que contrasta
+     con él (≥4.5:1). Los temas tintados no pueden usar bg-indigo-*
+     porque App.css lo cambia por --accent-soft. */
+  --accent-solid:   #4f46e5;
+  --accent-on:      #ffffff;
   --accent-inline:  #c4b5fd;
   --accent-link:    #818cf8;
   --accent-code:    #a78bfa;
+
+  /* Resaltado de código (hljs) en las notas y en DevTools. Los de siempre,
+     pensados para fondo oscuro; los temas claros los redefinen abajo. */
+  --syntax-string:   #86efac;
+  --syntax-number:   #fca5a5;
+  --syntax-comment:  #94a3b8;
+  --syntax-function: #67e8f9;
+  --syntax-property: #f5d0fe;
+  --syntax-punct:    #e2e8f0;
 }
 
 :root[data-theme="light"] {
@@ -66,6 +84,8 @@
   --accent-strong:  #4f46e5;
   --accent-soft:    rgba(99, 102, 241, 0.18);
   --accent-ink:     #6366f1;
+  --accent-solid:   #4f46e5;
+  --accent-on:      #ffffff;
   --accent-inline:  #6d28d9;
   --accent-link:    #4f46e5;
   --accent-code:    #7c3aed;
@@ -96,6 +116,8 @@
   --accent-strong:  #6366f1;
   --accent-soft:    rgba(129, 140, 248, 0.24);
   --accent-ink:     #c7d2fe;
+  --accent-solid:   #4f46e5;
+  --accent-on:      #ffffff;
   --accent-inline:  #c4b5fd;
   --accent-link:    #a5b4fc;
   --accent-code:    #a78bfa;
@@ -126,6 +148,8 @@
   --accent-strong:  #5bbf86;
   --accent-soft:    rgba(124, 207, 158, 0.22);
   --accent-ink:     #bde8cf;
+  --accent-solid:   #5bbf86;
+  --accent-on:      #111827;
   --accent-inline:  #b7e4cb;
   --accent-link:    #9adab8;
   --accent-code:    #a7dcbf;
@@ -156,6 +180,8 @@
   --accent-strong:  #7d512a;
   --accent-soft:    rgba(181, 101, 47, 0.18);
   --accent-ink:     #b5652f;
+  --accent-solid:   #7d512a;
+  --accent-on:      #ffffff;
   --accent-inline:  #665a27;
   --accent-link:    #7d512a;
   --accent-code:    #73611f;
@@ -186,6 +212,8 @@
   --accent-strong:  #0caef6;
   --accent-soft:    rgba(56, 189, 248, 0.22);
   --accent-ink:     #87c4fb;
+  --accent-solid:   #0caef6;
+  --accent-on:      #111827;
   --accent-inline:  #73a8fa;
   --accent-link:    #38bdf8;
   --accent-code:    #568bf9;
@@ -216,6 +244,8 @@
   --accent-strong:  #5e81ac;
   --accent-soft:    rgba(136, 192, 208, 0.20);
   --accent-ink:     #c2d9e7;
+  --accent-solid:   #4c6a91;
+  --accent-on:      #ffffff;
   --accent-inline:  #b4cae1;
   --accent-link:    #88c0d0;
   --accent-code:    #9eb6d9;
@@ -232,6 +262,58 @@
 :root[data-theme="light"] .text-indigo-400,
 :root[data-theme="light"] .hover\:text-indigo-400:hover { color: #4f46e5; }
 :root[data-theme="light"] .text-indigo-300 { color: #4338ca; }
+
+/* Sepia: lo mismo que el tema claro. Sobre su fondo crema, el rojo, el
+   verde y el ámbar -400 quedan en 2,2, 1,5 y 1,3:1, y los usan los errores,
+   el "Copiado" y los avisos (specs/devtools, hallazgo 9.1-1). */
+:root[data-theme="sepia"] .text-amber-400 { color: #92400e; }
+:root[data-theme="sepia"] .text-red-400,
+:root[data-theme="sepia"] .hover\:text-red-400:hover { color: #b91c1c; }
+:root[data-theme="sepia"] .text-green-400,
+:root[data-theme="sepia"] .text-emerald-400 { color: #065f46; }
+
+/* Colores de sintaxis en los temas claros: los de fondo oscuro daban entre
+   1,0 y 2,5:1 sobre --bg-surface; estos, entre 5,5 y 9,8:1 (hallazgo 4). */
+:root[data-theme="light"],
+:root[data-theme="sepia"] {
+  --syntax-string:   #166534;
+  --syntax-number:   #991b1b;
+  --syntax-comment:  #475569;
+  --syntax-function: #155e75;
+  --syntax-property: #86198f;
+  --syntax-punct:    var(--text-secondary);
+}
+/* Nórdico: el comentario #94a3b8 daba 3,9:1. */
+:root[data-theme="nordic"] { --syntax-comment: var(--text-hint); }
+
+/* Colores de fase del Pomodoro (specs/pomodoro, design §5). Solo pintan
+   gráficos (anillo, barra, puntos e íconos), nunca texto. El trabajo es el
+   acento del tema, así sigue también a los personalizados; los descansos
+   tienen un tono fijo por tema que no se parece al acento. Todos pasan de
+   3:1 sobre la base, el menú y el riel. */
+:root {
+  --phase-work:  var(--accent);
+  --phase-short: #34d399;
+  --phase-long:  #38bdf8;
+  --phase-track: var(--border);
+}
+:root[data-theme="light"]         { --phase-short: #047857; --phase-long: #0369a1; }
+/* Alto contraste: el riel --border solo le sacaba 2,2:1 al acento. */
+:root[data-theme="high-contrast"] { --phase-short: #6ee7b7; --phase-long: #7dd3fc; --phase-track: var(--bg-hover); }
+/* Descanso visual: el acento es verde, así que el corto va en celeste. */
+:root[data-theme="visual-rest"]   { --phase-short: #7dd3fc; --phase-long: #c4b5fd; }
+/* Sepia: el acento #b5652f daba 2,7:1 contra el riel; mismo tono, más oscuro. */
+:root[data-theme="sepia"]         { --phase-work: #9a4f1f; --phase-short: #065f46; --phase-long: #1e40af; }
+/* OLED: el acento es celeste, así que el largo va en violeta. */
+:root[data-theme="oled"]          { --phase-long: #c4b5fd; }
+/* Nórdico: nord14 y nord15 (aclarado), de su propia paleta. */
+:root[data-theme="nordic"]        { --phase-short: #a3be8c; --phase-long: #c4a5c1; }
+
+/* El contador del menú y las filas de "Hoy" del Pomodoro aparecen con
+   opacidad, nunca con altura (design §3.3). */
+@keyframes pomodoro-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.pomodoro-fade-in { animation: pomodoro-fade-in 150ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .pomodoro-fade-in { animation: none; } }
 
 /* Repinta clases Tailwind indigo-* hardcodeadas al acento del tema activo.
    Se activa vía la clase .theme-tinted en <html>, gestionada por
@@ -365,6 +447,12 @@ html.theme-animating body * {
 }
 .animate-fade-in {
   animation: fade-in 200ms ease-out both;
+}
+/* La ayuda contextual se queda quieta con prefers-reduced-motion; con las
+   animaciones de la app apagadas ya la para .no-animations
+   (specs/ayuda-contextual AY12). */
+@media (prefers-reduced-motion: reduce) {
+  .help-popover { animation: none; }
 }
 .animate-out {
   animation: fade-out-down 200ms ease-in both;
@@ -691,6 +779,85 @@ html.theme-animating body * {
 .prose-editor .mermaid-node-view { margin: 0.5rem 0; }
 .prose-editor .mermaid-node-source { display: none; }
 
+/* Bloque inline de una extensión (Cliente HTTP, specs/cliente-http design
+   §1.1): una tarjeta con la barra, el código editable y la respuesta. Sin
+   overflow oculto: los menús de la barra salen de la tarjeta. */
+.prose-editor .extension-node-inline {
+  margin: 0.5rem 0;
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+.prose-editor .extension-node-inline .extension-block-code {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0.625rem 1rem 0.75rem;
+  background: transparent;
+}
+.prose-editor .extension-node-inline:focus-within { border-color: var(--border-high); }
+/* Compacto (specs/cliente-http, bloque compacto): el código y la franja se
+   pliegan con una transición de alto (filas de 1fr a 0fr) y quedan
+   ocultos, en el documento. Sin animación con prefers-reduced-motion o con
+   las animaciones de la app apagadas (.no-animations, arriba). */
+.prose-editor .extension-block-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 160ms ease-out, visibility 160ms;
+}
+.prose-editor .extension-block-body[data-compact] {
+  grid-template-rows: 0fr;
+  visibility: hidden;
+}
+.prose-editor .extension-block-body-inner { min-height: 0; }
+.prose-editor .extension-block-body[data-compact] > .extension-block-body-inner,
+.prose-editor .extension-block-body[data-animating] > .extension-block-body-inner { overflow: hidden; }
+.prose-editor .extension-block-body[data-instant] { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .prose-editor .extension-block-body { transition: none; }
+}
+/* Las islas no heredan los estilos del texto ni del código del editor
+   (hallazgo 3): `pre`, `code`, `p` y las tablas de la nota. */
+.prose-editor .extension-block-ui {
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+  caret-color: auto;
+}
+.prose-editor .extension-block-ui p { line-height: 1.5; white-space: normal; }
+.prose-editor .extension-block-ui pre {
+  padding: 0.5rem 0.75rem;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-input);
+}
+.prose-editor .extension-block-ui pre code,
+.prose-editor .extension-block-ui code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+  color: var(--text-body);
+}
+.prose-editor .extension-block-ui table {
+  table-layout: auto;
+  width: auto;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+.prose-editor .extension-block-ui th,
+.prose-editor .extension-block-ui td {
+  border: 0;
+  padding: 0.125rem 0.75rem 0.125rem 0;
+  min-width: 0;
+  font-size: inherit;
+  font-weight: normal;
+  background: transparent;
+}
+
 .code-block-lang-select-wrap {
   z-index: 15;
 }
@@ -784,52 +951,80 @@ html.theme-animating body * {
 }
 .prose-editor pre code { background: none; padding: 0; color: var(--accent-inline); }
 
-/* CodeBlockLowlight token colors in visual editor */
+/* Colores de los tokens de hljs: los bloques de código de las notas
+   (CodeBlockLowlight) y las salidas de DevTools (.devtools-code). */
+.devtools-code { color: var(--text-body); }
+
 .prose-editor pre code .hljs-keyword,
 .prose-editor pre code .hljs-selector-tag,
 .prose-editor pre code .hljs-literal,
 .prose-editor pre code .hljs-name,
 .prose-editor pre code .hljs-built_in,
 .prose-editor pre code .hljs-type,
-.prose-editor pre code .hljs-tag {
+.prose-editor pre code .hljs-tag,
+.devtools-code .hljs-keyword,
+.devtools-code .hljs-selector-tag,
+.devtools-code .hljs-literal,
+.devtools-code .hljs-name,
+.devtools-code .hljs-built_in,
+.devtools-code .hljs-type,
+.devtools-code .hljs-tag {
   color: var(--accent-ink);
   font-weight: 600;
 }
 
 .prose-editor pre code .hljs-string,
 .prose-editor pre code .hljs-template-string,
-.prose-editor pre code .hljs-regexp {
-  color: #86efac;
+.prose-editor pre code .hljs-regexp,
+.devtools-code .hljs-string,
+.devtools-code .hljs-template-string,
+.devtools-code .hljs-regexp {
+  color: var(--syntax-string);
 }
 
 .prose-editor pre code .hljs-number,
 .prose-editor pre code .hljs-symbol,
-.prose-editor pre code .hljs-bullet {
-  color: #fca5a5;
+.prose-editor pre code .hljs-bullet,
+.devtools-code .hljs-number,
+.devtools-code .hljs-symbol,
+.devtools-code .hljs-bullet {
+  color: var(--syntax-number);
 }
 
 .prose-editor pre code .hljs-comment,
 .prose-editor pre code .hljs-quote,
-.prose-editor pre code .hljs-meta {
-  color: #94a3b8;
+.prose-editor pre code .hljs-meta,
+.devtools-code .hljs-comment,
+.devtools-code .hljs-quote,
+.devtools-code .hljs-meta {
+  color: var(--syntax-comment);
   font-style: italic;
 }
 
 .prose-editor pre code .hljs-function .hljs-title,
-.prose-editor pre code .hljs-title.function_ {
-  color: #67e8f9;
+.prose-editor pre code .hljs-title.function_,
+.devtools-code .hljs-function .hljs-title,
+.devtools-code .hljs-title.function_ {
+  color: var(--syntax-function);
 }
 
 .prose-editor pre code .hljs-variable,
 .prose-editor pre code .hljs-attr,
 .prose-editor pre code .hljs-property,
-.prose-editor pre code .hljs-params {
-  color: #f5d0fe;
+.prose-editor pre code .hljs-params,
+.devtools-code .hljs-variable,
+.devtools-code .hljs-attr,
+.devtools-code .hljs-attribute,
+.devtools-code .hljs-property,
+.devtools-code .hljs-params {
+  color: var(--syntax-property);
 }
 
 .prose-editor pre code .hljs-operator,
-.prose-editor pre code .hljs-punctuation {
-  color: #e2e8f0;
+.prose-editor pre code .hljs-punctuation,
+.devtools-code .hljs-operator,
+.devtools-code .hljs-punctuation {
+  color: var(--syntax-punct);
 }
 
 /* Lists */
@@ -1034,4 +1229,197 @@ html.theme-animating body * {
     opacity: 0;
     transform: scaleX(1.02);
   }
+}
+
+/* ── Miniaturas del estilo del menú (specs/navegacion-secciones NS20) ──
+   Quietas muestran el fotograma final. Corren al pasar el puntero o con
+   el foco del teclado en la tarjeta (en bucle) y una vez al elegirla
+   (`.sbp-run`). Solo transform y opacity. */
+.sbp-hl { --sbp-step: 13px; transform: translateY(calc(var(--sbp-step) * 2)); }
+.sbp-hl-list { --sbp-step: 11px; }
+@keyframes sbp-move {
+  0%, 28% { transform: translateY(0); }
+  34%, 61% { transform: translateY(var(--sbp-step)); }
+  67%, 100% { transform: translateY(calc(var(--sbp-step) * 2)); }
+}
+@keyframes sbp-fade {
+  0%, 26% { opacity: 1; }
+  31% { opacity: 0.25; }
+  37%, 59% { opacity: 1; }
+  64% { opacity: 0.25; }
+  70%, 100% { opacity: 1; }
+}
+@keyframes sbp-tip {
+  0%, 6% { opacity: 0; }
+  12%, 26% { opacity: 1; }
+  30%, 38% { opacity: 0; }
+  44%, 59% { opacity: 1; }
+  63%, 71% { opacity: 0; }
+  77%, 100% { opacity: 1; }
+}
+.sbp-run .sbp-hl { animation: sbp-move 3s ease-in-out 1; }
+.sbp-run .sbp-lines { animation: sbp-fade 3s ease-in-out 1; }
+.sbp-run .sbp-tip { animation: sbp-tip 3s ease-in-out 1; }
+.sbp-card:hover .sbp-hl,
+.sbp-card:has(:focus-visible) .sbp-hl { animation: sbp-move 3s ease-in-out infinite; }
+.sbp-card:hover .sbp-lines,
+.sbp-card:has(:focus-visible) .sbp-lines { animation: sbp-fade 3s ease-in-out infinite; }
+.sbp-card:hover .sbp-tip,
+.sbp-card:has(:focus-visible) .sbp-tip { animation: sbp-tip 3s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .sbp-anim { animation: none !important; }
+}
+
+/* ── Bienvenida (specs/onboarding) ──
+   El cambio de paso: opacidad y 8 px de desplazamiento en 150 ms. Solo
+   transform y opacity; sin movimiento con prefers-reduced-motion o con las
+   animaciones de la app apagadas (.no-animations, arriba). */
+@keyframes obd-step-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: none; }
+}
+.obd-step { animation: obd-step-in 150ms ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .obd-step { animation: none !important; }
+}
+
+/* ── Miniaturas del recorrido (specs/onboarding OB13) ──
+   Una sola pasada de 4 s que empieza 300 ms después de mostrarse la escena.
+   Cada clase pone, como estilo base, el fotograma final de su animación:
+   sin animación (prefers-reduced-motion o .no-animations) la miniatura ya
+   se ve completa. Solo transform y opacity. "Ver la animación de nuevo"
+   vuelve a montar la escena. */
+.obd-anim {
+  animation-duration: 4s;
+  animation-delay: 300ms;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: 1;
+  animation-fill-mode: both;
+}
+/* El resaltado del menú: un paso por fila (18 px con la Barra de íconos,
+   16 px con la Lista), de la fila --obd-from a la --obd-to. */
+.obd-frame-icons { --obd-step: 18px; }
+.obd-frame-list { --obd-step: 16px; }
+.obd-hl { transform: translateY(calc(var(--obd-step) * var(--obd-to))); }
+@keyframes obd-hl-early {
+  0%, 15% { transform: translateY(calc(var(--obd-step) * var(--obd-from))); }
+  25%, 100% { transform: translateY(calc(var(--obd-step) * var(--obd-to))); }
+}
+.obd-hl-early { transform: translateY(calc(var(--obd-step) * var(--obd-to))); animation-name: obd-hl-early; }
+@keyframes obd-hl-mid {
+  0%, 35% { transform: translateY(calc(var(--obd-step) * var(--obd-from))); }
+  45%, 100% { transform: translateY(calc(var(--obd-step) * var(--obd-to))); }
+}
+.obd-hl-mid { transform: translateY(calc(var(--obd-step) * var(--obd-to))); animation-name: obd-hl-mid; }
+@keyframes obd-hl-late {
+  0%, 68% { transform: translateY(calc(var(--obd-step) * var(--obd-from))); }
+  76%, 100% { transform: translateY(calc(var(--obd-step) * var(--obd-to))); }
+}
+.obd-hl-late { transform: translateY(calc(var(--obd-step) * var(--obd-to))); animation-name: obd-hl-late; }
+/* Lo que aparece o se va. */
+@keyframes obd-out-mid {
+  0%, 35% { opacity: 1; }
+  45%, 100% { opacity: 0; }
+}
+.obd-out-mid { opacity: 0; animation-name: obd-out-mid; }
+@keyframes obd-in-mid {
+  0%, 40% { opacity: 0; }
+  50%, 100% { opacity: 1; }
+}
+.obd-in-mid { opacity: 1; animation-name: obd-in-mid; }
+@keyframes obd-in-early {
+  0%, 8% { opacity: 0; }
+  16%, 100% { opacity: 1; }
+}
+.obd-in-early { opacity: 1; animation-name: obd-in-early; }
+@keyframes obd-in-late {
+  0%, 80% { opacity: 0; }
+  88%, 100% { opacity: 1; }
+}
+.obd-in-late { opacity: 1; animation-name: obd-in-late; }
+@keyframes obd-search {
+  0%, 10% { opacity: 0; }
+  18%, 55% { opacity: 1; }
+  63%, 100% { opacity: 0; }
+}
+.obd-search { opacity: 0; animation-name: obd-search; }
+/* Las líneas que se escriben. */
+.obd-grow { transform-origin: left; }
+@keyframes obd-grow-1 {
+  0%, 50% { transform: scaleX(0); }
+  62%, 100% { transform: scaleX(1); }
+}
+.obd-grow-1 { transform: scaleX(1); animation-name: obd-grow-1; }
+@keyframes obd-grow-2 {
+  0%, 60% { transform: scaleX(0); }
+  72%, 100% { transform: scaleX(1); }
+}
+.obd-grow-2 { transform: scaleX(1); animation-name: obd-grow-2; }
+@keyframes obd-grow-3 {
+  0%, 70% { transform: scaleX(0); }
+  82%, 100% { transform: scaleX(1); }
+}
+.obd-grow-3 { transform: scaleX(1); animation-name: obd-grow-3; }
+/* La tarjeta que pasa de la columna 1 a la 2 del Kanban. */
+@keyframes obd-card-move {
+  0%, 60% { transform: translateX(calc(-100% - 12px)); }
+  75%, 100% { transform: translateX(0); }
+}
+.obd-card-move { transform: translateX(0); animation-name: obd-card-move; }
+/* Las cajas del diagrama y la lista que pasa a árbol. */
+@keyframes obd-pop-1 {
+  0%, 60% { opacity: 0; transform: scale(0.8); }
+  68%, 100% { opacity: 1; transform: scale(1); }
+}
+.obd-pop-1 { opacity: 1; transform: scale(1); animation-name: obd-pop-1; }
+@keyframes obd-pop-2 {
+  0%, 66% { opacity: 0; transform: scale(0.8); }
+  74%, 100% { opacity: 1; transform: scale(1); }
+}
+.obd-pop-2 { opacity: 1; transform: scale(1); animation-name: obd-pop-2; }
+@keyframes obd-pop-3 {
+  0%, 72% { opacity: 0; transform: scale(0.8); }
+  80%, 100% { opacity: 1; transform: scale(1); }
+}
+.obd-pop-3 { opacity: 1; transform: scale(1); animation-name: obd-pop-3; }
+@keyframes obd-indent {
+  0%, 82% { transform: translateX(0); }
+  92%, 100% { transform: translateX(6px); }
+}
+.obd-indent { transform: translateX(6px); animation-name: obd-indent; }
+/* Los archivos que salen de la carpeta y lo opcional. */
+@keyframes obd-drop-1 {
+  0%, 10% { opacity: 0; transform: translateY(-6px); }
+  18%, 100% { opacity: 1; transform: translateY(0); }
+}
+.obd-drop-1 { opacity: 1; transform: translateY(0); animation-name: obd-drop-1; }
+@keyframes obd-drop-2 {
+  0%, 18% { opacity: 0; transform: translateY(-6px); }
+  26%, 100% { opacity: 1; transform: translateY(0); }
+}
+.obd-drop-2 { opacity: 1; transform: translateY(0); animation-name: obd-drop-2; }
+@keyframes obd-drop-3 {
+  0%, 26% { opacity: 0; transform: translateY(-6px); }
+  34%, 100% { opacity: 1; transform: translateY(0); }
+}
+.obd-drop-3 { opacity: 1; transform: translateY(0); animation-name: obd-drop-3; }
+@keyframes obd-chip-1 {
+  0%, 50% { opacity: 0; }
+  58%, 100% { opacity: 1; }
+}
+.obd-chip-1 { opacity: 1; animation-name: obd-chip-1; }
+@keyframes obd-chip-2 {
+  0%, 60% { opacity: 0; }
+  68%, 100% { opacity: 1; }
+}
+.obd-chip-2 { opacity: 1; animation-name: obd-chip-2; }
+@keyframes obd-chip-3 {
+  0%, 70% { opacity: 0; }
+  78%, 100% { opacity: 1; }
+}
+.obd-chip-3 { opacity: 1; animation-name: obd-chip-3; }
+.no-animations .obd-replay { display: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .obd-anim { animation: none !important; }
+  .obd-replay { display: none !important; }
 }

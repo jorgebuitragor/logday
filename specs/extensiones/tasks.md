@@ -46,6 +46,47 @@ Estado: en progreso.
   del menú lateral: sin probar en la app, porque todavía ninguna
   extensión tiene vista. Están cubiertas por pruebas unitarias.
 
+## Estado en el menú lateral (R26)
+
+- [x] Punto `SidebarStatus`, metadato `sidebarStatus` y `SidebarStatusSlots`
+  en el pie del menú expandido y sobre Buscar en el colapsado, con la
+  columna colapsada con scroll. Lo estrena el Pomodoro (`specs/pomodoro`).
+- [x] `openExtensionSettings(id)`: Opciones abierto en la página de una
+  extensión (R21).
+
+## Tarjetas en Inicio (R27)
+
+- [x] Punto `HomeCard`, metadato `homeCard: { order }`, `ExtensionHomeCards`
+  después de "Esta semana" y `HomeCardShell` (31 oct 2026, rama
+  `feature/inicio-extensiones`). Lo estrenan Pomodoro (PM17) y Google
+  Calendar (G12).
+- [x] Aviso "Extensiones" sin ninguna activa, `openExtensionsCatalog()` y
+  `dismissHomeExtensionsHint()` (`homeExtensionsHintDismissed`, local).
+- [ ] Prueba visual en la app de QA: anchos (una, dos tarjetas por fila),
+  temas claro y sepia, foco al ocultar el aviso.
+- [ ] Después (decisión de Jorge): Granola, "Enviar el daily" desde Inicio,
+  avisos de una línea de OpenProject, MCP y Webhook, y la tarjeta del
+  Cliente HTTP.
+
+## Acciones de la barra en el modo inline (R24, 31 oct 2026)
+
+- [x] `setLanguage` y `setCode` en `NoteBlockProps`, implementadas en
+  `InlineExtensionBlockView` con `setBlockLanguageTr` y `setBlockCodeTr`
+  (`extensionBlockPos.ts`, con pruebas). Las estrena el Cliente HTTP
+  (specs/cliente-http HT36–HT38).
+- [ ] Probar en la app de QA (el lenguaje desde la barra, el scroll y el
+  foco, Deshacer).
+
+## Interruptor en la página de la extensión (R28, 1 nov 2026)
+
+- [x] Cabecera con interruptor "Activada" en `ExtensionSettingsPage`,
+  `disableWithUndo` en `actions.ts` y el aviso con Deshacer.
+- [x] Pruebas: `actions.test.ts` (configuración y aviso conservados,
+  Deshacer reabre, no salta un aviso borrado) y
+  `ExtensionSettingsPage.test.tsx` (cabecera en es y en).
+- [x] Prueba en el navegador con Tauri simulado: apagar desde la página,
+  volver al catálogo y Deshacer con la configuración intacta.
+
 ## Primera extensión
 
 - [x] `team-chat`, en modo local. Ver

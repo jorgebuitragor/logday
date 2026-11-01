@@ -11,6 +11,7 @@ import { TaskFilterBar } from './TaskFilterBar';
 import { TaskSelectionBar } from './TaskSelectionBar';
 import { DatePickerPopover } from './DatePickerPopover';
 import { TaskShortcutsSheet } from './TaskShortcutsSheet';
+import { useTaskShortcutsRequest } from './taskShortcutsRequest';
 import type { AnchorRect } from '../../lib/menuPosition';
 import type { QuickCaptureResult } from '../../lib/quickCapture';
 import { t } from '../../lib/i18n';
@@ -54,6 +55,8 @@ export function TaskList() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [datePicker, setDatePicker] = useState<{ anchor: AnchorRect; ids: string[] } | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  // "Ver todos los atajos" de la ayuda del menú lateral (AY17).
+  useTaskShortcutsRequest(currentView === 'list', () => setShowShortcuts(true));
   const filter = taskFilter.status;
   const [emptyCtxMenu, setEmptyCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [newTaskIds, setNewTaskIds] = useState<Set<string>>(new Set());
@@ -257,10 +260,11 @@ export function TaskList() {
       <div className="border-b border-[var(--border)] px-4 py-3">
         <div className="mx-auto w-full max-w-3xl">
         <div className="flex items-center justify-between mb-3">
-          <h1 className="text-lg font-semibold text-[var(--text-primary)] capitalize">{title}</h1>
+          {/* Con el panel angosto, el título se recorta y el botón no se encoge. */}
+          <h1 className="min-w-0 truncate text-lg font-semibold text-[var(--text-primary)] capitalize" title={title}>{title}</h1>
           <button
             onClick={() => setNewTaskDraft({})}
-            className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white transition hover:bg-indigo-500"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white transition hover:bg-indigo-500"
           >
             <Plus size={14} />
             {t(language, 'tasks', 'newTask')}

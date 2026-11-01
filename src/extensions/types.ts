@@ -2,7 +2,7 @@ import type { ComponentType } from 'react';
 import type { LucideIcon } from 'lucide-react';
 
 /** Mismo id en Desktop, Web y Mobile (specs/extensiones/design.md). */
-export type ExtensionId = 'team-chat' | 'mcp' | 'google-calendar' | 'outgoing-webhook' | 'granola' | 'openproject' | 'excalidraw';
+export type ExtensionId = 'team-chat' | 'mcp' | 'google-calendar' | 'outgoing-webhook' | 'granola' | 'openproject' | 'excalidraw' | 'quick-capture' | 'devtools' | 'pomodoro' | 'http-client';
 
 export type ExtensionCategory = 'integration' | 'tool';
 export type LogdayApp = 'desktop' | 'web' | 'mobile';
@@ -32,6 +32,38 @@ export interface NoteBlockProps {
   /** El contenido del bloque (lo que va dentro de la cerca de código). */
   code: string;
   onEdit: () => void;
+  /** Solo en el modo inline (`noteBlock.inline`): la isla que se dibuja,
+   *  la barra de encima o la franja de debajo del código. */
+  part?: 'header' | 'footer';
+  /** La nota abierta (`activeNote.id`). */
+  noteId?: string;
+  /** El n-ésimo bloque de ese lenguaje en la nota. */
+  index?: number;
+  /** Solo en el modo inline: la posición del cursor dentro del texto del
+   *  bloque, o `null` si el cursor está fuera. */
+  cursor?: number | null;
+  /** Solo en el modo inline, y si la nota se puede editar: cambia el
+   *  lenguaje del bloque, como el selector de los bloques de código
+   *  normales (`plaintext` lo quita). Si el nuevo no es de la extensión, el
+   *  bloque pasa a verse como código normal, con su selector de siempre. */
+  setLanguage?: (language: string) => void;
+  /** Solo en el modo inline, y si la nota se puede editar: reemplaza el
+   *  texto del bloque. Cambia solo el tramo distinto, así el cursor se
+   *  queda en su sitio y Deshacer lo revierte en un paso. */
+  setCode?: (code: string) => void;
+  /** Solo en el modo inline: el bloque está compacto. La nota oculta el
+   *  código y la franja (siguen en el documento) y solo queda la barra. */
+  compact?: boolean;
+  /** Solo en el modo inline: compacta o expande el bloque. Recordarlo es
+   *  cosa de la extensión. Al compactar con el cursor dentro, el cursor
+   *  sale del bloque; si el usuario vuelve a ponerlo dentro (Deshacer, ir
+   *  a una línea), la nota lo expande sola, sin avisar a la extensión.
+   *  `initial`: el estado con que arranca al montarse; no mueve la
+   *  selección y no compacta si el usuario está escribiendo en el bloque. */
+  setCompact?: (compact: boolean, opts?: { initial?: boolean }) => void;
+  /** Solo en el modo inline: el texto de cada bloque de ese lenguaje en la
+   *  nota, en orden (el de `index` es este). Se calcula al llamarla. */
+  blockCodes?: () => string[];
 }
 
 /** Props del editor de ese bloque, que se abre al crearlo o editarlo. */
@@ -40,6 +72,29 @@ export interface NoteBlockEditorProps {
   onSave: (code: string) => void;
   onClose: () => void;
 }
+
+/** Lo que devuelve `convertPaste`: el texto del bloque y, una vez
+ *  insertado, qué avisar (specs/extensiones R24, specs/cliente-http HT39). */
+export interface NotePasteConversion {
+  code: string;
+  onInserted?: () => void;
+  /** Preguntar antes de insertar (specs/cliente-http HT71): mientras
+   *  espera no se inserta nada, y el texto pegado solo vive en memoria.
+   *  Devuelve la conversión elegida, o `null` para pegar el texto tal
+   *  cual. */
+  ask?: () => Promise<NotePasteConversion | null>;
+}
+
+/** Props del estado que una extensión pone en el menú lateral, abajo,
+ *  encima de "Opciones" (R26). */
+export interface SidebarStatusProps {
+  /** El menú está colapsado (48 px): solo íconos. */
+  collapsed: boolean;
+}
+
+/** Props de la tarjeta que una extensión pone en Inicio (R27). Por ahora
+ *  ninguna: cada tarjeta lee lo suyo de su store. */
+export type HomeCardProps = object;
 
 /** Lo que aporta una extensión a cada punto de extensión. No es una API
  *  pública: se cambia cuando haga falta, porque todas viven en este repo. */
@@ -53,11 +108,22 @@ export interface ExtensionModule {
   /** Bloque propio en las notas y su editor (R24). */
   NoteBlock?: ComponentType<NoteBlockProps>;
   NoteBlockEditor?: ComponentType<NoteBlockEditorProps>;
+  /** R24: un texto pegado en una nota que es suyo (p. ej. un comando cURL
+   *  para Cliente HTTP) pasa a ser un bloque de su lenguaje. Devuelve el
+   *  código del bloque, o `null` si el texto no es suyo. Debe ser rápido y
+   *  puro: corre al pegar, con el módulo ya cargado (`peek`). */
+  convertPaste?: (text: string) => NotePasteConversion | null;
+  /** Estado siempre visible en el menú lateral (R26). Si no hay nada que
+   *  mostrar, devuelve `null`. */
+  SidebarStatus?: ComponentType<SidebarStatusProps>;
+  /** Tarjeta al final de Inicio (R27). Si no hay nada que mostrar (o el
+   *  usuario la apagó en sus opciones), devuelve `null`. */
+  HomeCard?: ComponentType<HomeCardProps>;
   /** Procesos propios; devuelve cómo pararlos (R7). */
   start?: () => () => void;
 }
 
-export type ExtensionPoint = 'Settings' | 'View' | 'dailyActions' | 'NoteBlock' | 'NoteBlockEditor';
+export type ExtensionPoint = 'Settings' | 'View' | 'dailyActions' | 'NoteBlock' | 'NoteBlockEditor' | 'SidebarStatus' | 'HomeCard';
 
 /** Metadatos del registro: se dibujan sin cargar el código (R16). */
 export interface ExtensionDefinition {
@@ -77,11 +143,31 @@ export interface ExtensionDefinition {
   /** R24: el lenguaje de su bloque en las notas (```<language>). Es
    *  metadato para que el editor sepa qué bloques son de la extensión sin
    *  cargar su código. */
-  noteBlock?: { language: string };
+  noteBlock?: {
+    language: string;
+    /** Modo inline: el código se ve y se edita en la nota, y la extensión
+     *  dibuja una barra encima y una franja debajo (`part`). Sin editor
+     *  aparte (specs/cliente-http, design A3). La barra puede compactar el
+     *  bloque (`NoteBlockProps.setCompact`). */
+    inline?: boolean;
+    /** Lo que inserta "Nuevo bloque" en el modo inline. */
+    template?: string;
+  };
+  /** R26: si tiene `SidebarStatus`. Es metadato para que el menú lateral
+   *  no cargue el módulo solo para saberlo (R16). */
+  sidebarStatus?: boolean;
+  /** R27: si tiene `HomeCard`, y su lugar entre las tarjetas de Inicio
+   *  (de menor a mayor). Es metadato para que Inicio no cargue el módulo
+   *  solo para saberlo (R16). */
+  homeCard?: { order: number };
   /** Claves de sus secretos en el llavero (`ext:<id>:<clave>`). El
    *  llavero no se puede listar, así que "Quitar configuración" (R8)
    *  borra estas. */
   secretKeys?: string[];
+  /** Claves que dependen de su configuración (p. ej. una por variable
+   *  secreta). "Quitar configuración" borra también estas. Es una función
+   *  pura del registro, que no carga el módulo (R16). */
+  dynamicSecretKeys?: (settings?: Record<string, unknown>) => string[];
   load: () => Promise<ExtensionModule>;
 }
 

@@ -42,6 +42,15 @@ export interface NoteBlockProps {
   /** Solo en el modo inline: la posición del cursor dentro del texto del
    *  bloque, o `null` si el cursor está fuera. */
   cursor?: number | null;
+  /** Solo en el modo inline, y si la nota se puede editar: cambia el
+   *  lenguaje del bloque, como el selector de los bloques de código
+   *  normales (`plaintext` lo quita). Si el nuevo no es de la extensión, el
+   *  bloque pasa a verse como código normal, con su selector de siempre. */
+  setLanguage?: (language: string) => void;
+  /** Solo en el modo inline, y si la nota se puede editar: reemplaza el
+   *  texto del bloque. Cambia solo el tramo distinto, así el cursor se
+   *  queda en su sitio y Deshacer lo revierte en un paso. */
+  setCode?: (code: string) => void;
 }
 
 /** Props del editor de ese bloque, que se abre al crearlo o editarlo. */
@@ -49,6 +58,13 @@ export interface NoteBlockEditorProps {
   code: string;
   onSave: (code: string) => void;
   onClose: () => void;
+}
+
+/** Lo que devuelve `convertPaste`: el texto del bloque y, una vez
+ *  insertado, qué avisar (specs/extensiones R24, specs/cliente-http HT39). */
+export interface NotePasteConversion {
+  code: string;
+  onInserted?: () => void;
 }
 
 /** Props del estado que una extensión pone en el menú lateral, abajo,
@@ -70,6 +86,11 @@ export interface ExtensionModule {
   /** Bloque propio en las notas y su editor (R24). */
   NoteBlock?: ComponentType<NoteBlockProps>;
   NoteBlockEditor?: ComponentType<NoteBlockEditorProps>;
+  /** R24: un texto pegado en una nota que es suyo (p. ej. un comando cURL
+   *  para Cliente HTTP) pasa a ser un bloque de su lenguaje. Devuelve el
+   *  código del bloque, o `null` si el texto no es suyo. Debe ser rápido y
+   *  puro: corre al pegar, con el módulo ya cargado (`peek`). */
+  convertPaste?: (text: string) => NotePasteConversion | null;
   /** Estado siempre visible en el menú lateral (R26). Si no hay nada que
    *  mostrar, devuelve `null`. */
   SidebarStatus?: ComponentType<SidebarStatusProps>;

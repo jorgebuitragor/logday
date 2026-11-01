@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { checkHtml, formatHtml, minifyHtml } from './tools/htmlFormat';
 import { HtmlPreview, previewScale } from '../../components/shared/HtmlPreview';
-import { availableTools, clearDrafts, draftKey, readDevtoolsSettings, setDraft, toolForBlock, type ToolId } from './model';
+import { clearDrafts, draftKey, readDevtoolsSettings, setDraft, toolForBlock, type ToolId } from './model';
 import { DevtoolsContext, type DevtoolsContextValue } from './ui/context';
 import { makeTr, shortcutLabel } from './ui/text';
 import HtmlPreviewTool from './views/HtmlPreviewTool';
@@ -148,12 +148,10 @@ describe('HtmlPreview', () => {
   });
 });
 
-const OFF = availableTools(false);
-
 function render(options: Record<string, string> = {}) {
   const tool: ToolId = 'html-preview';
   const ctx: DevtoolsContextValue = {
-    tool, available: OFF, language: 'es', tr: makeTr('es'), mac: true,
+    tool, language: 'es', tr: makeTr('es'), mac: true,
     settings: { ...readDevtoolsSettings({}), lastTool: tool, options: { [tool]: options } },
     updateSettings: () => {}, openSettings: () => {}, setOptions: () => {}, announce: () => {}, copyText: async () => true,
     saveNote: async () => null, openNote: () => {}, openPicker: () => {}, actionsRef: { current: {} }, loadedFrom: null,

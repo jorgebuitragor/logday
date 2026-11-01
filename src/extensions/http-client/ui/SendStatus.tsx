@@ -1,5 +1,5 @@
-// Lo que el bloque de una nota y la herramienta de DevTools muestran igual
-// alrededor de un envío (Interfaz §1.4 y §3): la confirmación en el sitio,
+// Lo que el bloque de una nota y el formulario de la pantalla muestran igual
+// alrededor de un envío (Interfaz §1.4 y §11): la confirmación en el sitio,
 // "Enviando…", el error con Reintentar y "Enviar sin verificar".
 import { useEffect, useRef, useState } from 'react';
 import { RotateCw, ShieldOff, TriangleAlert } from 'lucide-react';

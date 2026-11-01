@@ -132,3 +132,16 @@ Pedido por Jorge: el botón (?) se solapaba con los de las cabeceras angostas. E
 
 Los títulos de las cabeceras de Tareas, Kanban, Calendario, Dailys y Horas extra siguen recortándose con "…" y sus botones sin encogerse: es una mejora aparte, que se queda.
 
+
+## Cambio del 31 oct 2026: la pantalla del Cliente HTTP
+
+La extensión Cliente HTTP pasó de ser una herramienta de DevTools a tener su propia sección (specs/cliente-http HT33). Pedido por Jorge.
+
+- AY30. La sección del Cliente HTTP DEBERÁ tener su ayuda propia, "Cómo funciona el Cliente HTTP", con el botón "Ayuda: Cliente HTTP" (AY25):
+  - la columna "Peticiones", que reúne los bloques ```` ```http ```` de todas las notas, y cómo crear una;
+  - el formulario, las variables `{{nombre}}` y el entorno activo;
+  - los entornos y los secretos (Opciones → Cliente HTTP, el llavero, las confirmaciones);
+  - que lo que se cambia en la pantalla no toca la nota;
+  - que los bloques de las notas también se envían desde la nota, con ⌘↵;
+  - y sus atajos: ⌘↵ (Ctrl+Enter fuera de macOS), Enter en la URL y Esc.
+- Con esto, DevTools vuelve a no tener nada del Cliente HTTP en su ayuda: sin "En esta herramienta" de Cliente HTTP ni las filas `help.k.runHttp` y `help.k.tabsHttp`.

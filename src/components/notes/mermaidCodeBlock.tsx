@@ -6,7 +6,7 @@ import { MermaidBlock } from './MermaidBlock';
 import { ExtensionSlot } from '../../extensions/ExtensionSlot';
 import type { ExtensionId } from '../../extensions/types';
 import { emitNoteBlockRun } from '../../extensions/noteBlockEvents';
-import { blockIndexAt, inlineRunTarget, languageOf } from './extensionBlockPos';
+import { blockIndexAt, inlineRunTarget, languageOf, setBlockCodeTr, setBlockLanguageTr } from './extensionBlockPos';
 
 // Bloques de código con lenguaje `mermaid`, dibujados dentro del documento.
 //
@@ -72,6 +72,15 @@ function mermaidCount(doc: PMNode): number {
 
 const posOf = (getPos: NodeViewProps['getPos']) => (typeof getPos === 'function' ? getPos() : undefined);
 
+/** El contenedor con scroll del editor (el panel de la nota). */
+function scrollParent(el: Element | null): HTMLElement | null {
+  for (let node = el?.parentElement ?? null; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) return node;
+  }
+  return null;
+}
+
 /** Un bloque de extensión: lo dibuja su `NoteBlock`, aislado en su
  *  ExtensionBoundary; el código sigue en el documento, oculto. En el modo
  *  inline el código se ve y se edita, entre la barra y la franja de la
@@ -121,6 +130,30 @@ function InlineExtensionBlockView({ node, editor, getPos, extension }: NodeViewP
   // `read` lee siempre el estado actual del editor.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, language]);
+  // Las acciones de la barra (R24). Se calcula la posición al usarlas: el
+  // documento pudo cambiar desde el último render.
+  const setLanguage = (next: string) => {
+    const pos = posOf(getPos);
+    if (typeof pos !== 'number' || !editor.isEditable) return;
+    const tr = setBlockLanguageTr(editor.state, pos, next);
+    if (!tr) return;
+    // Al cambiar de lenguaje este NodeView se reemplaza (sin barra ni
+    // franja) y el panel podría saltar: se guarda el scroll, como el
+    // selector de los bloques normales (handleChangeCodeLanguage).
+    const scroller = scrollParent(editor.view.dom);
+    const scrollTop = scroller?.scrollTop ?? 0;
+    editor.view.dispatch(tr);
+    // El foco estaba en el menú de la barra, que ya no existe: vuelve al código.
+    editor.view.focus();
+    if (scroller) scroller.scrollTop = scrollTop;
+  };
+  const setCode = (next: string) => {
+    const pos = posOf(getPos);
+    if (typeof pos !== 'number' || !editor.isEditable) return;
+    const tr = setBlockCodeTr(editor.state, pos, next);
+    if (tr) editor.view.dispatch(tr);
+  };
+  const editable = editor.isEditable;
   const slotProps = (part: 'header' | 'footer') => ({
     code: node.textContent,
     onEdit: () => {},
@@ -128,6 +161,8 @@ function InlineExtensionBlockView({ node, editor, getPos, extension }: NodeViewP
     noteId: blocks?.noteId,
     index: where.index,
     cursor: where.cursor,
+    setLanguage: editable ? setLanguage : undefined,
+    setCode: editable ? setCode : undefined,
   });
   return (
     <NodeViewWrapper className="extension-node-view extension-node-inline" data-extension-block={language}>

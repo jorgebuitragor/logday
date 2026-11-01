@@ -1,5 +1,5 @@
-// El formulario de la herramienta de DevTools ↔ el texto de un bloque
-// ```http (specs/cliente-http HT28, design A1 y Interfaz §3). El envío usa
+// El formulario de la pantalla Cliente HTTP ↔ el texto de un bloque
+// ```http (specs/cliente-http HT33, HT34, design A1 e Interfaz §11). El envío usa
 // ese texto, así que el formulario pasa por el mismo parser, la misma
 // resolución y las mismas confirmaciones que un bloque de una nota. Puro.
 import { HTTP_METHODS, parseHttpBlock, type HttpMethod, type ParseIssue } from './parse';
@@ -68,17 +68,19 @@ export function bodySplitsRequest(form: HttpForm): boolean {
 
 export interface LoadedForm {
   form: HttpForm;
-  /** Cuántas peticiones tiene el bloque (se carga la primera). */
+  /** Cuántas peticiones tiene el bloque. */
   count: number;
 }
 
-/** "Traer de una nota": la primera petición del bloque, en el formulario.
- *  Las cabeceras se copian como están escritas (también las mal escritas,
- *  para que se vea el error) y las líneas `?`/`&` ya van en la URL. Sin
- *  ninguna petición, `null`. */
-export function formFromBlock(code: string): LoadedForm | null {
+/** Elegir una petición de la columna: la `index` del bloque, en el
+ *  formulario. Las cabeceras se copian como están escritas (también las
+ *  mal escritas, para que se vea el error) y las líneas `?`/`&` ya van en
+ *  la URL. Si la línea de la petición no se entiende (o su método no es
+ *  uno de los admitidos), va entera a la URL, para que se vea qué dice la
+ *  nota y no se envíe un GET que no está escrito. Sin esa petición, `null`. */
+export function formFromBlock(code: string, index = 0): LoadedForm | null {
   const parsed = parseHttpBlock(code);
-  const req = parsed.requests[0];
+  const req = parsed.requests[index];
   if (!req) return null;
   const lines = code.replace(/\r\n?/g, '\n').split('\n');
   // De la línea de la petición (la primera con contenido tras el ### y los
@@ -86,6 +88,8 @@ export function formFromBlock(code: string): LoadedForm | null {
   let i = req.startLine - 1;
   if (/^###/.test(lines[i] ?? '')) i += 1;
   while (i < req.endLine && (isBlank(lines[i]) || /^\s*(#(?!##)|\/\/)/.test(lines[i]))) i += 1;
+  const unreadable = req.issues.some((issue) => issue.code === 'missing_request_line' || issue.code === 'unsupported_method');
+  const url = unreadable ? (lines[i] ?? '').trim() : req.url;
   i += 1;
   while (i < req.endLine && /^\s*[?&]/.test(lines[i])) i += 1;
   const headers: string[] = [];
@@ -94,13 +98,13 @@ export function formFromBlock(code: string): LoadedForm | null {
     i += 1;
   }
   return {
-    form: { method: req.method, url: req.url, headers: headers.join('\n'), body: req.body ?? '' },
+    form: { method: req.method, url, headers: headers.join('\n'), body: req.body ?? '' },
     count: parsed.requests.length,
   };
 }
 
-/** Los problemas que muestra la herramienta: los del bloque sin el de "el
- *  bloque está vacío" (sin URL, la herramienta muestra su estado vacío). */
+/** Los problemas que muestra el formulario: los del bloque sin el de "el
+ *  bloque está vacío" (sin URL, el formulario muestra su estado vacío). */
 export function formIssues(issues: readonly ParseIssue[]): ParseIssue[] {
   return issues.filter((i) => i.code !== 'empty_block');
 }

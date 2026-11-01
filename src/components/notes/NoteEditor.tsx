@@ -103,6 +103,8 @@ import { EMOJI_CATALOG, normalizeEmojiSearchTerm } from '../../lib/emojiCatalog'
 import { createTaskCodePlugin, normalizeEditorMarkdown } from '../../lib/noteEditorMarkdown';
 import { useLinkPreview } from '../../hooks/useLinkPreview';
 import { useExtensions } from '../../extensions/useExtensions';
+import { extensionRuntime } from '../../extensions/runtime';
+import { handleExtensionPaste, type PasteConverter } from './extensionPaste';
 import { ExtensionSlot } from '../../extensions/ExtensionSlot';
 import { extensionText } from '../../extensions/text';
 import type { ExtensionId } from '../../extensions/types';
@@ -289,6 +291,18 @@ export function NoteEditor() {
     noteId: activeNote?.id,
     edit: (language, index) => openExtensionBlockRef.current(language, index),
   };
+  // R24 (`convertPaste`): las extensiones activas que pueden convertir un
+  // texto pegado en su bloque (Cliente HTTP: un cURL, specs/cliente-http
+  // HT39). Se leen al pegar, con el módulo ya cargado: nunca se carga aquí.
+  const pasteConvertersRef = useRef<() => PasteConverter[]>(() => []);
+  pasteConvertersRef.current = () => blockExtensions.flatMap((def) => {
+    const convert = extensionRuntime.peek(def.id)?.convertPaste;
+    return convert ? [{ language: def.noteBlock!.language, convert }] : [];
+  });
+  // ⇧⌘V (y ⌥⇧⌘V, "Pegar y mantener el estilo"): pegar sin formato pega
+  // tal cual, sin convertir. El evento de pegar no dice si iba Mayúsculas,
+  // así que se anota en el keydown.
+  const plainPasteAtRef = useRef(0);
   const codeBlockLanguages = useMemo(() => {
     const lines = mdContent.split('\n');
     const languages: string[] = [];
@@ -459,11 +473,20 @@ export function NoteEditor() {
         spellcheck: 'false',
       },
       handleKeyDown(_view, event) {
+        if ((event.metaKey || event.ctrlKey) && event.shiftKey && (event.code === 'KeyV' || event.key.toLowerCase() === 'v')) {
+          plainPasteAtRef.current = Date.now();
+        }
         // Close task-ref popup on Escape; handle Enter/ArrowDown/ArrowUp via React state
         if (event.key === 'Escape') {
           setTaskRefQuery(null);
           setTaskRefAnchor(null);
         }
+      },
+      handlePaste(view, event) {
+        const plain = Date.now() - plainPasteAtRef.current < 1500;
+        plainPasteAtRef.current = 0;
+        const text = event.clipboardData?.getData('text/plain') ?? '';
+        return handleExtensionPaste(view, text, plain, pasteConvertersRef.current());
       },
       handleClick(_view, _pos, event) {
         const target = (event.target as HTMLElement).closest('[data-task-code]') as HTMLElement | null;

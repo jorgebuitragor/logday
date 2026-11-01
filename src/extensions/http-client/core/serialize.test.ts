@@ -1,4 +1,4 @@
-// El formulario de DevTools ↔ el texto de un bloque ```http (HT28).
+// El formulario de la pantalla Cliente HTTP ↔ el texto de un bloque ```http (HT33, HT34).
 import { describe, expect, it } from 'vitest';
 import { formatFence, parseFencedBlocks } from '../../../lib/fencedBlocks';
 import { parseHttpBlock } from './parse';
@@ -65,7 +65,7 @@ describe('"Guardar en una nota"', () => {
   });
 });
 
-describe('"Traer de una nota" → formulario', () => {
+describe('una petición de una nota → formulario', () => {
   it('la primera petición, con la query unida y las cabeceras como están', () => {
     const loaded = formFromBlock('# comentario\n### Crear\npost https://x.com/u\n?page=2\nX-A: 1\nmal\n\n{"a":1}\n\n### Otra\nGET https://y.com');
     expect(loaded?.count).toBe(2);
@@ -79,5 +79,17 @@ describe('"Traer de una nota" → formulario', () => {
 
   it('un bloque vacío no carga nada', () => {
     expect(formFromBlock('\n# solo un comentario\n')).toBeNull();
+  });
+
+  it('elegir otra petición del bloque la carga a ella, y una que no existe, nada', () => {
+    const code = '### Uno\nGET https://x.com/1\n\n### Dos\nPUT https://x.com/2\nA: 1\n\nhola';
+    expect(formFromBlock(code, 1)).toEqual({ form: { method: 'PUT', url: 'https://x.com/2', headers: 'A: 1', body: 'hola' }, count: 2 });
+    expect(formFromBlock(code, 2)).toBeNull();
+  });
+
+  it('una línea de petición que no se entiende va entera a la URL, para que se vea qué dice la nota', () => {
+    expect(formFromBlock('### Rota\nhola\nA: 1')?.form).toEqual({ method: 'GET', url: 'hola', headers: 'A: 1', body: '' });
+    // Con un método que no existe, tampoco se convierte en un GET.
+    expect(formFromBlock('FETCH https://x.com')?.form.url).toBe('FETCH https://x.com');
   });
 });

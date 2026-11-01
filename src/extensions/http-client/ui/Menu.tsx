@@ -1,6 +1,10 @@
 // Un menú pequeño con el patrón de teclado de siempre (Interfaz §5):
 // ↑/↓, Home/End, Enter/Espacio para elegir y Esc para cerrar, que devuelve
-// el foco al botón. Lo usan el selector de petición y el del entorno.
+// el foco al botón, y escribir letras salta a la opción que empieza así
+// (typeahead). Lo usan los selectores de la barra (lenguaje, método,
+// petición), el del entorno y, en vez de un <select> nativo (que en macOS
+// es la lista azul del sistema), el método del formulario y el entorno
+// activo de Opciones, con el botón como un campo (`FIELD_BTN`).
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Check } from 'lucide-react';
 import { FOCUS_RING } from '../../../components/shared/controlClasses';
@@ -18,8 +22,12 @@ export interface MenuItem {
 
 export const CHIP_BTN = `flex min-w-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] ${FOCUS_RING}`;
 
+/** El botón con la forma de un campo (`INPUT_CLS`), para los selectores
+ *  que están entre campos: el método del formulario, el entorno activo. */
+export const FIELD_BTN = `flex items-center justify-between gap-2 rounded-lg border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs text-[var(--text-primary)] transition hover:bg-[var(--bg-hover)] ${FOCUS_RING}`;
+
 export function Menu({
-  label, button, items, hint, align = 'left',
+  label, button, items, hint, align = 'left', buttonClassName = CHIP_BTN, listClassName = 'min-w-[220px] max-w-[22rem]',
 }: {
   /** `aria-label` del botón. */
   label: string;
@@ -28,10 +36,15 @@ export function Menu({
   /** Una línea arriba, sin acción ("Se usa en todas las peticiones."). */
   hint?: string;
   align?: 'left' | 'right';
+  /** Por defecto, el chip de la barra (`CHIP_BTN`). */
+  buttonClassName?: string;
+  /** El ancho del menú. */
+  listClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const typed = useRef({ text: '', at: 0 });
 
   useEffect(() => {
     if (!open) return;
@@ -64,6 +77,19 @@ export function Menu({
       if (e.key === 'Escape') e.preventDefault();
       e.stopPropagation();
       close(e.key === 'Escape');
+    } else if (e.key.length === 1 && e.key !== ' ' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      // Typeahead: la misma letra repetida recorre las que empiezan por ella.
+      const now = Date.now();
+      const prev = now - typed.current.at < 700 ? typed.current.text : '';
+      const text = prev === e.key.toLowerCase() ? prev : prev + e.key.toLowerCase();
+      typed.current = { text, at: now };
+      const from = text.length === 1 ? i + 1 : Math.max(0, i);
+      const found = [...nodes.slice(from), ...nodes.slice(0, from)]
+        .find((n) => (n.textContent ?? '').trim().toLowerCase().startsWith(text));
+      if (found) {
+        e.preventDefault();
+        found.focus();
+      }
     }
   };
 
@@ -103,7 +129,7 @@ export function Menu({
             setOpen(true);
           }
         }}
-        className={CHIP_BTN}
+        className={buttonClassName}
       >
         {button}
       </button>
@@ -113,7 +139,7 @@ export function Menu({
           role="menu"
           aria-label={label}
           onKeyDown={onKeyDown}
-          className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} z-30 mt-1 min-w-[220px] max-w-[22rem] rounded-lg border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-xl`}
+          className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} z-30 mt-1 ${listClassName} rounded-lg border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-xl`}
         >
           {hint && <p className="px-3 py-1 text-[10px] text-[var(--text-hint)]">{hint}</p>}
           {options.map(row)}

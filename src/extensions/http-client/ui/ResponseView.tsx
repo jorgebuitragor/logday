@@ -1,7 +1,7 @@
 // La respuesta (Interfaz §2, HT10–HT14): el estado, el tiempo, el tamaño
 // y tres pestañas (cuerpo, cabeceras y la petición enviada). El HTML se
 // muestra como texto y las imágenes en <img>; nada pasa por
-// dangerouslySetInnerHTML. Se comparte con DevTools (PR 2).
+// dangerouslySetInnerHTML. Se comparte con la pantalla (HT33).
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Check, CircleAlert, CircleCheck, Copy, CornerDownRight, Download, FileQuestion, History, ShieldOff, TriangleAlert, X,
@@ -178,7 +178,8 @@ export function ResponseView({
   onDismiss?: () => void;
   now: number;
   initialTab?: Tab;
-  /** La pestaña, si la lleva quien la dibuja (⌥⌘1–3 de DevTools). */
+  /** La pestaña, si la lleva quien la dibuja (la pantalla la conserva
+   *  al cambiar de petición). */
   tab?: Tab;
   onTabChange?: (tab: Tab) => void;
 }) {

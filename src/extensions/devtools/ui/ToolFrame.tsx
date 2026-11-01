@@ -11,14 +11,12 @@ import { FOCUS_RING, SECONDARY_CLS } from './classes';
 import { ToolNav } from './ToolNav';
 
 export function ToolFrame({
-  options, children, status, headerExtra, notice, bodyClass = 'grid gap-4 px-5 py-4 @3xl/tool:grid-cols-2',
+  options, children, status, headerExtra, bodyClass = 'grid gap-4 px-5 py-4 @3xl/tool:grid-cols-2',
 }: {
   options?: ReactNode;
   children: ReactNode;
   status?: ReactNode;
   headerExtra?: ReactNode;
-  /** Un aviso fijo bajo la descripción (Cliente HTTP: que envía fuera). */
-  notice?: ReactNode;
   bodyClass?: string;
 }) {
   const { tool, tr, openPicker, shortcut } = useDevtools();
@@ -39,7 +37,6 @@ export function ToolFrame({
               <ToolSwitcher name={name} />
             </h2>
             <p className="mt-0.5 text-[11px] text-[var(--text-hint)]">{tr(toolKey(tool, 'desc'))}</p>
-            {notice}
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">

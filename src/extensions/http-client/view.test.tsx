@@ -274,6 +274,23 @@ describe('el formulario se dibuja', () => {
     expect(t).not.toContain('Traer de una nota');
   });
 
+  it('"Código" y "Copiar como…" en la cabecera de la petición (HT60, HT61)', () => {
+    const disabled = /aria-label="Copiar como…" title="Copiar como…" disabled=""/;
+    // Sin URL no hay código que copiar.
+    let html = formHtml();
+    expect(html).toMatch(disabled);
+    expect(html).toMatch(/aria-expanded="false"[^>]*aria-label="Código"/);
+    // El panel solo se dibuja al abrirlo.
+    expect(html).not.toContain('role="tablist" aria-label="Lenguaje del código"');
+    setDraft('GET {{baseUrl}}/me\nAuthorization: Bearer {{token}}');
+    html = formHtml();
+    expect(html).not.toMatch(disabled);
+    expect(text(html)).toContain('Copiar como…');
+    // Con un error de sintaxis, deshabilitado otra vez.
+    setDraft('GET https://x.com\nmal');
+    expect(formHtml()).toMatch(disabled);
+  });
+
   it('una cabecera mal escrita: el error con su línea del texto, y la tabla de solo lectura', () => {
     setDraft('GET https://x.com\nAccept: */*\nmal');
     const html = formHtml();

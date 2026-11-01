@@ -1,9 +1,9 @@
 // El bloque ```http en la nota (Interfaz §1, HT4–HT16, HT20–HT25, HT30,
-// HT36–HT38, HT50): la
+// HT36–HT38, HT50, HT60): la
 // barra de encima (`part: 'header'`) y la franja de debajo (`'footer'`).
 // Son dos islas aparte dentro del NodeView; comparten el estado del store.
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, CircleAlert, PanelRight, Send, SquareTerminal, X } from 'lucide-react';
+import { useEffect, useMemo, useRef } from 'react';
+import { ChevronDown, CircleAlert, PanelRight, Send, X } from 'lucide-react';
 import { useAppStore } from '../../../store/appStore';
 import { CODE_LANGUAGE_OPTIONS } from '../../../lib/codeHighlight';
 import { ICON_BTN, PANEL_TITLE, SECONDARY_CLS, SEND_BTN } from '../../../components/shared/controlClasses';
@@ -12,7 +12,7 @@ import type { NoteBlockProps } from '../../types';
 import { subscribeNoteBlockRun } from '../../noteBlockEvents';
 import { announce } from '../announce';
 import { activeEnvironment, EXTENSION_ID, readHttpSettings } from '../core/environments';
-import { setRequestMethod, toCurl } from '../core/edit';
+import { setRequestMethod } from '../core/edit';
 import { HTTP_METHODS, hasErrors, parseHttpBlock, requestAtOffset, requestLabel, type HttpMethod } from '../core/parse';
 import { draftFromBlock } from '../core/noteSave';
 import { requestTitle } from '../core/noteRequests';
@@ -21,6 +21,7 @@ import {
   blockKey, blockState, blockedMessage, cancelBlock, dismissResult, firstError, issueMessage, openInView, openSettings,
   readResult, resolveWith, selectRequest, sendRequest, useHttpStore,
 } from '../store';
+import { CopyAsMenu } from './CopyAs';
 import { EnvironmentChip } from './EnvironmentChip';
 import { Menu } from './Menu';
 import { ResponseView } from './ResponseView';
@@ -106,18 +107,14 @@ function BlockHeader(props: NoteBlockProps) {
 
   const label = req?.name ? tr('blockLabelNamed', { name: req.name }) : tr('blockLabel');
 
-  // El método y "Copiar como cURL" leen el texto de ahora, no el de hace
+  // El método y "Copiar como…" leen el texto de ahora, no el de hace
   // 300 ms (`useDebounced`): al elegir un método se ve en el acto.
   const fresh = useMemo(() => parseHttpBlock(props.code), [props.code]);
   const freshReq = fresh.requests[Math.min(b.selected, Math.max(0, fresh.requests.length - 1))] ?? null;
   const canSetMethod = !!props.setCode && !!freshReq && !freshReq.issues.some((i) => i.code === 'missing_request_line');
-  const [curlCopied, setCurlCopied] = useState(false);
-  useEffect(() => {
-    if (!curlCopied) return;
-    const id = setTimeout(() => setCurlCopied(false), 1500);
-    return () => clearTimeout(id);
-  }, [curlCopied]);
-  const curlReady = !!freshReq && !hasErrors(freshReq.issues) && !hasErrors(fresh.issues);
+  // HT60: con errores de sintaxis, "Copiar como…" queda deshabilitado.
+  // Una variable que falta no lo impide: el código lleva {{nombre}}.
+  const codeReq = freshReq && !hasErrors(freshReq.issues) && !hasErrors(fresh.issues) ? freshReq : null;
 
   // HT36: solo cambia el método en la línea de la petición de la barra.
   const changeMethod = (method: HttpMethod) => {
@@ -157,18 +154,6 @@ function BlockHeader(props: NoteBlockProps) {
       requestIndex,
       label: requestTitle(freshReq),
     }, { ...loaded, name: freshReq.name });
-  };
-
-  // HT37: las variables y los secretos van como {{nombre}}.
-  const copyCurl = async () => {
-    if (!freshReq || !curlReady) return;
-    try {
-      await navigator.clipboard.writeText(toCurl(freshReq));
-      setCurlCopied(true);
-      announce(tr('aCurlCopied'));
-    } catch {
-      // Sin permiso del portapapeles: no hay nada más que hacer.
-    }
   };
 
   return (
@@ -257,16 +242,7 @@ function BlockHeader(props: NoteBlockProps) {
           <PanelRight size={14} aria-hidden />
         </button>
       )}
-      <button
-        type="button"
-        onClick={() => void copyCurl()}
-        disabled={!curlReady}
-        aria-label={curlCopied ? tr('copied') : tr('copyCurl')}
-        title={tr('copyCurl')}
-        className={`${ICON_BTN} min-h-7 min-w-7 justify-center`}
-      >
-        {curlCopied ? <Check size={14} className="text-emerald-400" aria-hidden /> : <SquareTerminal size={14} aria-hidden />}
-      </button>
+      <CopyAsMenu tr={tr} req={codeReq} />
       <EnvironmentChip />
       {inFlight ? (
         <button type="button" onClick={() => cancelBlock(key)} className={`${SECONDARY_CLS} py-1`}>

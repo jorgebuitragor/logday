@@ -369,6 +369,20 @@ export function Sidebar() {
     setFolderCtx(null);
   };
 
+  const handleNewNoteInFolder = () => {
+    if (!folderCtx) return;
+    const folder = folderCtx.folder;
+    setFolderCtx(null);
+    // La carpeta (y sus padres) se abren para que la nota nueva se vea.
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      const parts = folder.split('/');
+      for (let i = 1; i <= parts.length; i += 1) next.add(parts.slice(0, i).join('/'));
+      return next;
+    });
+    void createNote(folder);
+  };
+
   const handleNewSubfolder = () => {
     if (!folderCtx) return;
     setSubfolderParent(folderCtx.folder);
@@ -846,21 +860,16 @@ export function Sidebar() {
               {t(language, 'sidebar', 'folders')}
             </button>
             <div className="flex items-center gap-0.5">
-              {notesView === 'tree' && (
-                <button
-                  onClick={() => void createNote()}
-                  className="rounded p-0.5 text-[var(--text-hint)] transition hover:text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)]"
-                  title={t(language, 'notes', 'newNote')}
-                >
-                  <FilePlus size={12} />
-                </button>
-              )}
+              {/* "Nueva nota" va como fila visible debajo (en el árbol); aquí
+                  queda solo "Nueva carpeta", con su propio ícono: el "+" a
+                  secas confundía (Jorge, 31 oct 2026). */}
               <button
                 onClick={() => setShowCreateFolderModal(true)}
                 className="rounded p-0.5 text-[var(--text-hint)] transition hover:text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)]"
                 title={t(language, 'sidebar', 'newFolder')}
+                aria-label={t(language, 'sidebar', 'newFolder')}
               >
-                <Plus size={12} />
+                <FolderPlus size={12} />
               </button>
               {/* Cambia entre la vista de lista (estilo Notas) y la de árbol
                   (estilo Obsidian); se recuerda la última usada. */}
@@ -874,6 +883,16 @@ export function Sidebar() {
               </button>
             </div>
           </div>
+
+          {notesView === 'tree' && (
+            <button
+              onClick={() => void createNote()}
+              className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-indigo-400 transition hover:bg-indigo-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            >
+              <FilePlus size={12} />
+              {t(language, 'notes', 'newNote')}
+            </button>
+          )}
 
           {isFoldersOpen && notesView === 'tree' && (
             <div className="mt-1">
@@ -957,6 +976,15 @@ export function Sidebar() {
             style={areaCtxLayout.style}
             onMouseDown={(e) => e.stopPropagation()}
           >
+            {activeSection === 'notes' && (
+              <button
+                onClick={() => { setAreaCtx(null); void createNote(); }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
+              >
+                <FilePlus size={13} />
+                {t(language, 'notes', 'newNote')}
+              </button>
+            )}
             <button
               onClick={() => { setAreaCtx(null); setShowCreateFolderModal(true); }}
               className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
@@ -1028,6 +1056,13 @@ export function Sidebar() {
             >
               <Pencil size={13} />
               {t(language, 'sidebar', 'renameFolder')}
+            </button>
+            <button
+              onClick={handleNewNoteInFolder}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition"
+            >
+              <FilePlus size={13} />
+              {t(language, 'sidebar', 'newNoteInFolder')}
             </button>
             <button
               onClick={handleNewSubfolder}

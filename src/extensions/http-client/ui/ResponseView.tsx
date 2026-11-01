@@ -256,6 +256,7 @@ function RequestPanel({ o, tr }: { o: ResponseOutcome; tr: Tr }) {
             {`${h.name}: ${h.value}`}
             {h.secret && <span className={MARK}>{tr('markSecret')}</span>}
             {h.auto && <span className={MARK}>{tr('markAuto')}</span>}
+            {h.encoded && <span className={MARK}>{tr('markEncoded')}</span>}
             {'\n'}
           </span>
         ))}

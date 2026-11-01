@@ -1,95 +1,101 @@
-// El formulario de la pantalla Cliente HTTP (specs/cliente-http HT33,
-// Interfaz §11): método, URL, cabeceras y cuerpo, el entorno activo y la
-// respuesta. Se convierte en el texto de un bloque ```http y se envía con
-// el mismo motor que los bloques de las notas: el mismo parser, la misma
-// resolución de variables, los mismos límites y las mismas confirmaciones
-// (entorno protegido, host ajeno). Lo escrito y la respuesta viven en el
-// store del Cliente HTTP, en memoria; nada va a disco ni a la nota de la
-// que vino la petición.
+// El editor de la pantalla Cliente HTTP (specs/cliente-http HT33, HT40–HT43,
+// HT50, design §14.4): método y URL, las pestañas Params, Cabeceras, Auth,
+// Cuerpo y Texto, el entorno activo y la respuesta. Lo que se edita es el
+// texto de la petición (el borrador del store): las pestañas son vistas de
+// ese texto y cada cambio reescribe solo sus líneas (`requestEdit.ts`). Se
+// envía con el mismo motor que los bloques de las notas: el mismo parser,
+// la misma resolución de variables, los mismos límites y las mismas
+// confirmaciones. Lo escrito y la respuesta viven en memoria; la nota de
+// la que vino solo cambia con "Guardar en la nota" (HT50).
 import { useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { ChevronDown, CodeXml, FilePlus, Globe, Send, X } from 'lucide-react';
+import { ChevronDown, CodeXml, FilePlus, Globe, Save, Send, X } from 'lucide-react';
 import { useAppStore } from '../../../store/appStore';
 import type { Note } from '../../../types/note';
 import type { Language } from '../../../lib/i18n';
 import { formatFence } from '../../../lib/fencedBlocks';
 import { ICON_BTN, PANEL_TITLE, SECONDARY_CLS, SEND_BTN } from '../../../components/shared/controlClasses';
 import { StatusItem } from '../../../components/shared/FormControls';
-import { NO_AUTOCORRECT, lineInputCls, textareaCls } from '../../devtools/ui/classes';
+import { lineInputCls } from '../../devtools/ui/classes';
 import { activeEnvironment, EXTENSION_ID, readHttpSettings } from '../core/environments';
-import { HTTP_METHODS, parseHttpBlock, type ParseIssue } from '../core/parse';
+import { HTTP_METHODS, parseHttpBlock } from '../core/parse';
 import { fromCurl } from '../core/curl';
 import { requestForCode } from '../core/codegen';
-import { bodySplitsRequest, formFromBlock, formIssues, serializeForm } from '../core/serialize';
-import { localeOf, sendShortcut, type Tr } from '../core/text';
+import { readRequestLine, writeRequestLine } from '../core/requestEdit';
+import { draftSplitsRequest, formIssues } from '../core/serialize';
+import { localeOf, saveShortcut, sendShortcut, type Tr } from '../core/text';
 import { announce } from '../announce';
 import { notifyCurlConverted } from '../paste';
 import {
-  blockState, blockedMessage, cancelBlock, firstError, formKey, formNoteId, issueMessage, openSettings, readFormResult,
-  resolveWith, sendRequest, setForm, setFormField, useHttpStore, type FormOrigin, type SendOptions,
+  blockState, blockedMessage, cancelBlock, currentDraft, dismissConflict, firstError, formKey, formNoteId, isDirty,
+  issueMessage, openSettings, readFormResult, resolveWith, saveDraftToNote, sendRequest, setDraftCode, useHttpStore, type SendOptions,
 } from '../store';
 import { CodePanel, CopyAsMenu } from './CopyAs';
 import { EnvironmentChip } from './EnvironmentChip';
+import { LiveInput } from './KeyValueTable';
 import { FIELD_BTN, Menu } from './Menu';
 import { ResponseView, type ResponseTab } from './ResponseView';
 import { ConfirmBox, SendFailure, SendProgress, TEXT_LINK, useDebounced, useNow } from './SendStatus';
+import { OriginLine, zoneErrors, type RequestTab } from './RequestParts';
+import { RequestTabs } from './RequestTabs';
 
-/** El texto de un problema, con la línea relativa a su campo (Interfaz §3). */
-function fieldIssueText(tr: Tr, issue: ParseIssue, fieldOf: ReturnType<typeof serializeForm>['fieldOf']): string {
-  return issueMessage(tr, { ...issue, line: fieldOf(issue.line).line });
-}
+export type { RequestTab };
 
 const shortDateTime = (ms: number, language: Language) =>
   new Intl.DateTimeFormat(localeOf(language), { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(ms));
 
-/** "Guardar en una nota": una nota nueva en la raíz con el bloque, con las
- *  variables como {{nombre}}; nunca sus valores ni los de los secretos
- *  (HT18). La cerca se alarga si el cuerpo trae comillas invertidas. */
+/** "Nueva nota": una nota nueva en la raíz con el bloque, con las variables
+ *  como {{nombre}}; nunca sus valores ni los de los secretos (HT18). La
+ *  cerca se alarga si el cuerpo trae comillas invertidas. */
 export function saveRequestAsNote(title: string, code: string): Promise<Note> {
   return useAppStore.getState().createNoteWith({ title, content: formatFence('http', code) });
 }
 
 export function RequestForm({
-  tr, mac, loadedError, onOpenNote, onSaved,
+  tr, mac, loadedError, onOpenNote, onSaved, initialTab = 'params',
 }: {
   tr: Tr;
   mac: boolean;
   /** El primer error que tiene la petición en su nota, si lo tiene. */
   loadedError: string | null;
   onOpenNote: (target: { filePath: string; noteId: string }) => void;
-  /** Tras crear la nota, para que la columna la muestre. */
+  /** Tras escribir una nota, para que la columna la muestre. */
   onSaved: () => void;
+  /** La pestaña con la que abre (las pruebas dibujan cada una). */
+  initialTab?: RequestTab;
 }) {
   const language = useAppStore((s) => s.language);
   const showToast = useAppStore((s) => s.showToast);
-  const form = useHttpStore((s) => s.form);
+  const draft = useHttpStore((s) => currentDraft(s));
   const origin = useHttpStore((s) => s.origin);
   const key = formKey(origin);
   const state = useHttpStore((s) => blockState(s, key));
   useHttpStore((s) => s.rev);
 
-  const { method, url, headers, body } = form;
-  // Lo que se envía sale de lo escrito ahora; los errores se muestran con
-  // una pausa, para no parpadear mientras se escribe (como el bloque).
-  const current = useMemo(() => serializeForm(form), [form]);
-  const shownForm = useDebounced(form, 300);
-  const shown = useMemo(() => serializeForm(shownForm), [shownForm]);
-  const shownParsed = useMemo(() => parseHttpBlock(shown.code), [shown]);
-  const currentSource = useMemo(() => parseHttpBlock(current.code).requests[0]?.source ?? null, [current]);
+  const code = draft.code;
+  const dirty = isDirty(draft);
+  // Las tablas leen el texto de ahora; los errores se muestran con una
+  // pausa, para no parpadear mientras se escribe (como el bloque).
+  const parsed = useMemo(() => parseHttpBlock(code), [code]);
+  const req = parsed.requests[0];
+  const line = useMemo(() => readRequestLine(code), [code]);
+  const shownCode = useDebounced(code, 300);
+  const shownParsed = useMemo(() => parseHttpBlock(shownCode), [shownCode]);
+  const currentSource = req?.source ?? null;
 
   const raw = useAppStore((s) => s.extensions[EXTENSION_ID]?.settings);
   const env = activeEnvironment(readHttpSettings(raw));
 
-  const hasUrl = shownForm.url.trim() !== '';
-  const req = shownParsed.requests[0];
-  const split = bodySplitsRequest(shownForm);
-  const issue = hasUrl && !split ? firstError(formIssues(shownParsed.issues), req) : null;
-  const issueField = issue ? shown.fieldOf(issue.line).field : null;
-  const resolved = hasUrl && req && !issue && !split ? resolveWith(req, env) : null;
+  const hasUrl = readRequestLine(shownCode).url.trim() !== '';
+  const shownReq = shownParsed.requests[0];
+  const split = draftSplitsRequest(shownCode);
+  const issue = hasUrl && !split ? firstError(formIssues(shownParsed.issues), shownReq) : null;
+  const resolved = hasUrl && shownReq && !issue && !split ? resolveWith(shownReq, env) : null;
   const blocked = resolved ? blockedMessage(tr, resolved, env) : null;
-  const problem = split ? tr('toolBodySeparator') : issue ? fieldIssueText(tr, issue, shown.fieldOf) : blocked;
+  const problem = split ? tr('toolBodySeparator') : issue ? issueMessage(tr, issue) : blocked;
   const missingVars = !!resolved && !resolved.ok && (resolved.missing.length > 0 || resolved.emptySecrets.length > 0);
-  const warnings = hasUrl && !issue ? (req?.issues ?? []).filter((i) => i.severity === 'warn') : [];
+  const warnings = hasUrl && !issue ? (shownReq?.issues ?? []).filter((i) => i.severity === 'warn') : [];
   const disabled = !hasUrl || !!problem;
+  const zones = zoneErrors(req);
 
   const inFlight = state.inFlight;
   const pending = state.confirm;
@@ -98,26 +104,30 @@ export function RequestForm({
   const response = result?.entry.response ?? null;
   const error = result?.entry.error ?? null;
   const [tab, setTab] = useState<ResponseTab>('body');
+  const [reqTab, setReqTab] = useState<RequestTab>(initialTab);
   const [saved, setSaved] = useState<{ note: Note; code: string } | null>(null);
+  const [saving, setSaving] = useState(false);
   // HT60 y HT61: "Copiar como…" usa lo escrito ahora; el panel "Código",
   // lo de hace 300 ms, para no saltar a "con errores" a cada tecla.
   const [codeOpen, setCodeOpen] = useState(false);
-  const copyReq = useMemo(() => (form.url.trim() && !bodySplitsRequest(form) ? requestForCode(current.code) : null), [form, current]);
-  const codeReq = useMemo(() => (hasUrl && !split ? requestForCode(shown.code) : null), [hasUrl, split, shown]);
+  const copyReq = useMemo(() => (line.url.trim() && !draftSplitsRequest(code) ? requestForCode(code) : null), [line, code]);
+  const codeReq = useMemo(() => (hasUrl && !split ? requestForCode(shownCode) : null), [hasUrl, split, shownCode]);
 
-  const urlRef = useRef<HTMLInputElement>(null);
+  const urlRef = useRef<HTMLInputElement | null>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
   const uid = useId().replace(/:/g, '');
   const problemId = `http-problem-${uid}`;
-  const headersId = `http-headers-${uid}`;
-  const bodyId = `http-body-${uid}`;
-  const headBodyId = `http-head-body-${uid}`;
+
+  const edit = (next: string) => {
+    if (next !== code) setDraftCode(next);
+  };
   const codeId = `http-code-${uid}`;
 
   const sendWith = (extra: Partial<SendOptions> = {}) =>
     void sendRequest({
       noteId: formNoteId(origin),
       blockIndex: 0,
-      code: current.code,
+      code,
       requestIndex: 0,
       returnFocus: document.activeElement,
       ...extra,
@@ -126,29 +136,27 @@ export function RequestForm({
   /** HT3: solo con Enviar, ⌘↵, Enter en la URL o una confirmación. */
   const send = () => {
     if (inFlight) return;
-    if (!form.url.trim()) {
+    if (!line.url.trim()) {
       announce(tr('aFailed', { message: tr('toolUrlEmpty') }));
       urlRef.current?.focus();
       return;
     }
     // Con lo escrito ahora, no con lo que se muestra (que va 300 ms atrás).
-    if (bodySplitsRequest(form)) {
+    if (draftSplitsRequest(code)) {
       announce(tr('aFailed', { message: tr('toolBodySeparator') }));
       return;
     }
-    const parsed = parseHttpBlock(current.code);
-    const fresh = firstError(formIssues(parsed.issues), parsed.requests[0]);
+    const fresh = firstError(formIssues(parsed.issues), req);
     if (fresh) {
-      announce(tr('aFailed', { message: fieldIssueText(tr, fresh, current.fieldOf) }));
+      announce(tr('aFailed', { message: issueMessage(tr, fresh) }));
       return;
     }
     sendWith();
   };
 
-  const canSave = form.url.trim() !== '';
-  const save = async () => {
-    if (!canSave) return;
-    const code = current.code;
+  const canCreate = line.url.trim() !== '';
+  const createNote = async () => {
+    if (!canCreate) return;
     const title = tr('noteTitle', { date: shortDateTime(Date.now(), language) });
     try {
       const note = await saveRequestAsNote(title, code);
@@ -165,7 +173,52 @@ export function RequestForm({
       showToast({ kind: 'error', title: tr('noteCreateError') });
     }
   };
-  const savedNote = saved && saved.code === current.code ? saved.note : null;
+  const savedNote = saved && saved.code === code ? saved.note : null;
+
+  /** HT50: "Guardar en la nota" (⌘S) y las dos salidas del conflicto. */
+  const saveToNote = async (mode: 'replace' | 'force' | 'append') => {
+    if (!origin || saving) return;
+    if (draftSplitsRequest(code)) {
+      showToast({ kind: 'error', title: tr('saveToNoteError'), description: tr('toolBodySeparator') });
+      return;
+    }
+    if (parsed.requests.length !== 1) {
+      showToast({ kind: 'error', title: tr('saveToNoteError'), description: tr('saveNoRequest') });
+      return;
+    }
+    setSaving(true);
+    const r = await saveDraftToNote(mode, tr('noteTitle', { date: shortDateTime(Date.now(), language) }));
+    setSaving(false);
+    if (r === 'saved' || r === 'new_note') {
+      const title = r === 'saved' ? tr('savedToNote') : tr('savedAsNewNote');
+      showToast({ kind: 'success', title });
+      announce(title);
+      onSaved();
+    } else if (r === 'conflict') {
+      announce(tr('conflictTitle'));
+    } else if (r === 'open') {
+      showToast({ kind: 'error', title: tr('saveToNoteError'), description: tr('saveNoteOpen') });
+    } else if (r === 'missing') {
+      showToast({ kind: 'error', title: tr('saveToNoteError'), description: tr('viewOpenNoteError') });
+    } else {
+      showToast({ kind: 'error', title: tr('saveToNoteError') });
+    }
+  };
+
+  /** "Ir al texto": la pestaña Texto, con el cursor en la línea del error. */
+  const goToText = (issueLine?: number) => {
+    setReqTab('text');
+    requestAnimationFrame(() => {
+      const el = textRef.current;
+      if (!el) return;
+      el.focus();
+      if (issueLine) {
+        const lines = el.value.split('\n');
+        const start = lines.slice(0, issueLine - 1).reduce((n, l) => n + l.length + 1, 0);
+        el.setSelectionRange(start, start + (lines[issueLine - 1]?.length ?? 0));
+      }
+    });
+  };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.defaultPrevented) return;
@@ -174,11 +227,18 @@ export function RequestForm({
       cancelBlock(key);
       return;
     }
+    const mod = mac ? e.metaKey : e.ctrlKey;
     // ⌘↵ (Ctrl+Enter fuera de macOS) envía desde cualquier campo.
-    if (e.key === 'Enter' && (mac ? e.metaKey : e.ctrlKey) && !e.altKey && !e.shiftKey) {
+    if (e.key === 'Enter' && mod && !e.altKey && !e.shiftKey) {
       e.preventDefault();
       e.stopPropagation();
       send();
+      return;
+    }
+    // ⌘S: "Guardar en la nota" (HT50), si viene de una y tiene cambios.
+    if (e.key.toLowerCase() === 's' && mod && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      if (origin && dirty) void saveToNote('replace');
     }
   };
 
@@ -193,7 +253,7 @@ export function RequestForm({
             <h2 id="http-view-title" className="truncate text-sm font-semibold text-[var(--text-primary)]">
               {origin ? origin.label : tr('viewNewRequest')}
             </h2>
-            {origin && <OriginLine tr={tr} origin={origin} onOpenNote={onOpenNote} />}
+            {origin && <OriginLine tr={tr} origin={origin} dirty={dirty} onOpenNote={onOpenNote} />}
             <p className="mt-1 flex items-center gap-1.5 text-[10px] text-[var(--text-hint)]">
               <Globe size={11} className="shrink-0" aria-hidden />
               {tr('toolNotice')}
@@ -223,19 +283,42 @@ export function RequestForm({
                 <span className="hidden @sm/tool:inline">{tr('codePanel')}</span>
               </button>
               <CopyAsMenu tr={tr} req={copyReq} withLabel />
+              {origin && dirty && (
+                <button
+                  type="button"
+                  onClick={() => void saveToNote('replace')}
+                  aria-disabled={saving || undefined}
+                  title={`${tr('saveToThisNote')} (${saveShortcut(mac)})`}
+                  className={SECONDARY_CLS}
+                >
+                  <Save size={13} aria-hidden />
+                  {tr('saveToThisNote')}
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => void save()}
-                disabled={!canSave}
-                aria-label={tr('saveToNote')}
-                title={tr('saveToNote')}
+                onClick={() => void createNote()}
+                disabled={!canCreate}
+                aria-label={tr('newNote')}
+                title={tr('newNote')}
                 className={ICON_BTN}
               >
                 <FilePlus size={14} className="shrink-0" aria-hidden />
-                <span className="hidden @sm/tool:inline">{tr('saveToNote')}</span>
+                <span className="hidden @sm/tool:inline">{tr('newNote')}</span>
               </button>
             </div>
           </div>
+          {draft.conflict && origin && (
+            <div role="alert" className="flex flex-col gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+              <p className="text-xs font-medium text-[var(--text-primary)]">{tr('conflictTitle')}</p>
+              <p className="text-[11px] text-[var(--text-secondary)]">{tr('conflictBody')}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" className={SECONDARY_CLS} onClick={() => void saveToNote('force')}>{tr('conflictReplace')}</button>
+                <button type="button" className={SECONDARY_CLS} onClick={() => void saveToNote('append')}>{tr('conflictAsNew')}</button>
+                <button type="button" className={TEXT_LINK} onClick={dismissConflict}>{tr('cancel')}</button>
+              </div>
+            </div>
+          )}
           {savedNote && (
             <span className="text-[11px] text-[var(--text-secondary)]">
               {tr('noteCreatedLive', { title: savedNote.title })} ·{' '}
@@ -246,39 +329,39 @@ export function RequestForm({
           )}
           <div className="flex flex-wrap items-center gap-2">
             <Menu
-              label={tr('methodPicker', { method })}
+              label={tr('methodPicker', { method: line.method })}
               buttonClassName={`${FIELD_BTN} w-28`}
               listClassName="min-w-[7rem]"
               items={HTTP_METHODS.map((m) => ({
                 key: m,
-                checked: m === method,
+                checked: m === line.method,
                 label: <span className="font-mono font-semibold">{m}</span>,
-                onSelect: () => setFormField('method', m),
+                onSelect: () => edit(writeRequestLine(code, 0, { method: m })),
               }))}
               button={
                 <>
-                  <span className="font-mono font-semibold">{method}</span>
+                  <span className="font-mono font-semibold">{line.method}</span>
                   <ChevronDown size={13} className="shrink-0 text-[var(--text-hint)]" aria-hidden />
                 </>
               }
             />
-            <input
-              ref={urlRef}
-              type="text"
+            <LiveInput
+              inputRef={(el) => {
+                urlRef.current = el;
+              }}
               aria-label={tr('toolUrl')}
-              aria-invalid={issueField === 'url' || undefined}
-              aria-describedby={issueField === 'url' ? problemId : undefined}
+              aria-describedby={issue?.line === req?.requestLine && problem ? problemId : undefined}
               placeholder={tr('toolUrlPlaceholder')}
-              value={url}
-              onChange={(e) => setFormField('url', e.target.value)}
+              value={line.url}
+              onValue={(v) => edit(writeRequestLine(code, 0, { url: v.trim() }))}
               onPaste={(e) => {
-                // HT39: un cURL pegado en la URL rellena el formulario, con
-                // los valores sensibles ya cambiados por variables.
+                // HT39c: un cURL pegado en la URL pasa a ser la petición
+                // entera, con los valores sensibles ya cambiados por variables.
                 const converted = fromCurl(e.clipboardData.getData('text/plain'));
-                const loaded = converted ? formFromBlock(converted.code) : null;
-                if (!converted || !loaded) return;
+                if (!converted) return;
                 e.preventDefault();
-                setForm(loaded.form);
+                setDraftCode(converted.code, { apiKey: null });
+                (e.target as HTMLInputElement).blur();
                 notifyCurlConverted(converted.replaced, 'form');
               }}
               onKeyDown={(e) => {
@@ -287,8 +370,7 @@ export function RequestForm({
                   send();
                 }
               }}
-              className={lineInputCls(issueField === 'url')}
-              {...NO_AUTOCORRECT}
+              className={lineInputCls(!!issue && issue.line === req?.requestLine)}
             />
             {inFlight ? (
               <button type="button" onClick={() => cancelBlock(key)} className={`${SECONDARY_CLS} py-1`}>
@@ -310,36 +392,23 @@ export function RequestForm({
               </button>
             )}
           </div>
-          <div className="grid gap-4 @3xl/tool:grid-cols-2">
-            <div className="flex min-w-0 flex-col gap-1.5">
-              <label htmlFor={headersId} className={PANEL_TITLE}>{tr('toolHeaders')}</label>
-              <textarea
-                id={headersId}
-                value={headers}
-                onChange={(e) => setFormField('headers', e.target.value)}
-                placeholder={tr('toolHeadersPlaceholder')}
-                aria-invalid={issueField === 'headers' || undefined}
-                aria-describedby={issueField === 'headers' ? problemId : undefined}
-                className={textareaCls(issueField === 'headers', 'min-h-[7rem] h-[20vh]')}
-                {...NO_AUTOCORRECT}
-              />
-            </div>
-            <div className="flex min-w-0 flex-col gap-1.5">
-              <label htmlFor={bodyId} className={PANEL_TITLE}>{tr('toolBody')}</label>
-              <textarea
-                id={bodyId}
-                value={body}
-                onChange={(e) => setFormField('body', e.target.value)}
-                placeholder={tr('toolBodyPlaceholder')}
-                disabled={method === 'HEAD'}
-                aria-invalid={issueField === 'body' || split || undefined}
-                aria-describedby={method === 'HEAD' ? headBodyId : issueField === 'body' || split ? problemId : undefined}
-                className={`${textareaCls(issueField === 'body' || split, 'min-h-[7rem] h-[20vh]')} disabled:cursor-not-allowed disabled:opacity-50`}
-                {...NO_AUTOCORRECT}
-              />
-              {method === 'HEAD' && <p id={headBodyId} className="text-[11px] text-[var(--text-hint)]">{tr('headWithBody')}</p>}
-            </div>
-          </div>
+
+          <RequestTabs
+            tr={tr}
+            code={code}
+            req={req}
+            env={env}
+            apiKey={draft.apiKey}
+            method={line.method}
+            tab={reqTab}
+            onTab={setReqTab}
+            zones={zones}
+            textInvalid={!!issue || split}
+            split={split}
+            describedBy={problem ? problemId : undefined}
+            textRef={textRef}
+            onGoToText={goToText}
+          />
           {codeOpen && <CodePanel tr={tr} req={codeReq} id={codeId} />}
         </div>
 
@@ -349,6 +418,9 @@ export function RequestForm({
             {problem && !pending && (
               <div id={problemId} className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <StatusItem kind={issue || split ? 'error' : 'warn'}>{problem}</StatusItem>
+                {(issue || split) && reqTab !== 'text' && (
+                  <button type="button" onClick={() => goToText(issue?.line)} className={TEXT_LINK}>{tr('goToText')}</button>
+                )}
                 {missingVars && (
                   <button type="button" onClick={() => openSettings(env?.id ?? null)} className={TEXT_LINK}>
                     {tr('defineInSettings')}
@@ -395,18 +467,5 @@ export function RequestForm({
         </div>
       </div>
     </div>
-  );
-}
-
-/** "De «API» · Abrir la nota", bajo el título. */
-function OriginLine({ tr, origin, onOpenNote }: { tr: Tr; origin: FormOrigin; onOpenNote: (target: { filePath: string; noteId: string }) => void }) {
-  return (
-    <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-[var(--text-hint)]">
-      <span className="min-w-0 truncate">{tr('viewFrom', { title: origin.title })}</span>
-      <span aria-hidden>·</span>
-      <button type="button" className={TEXT_LINK} onClick={() => onOpenNote({ filePath: origin.filePath, noteId: origin.noteId })}>
-        {tr('viewOpenNote')}
-      </button>
-    </p>
   );
 }

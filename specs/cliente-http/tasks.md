@@ -200,14 +200,14 @@ Rama `feature/http-pantalla-propia`. Pedido por Jorge al probar (requirements, "
 - **"Texto" traducido** en el selector de la barra (`langPlain`); el selector normal sigue diciendo "Texto" también en inglés (`CODE_LANGUAGE_OPTIONS`), sin cambiar.
 - **La pantalla Cliente HTTP** no tiene "Copiar como cURL" todavía: el pedido era el bloque de la nota.
 
-## Pegar un cURL (31 oct 2026, HT39–HT41)
+## Pegar un cURL (31 oct 2026, HT39–HT39c)
 
 Rama `feature/http-pantalla-propia`. Pedido por Jorge (requirements, "Cambio del 31 oct 2026: pegar un cURL"; design §13).
 
 - [x] `core/curl.ts` y `core/shell.ts` (puros): `shellWords` (comillas, escapes, `$'…'`, continuaciones, variables del shell), `fromCurl` y `formatJsonBody`, con `core/curl.test.ts` (Chrome, Postman, Insomnia, comillas dobles, `-sSL`, `-u`, `--json`, `-G -d`, `-I`, `@archivo`, `-F`, encadenados, texto que no es curl, URL sin esquema, PowerShell y cmd, opciones desconocidas, cuerpos grandes, los valores sensibles y la ida y vuelta con `toCurl`).
 - [x] Base (specs/extensiones R24): `ExtensionModule.convertPaste` y `extensionRuntime.peek`; `components/notes/extensionPaste.ts` (puro: dónde se pega, qué se hace y las dos transacciones) con su prueba, y `handlePaste` en `NoteEditor.tsx`.
 - [x] `paste.ts`: `convertCurlPaste` (el `convertPaste` del módulo) y `notifyCurlConverted` (anuncio y aviso con "Abrir Entornos"), con `paste.test.ts`.
-- [x] Pantalla: `onPaste` en la URL de `ui/RequestForm.tsx` y `setForm` en el store (HT41).
+- [x] Pantalla: `onPaste` en la URL de `ui/RequestForm.tsx` y `setForm` en el store (HT39c).
 - [x] Textos es y en con las mismas claves (§13.4).
 - [ ] Prueba en el navegador y en la app de QA: pegar un "Copiar como cURL" de Chrome y uno de Postman en un párrafo vacío, en medio de un párrafo, en un bloque `http`, en un bloque `bash`; ⇧⌘V; ⌘Z y otro ⌘Z; el aviso y "Abrir Entornos"; con la extensión apagada; y en la URL de la pantalla.
 
@@ -229,6 +229,92 @@ Pedido por Jorge al probar la pantalla: el selector de método del formulario er
 - [x] Opciones → Cliente HTTP (`ui/Settings.tsx`): el "Entorno activo" también, con el escudo de los protegidos como en el chip. Con esto el Cliente HTTP no tiene ningún `<select>`.
 - [x] Pruebas: `view.test.tsx` (el formulario sin `<select>`, el botón del método) y `ui.test.tsx` (el entorno activo de Opciones).
 - [ ] Prueba en el navegador: abrir con Enter, Espacio y ↓; flechas, Inicio/Fin y letras; Esc devuelve el foco al botón; clic fuera cierra; los temas claro, oscuro y sepia.
+
+## Cliente HTTP v2 (aprobado el 31 oct 2026, HT40–HT69)
+
+Diseño en design §14; requisitos en requirements, "Cliente HTTP v2". Jorge aprobó las ocho decisiones como las recomienda el diseño. Ocho PR, en este orden: A1 → D1 → A2 → B1 → B2 → D2 → D3, y B3 cuando lo pida. Cada uno actualiza estos tres archivos y la ayuda (HT35).
+
+- [x] Diseño aprobado y llevado a los specs (requirements, design §14 y este archivo). Los requisitos de pegar un cURL que se llamaban HT40 y HT41 pasan a HT39b y HT39c, para no chocar con la numeración aprobada.
+
+### PR A1: editor de petición (rama `feature/http-v2-a1`, desde `feature/http-pantalla-propia`)
+
+- [x] `core/parse.ts` v2: zona de la query con comentarios y `# &k=v`; cabeceras desactivadas; `urlLine`, `query`, `headerRows`, `disabledHeaders`, `headerStart`/`headerEnd` y `bodyKind`; la URL final unida con `?`/`&`; `variablesOf` sin las filas desactivadas. Con pruebas.
+- [x] `core/requestEdit.ts`: ediciones puras de la línea de la petición, las filas de la query y de las cabeceras (editar, activar, agregar, quitar, mover), el cuerpo y Auth (leer y escribir Bearer, Basic, API key, Otra y Ninguna). `requestEdit.test.ts`: ida y vuelta con filas desactivadas, duplicadas, el orden, comentarios, varias peticiones con `###`, variables, params en la URL y en líneas `?`/`&`.
+- [x] Rust: Basic (HT44) en `prepare` (`encode_basic`), con `cargo test`; su Base64 también se oculta en la respuesta. `resolve.ts`: la marca "Codificada por Logday" (`basicEncodedByLogday`).
+- [x] Store: el borrador de texto por petición (`drafts`, con `code`, `loadedCode`, `loadedSource`, `name`, `apiKey` y `conflict`) en vez del formulario de campos. `serialize.ts` queda con `formIssues` y `draftSplitsRequest`.
+- [x] Pantalla: pestañas Params, Cabeceras, Auth, Cuerpo (el `textarea` de hoy) y Texto (`ui/RequestTabs.tsx`, `ui/RequestParts.tsx`); `KeyValueTable` y `VariableCombobox`; "Guardar como secreto" (`ui/AuthPanel.tsx`); las cabeceras de Logday en solo lectura; la tabla de solo lectura con "Ir al texto" si la zona tiene un error.
+- [x] Guardar en la nota (HT50): `core/noteSave.ts` (puro) y `lib/noteExternalEdit.ts` (escribe como el editor: `.md` y `Y.Text`); ⌘S, "● Cambios sin guardar", el punto en la columna, el conflicto con "Reemplazar en la nota" y "Guardar como petición nueva". "Guardar en una nota" pasa a "Nueva nota".
+- [x] Barra del bloque: "Editar en Cliente HTTP".
+- [x] Pegar un cURL: `-u` y el usuario de la URL dan `Basic {{username}}:{{password}}`; fuera `curlBasicHint` (design §14.14).
+- [x] Textos es y en (§14.12, A1) y la ayuda (HT35: `help2`, `help3`, `help5`, y ⌘S y ⌥⇧↑/↓ en los atajos).
+- [ ] Prueba en el navegador (mock de Tauri): tablas ↔ texto y URL, el teclado de las tablas y de las pestañas, Auth con un literal y "Guardar como secreto", Guardar en la nota con y sin conflicto, ⌘S, "Editar en Cliente HTTP" desde una nota, los 7 temas.
+
+#### Diferencias con el diseño (A1)
+
+- **Las ediciones van en `core/requestEdit.ts`**, no en `core/edit.ts`: el PR D1 saca `toCurl` de `edit.ts` y así no chocan.
+- **`ParsedRequest.body` sigue siendo un texto** (lo usan el envío y cURL); el tipo va en `bodyKind`, y las líneas de cada zona en `headerStart` y `headerEnd`. Las filas de la query llevan `pos` (su lugar entre los pares de la línea) para reescribir solo ese par.
+- **El campo URL muestra la URL de la línea de la petición**, sin las líneas `?`/`&` aparte, que están en la tabla con "en una línea aparte". Así editar la URL nunca toca esas líneas.
+- **Una fila nueva se escribe en el texto cuando tiene nombre** (y, en Cabeceras, un nombre válido): una cabecera sin nombre sería un error y dejaría la tabla de solo lectura. Hasta entonces vive en la tabla.
+- **Al activar o desactivar un parámetro**, la primera línea activa pasa a `?` si la URL no tiene uno, y las demás a `&`: REST Client pega las líneas tal cual, y sin eso la URL le quedaría rota.
+- **El Tipo de Auth es el `Menu` de la app** y no un `<select>`, como pidió Jorge para todo el Cliente HTTP. El usuario de Basic no avisa de "valor literal": no es un secreto.
+- **La API key recién elegida se reconoce aunque su valor aún no sea una variable**: el borrador recuerda la fila que escribió Auth (`apiKey`). Sin eso, la pestaña volvía a "Ninguna" al elegir API key.
+- **"Guardar como secreto" con una variable que ya existe** la pasa a secreta con el valor nuevo; sin entornos, crea "Entorno 1" y lo deja activo.
+- **"Guardar como petición nueva"** nombra la sección "{nombre} (2)" (o `###` sin nombre) y la pantalla pasa a ella. Si el bloque ya no está o tiene 20 peticiones, crea una nota nueva con el título de "Nueva nota".
+- **Si la nota está abierta en el editor**, "Guardar en la nota" no escribe y lo dice. Hoy no puede pasar: la pantalla y el editor no se muestran a la vez.
+- **La pestaña Cuerpo no lleva resumen del tipo** ("Cuerpo · JSON"): llega con el selector de A2.
+- **El panel "Código" y "Copiar como…"** son de D1; la pantalla sigue sin "Copiar como cURL".
+
+### PR D1: Copiar como… y Código
+
+- [ ] `core/codegen.ts` (puro): cURL (movido de `edit.ts` sin cambiar su salida), JavaScript (fetch), Python (requests), Go (net/http) y Java (HttpClient), sin las filas desactivadas, con Basic según el lenguaje y el `Content-Type` automático de JSON.
+- [ ] Barra del bloque: el menú "Copiar como…" en lugar del botón de cURL, con la pista y Java multipart deshabilitado con la razón.
+- [ ] Pantalla: el panel "Código" con las pestañas de lenguaje, el código resaltado y "Copiar".
+- [ ] Textos es y en (§14.12, D1).
+- [ ] Pruebas: instantáneas por lenguaje y ningún valor de secreto en la salida.
+
+### PR A2: cuerpo y archivos
+
+- [ ] Selector de tipo de cuerpo (HT45) con la conversión y el cuerpo guardado por tipo; JSON con "Formatear"; Texto con sus subtipos.
+- [ ] Form (HT46) con `KeyValueTable` y `# &k=v`; Multipart (HT47) con la columna Tipo.
+- [ ] Rust: `http_client_pick_file`, `http_client_files`, `http_client_forget_file`, `files.json`, `body_segments`, `scope`, `compose_body` y los errores `file_*` (HT48, HT49).
+- [ ] `FileChip`, la ficha en la franja del bloque y los permisos que pasan a la nota al guardar.
+- [ ] Textos es y en (§14.12, A2).
+- [ ] Pruebas: `cargo test` de `compose_body` y de los permisos con `tiny_http` (multipart con CRLF, binario, permiso de otro `scope` rechazado); una nota sincronizada sin permiso no envía.
+
+### PR B1: respuesta
+
+- [ ] `core/jsonPath.ts` (puro, sin `eval`) y `ui/JsonTree.tsx`: árbol, filtro de texto y de ruta, copiar valor y ruta, teclado de árbol (HT51, HT52).
+- [ ] HTML con `HtmlPreview` (HT53), cuando entre el PR de DevTools.
+- [ ] `core/cookies.ts` y la pestaña Cookies (HT54).
+- [ ] Rust: `timing` y `remoteAddr` en `SendOutput`; `TimingStrip` (HT55).
+- [ ] Textos es y en (§14.12, B1).
+- [ ] Pruebas: vitest de `jsonPath` y `parseSetCookie`, `cargo test` de `timing`; navegador: teclado del árbol y los 7 temas.
+
+### PR B2: historial
+
+- [ ] Rust: escribir la entrada al terminar cada envío, listar, borrar y vaciar, compactar y enmascarar (HT56, HT57).
+- [ ] La pestaña Historial de la columna (HT58) y las Opciones del historial.
+- [ ] "Guardar la respuesta completa…" (HT59).
+- [ ] Textos es y en (§14.12, B2).
+- [ ] Pruebas: `cargo test` de que ningún valor de secreto llega a `history.jsonl`, de los topes y de la retención.
+
+### PR B3 (opcional, cuando Jorge lo pida)
+
+- [ ] "Medir la conexión" (HT55b): cliente de un solo uso, `Resolve` y `connector_layer`, con `tower`.
+- [ ] "Descargar entero a un archivo" (HT59) con *streaming*, progreso y "Cancelar" por un `Channel`.
+- [ ] Pruebas con `tiny_http`.
+
+### PR D2: importar Postman, Insomnia y Bruno
+
+- [ ] `core/import/{detect,postman,insomnia,bruno,write}.ts` puros, con el `ImportPlan` (HT62, HT64–HT67).
+- [ ] `ImportModal`: elegir, vista previa con los secretos y los avisos, importar por tandas, "Deshacer la importación" (HT63, HT68).
+- [ ] Textos es y en (§14.12, D2).
+- [ ] Pruebas con colecciones de ejemplo en `fixtures/`, con secretos falsos: ningún `value` secreto en el Markdown de salida.
+
+### PR D3: OpenAPI y Swagger
+
+- [ ] `core/import/openapi.ts`: OpenAPI 3.0 y 3.1 y Swagger 2.0, en JSON y YAML, con ejemplos generados del esquema (HT69).
+- [ ] Pruebas con Petstore 3 y 2, y un esquema con ciclos.
 
 ## Al cerrar
 

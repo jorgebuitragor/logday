@@ -72,9 +72,10 @@ describe('convertPaste', () => {
   });
 
   it('uno solo, en singular; con -u, la pista de Base64; en el formulario, sin "Deshacer"', () => {
-    notifyCurlConverted(['basic_auth'], 'form');
+    notifyCurlConverted(['username', 'password'], 'form');
     const toast = app.showToast.mock.calls[0][0];
-    expect(toast.description).toBe('Se cambió un valor por {{basic_auth}}. Guárdalo como secreto en Entornos: en la nota solo queda el nombre. En {{basic_auth}} va usuario:contraseña en Base64.');
+    // Ya no hay que guardar el Base64 a mano: Rust codifica la Basic (HT44).
+    expect(toast.description).toBe('Se cambiaron 2 valores por {{username}} y {{password}}. Guárdalos como secretos en Entornos: en la nota solo queda el nombre.');
     expect(announced[0]).toMatch(/^El cURL pegado rellenó el formulario\. /);
     app.language = 'en';
     notifyCurlConverted(['token']);
@@ -83,23 +84,22 @@ describe('convertPaste', () => {
 });
 
 describe('en la URL de la pantalla', () => {
-  it('el cURL convertido carga el formulario entero (lo que hace su onPaste)', async () => {
+  it('el cURL convertido pasa a ser el texto entero de la petición (lo que hace su onPaste)', async () => {
     const { fromCurl } = await import('./core/curl');
-    const { formFromBlock } = await import('./core/serialize');
+    const { parseHttpBlock } = await import('./core/parse');
+    const { readRequestLine } = await import('./core/requestEdit');
     const r = fromCurl(`curl -X PUT 'https://x.com/a?api_key=k1' -H 'Accept: */*' -H 'X-Api-Key: k2' --data-raw '{"a":1}'`)!;
-    expect(formFromBlock(r.code)?.form).toEqual({
-      method: 'PUT',
-      url: 'https://x.com/a?api_key={{api_key}}',
-      headers: 'Accept: */*\nX-Api-Key: {{x_api_key}}',
-      body: '{\n  "a": 1\n}',
-    });
+    expect(readRequestLine(r.code)).toEqual({ method: 'PUT', url: 'https://x.com/a?api_key={{api_key}}' });
+    const req = parseHttpBlock(r.code).requests[0];
+    expect(req.headerRows.map((h) => `${h.name}: ${h.value}`)).toEqual(['Accept: */*', 'X-Api-Key: {{x_api_key}}']);
+    expect(req.body).toBe('{\n  "a": 1\n}');
     expect(r.replaced).toEqual(['api_key', 'x_api_key']);
   });
 });
 
 describe('textos', () => {
   it('es y en con las mismas claves, y sin voseo', () => {
-    const keys = ['aCurlPasted', 'aCurlFilled', 'curlSecretsTitle', 'curlSecretsBody', 'curlBasicHint', 'curlSecretsAction'];
+    const keys = ['aCurlPasted', 'aCurlFilled', 'curlSecretsTitle', 'curlSecretsBody', 'curlSecretsAction'];
     for (const lang of ['es', 'en'] as const) for (const k of keys) expect(sectionKeys(lang, 'httpClient')).toContain(k);
     const voseo = /\b(querés|podés|tenés|guardá|pegá|abrí|usá)\b/i;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

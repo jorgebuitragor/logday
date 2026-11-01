@@ -21,6 +21,7 @@ const app = vi.hoisted(() => ({
   },
   openExtensionSettings: () => {},
   showToast: () => '',
+  activeNote: null as null | { id: string; title: string; filePath: string },
 }));
 
 vi.mock('../../store/appStore', () => {
@@ -182,6 +183,19 @@ describe('barra del bloque: lenguaje, método y "Copiar como…" (HT36–HT38, H
     expect(block('GET {{baseUrl}}', 'header', null, editable)).not.toMatch(disabled);
     // También sin las acciones del editor (otra vista): copiar no cambia la nota.
     expect(block('GET https://x.com', 'header')).toContain('aria-label="Copiar como…"');
+  });
+
+  it('"Editar en Cliente HTTP" (HT50): solo con la nota abierta en el editor', () => {
+    expect(block('GET https://x.com', 'header', null, editable)).not.toContain('Editar en Cliente HTTP');
+    app.activeNote = { id: 'n1', title: 'API', filePath: '/datos/notes/n1.md' };
+    try {
+      const html = block('GET https://x.com', 'header', null, editable);
+      expect(html).toMatch(/<button[^>]*aria-label="Editar en Cliente HTTP"[^>]*title="Editar en Cliente HTTP"/);
+      // De otra nota (otro id), no.
+      expect(block('GET https://x.com', 'header', null, { ...editable, noteId: 'otra' })).not.toContain('Editar en Cliente HTTP');
+    } finally {
+      app.activeNote = null;
+    }
   });
 
   it('en inglés, los mismos controles', () => {
@@ -444,6 +458,21 @@ describe('la petición enviada enmascara los secretos', () => {
     expect(html).toContain('No enviada: Content-Length (la calcula Logday)');
     expect(html).toContain('Redirección: 301 → https://api.example.com/v2/u');
     expect(html).toContain('Staging · Enviada a las');
+  });
+
+  it('una Basic que codifica Logday lleva su marca (HT44)', () => {
+    const html = text(renderToStaticMarkup(
+      <ResponseView
+        initialTab="request"
+        now={Date.now()}
+        outcome={{
+          envName: 'Staging', sentAt: Date.now(),
+          preview: { method: 'GET', url: 'https://x.com', body: null, headers: [{ name: 'Authorization', value: 'Basic ana:••••…a1b2', secret: true, auto: false, encoded: true }] },
+          output: output(),
+        }}
+      />,
+    ));
+    expect(html).toContain('Authorization: Basic ana:••••…a1b2 secreto Codificada por Logday');
   });
 });
 

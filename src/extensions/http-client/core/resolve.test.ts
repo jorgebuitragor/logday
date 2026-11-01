@@ -130,3 +130,23 @@ describe('confirmaciones (HT20, HT21)', () => {
     expect(r.ok && r.needsConfirm.map((c) => c.kind)).toEqual(['protected', 'untrusted_host']);
   });
 });
+
+describe('Basic codificada por Logday (HT44)', () => {
+  it('la misma regla que Rust: con : o espacio en lo escrito, sin las marcas', async () => {
+    const { basicEncodedByLogday } = await import('./resolve');
+    expect(basicEncodedByLogday('Authorization', 'Basic ana:{{$secret:v_ab12cd34}}')).toBe(true);
+    expect(basicEncodedByLogday('proxy-authorization', 'basic ana pw')).toBe(true);
+    expect(basicEncodedByLogday('Authorization', 'Basic {{$secret:v_ab12cd34}}')).toBe(false);
+    expect(basicEncodedByLogday('Authorization', 'Basic dXNlcjpwYXNz')).toBe(false);
+    expect(basicEncodedByLogday('X-Otra', 'Basic a:b')).toBe(false);
+    expect(basicEncodedByLogday('Authorization', 'Bearer a:b')).toBe(false);
+  });
+
+  it('la vista previa la marca, con el secreto como su pista; las filas desactivadas no se envían', () => {
+    const r = resolveRequest(req('GET https://staging.example.com\nAuthorization: Basic ana:{{token}}\n# X-Off: {{noDefinida}}\nX-On: 1'), ctx());
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.preview.headers[0]).toEqual({ name: 'Authorization', value: 'Basic ana:••••…a1b2', secret: true, auto: false, encoded: true });
+    expect(r.wire.headers.map(([n]) => n)).toEqual(['Authorization', 'X-On', 'User-Agent']);
+  });
+});

@@ -160,6 +160,60 @@ pub fn fill_secrets(text: &str, secrets: &[(String, String)]) -> String {
     out
 }
 
+/// El texto sin las marcas de los secretos (cada una pasa a `x`): la marca
+/// lleva `:`, y HT44 decide sobre lo que escribió el usuario.
+fn without_markers(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find(MARKER_OPEN) {
+        let after = &rest[start + MARKER_OPEN.len()..];
+        match after.find(MARKER_CLOSE) {
+            Some(end) => {
+                out.push_str(&rest[..start]);
+                out.push('x');
+                rest = &after[end + MARKER_CLOSE.len()..];
+            }
+            None => break,
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// HT44: `Basic usuario:contraseña` (o `Basic usuario contraseña`) se
+/// codifica en Base64 al enviar, como REST Client y JetBrains. Se decide con
+/// las credenciales tal como están escritas, antes de poner los secretos:
+/// Base64 nunca lleva `:` ni espacios, así que un `Basic dXNlcjpwYXNz` (o un
+/// `{{basic_b64}}`) se envía tal cual, y un secreto que traiga `:` en su
+/// valor no cambia la decisión. Devuelve el valor de la cabecera ya
+/// codificado, o `None` si no hay nada que codificar.
+pub fn encode_basic(raw: &str, secrets: &[(String, String)]) -> Option<String> {
+    let trimmed = raw.trim();
+    let split = trimmed.find(char::is_whitespace)?;
+    let (scheme, rest) = trimmed.split_at(split);
+    if !scheme.eq_ignore_ascii_case("basic") {
+        return None;
+    }
+    let creds = rest.trim();
+    let probe = without_markers(creds);
+    let pair = if probe.contains(':') {
+        fill_secrets(creds, secrets)
+    } else if probe.contains(char::is_whitespace) {
+        // Las marcas no llevan espacios: partir el texto escrito es seguro.
+        let at = creds.find(char::is_whitespace)?;
+        let (user, pass) = creds.split_at(at);
+        format!("{}:{}", fill_secrets(user, secrets), fill_secrets(pass.trim_start(), secrets))
+    } else {
+        return None;
+    };
+    Some(format!("{scheme} {}", base64::engine::general_purpose::STANDARD.encode(pair.as_bytes())))
+}
+
+/// Las cabeceras de credenciales a las que se aplica HT44.
+fn is_auth_header(name: &str) -> bool {
+    name.eq_ignore_ascii_case("authorization") || name.eq_ignore_ascii_case("proxy-authorization")
+}
+
 /// Al revés: cada valor de un secreto vuelve a su marca, también en la
 /// forma en que lo escribe una URL (%XX).
 pub fn mask_secrets(text: &str, secrets: &[(String, String)]) -> String {
@@ -399,14 +453,25 @@ pub fn prepare(input: &SendInput, secrets: Vec<(String, String)>) -> Result<Prep
     let host = host_of(&url);
     let mut headers = Vec::new();
     let mut dropped = Vec::new();
+    // Lo que se enmascara en la respuesta: los secretos y, si una Basic
+    // codificada lleva uno, también su Base64 (un servidor de eco la
+    // devolvería, y se decodifica sin esfuerzo).
+    let mut masks = secrets.clone();
     for (name, value) in &input.headers {
         if is_managed_header(name) {
             dropped.push(name.clone());
             continue;
         }
+        let basic = if is_auth_header(name) { encode_basic(value, &secrets) } else { None };
+        if let (Some(encoded), Some(key)) = (&basic, secret_keys_in(value).first()) {
+            if let Some((_, b64)) = encoded.split_once(' ') {
+                masks.push((key.clone(), b64.to_string()));
+            }
+        }
         let name = HeaderName::from_bytes(name.as_bytes()).map_err(|_| SendError::new("invalid_header"))?;
         // `from_str` rechaza CR y LF, también los de un secreto.
-        let value = HeaderValue::from_str(&fill_secrets(value, &secrets)).map_err(|_| SendError::new("invalid_header"))?;
+        let filled = basic.unwrap_or_else(|| fill_secrets(value, &secrets));
+        let value = HeaderValue::from_str(&filled).map_err(|_| SendError::new("invalid_header"))?;
         headers.push((name, value));
     }
     let body = input.body.as_ref().map(|b| fill_secrets(b, &secrets));
@@ -428,7 +493,7 @@ pub fn prepare(input: &SendInput, secrets: Vec<(String, String)>) -> Result<Prep
         max_response: clamp_max_response(input.max_response_bytes),
         follow_redirects: input.follow_redirects,
         insecure_tls: input.insecure_tls,
-        secrets,
+        secrets: masks,
         dropped,
     })
 }
@@ -830,6 +895,47 @@ mod tests {
         let mut k = input("https://x.com");
         k.body = Some("x".repeat(MAX_REQUEST_BODY + 1));
         assert_eq!(prepare(&k, vec![]).err().unwrap().code, "body_too_large");
+    }
+
+    #[test]
+    fn basic_se_codifica_como_rest_client() {
+        let s = secret("v_ab12cd34", "p:ss w0rd");
+        // usuario:contraseña, con la contraseña en el llavero.
+        assert_eq!(encode_basic("Basic ana:{{$secret:v_ab12cd34}}", &s).unwrap(), format!("Basic {}", base64::engine::general_purpose::STANDARD.encode("ana:p:ss w0rd")));
+        // `usuario contraseña` equivale a `usuario:contraseña`.
+        assert_eq!(encode_basic("basic ana {{$secret:v_ab12cd34}}", &s).unwrap(), format!("basic {}", base64::engine::general_purpose::STANDARD.encode("ana:p:ss w0rd")));
+        assert_eq!(encode_basic("Basic ana:secreto", &[]).unwrap(), "Basic YW5hOnNlY3JldG8=");
+        assert_eq!(encode_basic("Basic ana:", &[]).unwrap(), "Basic YW5hOg==");
+        // Ya en Base64, o un secreto que guarda el Base64: tal cual, aunque
+        // el valor del secreto tenga `:` (la decisión es sobre lo escrito).
+        assert_eq!(encode_basic("Basic dXNlcjpwYXNz", &[]), None);
+        assert_eq!(encode_basic("Basic {{$secret:v_ab12cd34}}", &s), None);
+        // Otros esquemas o sin credenciales: nada.
+        assert_eq!(encode_basic("Bearer a:b", &[]), None);
+        assert_eq!(encode_basic("Basic", &[]), None);
+        assert_eq!(encode_basic("Basicx a:b", &[]), None);
+    }
+
+    #[test]
+    fn basic_en_prepare_solo_en_las_cabeceras_de_credenciales() {
+        let mut i = input("https://x.com");
+        i.trusted_hosts = vec!["x.com".into()];
+        i.headers = vec![
+            ("Authorization".into(), "Basic ana:{{$secret:v_ab12cd34}}".into()),
+            ("Proxy-Authorization".into(), "Basic bob pw".into()),
+            ("X-Otra".into(), "Basic ana:pw".into()),
+        ];
+        let p = prepare(&i, secret("v_ab12cd34", "tok3n")).ok().unwrap();
+        let b64 = base64::engine::general_purpose::STANDARD.encode("ana:tok3n");
+        assert_eq!(p.headers[0].1.to_str().unwrap(), format!("Basic {b64}"));
+        assert_eq!(p.headers[1].1.to_str().unwrap(), format!("Basic {}", base64::engine::general_purpose::STANDARD.encode("bob:pw")));
+        assert_eq!(p.headers[2].1.to_str().unwrap(), "Basic ana:pw");
+        // Si el servidor devuelve la cabecera, su Base64 también se oculta.
+        let (h, _) = mask_response(vec![("x-echo".into(), format!("Basic {b64}"))], Body::Empty, &p.secrets);
+        assert_eq!(h[0].1, "Basic {{$secret:v_ab12cd34}}");
+        // Un secreto con salto de línea sigue sin poder ir en la cabecera,
+        // pero codificado ya no lleva saltos: es válido.
+        assert!(prepare(&i, secret("v_ab12cd34", "a\r\nX: 1")).is_ok());
     }
 
     #[test]

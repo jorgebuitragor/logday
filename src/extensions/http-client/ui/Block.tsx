@@ -1,12 +1,12 @@
 // El bloque ```http en la nota (Interfaz §1, HT4–HT16, HT20–HT25, HT30,
-// HT36–HT38, HT60): la
+// HT36–HT38, HT50, HT60): la
 // barra de encima (`part: 'header'`) y la franja de debajo (`'footer'`).
 // Son dos islas aparte dentro del NodeView; comparten el estado del store.
 import { useEffect, useMemo, useRef } from 'react';
-import { ChevronDown, CircleAlert, Send, X } from 'lucide-react';
+import { ChevronDown, CircleAlert, PanelRight, Send, X } from 'lucide-react';
 import { useAppStore } from '../../../store/appStore';
 import { CODE_LANGUAGE_OPTIONS } from '../../../lib/codeHighlight';
-import { PANEL_TITLE, SECONDARY_CLS, SEND_BTN } from '../../../components/shared/controlClasses';
+import { ICON_BTN, PANEL_TITLE, SECONDARY_CLS, SEND_BTN } from '../../../components/shared/controlClasses';
 import { StatusItem } from '../../../components/shared/FormControls';
 import type { NoteBlockProps } from '../../types';
 import { subscribeNoteBlockRun } from '../../noteBlockEvents';
@@ -14,9 +14,11 @@ import { announce } from '../announce';
 import { activeEnvironment, EXTENSION_ID, readHttpSettings } from '../core/environments';
 import { setRequestMethod } from '../core/edit';
 import { HTTP_METHODS, hasErrors, parseHttpBlock, requestAtOffset, requestLabel, type HttpMethod } from '../core/parse';
+import { draftFromBlock } from '../core/noteSave';
+import { requestTitle } from '../core/noteRequests';
 import { isMac, makeTr, sendShortcut } from '../core/text';
 import {
-  blockKey, blockState, blockedMessage, cancelBlock, dismissResult, firstError, issueMessage, openSettings,
+  blockKey, blockState, blockedMessage, cancelBlock, dismissResult, firstError, issueMessage, openInView, openSettings,
   readResult, resolveWith, selectRequest, sendRequest, useHttpStore,
 } from '../store';
 import { CopyAsMenu } from './CopyAs';
@@ -134,6 +136,26 @@ function BlockHeader(props: NoteBlockProps) {
     announce(tr('aLanguage', { name }));
   };
 
+  // HT50: la petición de la barra, en la pantalla, para editarla con las
+  // tablas y guardarla de vuelta. Se carga el texto de ahora (el editor lo
+  // guarda al salir de la nota).
+  const activeNote = useAppStore((s) => s.activeNote);
+  const canEditInView = !!freshReq && !!activeNote && activeNote.id === props.noteId;
+  const editInView = () => {
+    if (!canEditInView || !activeNote || !freshReq) return;
+    const requestIndex = fresh.requests.indexOf(freshReq);
+    const loaded = draftFromBlock(props.code, requestIndex);
+    if (!loaded) return;
+    void openInView({
+      noteId: activeNote.id,
+      title: activeNote.title.trim() || tr('viewUntitled'),
+      filePath: activeNote.filePath,
+      blockIndex: b.index,
+      requestIndex,
+      label: requestTitle(freshReq),
+    }, { ...loaded, name: freshReq.name });
+  };
+
   return (
     <div
       ref={rootRef}
@@ -209,6 +231,17 @@ function BlockHeader(props: NoteBlockProps) {
         />
       )}
       <div className="flex-1" />
+      {canEditInView && (
+        <button
+          type="button"
+          onClick={editInView}
+          aria-label={tr('editInView')}
+          title={tr('editInView')}
+          className={`${ICON_BTN} min-h-7 min-w-7 justify-center`}
+        >
+          <PanelRight size={14} aria-hidden />
+        </button>
+      )}
       <CopyAsMenu tr={tr} req={codeReq} />
       <EnvironmentChip />
       {inFlight ? (

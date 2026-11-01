@@ -236,7 +236,7 @@ function parseCommand(words: string[]): Command | null {
 
 /** Nombres de cabecera, de parámetro de la query o de campo del cuerpo
  *  cuyo valor no debe quedar escrito en la nota. */
-const SENSITIVE_NAME_RE = /token|api[-_.]?key|secret|passw(?:or)?d|session|credential|signature|^(?:x-)?auth$|^key$|^pwd$|^pass$/i;
+export const SENSITIVE_NAME_RE = /token|api[-_.]?key|secret|passw(?:or)?d|session|credential|signature|^(?:x-)?auth$|^key$|^pwd$|^pass$/i;
 
 const hasVariable = (value: string) => value.includes('{{');
 
@@ -276,6 +276,19 @@ function redactAuthorization(value: string, secrets: Secrets, prefix: string): s
   return `${m[1]} ${secrets.take(prefix + base, m[2])}`;
 }
 
+/** `-u usuario:contraseña` y el usuario de la URL → `Basic
+ *  {{username}}:{{password}}`, con dos variables: Rust lo codifica en
+ *  Base64 al enviar (HT44, design §14.14), así nadie tiene que guardar el
+ *  Base64 a mano. Lo que ya es una variable se deja; sin `:`, la
+ *  contraseña queda vacía (curl la pediría). */
+function basicCredentials(creds: string, secrets: Secrets): string {
+  const colon = creds.indexOf(':');
+  const user = colon < 0 ? creds : creds.slice(0, colon);
+  const pass = colon < 0 ? '' : creds.slice(colon + 1);
+  const part = (base: string, value: string) => (!value || hasVariable(value) ? value : secrets.take(base, value));
+  return `Basic ${part('username', user)}:${part('password', pass)}`;
+}
+
 function redactHeader(name: string, value: string, secrets: Secrets): string {
   const lower = name.toLowerCase();
   if (lower === 'authorization') return redactAuthorization(value, secrets, '');
@@ -312,6 +325,15 @@ function redactUrl(url: string, secrets: Secrets): string {
   const query = hash < 0 ? url.slice(q + 1) : url.slice(q + 1, hash);
   return `${url.slice(0, q + 1)}${redactPairs(query, secrets)}${hash < 0 ? '' : url.slice(hash)}`;
 }
+
+/** El usuario y la contraseña de la URL vienen con `%XX`, como los lee curl. */
+const decodeUserinfo = (text: string) => {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+};
 
 const FORM_PAIRS_RE = /^[^=&\s]+=[^&\n]*(?:&[^=&\s]+=[^&\n]*)*$/;
 
@@ -407,7 +429,7 @@ export function fromCurl(text: string): FromCurlResult | null {
   let url = normalizeUrl(cmd.urls[0]);
   if (!url) return null;
   const secrets = new Secrets();
-  const headers: { name: string; value: string }[] = [];
+  const headers: { name: string; value: string; basic?: boolean }[] = [];
   for (const h of cmd.headers) {
     // El bloque no admite saltos de línea ni nombres raros (HT23).
     if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(h.name) || /[\r\n]/.test(h.value)) return null;
@@ -417,12 +439,13 @@ export function fromCurl(text: string): FromCurlResult | null {
 
   // Usuario y contraseña en la URL (HT23 no los admite) o con -u: Basic.
   // Van con su valor aquí y se ocultan con las demás cabeceras, abajo.
+  // `basic` marca las credenciales sin codificar, que pasan a variables.
   const userinfo = /^(https?:\/\/)([^/?#@]*)@/i.exec(url);
   if (userinfo) {
     url = userinfo[1] + url.slice(userinfo[0].length);
-    if (userinfo[2] && !has('authorization')) headers.push({ name: 'Authorization', value: `Basic ${userinfo[2]}` });
+    if (userinfo[2] && !has('authorization')) headers.push({ name: 'Authorization', value: decodeUserinfo(userinfo[2]), basic: true });
   }
-  if (cmd.user !== null && !has('authorization')) headers.push({ name: 'Authorization', value: `Basic ${cmd.user}` });
+  if (cmd.user !== null && !has('authorization')) headers.push({ name: 'Authorization', value: cmd.user, basic: true });
   if (cmd.bearer !== null && !has('authorization')) headers.push({ name: 'Authorization', value: `Bearer ${cmd.bearer}` });
 
   // El cuerpo: los -d unidos con `&`, los --json sin separador.
@@ -464,7 +487,7 @@ export function fromCurl(text: string): FromCurlResult | null {
 
   // Los valores sensibles, en el orden en que se leen en el bloque.
   url = redactUrl(url, secrets);
-  const headerLines = headers.map((h) => `${h.name}: ${redactHeader(h.name, h.value, secrets)}`);
+  const headerLines = headers.map((h) => `${h.name}: ${h.basic ? basicCredentials(h.value, secrets) : redactHeader(h.name, h.value, secrets)}`);
   if (body !== null) {
     const contentType = headers.find((h) => h.name.toLowerCase() === 'content-type')?.value ?? '';
     if (json !== null) body = formatJsonBody(body, secrets) ?? json;

@@ -9,6 +9,9 @@ export interface HtmlPreviewProps {
   html: string;
   /** Imágenes, estilos, fuentes y medios por https (nunca scripts). */
   allowExternal?: boolean;
+  /** De dónde vino el HTML: con los externos, sus rutas relativas
+   *  (`/logo.png`) se resuelven contra esta URL (solo https). */
+  baseUrl?: string | null;
   /** Ancho simulado en px (375 móvil, 768 tablet) o `null` para el del
    *  panel. Si no cabe, la página se escala para que se vea entera. */
   width?: number | null;
@@ -26,8 +29,8 @@ export function previewScale(width: number | null, available: number): number {
   return available / width;
 }
 
-export function HtmlPreview({ html, allowExternal = false, width = null, title, heightClass = 'h-[60vh] min-h-[16rem]', onScale }: HtmlPreviewProps) {
-  const doc = useMemo(() => buildPreviewDoc(html, { allowExternal }), [html, allowExternal]);
+export function HtmlPreview({ html, allowExternal = false, baseUrl = null, width = null, title, heightClass = 'h-[60vh] min-h-[16rem]', onScale }: HtmlPreviewProps) {
+  const doc = useMemo(() => buildPreviewDoc(html, { allowExternal, baseUrl }), [html, allowExternal, baseUrl]);
   const frameRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
 

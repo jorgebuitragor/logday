@@ -5,6 +5,7 @@
 // navegador.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { HtmlPreview } from '../../components/shared/HtmlPreview';
 import type { SendInput, SendOutput } from './core/api';
 import type { HttpEnvironment } from './core/environments';
 import { parseHttpBlock } from './core/parse';
@@ -390,6 +391,15 @@ describe('respuesta HTML (HT53)', () => {
     // El interruptor empieza apagado: no se recuerda.
     expect(html).toMatch(/role="switch"[^>]*aria-checked="false"/);
     expect(text(html)).not.toContain('la página está incompleta');
+  });
+
+  it('con recursos externos, las rutas relativas apuntan a la URL final de la respuesta', () => {
+    // El interruptor es estado del componente: se prueba el marco que recibe la URL.
+    const page = '<img src="/logo.png">';
+    const on = renderToStaticMarkup(<HtmlPreview html={page} allowExternal baseUrl="https://www.google.com/" title="t" />);
+    expect(on).toContain('src=&quot;https://www.google.com/logo.png&quot;');
+    const off = renderToStaticMarkup(<HtmlPreview html={page} baseUrl="https://www.google.com/" title="t" />);
+    expect(off).toContain('src=&quot;/logo.png&quot;');
   });
 
   it('Código: formateado y resaltado, sin iframe', () => {

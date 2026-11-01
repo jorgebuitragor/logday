@@ -121,8 +121,9 @@ type TextView = Extract<BodyView, { kind: 'text' }>;
  *  formato (tal cual). Lo que no llegó entero se previsualiza igual, con
  *  aviso. "Cargar recursos externos" empieza apagado y no se recuerda, como
  *  en el Visor HTML de DevTools: cargar de internet deja ver a terceros qué
- *  se mira. */
-function HtmlBody({ view, tr, incomplete }: { view: TextView; tr: Tr; incomplete: boolean }) {
+ *  se mira. Las rutas relativas de la página se resuelven contra `baseUrl`,
+ *  la URL final de la respuesta. */
+function HtmlBody({ view, tr, incomplete, baseUrl }: { view: TextView; tr: Tr; incomplete: boolean; baseUrl: string }) {
   const [mode, setModeState] = useState<HtmlMode>(() => rememberedHtmlMode);
   const [external, setExternal] = useState(false);
   const setMode = (next: HtmlMode) => {
@@ -146,7 +147,7 @@ function HtmlBody({ view, tr, incomplete }: { view: TextView; tr: Tr; incomplete
       <ViewSwitch label={tr('tabBody')} value={mode} options={modes} onChange={setMode} />
       {mode === 'preview' ? (
         <>
-          <HtmlPreview html={view.raw} allowExternal={external} title={tr('htmlPreviewFrame')} heightClass={PREVIEW_HEIGHT} />
+          <HtmlPreview html={view.raw} allowExternal={external} baseUrl={baseUrl} title={tr('htmlPreviewFrame')} heightClass={PREVIEW_HEIGHT} />
           <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 text-[11px]">
             <p className="flex items-start gap-1.5 text-[var(--text-hint)]">
               {external ? (
@@ -168,7 +169,7 @@ function HtmlBody({ view, tr, incomplete }: { view: TextView; tr: Tr; incomplete
   );
 }
 
-function BodyPanel({ view, tr, pretty, setPretty, truncated, sentAt }: {
+function BodyPanel({ view, tr, pretty, setPretty, truncated, sentAt, finalUrl }: {
   view: BodyView;
   tr: Tr;
   pretty: boolean;
@@ -178,6 +179,8 @@ function BodyPanel({ view, tr, pretty, setPretty, truncated, sentAt }: {
   /** Identifica la respuesta: con una nueva, "Cargar recursos externos"
    *  vuelve a apagarse aunque la vista siga montada. */
   sentAt: number;
+  /** Contra ella se resuelven las rutas relativas de una página HTML. */
+  finalUrl: string;
 }) {
   const language = useAppStore((s) => s.language);
   if (view.kind === 'empty') return <p className="text-[11px] text-[var(--text-hint)]">{tr('emptyBody')}</p>;
@@ -198,7 +201,7 @@ function BodyPanel({ view, tr, pretty, setPretty, truncated, sentAt }: {
       </div>
     );
   }
-  if (view.html) return <HtmlBody key={sentAt} view={view} tr={tr} incomplete={truncated || view.partial} />;
+  if (view.html) return <HtmlBody key={sentAt} view={view} tr={tr} incomplete={truncated || view.partial} baseUrl={finalUrl} />;
   const showPretty = pretty && view.pretty !== null;
   const text = showPretty ? view.pretty! : view.raw;
   return (
@@ -407,7 +410,7 @@ export function ResponseView({
         )}
       </div>
       <div role="tabpanel" aria-label={tabs.find((t) => t.id === tab)?.label}>
-        {tab === 'body' && <BodyPanel view={view} tr={tr} pretty={pretty} setPretty={setPretty} truncated={out.truncated} sentAt={outcome.sentAt} />}
+        {tab === 'body' && <BodyPanel view={view} tr={tr} pretty={pretty} setPretty={setPretty} truncated={out.truncated} sentAt={outcome.sentAt} finalUrl={out.finalUrl} />}
         {tab === 'headers' && <HeadersPanel o={outcome} tr={tr} />}
         {tab === 'request' && <RequestPanel o={outcome} tr={tr} />}
       </div>

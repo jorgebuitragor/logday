@@ -8,7 +8,7 @@
 //    ningún formulario y no se abre ni se navega otra ventana.
 // 2. La CSP de `previewCsp`, en una `<meta>` que es lo primero del `<head>`:
 //    nada de red (o solo imágenes, estilos y fuentes por https si el usuario
-//    lo pide). Va antes de todo lo del usuario, así que rige para todo lo que
+//    lo pide; ver `rebaseAttr` para las rutas relativas). Va antes de todo lo del usuario, así que rige para todo lo que
 //    se carga después. Una CSP del usuario no la puede relajar: con varias
 //    políticas, el navegador exige que un recurso las cumpla todas, así que
 //    otra `<meta>` solo restringe más. Y sin scripts nadie la puede quitar.
@@ -26,6 +26,9 @@ export interface PreviewDocOptions {
   /** "Cargar recursos externos": imágenes, estilos, fuentes y medios por
    *  https. Nunca scripts ni http. */
   allowExternal?: boolean;
+  /** De dónde vino el HTML (en el Cliente HTTP, la URL final de la
+   *  respuesta). Solo cuenta con `allowExternal` y si es https. */
+  baseUrl?: string | null;
 }
 
 /** El atributo al que pasa un `href` neutralizado (y `srcdoc`, etc.). */
@@ -58,9 +61,138 @@ const attrValue = (attrs: readonly HtmlAttr[], name: string) => attrs.find((a) =
 /** `href` con cualquier prefijo (`xlink:href`). */
 const isHrefName = (name: string) => /^(?:[^:]+:)?href$/i.test(name);
 
-/** Los atributos de una etiqueta, ya neutralizados. `null`: la etiqueta se
- *  quita entera. */
-function cleanTag(name: string, attrs: readonly HtmlAttr[]): HtmlAttr[] | null {
+// --- Rutas relativas -------------------------------------------------------
+// En un `srcdoc`, `/logo.png` se resuelve contra la URL de la app, no contra
+// la página de donde vino el HTML: con los externos, la CSP la bloquea (no es
+// https) y la imagen no sale. No se puede poner un `<base>`: rompería las
+// referencias internas de SVG (`<use href="#icono">` pasaría a ser externa
+// en WebKit) y `base-uri 'none'` lo prohíbe a propósito. Así que se
+// reescriben aquí, solo en lo que la CSP deja cargar: `src`, `srcset`,
+// `poster`, `background`, el `href` de las hojas de estilo y los `url()` /
+// `@import` de los estilos. Dentro de una hoja externa, el navegador ya
+// resuelve contra ella.
+
+/** La base para las rutas relativas: solo https (lo único que la CSP deja
+ *  cargar), sin query, fragmento ni credenciales. */
+export function previewBaseUrl(url?: string | null): URL | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:') return null;
+    u.search = '';
+    u.hash = '';
+    u.username = '';
+    u.password = '';
+    return u;
+  } catch {
+    return null;
+  }
+}
+
+const HAS_SCHEME = /^[a-z][a-z\d+.-]*:/i;
+
+/** `ref` resuelta contra `base`; `null` si no es relativa (con esquema,
+ *  `#ancla` o vacía) o no se puede resolver. */
+function resolveRef(ref: string, base: URL): string | null {
+  const v = ref.trim();
+  if (!v || v.startsWith('#') || HAS_SCHEME.test(v)) return null;
+  try {
+    return new URL(v, base).href;
+  } catch {
+    return null;
+  }
+}
+
+/** Las URL de un `srcset` ("a.png 1x, b.png 2x"), resueltas. Sigue el
+ *  algoritmo del estándar: la URL va hasta el primer espacio (las comas del
+ *  final la cierran) y los descriptores, hasta una coma fuera de paréntesis. */
+function rebaseSrcset(value: string, base: URL): string {
+  const n = value.length;
+  const isWs = (c: string) => c === ' ' || c === '\t' || c === '\n' || c === '\f' || c === '\r';
+  let out = '';
+  let i = 0;
+  while (i < n) {
+    let j = i;
+    while (j < n && (isWs(value[j]) || value[j] === ',')) j++;
+    out += value.slice(i, j);
+    if (j >= n) break;
+    let k = j;
+    while (k < n && !isWs(value[k])) k++;
+    let url = value.slice(j, k);
+    const trailing = /,+$/.exec(url)?.[0] ?? '';
+    if (trailing) url = url.slice(0, -trailing.length);
+    out += (resolveRef(url, base) ?? url) + trailing;
+    i = k;
+    if (trailing) continue;
+    let depth = 0;
+    while (i < n && !(value[i] === ',' && depth === 0)) {
+      if (value[i] === '(') depth++;
+      else if (value[i] === ')') depth = Math.max(0, depth - 1);
+      i++;
+    }
+    out += value.slice(k, i);
+  }
+  return out;
+}
+
+/** Los `url()` y `@import "…"` de un CSS, resueltos. Los que van sin
+ *  comillas salen con comillas: la URL resuelta puede traer paréntesis. */
+function rebaseCss(css: string, base: URL): string {
+  return css
+    .replace(/\burl\(\s*(?:"([^"]*)"|'([^']*)'|([^\s"'()]+))\s*\)/gi, (m, dq?: string, sq?: string, bare?: string) => {
+      const ref = dq ?? sq ?? bare ?? '';
+      const resolved = resolveRef(ref, base);
+      if (resolved === null) return m;
+      return sq !== undefined ? `url('${resolved.replace(/'/g, "\\'")}')` : `url("${resolved}")`;
+    })
+    .replace(/@import\s*(["'])([^"']*)\1/gi, (m, q: string, ref: string) => {
+      const resolved = resolveRef(ref, base);
+      return resolved === null ? m : `@import ${q}${q === "'" ? resolved.replace(/'/g, "\\'") : resolved}${q}`;
+    });
+}
+
+/** Una entidad con `;` que no sabemos decodificar (`&nbsp;`): si la hay, el
+ *  atributo no se toca, para no cambiar lo que dice. */
+const UNKNOWN_ENTITY = /&(?!(?:amp|quot|apos|lt|gt);)[a-z][a-z\d]*;/i;
+
+/** Lo mínimo para leer una URL escrita en un atributo (`&amp;` en la query). */
+function decodeAttr(value: string): string {
+  return value.replace(/&(?:(amp|quot|apos|lt|gt)|#(\d+)|#x([\da-f]+));/gi, (m, named?: string, dec?: string, hex?: string) => {
+    if (named) return ({ amp: '&', quot: '"', apos: "'", lt: '<', gt: '>' } as Record<string, string>)[named.toLowerCase()];
+    const code = dec ? Number(dec) : parseInt(hex!, 16);
+    return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : m;
+  });
+}
+
+/** Los elementos cuyo `src` carga algo que la CSP puede dejar pasar con los
+ *  externos (no scripts, iframes ni plugins: esos nunca cargan). */
+const SRC_ELEMENTS = new Set(['img', 'source', 'video', 'audio', 'track', 'input']);
+
+/** `attr` con su ruta relativa resuelta contra `base`, o tal cual. */
+function rebaseAttr(tag: string, attr: HtmlAttr, base: URL): HtmlAttr {
+  if (attr.value === null || UNKNOWN_ENTITY.test(attr.value)) return attr;
+  const name = lower(attr.name);
+  const raw = decodeAttr(attr.value);
+  let next: string;
+  if ((name === 'src' && SRC_ELEMENTS.has(tag)) || name === 'poster' || name === 'background' || (name === 'href' && tag === 'link')) {
+    next = resolveRef(raw, base) ?? raw;
+  } else if (name === 'srcset' && (tag === 'img' || tag === 'source')) {
+    next = rebaseSrcset(raw, base);
+  } else if (name === 'style') {
+    next = rebaseCss(raw, base);
+  } else {
+    return attr;
+  }
+  if (next === raw) return attr;
+  // Se vuelve a escribir con `&amp;` y la comilla escapada.
+  const quote = attr.quote || '"';
+  const encoded = next.replace(/&/g, '&amp;').replace(quote === '"' ? /"/g : /'/g, quote === '"' ? '&quot;' : '&#39;');
+  return { ...attr, value: encoded, quote };
+}
+
+/** Los atributos de una etiqueta, ya neutralizados (y, con `base`, con las
+ *  rutas relativas resueltas). `null`: la etiqueta se quita entera. */
+function cleanTag(name: string, attrs: readonly HtmlAttr[], base: URL | null): HtmlAttr[] | null {
   if (name === 'base') return null;
   if (name === 'meta') {
     const equiv = attrValue(attrs, 'http-equiv');
@@ -97,7 +229,7 @@ function cleanTag(name: string, attrs: readonly HtmlAttr[]): HtmlAttr[] | null {
       neutralizedHref ??= attr;
       continue;
     }
-    out.push(attr);
+    out.push(base ? rebaseAttr(name, attr, base) : attr);
   }
   // El destino se ve al pasar el ratón, como en un navegador.
   const target = neutralizedHref?.value;
@@ -122,8 +254,9 @@ export function neutralizeLoose(raw: string): string {
 }
 
 /** El HTML del usuario, sin lo que podría navegar o salir a la red.
- *  Respeta todo lo demás tal como está escrito. */
-export function sanitizePreviewHtml(html: string): string {
+ *  Respeta todo lo demás tal como está escrito, salvo las rutas relativas
+ *  si llega `base` (ver `rebaseAttr`). */
+export function sanitizePreviewHtml(html: string, base: URL | null = null): string {
   // El navegador convierte CRLF y CR en LF antes de leer.
   const src = html.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
   let out = '';
@@ -136,14 +269,17 @@ export function sanitizePreviewHtml(html: string): string {
         // El documento ya empieza con el nuestro; otro más se ignora.
         break;
       case 'comment':
-      case 'raw':
         out += neutralizeLoose(token.raw);
+        break;
+      case 'raw':
+        // Primero las rutas del `<style>`; la segunda pasada, siempre al final.
+        out += neutralizeLoose(base && token.parent === 'style' ? rebaseCss(token.raw, base) : token.raw);
         break;
       case 'close':
         out += `</${token.rawName}>`;
         break;
       case 'open': {
-        const attrs = cleanTag(token.name, token.attrs);
+        const attrs = cleanTag(token.name, token.attrs, base);
         // Las que se quitan (base, meta, link) no tienen contenido.
         if (attrs === null) break;
         const parts = [token.rawName, ...attrs.map(serializeAttr)].join(' ');
@@ -168,13 +304,14 @@ const BASE_STYLE = `a[${NEUTRALIZED_PREFIX}href],area[${NEUTRALIZED_PREFIX}href]
  *  - si empieza con contenido (`<p>`, texto), el navegador cierra el
  *    `<head>` y abre el `<body>` solo.
  *  Siempre se dibuja en modo estándar, aunque el HTML no traiga DOCTYPE. */
-export function buildPreviewDoc(html: string, { allowExternal = false }: PreviewDocOptions = {}): string {
+export function buildPreviewDoc(html: string, { allowExternal = false, baseUrl = null }: PreviewDocOptions = {}): string {
+  const base = allowExternal ? previewBaseUrl(baseUrl) : null;
   return (
     '<!DOCTYPE html><html><head>' +
     `<meta http-equiv="Content-Security-Policy" content="${previewCsp(allowExternal)}">` +
     '<meta http-equiv="x-dns-prefetch-control" content="off">' +
     '<meta name="referrer" content="no-referrer">' +
     `<style>${BASE_STYLE}</style>` +
-    sanitizePreviewHtml(html)
+    sanitizePreviewHtml(html, base)
   );
 }

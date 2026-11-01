@@ -2,7 +2,7 @@
 // `srcdoc`. La CSP tiene que ser lo primero, y nada de lo del usuario puede
 // navegar ni salir a la red.
 import { describe, expect, it } from 'vitest';
-import { buildPreviewDoc, neutralizeLoose, previewCsp, sanitizePreviewHtml } from './htmlPreviewDoc';
+import { buildPreviewDoc, neutralizeLoose, previewBaseUrl, previewCsp, sanitizePreviewHtml } from './htmlPreviewDoc';
 import { tokenizeHtml } from './htmlTokenizer';
 
 const CSP_DEFAULT = "default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; base-uri 'none'; form-action 'none'";
@@ -80,6 +80,95 @@ describe('buildPreviewDoc', () => {
   it('una CSP del usuario se conserva: solo puede restringir más', () => {
     const doc = buildPreviewDoc('<meta http-equiv="Content-Security-Policy" content="img-src *">');
     expect(doc.indexOf('img-src *')).toBeGreaterThan(doc.indexOf(CSP_DEFAULT));
+  });
+});
+
+describe('rutas relativas con recursos externos', () => {
+  const BASE = 'https://www.example.com/dir/pagina.html?q=1#x';
+  /** Lo del usuario tal como queda, sin lo nuestro. */
+  const ext = (html: string, baseUrl: string | null = BASE) => {
+    const doc = buildPreviewDoc(html, { allowExternal: true, baseUrl });
+    return doc.slice(doc.indexOf('</style>') + '</style>'.length);
+  };
+
+  it('la base: solo https, sin query, fragmento ni credenciales', () => {
+    expect(previewBaseUrl(BASE)?.href).toBe('https://www.example.com/dir/pagina.html');
+    expect(previewBaseUrl('https://u:p@x.example/a')?.href).toBe('https://x.example/a');
+    expect(previewBaseUrl('http://x.example/')).toBeNull();
+    expect(previewBaseUrl('no es una url')).toBeNull();
+    expect(previewBaseUrl(null)).toBeNull();
+  });
+
+  it('sin externos, sin base o con una base http, nada cambia', () => {
+    const html = '<img src="/a.png">';
+    expect(buildPreviewDoc(html, { baseUrl: BASE }).endsWith(html)).toBe(true);
+    expect(ext(html, null)).toBe(html);
+    expect(ext(html, 'http://www.example.com/')).toBe(html);
+  });
+
+  it('resuelve src contra la URL de la página', () => {
+    expect(ext('<img src="/a.png">')).toBe('<img src="https://www.example.com/a.png">');
+    expect(ext('<img src="img/b.png">')).toBe('<img src="https://www.example.com/dir/img/b.png">');
+    expect(ext('<img src="//cdn.example/c.png">')).toBe('<img src="https://cdn.example/c.png">');
+    expect(ext('<img src="?v=2">')).toBe('<img src="https://www.example.com/dir/pagina.html?v=2">');
+    expect(ext('<img src=/a.png alt=x>')).toBe('<img src="https://www.example.com/a.png" alt=x>');
+    expect(ext("<video poster='p.jpg'><source src=v.mp4></video>")).toBe(
+      "<video poster='https://www.example.com/dir/p.jpg'><source src=\"https://www.example.com/dir/v.mp4\"></video>",
+    );
+    expect(ext('<td background="/fondo.gif">')).toBe('<td background="https://www.example.com/fondo.gif">');
+  });
+
+  it('deja como están las URL absolutas, data:, #ancla y las referencias internas de SVG', () => {
+    for (const html of [
+      '<img src="https://otro.example/a.png">',
+      '<img src="data:image/png;base64,AAAA">',
+      '<img src="">',
+      '<img src="#x">',
+      '<svg><use href="#icono"></use></svg>',
+      '<div style="fill:url(#grad)">x</div>',
+    ]) {
+      expect(ext(html)).toBe(html);
+    }
+  });
+
+  it('srcset: cada URL, con sus descriptores y las comas', () => {
+    expect(ext('<img srcset="a.png 1x, /b.png 2x,https://x.example/c.png 3x">')).toBe(
+      '<img srcset="https://www.example.com/dir/a.png 1x, https://www.example.com/b.png 2x,https://x.example/c.png 3x">',
+    );
+    expect(ext('<source srcset="a.png,, b.png 100w">')).toBe(
+      '<source srcset="https://www.example.com/dir/a.png,, https://www.example.com/dir/b.png 100w">',
+    );
+  });
+
+  it('url() e @import de los estilos, en atributos y en <style>', () => {
+    expect(ext('<div style="background:url(&quot;/a.png&quot;)">x</div>')).toBe(
+      '<div style="background:url(&quot;https://www.example.com/a.png&quot;)">x</div>',
+    );
+    expect(ext("<div style='background: url( /a.png ) no-repeat'>x</div>")).toBe(
+      "<div style='background: url(\"https://www.example.com/a.png\") no-repeat'>x</div>",
+    );
+    expect(ext("<style>@import 'base.css'; .l{background:url(logo.svg)} .m{background:url('/m.png')}</style>")).toBe(
+      "<style>@import 'https://www.example.com/dir/base.css'; .l{background:url(\"https://www.example.com/dir/logo.svg\")} .m{background:url('https://www.example.com/m.png')}</style>",
+    );
+  });
+
+  it('el href de las hojas de estilo y &amp; en la query', () => {
+    expect(ext('<link rel="stylesheet" href="/s.css">')).toBe('<link rel="stylesheet" href="https://www.example.com/s.css">');
+    expect(ext('<img src="/i?a=1&amp;b=2">')).toBe('<img src="https://www.example.com/i?a=1&amp;b=2">');
+    expect(ext('<img src="/i?a=1&b=2">')).toBe('<img src="https://www.example.com/i?a=1&amp;b=2">');
+  });
+
+  it('una entidad que no se sabe leer deja el atributo como está', () => {
+    expect(ext('<img src="/a&nbsp;b.png">')).toBe('<img src="/a&nbsp;b.png">');
+  });
+
+  it('no toca scripts, iframes ni el texto de <textarea>, y los enlaces siguen neutralizados', () => {
+    expect(ext('<script src="/app.js"></script>')).toBe('<script src="/app.js"></script>');
+    expect(ext('<iframe src="/otra"></iframe>')).toBe('<iframe src="/otra"></iframe>');
+    expect(ext('<textarea>url(/a.png)</textarea>')).toBe('<textarea>url(/a.png)</textarea>');
+    const a = ext('<a href="/x">ir</a>');
+    expect(a).toBe('<a data-logday-href="/x" title="/x">ir</a>');
+    expect(openTags(a)[0].attrs.href).toBeUndefined();
   });
 });
 

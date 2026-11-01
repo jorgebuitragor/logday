@@ -264,6 +264,23 @@ describe('el formulario se dibuja', () => {
     expect(t).not.toContain('Traer de una nota');
   });
 
+  it('"Código" y "Copiar como…" en la cabecera de la petición (HT60, HT61)', () => {
+    const disabled = /aria-label="Copiar como…" title="Copiar como…" disabled=""/;
+    // Sin URL no hay código que copiar.
+    let html = formHtml();
+    expect(html).toMatch(disabled);
+    expect(html).toMatch(/aria-expanded="false"[^>]*aria-label="Código"/);
+    // El panel solo se dibuja al abrirlo.
+    expect(html).not.toContain('role="tablist" aria-label="Lenguaje del código"');
+    setForm({ url: '{{baseUrl}}/me', headers: 'Authorization: Bearer {{token}}' });
+    html = formHtml();
+    expect(html).not.toMatch(disabled);
+    expect(text(html)).toContain('Copiar como…');
+    // Con un error de sintaxis, deshabilitado otra vez.
+    setForm({ url: 'https://x.com', headers: 'mal' });
+    expect(formHtml()).toMatch(disabled);
+  });
+
   it('una cabecera mal escrita dice su línea en el campo, no en el bloque', () => {
     setForm({ url: 'https://x.com', headers: 'Accept: */*\n\nmal' });
     const html = formHtml();

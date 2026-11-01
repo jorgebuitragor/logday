@@ -26,7 +26,11 @@ import { clearExtensionSecret } from '../extensions/secrets';
 import { calcOvertimeBreakdown } from '../lib/overtimeCalc';
 import { parseDailyFile, serializeDailyFile } from '../lib/dailyFileFormat';
 import { generateOvertimeXlsx } from '../lib/overtimeExcel';
+import { fillOvertimeTemplate } from '../lib/templates/overtimeTemplate';
+import { base64ToBytes, bytesToBase64 as templateBytesToBase64, LOGDAY_OVERTIME_XLSX_BASE64, logdayOvertimeTemplate } from '../lib/templates/logdayOvertimeXlsx';
+import { buildDailyMessage, customOvertimeTemplatePath, type DailyTemplateChoice, type OvertimeTemplateSource, type TemplatesConfig } from '../lib/templates/choice';
 import { fs, pickFolder, pickFile, saveDialog, SearchResult } from '../lib/invoke';
+import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 import {
   login as syncLogin, refreshToken as refreshTokenRemote, SyncApiError, normalizeServerUrl, syncChangesRemote, SyncChange,
   createTaskRemote, patchTaskRemote, deleteTaskRemote,
@@ -71,7 +75,6 @@ import { createBaseFolders, initialLanguage, inspectFolder, type PickedFolder } 
 import {
   toISO,
   getPreviousWorkingDay,
-  buildDailyCopyText,
   dateFromISO,
 } from '../lib/colombianHolidays';
 
@@ -122,6 +125,10 @@ export interface AppState {
   overtimeMonth: string;              // YYYY-MM
   overtimeMonths: string[];           // YYYY-MM[] con entradas, desc
   overtimeMeta: OvertimeMonthMeta;
+  /** Plantillas del Daily y del Excel (logday-server specs/plantillas,
+   *  v1). Vacío: el mensaje de siempre y el Excel Legacy. Local, no se
+   *  sincroniza. */
+  templates: TemplatesConfig;
 
   // Calendar Events
   calendarEvents: CalendarEvent[];
@@ -337,6 +344,13 @@ export interface AppState {
   setOvertimeMeta: (meta: Partial<OvertimeMonthMeta>) => void;
   replaceOvertimeMetaSnapshot: (meta: OvertimeMonthMeta) => void;
   exportOvertimeExcel: (yearMonth: string) => Promise<void>;
+  setDailyTemplate: (choice: DailyTemplateChoice) => Promise<void>;
+  /** 'custom' solo si ya hay un archivo cargado. */
+  setOvertimeTemplateSource: (source: OvertimeTemplateSource) => Promise<void>;
+  /** Elige un .xlsx, lo copia a la carpeta de la app y lo activa. */
+  loadOvertimeTemplate: () => Promise<void>;
+  /** Guarda una copia de la de Logday o de la cargada donde elija el usuario. */
+  downloadOvertimeTemplate: (which: 'logday' | 'custom') => Promise<void>;
 
   // Calendar Events
   loadCalendarEvents: () => Promise<void>;
@@ -504,6 +518,7 @@ async function persistConfig(get: SyncGet): Promise<void> {
     notificationsEnabled, defaultReminderMinutes, workWeekDays, holidaysAsNonWork,
     animationsEnabled, helpButtonsEnabled, homeExtensionsHintDismissed, trashAutoPurgeEnabled, sidebarStyle, sidebarSections,
     activeProject, activeNoteFolder, notesView, notesViewDefault, tasksViewDefault, noteSortBy, noteSortDir, taskSortBy, extensions,
+    templates,
   } = get();
   if (!configDir || !basePath) return;
   await saveConfig(configDir, {
@@ -532,6 +547,8 @@ async function persistConfig(get: SyncGet): Promise<void> {
     noteSortDir,
     taskSortBy,
     extensions,
+    // Solo si se eligió alguna: las configs de siempre no cambian.
+    ...(templates.daily || templates.overtime ? { templates } : {}),
   });
 }
 
@@ -2405,6 +2422,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try { return { colaborador: '', cedula: '', ...JSON.parse(localStorage.getItem('overtimeMeta') || '{}') }; }
     catch { return { colaborador: '', cedula: '' }; }
   })(),
+  templates: {},
   calendarEvents: [],
   activeCalendarEvent: null,
   absenceDays: [],
@@ -2466,6 +2484,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             helpButtonsEnabled: cfg.helpButtonsEnabled ?? true,
             homeExtensionsHintDismissed: cfg.homeExtensionsHintDismissed === true,
             trashAutoPurgeEnabled: cfg.trashAutoPurgeEnabled ?? true,
+            templates: cfg.templates ?? {},
             // NS5: una config con `sidebarLabelsVisible` y sin estilo
             // abre con la Barra de íconos, la predeterminada.
             sidebarStyle: parseSidebarStyle(cfg.sidebarStyle, cfg.sidebarLabelsVisible),
@@ -3704,8 +3723,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { dailyEntries } = get();
     const prevActivities = dailyEntries[prevISO] || '';
     const todayActivities = dailyEntries[date] || '';
-    const text = buildDailyCopyText(prevDate, prevActivities, todayDate, todayActivities);
-    return text;
+    const { templates, language, overtimeMeta } = get();
+    return buildDailyMessage(templates.daily, {
+      prevDate, prevActivities, todayDate, todayActivities, language, userName: overtimeMeta.colaborador,
+    });
   },
 
   deleteDailyEntry: async (date) => {
@@ -3973,20 +3994,92 @@ export const useAppStore = create<AppState>((set, get) => ({
     const meta = get().overtimeMeta;
     const monthNames = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
     const mesLabel = `${monthNames[parseInt(month) - 1]} ${year}`;
-    const bytes = await generateOvertimeXlsx(entries, meta, mesLabel);
     const colaborador = meta.colaborador || 'Colaborador';
+    // Legacy sale del código de siempre; Logday y la propia, del motor de
+    // plantillas (logday-server specs/plantillas).
+    const source = get().templates.overtime?.source ?? 'legacy';
+    let bytes: Uint8Array;
+    try {
+      if (source === 'legacy') {
+        bytes = await generateOvertimeXlsx(entries, meta, mesLabel);
+      } else {
+        const template = source === 'logday'
+          ? logdayOvertimeTemplate()
+          : base64ToBytes(await fs.readBinary(customOvertimeTemplatePath(get().configDir!)));
+        bytes = fillOvertimeTemplate(template, { mes: mesLabel, colaborador: meta.colaborador, cedula: meta.cedula, entries });
+      }
+    } catch (err) {
+      get().showToast({
+        kind: 'error',
+        title: t(language, 'templates', 'exportError'),
+        description: `${t(language, 'templates', 'exportErrorDesc')} (${err instanceof Error ? err.message : String(err)})`,
+      });
+      return;
+    }
     const dest = await saveDialog({
-      defaultPath: `Reporte Extras ${colaborador} - ${mesLabel}.xlsx`,
+      defaultPath: source === 'legacy' ? `Reporte Extras ${colaborador} - ${mesLabel}.xlsx` : `Horas extra ${colaborador} - ${mesLabel}.xlsx`,
       filters: [{ name: 'Excel', extensions: ['xlsx'] }],
     });
     if (dest) {
-      const b64 = btoa(String.fromCharCode(...bytes));
+      const b64 = templateBytesToBase64(bytes);
       await fs.writeBinary(dest, b64);
       get().showToast({
         kind: 'success',
         title: t(language, 'toast', 'overtimeExported'),
         description: dest.split('/').pop() ?? dest,
       });
+    }
+  },
+
+  setDailyTemplate: async (choice) => {
+    set((s) => ({ templates: { ...s.templates, daily: { ...s.templates.daily, ...choice } } }));
+    await persistConfig(get);
+  },
+
+  setOvertimeTemplateSource: async (source) => {
+    const current = get().templates.overtime;
+    if (source === 'custom' && !current?.fileName) return;
+    set((s) => ({ templates: { ...s.templates, overtime: { ...current, source } } }));
+    await persistConfig(get);
+  },
+
+  loadOvertimeTemplate: async () => {
+    const { configDir, language } = get();
+    if (!configDir) return;
+    const picked = await openFileDialog({ multiple: false, filters: [{ name: 'Excel', extensions: ['xlsx'] }] });
+    if (typeof picked !== 'string') return;
+    try {
+      // Sin validar (v1): si el archivo no sirve, se avisa al exportar.
+      const data = await fs.readBinary(picked);
+      await fs.createDir(`${configDir}/plantillas`);
+      await fs.writeBinary(customOvertimeTemplatePath(configDir), data);
+    } catch (err) {
+      get().showToast({ kind: 'error', title: t(language, 'templates', 'loadError'), description: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+    set((s) => ({
+      templates: {
+        ...s.templates,
+        overtime: { source: 'custom', fileName: picked.split(/[\\/]/).pop() ?? picked, loadedAt: nowInstant() },
+      },
+    }));
+    await persistConfig(get);
+    get().showToast({ kind: 'success', title: t(language, 'templates', 'loaded') });
+  },
+
+  downloadOvertimeTemplate: async (which) => {
+    const { configDir, language, templates } = get();
+    const dest = await saveDialog({
+      defaultPath: which === 'logday' ? 'Plantilla horas extra (Logday).xlsx' : templates.overtime?.fileName ?? 'Plantilla horas extra.xlsx',
+      filters: [{ name: 'Excel', extensions: ['xlsx'] }],
+    });
+    if (!dest) return;
+    try {
+      const data = which === 'logday' ? LOGDAY_OVERTIME_XLSX_BASE64 : await fs.readBinary(customOvertimeTemplatePath(configDir!));
+      await fs.writeBinary(dest, data);
+      get().showToast({ kind: 'success', title: t(language, 'templates', 'downloaded'), description: dest.split('/').pop() ?? dest });
+    } catch (err) {
+      get().showToast({ kind: 'error', title: t(language, 'templates', 'downloadError'), description: err instanceof Error ? err.message : String(err) });
     }
   },
 

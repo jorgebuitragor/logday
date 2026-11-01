@@ -9,8 +9,8 @@ import {
   toISO,
   dateFromISO,
   getPreviousWorkingDay,
-  buildDailyCopyText,
 } from '../../lib/colombianHolidays';
+import { buildDailyMessage } from '../../lib/templates/choice';
 import { usePositionedMenu } from '../../hooks/usePositionedMenu';
 import { t } from '../../lib/i18n';
 import { ConfirmDeleteModal } from '../shared/ConfirmDeleteModal';
@@ -673,6 +673,8 @@ export function DailyEditor() {
     language,
     confirmDestructiveActions,
     absenceDays,
+    templates,
+    overtimeMeta,
   } = useAppStore();
 
   // Extensiones activas: cada una puede poner botones junto a Copiar
@@ -730,8 +732,12 @@ export function DailyEditor() {
 
   const previewText = useMemo(() => {
     if (!activeDailyDate || !prevDate) return '';
-    return buildDailyCopyText(prevDate, prevActs, dateFromISO(activeDailyDate), todayActs);
-  }, [activeDailyDate, prevDate, prevActs, todayActs]);
+    // La plantilla elegida en Opciones → Plantillas (la de Logday si no hay).
+    return buildDailyMessage(templates.daily, {
+      prevDate, prevActivities: prevActs, todayDate: dateFromISO(activeDailyDate), todayActivities: todayActs,
+      language, userName: overtimeMeta.colaborador,
+    });
+  }, [activeDailyDate, prevDate, prevActs, todayActs, templates.daily, language, overtimeMeta.colaborador]);
 
   // Guarda lo que haya en el editor en este momento (no lo que capturó
   // el setTimeout): si llegó algo remoto mientras corría el debounce, el

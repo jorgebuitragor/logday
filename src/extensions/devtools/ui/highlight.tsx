@@ -1,17 +1,23 @@
 // Resaltado de la salida con lowlight (el mismo highlight.js de las notas),
-// solo con los lenguajes que usa DevTools. Las clases `hljs-*` se pintan
-// con los tokens `--syntax-*` de App.css, que se leen en todos los temas
-// (design §8, hallazgo 4).
+// solo con los lenguajes que usan DevTools y el panel "Código" del Cliente
+// HTTP (bash, javascript, python, go y java, que ya carga el editor de
+// notas). Las clases `hljs-*` se pintan con los tokens `--syntax-*` de
+// App.css, que se leen en todos los temas (design §8, hallazgo 4).
 import { useMemo, type ReactNode } from 'react';
 import { createLowlight } from 'lowlight';
+import bash from 'highlight.js/lib/languages/bash';
+import go from 'highlight.js/lib/languages/go';
+import java from 'highlight.js/lib/languages/java';
+import javascript from 'highlight.js/lib/languages/javascript';
 import json from 'highlight.js/lib/languages/json';
+import python from 'highlight.js/lib/languages/python';
 import sql from 'highlight.js/lib/languages/sql';
 import xml from 'highlight.js/lib/languages/xml';
 import yaml from 'highlight.js/lib/languages/yaml';
 
-const lowlight = createLowlight({ json, sql, xml, yaml });
+const lowlight = createLowlight({ bash, go, java, javascript, json, python, sql, xml, yaml });
 
-export type HighlightLanguage = 'json' | 'sql' | 'xml' | 'yaml';
+export type HighlightLanguage = 'json' | 'sql' | 'xml' | 'yaml' | 'bash' | 'javascript' | 'python' | 'go' | 'java';
 
 /** Por encima de esto se muestra sin colores (design §5). */
 export const HIGHLIGHT_LIMIT = 200_000;

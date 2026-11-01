@@ -7,7 +7,7 @@
 // store del Cliente HTTP, en memoria; nada va a disco ni a la nota de la
 // que vino la petición.
 import { useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { ChevronDown, FilePlus, Globe, Send, X } from 'lucide-react';
+import { ChevronDown, CodeXml, FilePlus, Globe, Send, X } from 'lucide-react';
 import { useAppStore } from '../../../store/appStore';
 import type { Note } from '../../../types/note';
 import type { Language } from '../../../lib/i18n';
@@ -18,6 +18,7 @@ import { NO_AUTOCORRECT, lineInputCls, textareaCls } from '../../devtools/ui/cla
 import { activeEnvironment, EXTENSION_ID, readHttpSettings } from '../core/environments';
 import { HTTP_METHODS, parseHttpBlock, type ParseIssue } from '../core/parse';
 import { fromCurl } from '../core/curl';
+import { requestForCode } from '../core/codegen';
 import { bodySplitsRequest, formFromBlock, formIssues, serializeForm } from '../core/serialize';
 import { localeOf, sendShortcut, type Tr } from '../core/text';
 import { announce } from '../announce';
@@ -26,6 +27,7 @@ import {
   blockState, blockedMessage, cancelBlock, firstError, formKey, formNoteId, issueMessage, openSettings, readFormResult,
   resolveWith, sendRequest, setForm, setFormField, useHttpStore, type FormOrigin, type SendOptions,
 } from '../store';
+import { CodePanel, CopyAsMenu } from './CopyAs';
 import { EnvironmentChip } from './EnvironmentChip';
 import { FIELD_BTN, Menu } from './Menu';
 import { ResponseView, type ResponseTab } from './ResponseView';
@@ -97,6 +99,11 @@ export function RequestForm({
   const error = result?.entry.error ?? null;
   const [tab, setTab] = useState<ResponseTab>('body');
   const [saved, setSaved] = useState<{ note: Note; code: string } | null>(null);
+  // HT60 y HT61: "Copiar como…" usa lo escrito ahora; el panel "Código",
+  // lo de hace 300 ms, para no saltar a "con errores" a cada tecla.
+  const [codeOpen, setCodeOpen] = useState(false);
+  const copyReq = useMemo(() => (form.url.trim() && !bodySplitsRequest(form) ? requestForCode(current.code) : null), [form, current]);
+  const codeReq = useMemo(() => (hasUrl && !split ? requestForCode(shown.code) : null), [hasUrl, split, shown]);
 
   const urlRef = useRef<HTMLInputElement>(null);
   const uid = useId().replace(/:/g, '');
@@ -104,6 +111,7 @@ export function RequestForm({
   const headersId = `http-headers-${uid}`;
   const bodyId = `http-body-${uid}`;
   const headBodyId = `http-head-body-${uid}`;
+  const codeId = `http-code-${uid}`;
 
   const sendWith = (extra: Partial<SendOptions> = {}) =>
     void sendRequest({
@@ -201,17 +209,32 @@ export function RequestForm({
         <div className="flex min-w-0 flex-col gap-2">
           <div className="flex min-h-[28px] flex-wrap items-center justify-between gap-2">
             <h3 className={PANEL_TITLE}>{tr('toolRequest')}</h3>
-            <button
-              type="button"
-              onClick={() => void save()}
-              disabled={!canSave}
-              aria-label={tr('saveToNote')}
-              title={tr('saveToNote')}
-              className={ICON_BTN}
-            >
-              <FilePlus size={14} className="shrink-0" aria-hidden />
-              <span className="hidden @sm/tool:inline">{tr('saveToNote')}</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setCodeOpen((v) => !v)}
+                aria-expanded={codeOpen}
+                aria-controls={codeOpen ? codeId : undefined}
+                aria-label={tr('codePanel')}
+                title={tr('codePanel')}
+                className={ICON_BTN}
+              >
+                <CodeXml size={14} className="shrink-0" aria-hidden />
+                <span className="hidden @sm/tool:inline">{tr('codePanel')}</span>
+              </button>
+              <CopyAsMenu tr={tr} req={copyReq} withLabel />
+              <button
+                type="button"
+                onClick={() => void save()}
+                disabled={!canSave}
+                aria-label={tr('saveToNote')}
+                title={tr('saveToNote')}
+                className={ICON_BTN}
+              >
+                <FilePlus size={14} className="shrink-0" aria-hidden />
+                <span className="hidden @sm/tool:inline">{tr('saveToNote')}</span>
+              </button>
+            </div>
           </div>
           {savedNote && (
             <span className="text-[11px] text-[var(--text-secondary)]">
@@ -317,6 +340,7 @@ export function RequestForm({
               {method === 'HEAD' && <p id={headBodyId} className="text-[11px] text-[var(--text-hint)]">{tr('headWithBody')}</p>}
             </div>
           </div>
+          {codeOpen && <CodePanel tr={tr} req={codeReq} id={codeId} />}
         </div>
 
         {(problem || pending || inFlight || error || result?.entry.cancelled || warnings.length > 0 || loadedError) && (

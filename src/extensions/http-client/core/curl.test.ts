@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { formatJsonBody, fromCurl, shellWords } from './curl';
-import { toCurl } from './edit';
+import { generateCode, toCurl } from './codegen';
 import { hasErrors, parseHttpBlock, type ParsedRequest } from './parse';
 
 /** El bloque de `fromCurl`, que nunca debe tener errores de sintaxis. */
@@ -297,7 +297,7 @@ describe('formatJsonBody', () => {
   });
 });
 
-describe('toCurl → fromCurl: ida y vuelta (casos de edit.test.ts)', () => {
+describe('toCurl → fromCurl: ida y vuelta (casos de codegen.test.ts)', () => {
   const normalize = (req: ParsedRequest) => ({
     method: req.method,
     url: req.url,
@@ -322,6 +322,8 @@ describe('toCurl → fromCurl: ida y vuelta (casos de edit.test.ts)', () => {
   ])('%s', (code) => {
     const req = parseHttpBlock(code).requests[0];
     const back = convert(toCurl(req));
+    // "Copiar como… → cURL" es el mismo comando.
+    expect(generateCode('curl', req)).toBe(toCurl(req));
     expect(back.replaced).toEqual([]);
     expect(normalize(back.req)).toEqual(normalize(req));
   });

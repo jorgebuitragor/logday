@@ -20,9 +20,9 @@ import type { ResponseOutcome } from '../store';
 export type ResponseTab = 'body' | 'headers' | 'request';
 type Tab = ResponseTab;
 
-const PRE = 'max-h-[24rem] overflow-auto rounded-md border border-[var(--border)] bg-[var(--bg-input)] px-3 py-2 font-mono text-xs leading-relaxed text-[var(--text-body)] select-text';
+export const PRE = 'max-h-[24rem] overflow-auto rounded-md border border-[var(--border)] bg-[var(--bg-input)] px-3 py-2 font-mono text-xs leading-relaxed text-[var(--text-body)] select-text';
 const MARK = 'ml-3 rounded bg-[var(--bg-hover)] px-1 text-[10px] text-[var(--text-secondary)]';
-const SEG_BTN = (active: boolean) =>
+export const SEG_BTN = (active: boolean) =>
   `rounded-md px-2.5 py-1 text-[11px] transition ${FOCUS_RING} ${
     active ? 'bg-indigo-500/10 text-[var(--text-primary)] ring-1 ring-indigo-500/40' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
   }`;

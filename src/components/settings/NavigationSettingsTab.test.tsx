@@ -59,7 +59,7 @@ beforeEach(() => {
 
 describe('la entrada Navegación (NS21)', () => {
   it('va segunda en el grupo App, con PanelLeft', () => {
-    expect(appTabs('es').map((tab) => tab.label)).toEqual(['General', 'Navegación', 'Preferencias', 'Atajos']);
+    expect(appTabs('es').map((tab) => tab.label)).toEqual(['General', 'Navegación', 'Preferencias', 'Plantillas', 'Atajos']);
     expect(appTabs('en')[1].label).toBe('Navigation');
     expect(appTabs('es')[1].icon.displayName).toBe('PanelLeft');
   });

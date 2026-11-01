@@ -3,6 +3,7 @@ import { Theme, CustomTheme } from './theme';
 import { OvertimeMonthMeta } from './overtime';
 import type { ExtensionSection, ExtensionsConfig } from '../extensions/types';
 import type { SavedSection, SidebarStyle } from '../components/sidebar/sectionOrder';
+import type { TemplatesConfig } from '../lib/templates/choice';
 
 export type ViewMode = 'list' | 'kanban' | 'calendar';
 /** Secciones fijas del menú lateral. */
@@ -73,6 +74,9 @@ export interface AppConfig {
    *  Local, no se sincroniza; los secretos van en el llavero
    *  (specs/extensiones R9, R10). */
   extensions?: ExtensionsConfig;
+  /** Plantillas del Daily y del Excel de horas extra (logday-server
+   *  specs/plantillas, v1). Sin él, la FCV en las dos. Local. */
+  templates?: TemplatesConfig;
 }
 
 export interface BackupSettings {

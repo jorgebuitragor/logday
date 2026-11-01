@@ -101,7 +101,7 @@ describe('ajustes y entornos (HT17–HT22)', () => {
   });
 });
 
-describe('vista del cuerpo (HT10, HT12)', () => {
+describe('vista del cuerpo (HT10, HT12, HT53)', () => {
   const h = (ct: string): [string, string][] => [['content-type', ct]];
 
   it('JSON y XML se formatean; si no son válidos, tal cual con aviso', () => {
@@ -114,8 +114,31 @@ describe('vista del cuerpo (HT10, HT12)', () => {
     expect(chooseBodyView({ kind: 'text', text: '[1', lossy: false }, [])).toMatchObject({ invalid: null });
   });
 
-  it('el HTML es texto, nunca una página', () => {
-    expect(chooseBodyView({ kind: 'text', text: '<script>x</script>', lossy: false }, h('text/html; charset=utf-8'))).toMatchObject({ kind: 'text', language: 'xml', pretty: null });
+  it('HTML por el content-type (HT53): se marca para la vista previa, sin formatear aquí', () => {
+    const t = (text: string) => ({ kind: 'text' as const, text, lossy: false });
+    expect(chooseBodyView(t('<script>x</script>'), h('text/html; charset=utf-8'))).toMatchObject({ kind: 'text', language: 'xml', pretty: null, invalid: null, html: true });
+    // XHTML termina en +xml, pero es una página, no XML que formatear.
+    expect(chooseBodyView(t('<html><body/></html>'), h('application/xhtml+xml'))).toMatchObject({ html: true, invalid: null });
+    expect(chooseBodyView(t('<a><b/></a>'), h('application/xml'))).toMatchObject({ html: false });
+    expect(chooseBodyView(t('{"a":1}'), h('application/json'))).toMatchObject({ html: false });
+  });
+
+  it('HTML por el contenido, solo sin content-type', () => {
+    const t = (text: string) => ({ kind: 'text' as const, text, lossy: false });
+    expect(chooseBodyView(t('<!DOCTYPE html><p>hola'), [])).toMatchObject({ html: true });
+    expect(chooseBodyView(t('\uFEFF\n  <html lang="es"><body>x</body></html>'), [])).toMatchObject({ html: true });
+    expect(chooseBodyView(t('<!doctype html>'), [])).toMatchObject({ html: true });
+    // Con otro tipo declarado manda el tipo; y un fragmento no es una página.
+    expect(chooseBodyView(t('<!doctype html><p>x'), h('text/plain'))).toMatchObject({ html: false, language: null });
+    expect(chooseBodyView(t('<p>hola</p>'), [])).toMatchObject({ html: false });
+    expect(chooseBodyView(t('<htmlx>'), [])).toMatchObject({ html: false });
+    expect(chooseBodyView(t('hola <html>'), [])).toMatchObject({ html: false });
+  });
+
+  it('HTML de más de 2 MB: se marca igual, con lo que se muestra', () => {
+    const v = chooseBodyView({ kind: 'text', text: `<html>${'a'.repeat(DISPLAY_LIMIT)}`, lossy: true }, h('text/html'));
+    expect(v).toMatchObject({ kind: 'text', html: true, partial: true, lossy: true });
+    expect(v.kind === 'text' && v.raw.length).toBe(DISPLAY_LIMIT);
   });
 
   it('más de 2 MB: se muestra cortado y sin formatear', () => {

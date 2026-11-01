@@ -1,17 +1,21 @@
 // La respuesta (Interfaz §2, HT10–HT14): el estado, el tiempo, el tamaño
-// y tres pestañas (cuerpo, cabeceras y la petición enviada). El HTML se
-// muestra como texto y las imágenes en <img>; nada pasa por
-// dangerouslySetInnerHTML. Se comparte con la pantalla (HT33).
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+// y tres pestañas (cuerpo, cabeceras y la petición enviada). Una página HTML
+// se ve en la vista previa aislada de `HtmlPreview` (iframe `sandbox=""`,
+// CSP sin red, enlaces neutralizados; HT53) o como texto; las imágenes, en
+// <img>. Nada pasa por dangerouslySetInnerHTML. Se comparte con la
+// pantalla (HT33).
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  Check, CircleAlert, CircleCheck, Copy, CornerDownRight, Download, FileQuestion, History, ShieldOff, TriangleAlert, X,
+  Check, CircleAlert, CircleCheck, Copy, CornerDownRight, Download, FileQuestion, History, ShieldCheck, ShieldOff, TriangleAlert, X,
 } from 'lucide-react';
 import { save } from '@tauri-apps/plugin-dialog';
 import { useAppStore } from '../../../store/appStore';
 import { fs } from '../../../lib/invoke';
 import { ICON_BTN, FOCUS_RING } from '../../../components/shared/controlClasses';
-import { StatusItem } from '../../../components/shared/FormControls';
+import { StatusItem, Toggle } from '../../../components/shared/FormControls';
+import { HtmlPreview } from '../../../components/shared/HtmlPreview';
 import { CodeText, HIGHLIGHT_LIMIT } from '../../devtools/ui/highlight';
+import { formatHtml } from '../../devtools/tools/htmlFormat';
 import { announce } from '../announce';
 import { chooseBodyView, defaultFileName, mimeOf, type BodyView } from '../core/body';
 import { formatAgo, formatElapsed, formatSize, makeTr, timeOfDay, type Tr } from '../core/text';
@@ -71,6 +75,39 @@ function requestText(o: ResponseOutcome): string {
   return lines.join('\n');
 }
 
+/** Cómo se ve una respuesta HTML (HT53). */
+export type HtmlMode = 'preview' | 'code' | 'raw';
+
+// La última vista elegida, para la próxima respuesta HTML. Solo en memoria
+// y solo la vista, nunca el contenido: se pierde al cerrar la app.
+let rememberedHtmlMode: HtmlMode = 'preview';
+export const rememberHtmlMode = (mode: HtmlMode) => {
+  rememberedHtmlMode = mode;
+};
+
+/** El alto de la vista previa: con tope en la franja de la nota y más alto
+ *  en la pantalla, que es el único sitio con el contenedor `httpview`
+ *  (`ui/View.tsx`). Sin redimensionar: el iframe taparía el asa. */
+const PREVIEW_HEIGHT = 'h-[min(24rem,60vh)] min-h-[10rem] @3xs/httpview:h-[60vh] @3xs/httpview:min-h-[16rem]';
+
+/** El segmentado de las vistas del cuerpo (botones con `aria-pressed`). */
+function ViewSwitch<T extends string>({ label, value, options, onChange }: {
+  label: string;
+  value: T;
+  options: readonly { id: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex gap-1 self-start rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-0.5" role="group" aria-label={label}>
+      {options.map((o) => (
+        <button key={o.id} type="button" aria-pressed={value === o.id} onClick={() => onChange(o.id)} className={SEG_BTN(value === o.id)}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 const headersText = (o: ResponseOutcome) => o.output.headers.map(([n, v]) => `${n}: ${v}`).join('\n');
 
 /** El texto entero del cuerpo (no solo lo que se muestra), para copiar o guardar. */
@@ -78,7 +115,70 @@ function fullBodyText(o: ResponseOutcome): string | null {
   return o.output.body.kind === 'text' ? o.output.body.text : null;
 }
 
-function BodyPanel({ view, tr, pretty, setPretty }: { view: BodyView; tr: Tr; pretty: boolean; setPretty: (v: boolean) => void }) {
+type TextView = Extract<BodyView, { kind: 'text' }>;
+
+/** HT53: Vista previa (aislada), Código (formateado y resaltado) o Sin
+ *  formato (tal cual). Lo que no llegó entero se previsualiza igual, con
+ *  aviso. "Cargar recursos externos" empieza apagado y no se recuerda, como
+ *  en el Visor HTML de DevTools: cargar de internet deja ver a terceros qué
+ *  se mira. */
+function HtmlBody({ view, tr, incomplete }: { view: TextView; tr: Tr; incomplete: boolean }) {
+  const [mode, setModeState] = useState<HtmlMode>(() => rememberedHtmlMode);
+  const [external, setExternal] = useState(false);
+  const setMode = (next: HtmlMode) => {
+    setModeState(next);
+    rememberHtmlMode(next);
+  };
+  // Se formatea solo al pedir Código: formatHtml nunca falla, pero 2 MB cuestan.
+  const formatted = useMemo(() => (mode === 'code' ? formatHtml(view.raw, 2) : null), [mode, view.raw]);
+  const text = formatted ?? view.raw;
+  const modes = [
+    { id: 'preview' as const, label: tr('htmlPreview') },
+    { id: 'code' as const, label: tr('htmlCode') },
+    { id: 'raw' as const, label: tr('viewRaw') },
+  ];
+  return (
+    <div className="flex flex-col gap-1.5">
+      {view.lossy && <StatusItem kind="warn">{tr('notUtf8')}</StatusItem>}
+      {mode === 'preview' && incomplete && <StatusItem kind="warn">{tr('htmlIncomplete')}</StatusItem>}
+      {mode !== 'preview' && view.partial && <StatusItem kind="info">{tr('partialView')}</StatusItem>}
+      {mode !== 'preview' && text.length > HIGHLIGHT_LIMIT && <StatusItem kind="info">{tr('noHighlight')}</StatusItem>}
+      <ViewSwitch label={tr('tabBody')} value={mode} options={modes} onChange={setMode} />
+      {mode === 'preview' ? (
+        <>
+          <HtmlPreview html={view.raw} allowExternal={external} title={tr('htmlPreviewFrame')} heightClass={PREVIEW_HEIGHT} />
+          <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 text-[11px]">
+            <p className="flex items-start gap-1.5 text-[var(--text-hint)]">
+              {external ? (
+                <TriangleAlert size={12} className="mt-px shrink-0 text-amber-400" aria-hidden />
+              ) : (
+                <ShieldCheck size={12} className="mt-px shrink-0" aria-hidden />
+              )}
+              {tr(external ? 'htmlIsolatedExternal' : 'htmlIsolated')}
+            </p>
+            <Toggle label={tr('htmlExternal')} checked={external} onChange={setExternal} />
+          </div>
+        </>
+      ) : (
+        <pre tabIndex={0} aria-label={tr('bodyAria')} className={`${PRE} ${mode === 'code' ? 'whitespace-pre' : 'whitespace-pre-wrap break-all'}`}>
+          <CodeText code={text} language="xml" />
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function BodyPanel({ view, tr, pretty, setPretty, truncated, sentAt }: {
+  view: BodyView;
+  tr: Tr;
+  pretty: boolean;
+  setPretty: (v: boolean) => void;
+  /** Rust cortó el cuerpo en el máximo de las opciones (HT24). */
+  truncated: boolean;
+  /** Identifica la respuesta: con una nueva, "Cargar recursos externos"
+   *  vuelve a apagarse aunque la vista siga montada. */
+  sentAt: number;
+}) {
   const language = useAppStore((s) => s.language);
   if (view.kind === 'empty') return <p className="text-[11px] text-[var(--text-hint)]">{tr('emptyBody')}</p>;
   if (view.kind === 'image') {
@@ -98,6 +198,7 @@ function BodyPanel({ view, tr, pretty, setPretty }: { view: BodyView; tr: Tr; pr
       </div>
     );
   }
+  if (view.html) return <HtmlBody key={sentAt} view={view} tr={tr} incomplete={truncated || view.partial} />;
   const showPretty = pretty && view.pretty !== null;
   const text = showPretty ? view.pretty! : view.raw;
   return (
@@ -107,10 +208,12 @@ function BodyPanel({ view, tr, pretty, setPretty }: { view: BodyView; tr: Tr; pr
       {view.partial && <StatusItem kind="info">{tr('partialView')}</StatusItem>}
       {view.language && text.length > HIGHLIGHT_LIMIT && <StatusItem kind="info">{tr('noHighlight')}</StatusItem>}
       {view.pretty !== null && (
-        <div className="flex gap-1 self-start rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-0.5" role="group" aria-label={tr('tabBody')}>
-          <button type="button" aria-pressed={pretty} onClick={() => setPretty(true)} className={SEG_BTN(pretty)}>{tr('viewPretty')}</button>
-          <button type="button" aria-pressed={!pretty} onClick={() => setPretty(false)} className={SEG_BTN(!pretty)}>{tr('viewRaw')}</button>
-        </div>
+        <ViewSwitch
+          label={tr('tabBody')}
+          value={pretty ? 'pretty' : 'raw'}
+          options={[{ id: 'pretty', label: tr('viewPretty') }, { id: 'raw', label: tr('viewRaw') }]}
+          onChange={(v) => setPretty(v === 'pretty')}
+        />
       )}
       <pre tabIndex={0} aria-label={tr('bodyAria')} className={`${PRE} ${showPretty ? 'whitespace-pre' : 'whitespace-pre-wrap break-all'}`}>
         <CodeText code={text} language={view.language} />
@@ -196,7 +299,7 @@ export function ResponseView({
   const [copied, flash] = useFlash();
   const tabRefs = useRef<Record<Tab, HTMLButtonElement | null>>({ body: null, headers: null, request: null });
   const out = outcome.output;
-  const view = chooseBodyView(out.body, out.headers);
+  const view = useMemo(() => chooseBodyView(out.body, out.headers), [out.body, out.headers]);
   const mime = mimeOf(out.headers);
   const status = `${out.status}${out.reason ? ` ${out.reason}` : ''}`;
   const tabs: { id: Tab; label: string }[] = [
@@ -303,7 +406,7 @@ export function ResponseView({
         )}
       </div>
       <div role="tabpanel" aria-label={tabs.find((t) => t.id === tab)?.label}>
-        {tab === 'body' && <BodyPanel view={view} tr={tr} pretty={pretty} setPretty={setPretty} />}
+        {tab === 'body' && <BodyPanel view={view} tr={tr} pretty={pretty} setPretty={setPretty} truncated={out.truncated} sentAt={outcome.sentAt} />}
         {tab === 'headers' && <HeadersPanel o={outcome} tr={tr} />}
         {tab === 'request' && <RequestPanel o={outcome} tr={tr} />}
       </div>

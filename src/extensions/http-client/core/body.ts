@@ -1,6 +1,7 @@
 // Qué vista lleva el cuerpo de una respuesta (specs/cliente-http HT10,
-// HT12, design A9): JSON o XML formateados, HTML y demás texto tal cual,
-// imágenes como imagen y el resto como binario. Puro.
+// HT12, design A9): JSON o XML formateados, HTML marcado para la vista
+// previa aislada (HT53), el demás texto tal cual, imágenes como imagen y el
+// resto como binario. Puro.
 import { formatJson, formatXml } from '../../devtools/tools/formats';
 
 /** Por encima, el texto se muestra cortado (HT12). */
@@ -18,7 +19,7 @@ export type BodyView =
   | { kind: 'empty' }
   | {
     kind: 'text';
-    /** Para resaltar: json, xml (también el HTML, que nunca se dibuja) o nada. */
+    /** Para resaltar: json, xml (también el HTML en Código) o nada. */
     language: 'json' | 'xml' | null;
     raw: string;
     /** Formateado, si es JSON o XML válido. */
@@ -28,6 +29,9 @@ export type BodyView =
     lossy: boolean;
     /** Se muestran solo los primeros 2 MB. */
     partial: boolean;
+    /** Es una página HTML: la respuesta ofrece Vista previa, Código y Sin
+     *  formato. Se formatea al pedir Código, no aquí. */
+    html: boolean;
   }
   | { kind: 'image'; mime: string; base64: string; bytes: number }
   | { kind: 'binary'; mime: string; base64: string; bytes: number };
@@ -41,6 +45,13 @@ export function mimeOf(headers: readonly [string, string][]): string {
 const isJsonMime = (m: string) => m === 'application/json' || m.endsWith('+json') || m.endsWith('/json');
 const isXmlMime = (m: string) => m.endsWith('/xml') || m.endsWith('+xml');
 const looksJson = (t: string) => /^\s*[[{]/.test(t);
+const isHtmlMime = (m: string) => m === 'text/html' || m === 'application/xhtml+xml';
+/** Sin content-type: una página empieza por `<!doctype html` o `<html`
+ *  (quizá tras la marca de orden de bytes y espacios). */
+const looksHtml = (t: string) => /^\uFEFF?\s*<(?:!doctype\s+html|html)[\s>]/i.test(t);
+
+/** Si el cuerpo se muestra como página HTML (HT53). */
+export const isHtmlBody = (mime: string, text: string) => isHtmlMime(mime) || (!mime && looksHtml(text));
 
 const base64Bytes = (b64: string) => Math.floor((b64.length * 3) / 4) - (b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0);
 
@@ -56,7 +67,9 @@ export function chooseBodyView(body: ResponseBody, headers: readonly [string, st
   if (raw === '') return { kind: 'empty' };
   const partial = raw.length > DISPLAY_LIMIT;
   const shown = partial ? raw.slice(0, DISPLAY_LIMIT) : raw;
-  const base = { kind: 'text' as const, raw: shown, lossy: body.lossy, partial };
+  const base = { kind: 'text' as const, raw: shown, lossy: body.lossy, partial, html: false };
+  // Antes que el XML: `application/xhtml+xml` termina en `+xml`.
+  if (isHtmlBody(mime, raw)) return { ...base, language: 'xml', pretty: null, invalid: null, html: true };
   // Un cuerpo cortado no se puede formatear: se muestra tal cual.
   if (isJsonMime(mime) || (!mime && looksJson(raw))) {
     const r = partial ? null : formatJson(raw, 2);
@@ -68,8 +81,6 @@ export function chooseBodyView(body: ResponseBody, headers: readonly [string, st
     if (r?.ok) return { ...base, language: 'xml', pretty: r.value, invalid: null };
     return { ...base, language: null, pretty: null, invalid: partial ? null : 'xml' };
   }
-  // HT12: el HTML se muestra como texto, resaltado como xml.
-  if (mime === 'text/html') return { ...base, language: 'xml', pretty: null, invalid: null };
   return { ...base, language: null, pretty: null, invalid: null };
 }
 

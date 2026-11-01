@@ -37,6 +37,8 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     // así que no lleva el aviso de R6; el permiso se da al conectar.
     secretKeys: ['google_client_secret', 'google_refresh'],
     settings: true,
+    // R27: "Reuniones de hoy" en Inicio, después del Pomodoro.
+    homeCard: { order: 20 },
     load: () => import('./google-calendar').then((m) => m.default),
   },
   {
@@ -113,6 +115,8 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     settings: true,
     // PM10: el contador del menú lateral.
     sidebarStatus: true,
+    // R27: su tarjeta en Inicio, la primera.
+    homeCard: { order: 10 },
     load: () => import('./pomodoro').then((m) => m.default),
   },
   {

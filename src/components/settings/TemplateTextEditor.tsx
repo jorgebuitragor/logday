@@ -11,7 +11,7 @@
 // entero; si se escribe dentro de uno, deja de ser marcador y queda como
 // texto (la vista previa avisa). Sin dependencias de la app: el mismo
 // archivo va en Web.
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { splitTemplate } from '../../lib/templates/dailyTemplate';
 
 export type MarkerTone = 'amber' | 'indigo' | 'teal';
@@ -87,6 +87,21 @@ export const TemplateTextEditor = forwardRef<TemplateTextEditorHandle, {
   const [display, setDisplay] = useState(() => toDisplay(value, byKey));
   const area = useRef<HTMLTextAreaElement>(null);
   const backdrop = useRef<HTMLDivElement>(null);
+  // Cuando el texto no cabe, la barra de scroll le quita ancho al textarea
+  // (unos 15 px con barras clásicas): la capa de atrás pierde lo mismo por
+  // la derecha, o las líneas largas se parten distinto y los recuadros se
+  // corren.
+  const [scrollbar, setScrollbar] = useState(0);
+  useLayoutEffect(() => {
+    const el = area.current;
+    if (!el) return;
+    const measure = () => setScrollbar(el.offsetWidth - el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [display]);
 
   // Si el valor cambia por fuera (un ejemplo, otro idioma), se redibuja.
   // Lo que viene de escribir aquí ya coincide y no mueve el cursor.
@@ -150,7 +165,8 @@ export const TemplateTextEditor = forwardRef<TemplateTextEditorHandle, {
       <div
         ref={backdrop}
         aria-hidden
-        className={`pointer-events-none absolute inset-0 overflow-hidden text-transparent ${SHARED}`}
+        className={`pointer-events-none absolute inset-y-0 left-0 overflow-hidden text-transparent ${SHARED}`}
+        style={{ right: scrollbar }}
       >
         {painted.map((part, i) =>
           typeof part === 'string' ? (

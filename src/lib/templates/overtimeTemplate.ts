@@ -49,6 +49,9 @@ export interface OvertimeTemplateData {
   colaborador: string;
   cedula: string;
   entries: OvertimeTemplateEntry[];
+  /** Cómo se escriben 'comp', 'pay' y 'other' en Observaciones. Sin él, en
+   *  español, como el Excel Legacy. */
+  observacionesLabels?: Partial<Record<'comp' | 'pay' | 'other', string>>;
 }
 
 /** Los marcadores, para la ayuda de Opciones → Plantillas. */
@@ -81,13 +84,13 @@ function excelTime(s: string): number | string {
 
 const OBSERVACIONES: Record<string, string> = { comp: 'Compensatorio', pay: 'Pago', other: 'Otro' };
 
-function rowValues(e: OvertimeTemplateEntry | null): Record<string, Value> {
+function rowValues(e: OvertimeTemplateEntry | null, labels: Partial<Record<string, string>> = {}): Record<string, Value> {
   if (!e) return Object.fromEntries(OVERTIME_TEMPLATE_MARKERS.row.map((k) => [k, '']));
   return {
     'fila.fecha': excelDate(e.fecha),
     'fila.solicitada_por': e.solicitadaPor,
     'fila.actividad': e.actividad,
-    'fila.observaciones': OBSERVACIONES[e.observaciones] ?? e.observaciones,
+    'fila.observaciones': labels[e.observaciones] ?? OBSERVACIONES[e.observaciones] ?? e.observaciones,
     'fila.hora_inicio': excelTime(e.horaInicio),
     'fila.hora_final': excelTime(e.horaFinal),
     'fila.total': e.totalHoras,
@@ -352,7 +355,7 @@ function fillSheet(xml: string, sheet: string, shared: string[], data: OvertimeT
     if (dataIndex >= 0 && row.num === base.dataRow) {
       for (let i = 0; i < copies; i++) {
         const sh = { ...base, copy: i };
-        const values = { ...scalars, ...rowValues(data.entries[i] ?? null) };
+        const values = { ...scalars, ...rowValues(data.entries[i] ?? null, data.observacionesLabels) };
         out.push(renderRow(row, base.dataRow + i, sheet, sh, shared, values));
       }
     } else {

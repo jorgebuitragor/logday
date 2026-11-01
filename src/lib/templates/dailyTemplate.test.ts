@@ -76,6 +76,9 @@ describe('ejemplos y recuadros', () => {
     expect(ctx('2026-11-02', '2026-11-02')['hoy.dia']).toBe('de hoy, Lunes 2 de Noviembre');
     expect(ctx('2026-11-02', '2026-11-05')['hoy.dia']).toBe('Lunes 2 de Noviembre');
     expect(LOGDAY_DAILY_TEMPLATE).not.toContain('{{#');
+    expect(renderTemplate(DAILY_TEMPLATE_EXAMPLES.en[0].template, ctx('2026-11-02', '2026-11-02', '- a', '- b', 'en')).text).toBe(
+      'Good morning.\n\nFriday, October 30:\n- a\n\nToday, Monday, November 2:\n- b',
+    );
   });
 
   it('splitTemplate separa texto y marcadores y vuelve a armar lo mismo', () => {

@@ -110,7 +110,9 @@ export interface DailyContextInput {
   now?: Date;
 }
 
-const TODAY_PREFIX = { es: 'de hoy, ', en: 'today, ' };
+// En inglés va al principio de la línea ("Today, Monday, November 2:"),
+// como el mensaje de siempre de Web en inglés.
+const TODAY_PREFIX = { es: 'de hoy, ', en: 'Today, ' };
 
 export function dailyTemplateContext(input: DailyContextInput): TemplateContext {
   const { language } = input;
@@ -158,6 +160,17 @@ export const LOGDAY_DAILY_TEMPLATE = [
   '{{hoy.actividades}}',
 ].join('\n');
 
+/** El mismo mensaje en inglés, como lo arma Web con la app en inglés. */
+export const LOGDAY_DAILY_TEMPLATE_EN = [
+  'Good morning.',
+  '',
+  '{{anterior.fecha}}:',
+  '{{anterior.actividades}}',
+  '',
+  '{{hoy.dia}}:',
+  '{{hoy.actividades}}',
+].join('\n');
+
 // ── Ejemplos para empezar ─────────────────────────────────────────────────
 // Los nombres van en los textos de cada app (`templates.example*`). Aquí
 // solo el texto, porque i18next (Mobile) interpretaría las llaves.
@@ -183,7 +196,7 @@ export const DAILY_TEMPLATE_EXAMPLES: Record<DailyTemplateLanguage, { id: 'usual
     },
   ],
   en: [
-    { id: 'usual', template: LOGDAY_DAILY_TEMPLATE },
+    { id: 'usual', template: LOGDAY_DAILY_TEMPLATE_EN },
     {
       id: 'short',
       template: ['{{anterior.fecha}}:', '{{anterior.actividades}}', '', '{{hoy.fecha}}:', '{{hoy.actividades}}'].join('\n'),

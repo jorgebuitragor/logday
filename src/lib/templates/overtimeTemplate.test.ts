@@ -93,6 +93,11 @@ describe('fillOvertimeTemplate con la plantilla de Logday', () => {
     expect(ws.G9.f).toBe('SUM(G8:G8)');
   });
 
+  it('Observaciones en otro idioma', () => {
+    const ws = sheetOf(fillOvertimeTemplate(logdayOvertimeTemplate(), { ...data([entry('2026-11-03')]), observacionesLabels: { comp: 'Time off' } }));
+    expect(ws.D8.v).toBe('Time off');
+  });
+
   it('un valor que empieza con = queda como texto, nunca como fórmula', () => {
     const ws = sheetOf(fillOvertimeTemplate(logdayOvertimeTemplate(), data([entry('2026-11-03', { actividad: '=HYPERLINK("http://x")' })])));
     expect(ws.C8.t).toBe('s');

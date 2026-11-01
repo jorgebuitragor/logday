@@ -11,13 +11,40 @@ import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
 import { getPreviousWorkingDay } from '../../lib/colombianHolidays';
 import { buildDailyMessage } from '../../lib/templates/choice';
-import { DAILY_TEMPLATE_MARKERS, LOGDAY_DAILY_TEMPLATE, dailyTemplateContext, renderTemplate } from '../../lib/templates/dailyTemplate';
+import { DAILY_TEMPLATE_EXAMPLES, DAILY_TEMPLATE_MARKERS, LOGDAY_DAILY_TEMPLATE, dailyTemplateContext, renderTemplate } from '../../lib/templates/dailyTemplate';
 import { OVERTIME_TEMPLATE_MARKERS } from '../../lib/templates/overtimeTemplate';
 import { StatusItem } from '../shared/FormControls';
-import { CHIP, FOCUS_RING, INPUT_CLS, PANEL_TITLE, SECONDARY_CLS } from '../shared/controlClasses';
+import { FOCUS_RING, PANEL_TITLE, SECONDARY_CLS } from '../shared/controlClasses';
+import { TONE_BG, TemplateTextEditor, type MarkerDef, type MarkerTone, type TemplateTextEditorHandle } from './TemplateTextEditor';
 
 const SECTION_TITLE = 'mb-1 text-xs font-medium uppercase tracking-widest text-[var(--text-hint)]';
 const marker = (name: string) => `{{${name}}}`;
+
+type TemplatesKey = Parameters<typeof t<'templates'>>[2];
+/** `anterior.fecha` → la clave de su nombre (`marker_anterior_fecha`). */
+const markerKey = (name: string, kind: 'marker' | 'markerExample') => `${kind}_${name.replace(/\./g, '_')}` as TemplatesKey;
+
+/** El color de cada marcador: el día anterior en ámbar, el del Daily en
+ *  índigo, el usuario en verde azulado; en el Excel, la fila en índigo. */
+const dailyTone = (name: string): MarkerTone => (name.startsWith('anterior.') ? 'amber' : name.startsWith('hoy.') ? 'indigo' : 'teal');
+
+/** Un recuadro de color como los del editor, con su ejemplo debajo. */
+function MarkerChip({ label, example, tone, onClick }: { label: string; example: string; tone: MarkerTone; onClick?: () => void }) {
+  const body = (
+    <>
+      <span className="block text-[11px] font-medium text-[var(--text-primary)]">{label}</span>
+      <span className="block text-[10px] text-[var(--text-hint)]">{example}</span>
+    </>
+  );
+  const cls = `rounded-md px-2 py-1 text-left ${FOCUS_RING}`;
+  return onClick ? (
+    <button type="button" onClick={onClick} className={`${cls} transition hover:brightness-110`} style={{ background: TONE_BG[tone] }}>
+      {body}
+    </button>
+  ) : (
+    <span className={`${cls} inline-block`} style={{ background: TONE_BG[tone] }}>{body}</span>
+  );
+}
 
 /** Las opciones como radios en tarjetas. */
 function SourcePicker<T extends string>({ label, value, onChange, options }: {
@@ -59,8 +86,13 @@ function DailyTemplateSection() {
   const source = templates.daily?.source ?? 'logday';
   const saved = templates.daily?.text ?? '';
   const [draft, setDraft] = useState(saved);
-  const textRef = useRef<HTMLTextAreaElement>(null);
+  const editor = useRef<TemplateTextEditorHandle>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const markers: MarkerDef[] = useMemo(
+    () => DAILY_TEMPLATE_MARKERS.map((key) => ({ key, label: tt(markerKey(key, 'marker')), tone: dailyTone(key) })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [language],
+  );
 
   // Lo guardado manda cuando cambia por fuera (otra pestaña de Opciones).
   useEffect(() => setDraft(saved), [saved]);
@@ -87,19 +119,6 @@ function DailyTemplateSection() {
     void setDailyTemplate({ source: next });
   };
 
-  const insert = (name: string) => {
-    const el = textRef.current;
-    const at = el ? el.selectionStart : draft.length;
-    const end = el ? el.selectionEnd : draft.length;
-    const text = draft.slice(0, at) + marker(name) + draft.slice(end);
-    edit(text);
-    requestAnimationFrame(() => {
-      el?.focus();
-      const pos = at + marker(name).length;
-      el?.setSelectionRange(pos, pos);
-    });
-  };
-
   // Vista previa con datos de ejemplo: hoy y el día laborable anterior.
   const input = useMemo(() => {
     const today = new Date();
@@ -109,6 +128,7 @@ function DailyTemplateSection() {
       todayDate: today,
       todayActivities: tt('previewToday'),
       language,
+      userName: tt('markerExample_usuario_nombre'),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [language]);
@@ -132,35 +152,33 @@ function DailyTemplateSection() {
       />
 
       {source === 'custom' && (
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <label htmlFor="daily-template-text" className={PANEL_TITLE}>{tt('editorLabel')}</label>
-            <button type="button" className={SECONDARY_CLS} onClick={() => edit(LOGDAY_DAILY_TEMPLATE)}>{tt('startWithLogday')}</button>
+        <div className="space-y-2.5">
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={tt('examplesLabel')}>
+            <span className="text-[10px] text-[var(--text-hint)]">{tt('examplesLabel')}:</span>
+            {DAILY_TEMPLATE_EXAMPLES[language].map((ex) => (
+              <button key={ex.id} type="button" className={SECONDARY_CLS} onClick={() => edit(ex.template)}>
+                {tt(ex.id === 'usual' ? 'exampleUsual' : ex.id === 'short' ? 'exampleShort' : 'exampleNamed')}
+              </button>
+            ))}
           </div>
-          <textarea
+          <label htmlFor="daily-template-text" className={`${PANEL_TITLE} block`}>{tt('editorLabel')}</label>
+          <TemplateTextEditor
+            ref={editor}
             id="daily-template-text"
-            ref={textRef}
             value={draft}
-            onChange={(e) => edit(e.target.value)}
+            markers={markers}
+            onChange={edit}
             onBlur={() => {
               if (saveTimer.current) clearTimeout(saveTimer.current);
               if (draft !== saved) void setDailyTemplate({ source: 'custom', text: draft });
             }}
-            rows={8}
-            spellCheck={false}
-            className={`${INPUT_CLS} w-full resize-y font-mono leading-relaxed`}
           />
-          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={tt('insertMarker')}>
-            <span className="text-[10px] text-[var(--text-hint)]">{tt('insertMarker')}:</span>
-            {DAILY_TEMPLATE_MARKERS.map((name) => (
-              <button key={name} type="button" onClick={() => insert(name)} className={`${CHIP} font-mono transition hover:text-[var(--text-primary)] ${FOCUS_RING}`}>
-                {marker(name)}
-              </button>
+          <div className="flex flex-wrap items-start gap-1.5" role="group" aria-label={tt('insertMarker')}>
+            {markers.map((m) => (
+              <MarkerChip key={m.key} label={m.label} example={tt(markerKey(m.key, 'markerExample'))} tone={m.tone} onClick={() => editor.current?.insert(m.key)} />
             ))}
           </div>
-          <p className="text-[10px] leading-relaxed text-[var(--text-hint)]">
-            {tt('markerHint').replace('{open}', '{{#hoy.es_hoy}}').replace('{close}', '{{/hoy.es_hoy}}')}
-          </p>
+          <p className="text-[10px] leading-relaxed text-[var(--text-hint)]">{tt('insertHint')}</p>
           {!draft.trim() && <StatusItem kind="info">{tt('emptyCustom')}</StatusItem>}
           {check?.error && <StatusItem kind="error">{tt('syntaxError').replace('{detail}', check.error)}</StatusItem>}
           {check && check.unknown.length > 0 && (
@@ -231,10 +249,37 @@ function OvertimeTemplateSection() {
 
       <details className="rounded-xl border border-[var(--border-card)] px-4 py-2.5 text-[11px] leading-relaxed text-[var(--text-secondary)]">
         <summary className={`cursor-pointer select-none text-xs font-medium text-[var(--text-secondary)] ${FOCUS_RING} rounded`}>{tt('xlsxHelpTitle')}</summary>
-        <div className="mt-2 space-y-1.5">
-          <p>{tt('xlsxHelp1').replace('{values}', OVERTIME_TEMPLATE_MARKERS.values.map(marker).join(', '))}</p>
-          <p>{tt('xlsxHelp2').replace('{row}', '{{fila.…}}')}</p>
-          <p className="font-mono text-[10px] text-[var(--text-hint)]">{tt('xlsxHelp3').replace('{list}', OVERTIME_TEMPLATE_MARKERS.row.map(marker).join(', '))}</p>
+        <div className="mt-2 space-y-2">
+          <p>{tt('xlsxIntro')}</p>
+          {([['xlsxGroupValues', OVERTIME_TEMPLATE_MARKERS.values, 'amber'], ['xlsxGroupRow', OVERTIME_TEMPLATE_MARKERS.row, 'indigo']] as const).map(([group, keys, tone]) => (
+            <table key={group} className="w-full table-fixed border-collapse text-[11px]">
+              <caption className="pb-1 text-left text-[10px] font-semibold uppercase tracking-wider text-[var(--text-hint)]">{tt(group)}</caption>
+              <colgroup>
+                <col className="w-[42%]" />
+                <col className="w-[30%]" />
+                <col />
+              </colgroup>
+              <thead>
+                <tr className="text-left text-[10px] text-[var(--text-hint)]">
+                  <th className="py-1 pr-3 font-medium">{tt('xlsxColWrite')}</th>
+                  <th className="py-1 pr-3 font-medium">{tt('xlsxColWhat')}</th>
+                  <th className="py-1 font-medium">{tt('xlsxColExample')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {keys.map((key) => (
+                  <tr key={key} className="border-t border-[var(--border-card)]">
+                    <td className="py-1 pr-3 font-mono text-[10px] select-all">{marker(key)}</td>
+                    <td className="py-1 pr-3">
+                      <span className="rounded px-1.5 py-0.5" style={{ background: TONE_BG[tone] }}>{tt(markerKey(key, 'marker'))}</span>
+                    </td>
+                    <td className="py-1 text-[var(--text-hint)]">{tt(markerKey(key, 'markerExample'))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ))}
+          <p>{tt('xlsxRowNote')}</p>
         </div>
       </details>
     </section>

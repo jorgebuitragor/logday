@@ -1,5 +1,5 @@
 // El selector del estilo de las secciones del menú (specs/navegacion-secciones
-// NS1, NS20, design §6.1): dos tarjetas con miniatura animada. Va aparte de
+// NS1, NS20, NS23, design §6.1): tres tarjetas con miniatura animada. Va aparte de
 // `SidebarSettings` porque lo usan Opciones → Navegación y la bienvenida.
 import { useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
@@ -8,9 +8,10 @@ import { t } from '../../lib/i18n';
 import type { SidebarStyle } from '../sidebar/sectionOrder';
 import { SidebarStylePreview } from './SidebarStylePreview';
 
-const STYLES: { value: SidebarStyle; name: 'icons' | 'list'; desc: 'iconsDesc' | 'listDesc' }[] = [
+const STYLES: { value: SidebarStyle; name: 'icons' | 'list' | 'classic'; desc: 'iconsDesc' | 'listDesc' | 'classicDesc' }[] = [
   { value: 'list', name: 'list', desc: 'listDesc' },
   { value: 'icons', name: 'icons', desc: 'iconsDesc' },
+  { value: 'classic', name: 'classic', desc: 'classicDesc' },
 ];
 
 export function SidebarStylePicker() {
@@ -31,7 +32,7 @@ export function SidebarStylePicker() {
   return (
     <fieldset>
       <legend className="mb-2 text-xs font-medium text-[var(--text-secondary)]">{t(language, 'sectionNav', 'style')}</legend>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         {STYLES.map(({ value, name, desc }) => {
           const selected = sidebarStyle === value;
           return (

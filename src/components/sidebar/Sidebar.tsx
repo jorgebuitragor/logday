@@ -600,8 +600,8 @@ export function Sidebar() {
               {collapseButton}
             </div>
           </div>
-          {/* Lista con nombres (NS3). */}
-          <SectionNav variant="list" />
+          {/* Lista con nombres (NS3) o Clásico (NS23), con la misma cabecera. */}
+          <SectionNav variant={sidebarStyle === 'classic' ? 'classic' : 'list'} />
         </>
       )}
 

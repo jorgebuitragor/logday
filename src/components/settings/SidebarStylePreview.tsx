@@ -23,7 +23,19 @@ export function SidebarStylePreview({ variant, play = false }: { variant: Sideba
       aria-hidden="true"
       className={`sbp ${play ? 'sbp-run' : ''} flex h-24 w-full max-w-40 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg-base)]`}
     >
-      {variant === 'icons' ? (
+      {variant === 'classic' ? (
+        <div className="flex w-[4.75rem] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]">
+          {/* La fila de íconos arriba del menú: el resaltado avanza de
+              sección en sección. */}
+          <div className="relative flex gap-[3px] border-b border-[var(--border)] px-1.5 py-1.5">
+            <div className="sbp-anim sbp-hlx absolute left-1.5 top-1.5 h-2.5 w-2.5 rounded-sm bg-[var(--accent)]" />
+            {Array.from({ length: 4 }, (_, i) => <div key={i} className={SQUARE} />)}
+          </div>
+          <div className="p-1.5">
+            <PanelLines widths={['85%', '60%', '75%', '50%']} />
+          </div>
+        </div>
+      ) : variant === 'icons' ? (
         <>
           {/* La columna de íconos: el resaltado baja de sección en sección,
               con su tooltip al lado. */}

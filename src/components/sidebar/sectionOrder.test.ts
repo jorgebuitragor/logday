@@ -210,6 +210,7 @@ describe('config y migración (NS5)', () => {
     expect(parseSidebarStyle(oldOff.sidebarStyle, oldOff.sidebarLabelsVisible)).toBe('icons');
     expect(parseSidebarStyle('icons', true)).toBe('icons');
     expect(parseSidebarStyle('list', false)).toBe('list');
+    expect(parseSidebarStyle('classic', false)).toBe('classic');
     expect(parseSidebarStyle('fila')).toBe('list');
   });
 

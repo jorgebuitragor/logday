@@ -1,6 +1,7 @@
-// El menú de secciones (specs/navegacion-secciones NS1-NS18): la Barra de
-// íconos, la Lista con nombres y el colapsado salen de aquí, con la misma
-// lista (`useSectionItems`), el mismo teclado, "Más" y clic derecho.
+// El menú de secciones (specs/navegacion-secciones NS1-NS18, NS23): la Barra
+// de íconos, la Lista con nombres, el Clásico y el colapsado salen de aquí,
+// con la misma lista (`useSectionItems`), el mismo teclado, "Más" y clic
+// derecho.
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { MoreHorizontal } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
@@ -17,7 +18,7 @@ import {
   NavTooltip, SectionContextMenu, SectionMoreMenu, moreMenuAnchor, useNavTooltip, type SectionCtx,
 } from './SectionMenus';
 
-export type SectionNavVariant = 'icons' | 'list';
+export type SectionNavVariant = 'icons' | 'list' | 'classic';
 
 interface SectionNavProps {
   variant: SectionNavVariant;
@@ -38,6 +39,15 @@ const ICON_IDLE = 'text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text
 const ROW_BASE = `group flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs transition ${FOCUS_RING}`;
 const ROW_ACTIVE = 'bg-indigo-500/15 font-medium text-indigo-400';
 const ROW_IDLE = 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]';
+// El Clásico (NS23): la fila de la versión 1.1, una sola fila de hasta cinco
+// celdas (con más secciones, cuatro y "Más"), con el nombre solo en la
+// activa y solo si cabe.
+const CLASSIC_SLOTS = 5;
+/** Lo que el nombre de la activa necesita a cada lado dentro de la celda. */
+const LABEL_FIT_MARGIN_PX = 4;
+const CELL_BASE = `flex h-[42px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg transition-[background-color,color] duration-200 ${FOCUS_RING}`;
+const CELL_ACTIVE = 'bg-indigo-500/15 font-medium text-indigo-400';
+const CELL_IDLE = 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]';
 
 export function SectionNav({ variant, collapsed = false, after, initialCapacity = Infinity }: SectionNavProps) {
   const { language, activeSection, setSection, openSidebarSettings } = useAppStore(
@@ -51,6 +61,9 @@ export function SectionNav({ variant, collapsed = false, after, initialCapacity 
   const { home, items } = useSectionItems();
   const actions = useSectionActions(items);
   const isColumn = variant === 'icons' || collapsed;
+  // En el Clásico, Inicio es el logo de la cabecera, como antes: no va en
+  // la cuadrícula ni en el recorrido con las flechas.
+  const isGrid = variant === 'classic' && !collapsed;
   const visible = items.filter((i) => !i.hidden);
   const wantsSeparator = separatorIndex(visible.map((i) => i.isExtension)) > 0;
 
@@ -60,6 +73,8 @@ export function SectionNav({ variant, collapsed = false, after, initialCapacity 
   const regionRef = useRef<HTMLDivElement>(null);
   const afterRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
+    // La cuadrícula crece en filas: entra todo lo visible.
+    if (isGrid) return;
     const measure = () => {
       if (isColumn) {
         const region = regionRef.current;
@@ -76,15 +91,15 @@ export function SectionNav({ variant, collapsed = false, after, initialCapacity 
     const targets = isColumn ? [regionRef.current, afterRef.current] : [navRef.current?.parentElement];
     for (const el of targets) if (el) observer.observe(el);
     return () => observer.disconnect();
-  }, [isColumn, wantsSeparator, Boolean(after)]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isColumn, isGrid, wantsSeparator, Boolean(after)]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { shown, more } = splitSections(items, capacity);
+  const { shown, more } = splitSections(items, isGrid ? CLASSIC_SLOTS : capacity);
   const sep = separatorIndex(shown.map((i) => i.isExtension));
   const activeInMore = more.find((i) => i.id === activeSection);
 
   // ── Roving tabindex (NS14) ──
-  const keys = [home.id, ...shown.map((i) => i.id), ...(more.length ? [MORE_KEY] : [])];
-  const defaultKey = activeInMore ? MORE_KEY : keys.includes(activeSection) ? activeSection : home.id;
+  const keys = [...(isGrid ? [] : [home.id]), ...shown.map((i) => i.id), ...(more.length ? [MORE_KEY] : [])];
+  const defaultKey = activeInMore ? MORE_KEY : keys.includes(activeSection) ? activeSection : keys[0];
   const [focusKey, setFocusKey] = useState<string | null>(null);
   const rovingKey = focusKey && keys.includes(focusKey) ? focusKey : defaultKey;
   const btnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -96,6 +111,36 @@ export function SectionNav({ variant, collapsed = false, after, initialCapacity 
   useEffect(() => {
     if (tooltip.tip && !keysKey.split(',').includes(tooltip.tip.id)) tooltip.hide();
   }, [keysKey, tooltip.tip]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── El nombre de la activa en el Clásico ──
+  // Se mide el nombre de la activa contra el ancho de su celda. Si no cabe
+  // ("Horas extra" en cinco celdas angostas), se ve solo el ícono resaltado,
+  // como en la 1.1, y el nombre queda en el tooltip.
+  const [labelFits, setLabelFits] = useState(true);
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    if (!isGrid || !nav) return;
+    const measure = () => {
+      const label = nav.querySelector<HTMLElement>('[data-cell-label="active"]');
+      const cell = label?.closest<HTMLElement>('[data-nav-key]');
+      if (!label || !cell) return;
+      setLabelFits(label.scrollWidth + LABEL_FIT_MARGIN_PX <= cell.clientWidth);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(nav);
+    return () => observer.disconnect();
+  }, [isGrid, keysKey, language, activeSection]);
+  const cellLabel = (label: string, show: boolean) =>
+    show ? (
+      <span
+        aria-hidden
+        data-cell-label="active"
+        className={`whitespace-nowrap text-[10px] leading-tight ${labelFits ? '' : 'h-0 overflow-hidden opacity-0'}`}
+      >
+        {label}
+      </span>
+    ) : null;
 
   const onNavKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') tooltip.hide();
@@ -116,7 +161,7 @@ export function SectionNav({ variant, collapsed = false, after, initialCapacity 
     const el = btnRefs.current[MORE_KEY];
     if (!el) return;
     tooltip.hide();
-    setMoreAnchor(moreMenuAnchor(el.getBoundingClientRect(), variant === 'list' && !collapsed ? 'list' : 'icons'));
+    setMoreAnchor(moreMenuAnchor(el.getBoundingClientRect(), variant !== 'icons' && !collapsed ? 'list' : 'icons'));
   };
   const closeMore = (returnFocus: boolean) => {
     setMoreAnchor(null);
@@ -178,6 +223,14 @@ export function SectionNav({ variant, collapsed = false, after, initialCapacity 
         </button>
       );
     }
+    if (isGrid) {
+      return (
+        <button key={item.id} {...common} title={item.label} aria-label={item.label} className={`${CELL_BASE} ${isActive ? CELL_ACTIVE : CELL_IDLE}`}>
+          <item.Icon size={14} className="shrink-0" />
+          {cellLabel(item.label, isActive)}
+        </button>
+      );
+    }
     return (
       <button key={item.id} {...common} className={`${ROW_BASE} ${isActive ? ROW_ACTIVE : ROW_IDLE}`}>
         <item.Icon size={14} className="shrink-0" />
@@ -220,21 +273,26 @@ export function SectionNav({ variant, collapsed = false, after, initialCapacity 
           openMore();
         }
       }}
+      title={isGrid ? moreLabel : undefined}
       className={
         isColumn
           ? `${ICON_BTN_BASE} ${activeInMore ? ICON_ACTIVE : ICON_IDLE}`
-          : `${ROW_BASE} ${activeInMore ? ROW_ACTIVE : ROW_IDLE}`
+          : isGrid
+            ? `${CELL_BASE} ${activeInMore ? CELL_ACTIVE : CELL_IDLE}`
+            : `${ROW_BASE} ${activeInMore ? ROW_ACTIVE : ROW_IDLE}`
       }
     >
       {isColumn && activeInMore && <span aria-hidden className={`absolute ${collapsed ? '-left-1.5' : '-left-1'} h-5 w-0.5 rounded-r bg-[var(--accent)]`} />}
       <MoreHorizontal size={isColumn ? 18 : 14} className="shrink-0" />
-      {!isColumn && <span className="truncate">{interpolate(t(language, 'sectionNav', 'moreCount'), { n: more.length })}</span>}
+      {isGrid && activeInMore && cellLabel(activeInMore.label, true)}
+      {!isColumn && !isGrid && <span className="truncate">{interpolate(t(language, 'sectionNav', 'moreCount'), { n: more.length })}</span>}
     </button>
   );
 
+  // En la cuadrícula no hay separadora: las extensiones siguen en la fila.
   const sectionButtons = shown.map((item, i) => (
     <Fragment key={item.id}>
-      {i === sep && separator(`sep-${item.id}`)}
+      {i === sep && !isGrid && separator(`sep-${item.id}`)}
       {renderItem(item)}
     </Fragment>
   ));
@@ -281,6 +339,21 @@ export function SectionNav({ variant, collapsed = false, after, initialCapacity 
           {moreButton}
           {after && <div ref={afterRef} className="flex w-full shrink-0 flex-col items-center gap-1">{after}</div>}
         </div>
+        {floating}
+      </nav>
+    );
+  }
+
+  if (isGrid) {
+    return (
+      <nav
+        ref={navRef}
+        aria-label={t(language, 'sectionNav', 'nav')}
+        onKeyDown={onNavKeyDown}
+        className={`grid shrink-0 gap-1 border-b border-[var(--border)] px-2 py-2 ${keys.length > 4 ? 'grid-cols-5' : 'grid-cols-4'}`}
+      >
+        {sectionButtons}
+        {moreButton}
         {floating}
       </nav>
     );

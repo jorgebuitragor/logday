@@ -1257,11 +1257,20 @@ html.theme-animating body * {
   63%, 71% { opacity: 0; }
   77%, 100% { opacity: 1; }
 }
+.sbp-hlx { --sbp-step: 13px; transform: translateX(calc(var(--sbp-step) * 2)); }
+@keyframes sbp-move-x {
+  0%, 28% { transform: translateX(0); }
+  34%, 61% { transform: translateX(var(--sbp-step)); }
+  67%, 100% { transform: translateX(calc(var(--sbp-step) * 2)); }
+}
 .sbp-run .sbp-hl { animation: sbp-move 3s ease-in-out 1; }
+.sbp-run .sbp-hlx { animation: sbp-move-x 3s ease-in-out 1; }
 .sbp-run .sbp-lines { animation: sbp-fade 3s ease-in-out 1; }
 .sbp-run .sbp-tip { animation: sbp-tip 3s ease-in-out 1; }
 .sbp-card:hover .sbp-hl,
 .sbp-card:has(:focus-visible) .sbp-hl { animation: sbp-move 3s ease-in-out infinite; }
+.sbp-card:hover .sbp-hlx,
+.sbp-card:has(:focus-visible) .sbp-hlx { animation: sbp-move-x 3s ease-in-out infinite; }
 .sbp-card:hover .sbp-lines,
 .sbp-card:has(:focus-visible) .sbp-lines { animation: sbp-fade 3s ease-in-out infinite; }
 .sbp-card:hover .sbp-tip,

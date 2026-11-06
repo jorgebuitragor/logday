@@ -208,6 +208,55 @@ describe('el menú lateral expandido', () => {
     expect(text(html)).not.toContain(' Opciones ');
   });
 
+  it('Clásico (NS23): cabecera de siempre y la fila de íconos, con el nombre solo en la activa', () => {
+    app.sidebarStyle = 'classic';
+    app.activeSection = 'tasks';
+    const html = renderToStaticMarkup(<Sidebar />);
+    expect(html).toContain('brand-wordmark');
+    expect(html).toContain('grid-cols-4');
+    expect(html).not.toContain('grid-cols-5');
+    expect(html).not.toContain('w-11');
+    // Cada sección tiene su nombre accesible; el texto visible es solo el de la activa.
+    expect(html).toContain('aria-label="Dailys"');
+    expect(html).toContain('aria-label="Horas extra"');
+    const nav = html.match(/<nav[^>]*grid-cols-4[^>]*>([\s\S]*?)<\/nav>/)![1];
+    // Solo la activa lleva su nombre visible.
+    expect(text(nav).trim()).toBe('Tareas');
+    expect(count(nav, 'data-cell-label="active"')).toBe(1);
+    // Inicio es el logo de la cabecera, no una celda.
+    expect(nav).not.toContain('aria-label="Inicio"');
+    // Un solo tab stop: la activa.
+    expect(count(nav, 'tabindex="0"')).toBe(1);
+    expect(nav).toMatch(/aria-current="page"[^>]*tabindex="0"|tabindex="0"[^>]*aria-current="page"/);
+  });
+
+  it('Clásico: las extensiones con vista siguen en la fila y las ocultas van a "Más"', () => {
+    app.sidebarStyle = 'classic';
+    app.extensions = { pomodoro: { enabled: true } };
+    app.sidebarSections = [{ id: 'dailys' }, { id: 'tasks' }, { id: 'notes', hidden: true }, { id: 'overtime' }, { id: 'ext:pomodoro' }];
+    const nav = renderToStaticMarkup(<Sidebar />).match(/<nav[^>]*grid-cols-5[^>]*>([\s\S]*?)<\/nav>/)![1];
+    expect(nav).toContain('aria-label="Pomodoro"');
+    expect(nav).not.toContain('aria-label="Notas"');
+    expect(nav).toContain('aria-haspopup="menu"');
+  });
+
+  it('Clásico: una sola fila de hasta cinco; con más secciones, cuatro y "Más"', () => {
+    app.sidebarStyle = 'classic';
+    app.extensions = { pomodoro: { enabled: true } };
+    app.sidebarSections = [{ id: 'dailys' }, { id: 'tasks' }, { id: 'notes' }, { id: 'overtime' }, { id: 'ext:pomodoro' }];
+    const five = renderToStaticMarkup(<Sidebar />).match(/<nav[^>]*grid-cols-5[^>]*>([\s\S]*?)<\/nav>/)![1];
+    expect(count(five, 'data-nav-key=')).toBe(5);
+    expect(five).not.toContain('aria-haspopup="menu"');
+
+    app.extensions = { pomodoro: { enabled: true }, devtools: { enabled: true } };
+    app.sidebarSections = [...app.sidebarSections, { id: 'ext:devtools' }];
+    const six = renderToStaticMarkup(<Sidebar />).match(/<nav[^>]*grid-cols-5[^>]*>([\s\S]*?)<\/nav>/)![1];
+    expect(count(six, 'data-nav-key=')).toBe(5);
+    expect(six).toContain('aria-label="Horas extra"');
+    expect(six).not.toContain('aria-label="Pomodoro"');
+    expect(six).toContain('aria-haspopup="menu"');
+  });
+
   it('Lista con nombres: cabecera de siempre, la lista y Opciones al pie', () => {
     app.sidebarStyle = 'list';
     const html = renderToStaticMarkup(<Sidebar />);
@@ -266,15 +315,16 @@ describe('el botón "Ayuda" (specs/ayuda-contextual AY24)', () => {
 });
 
 describe('Opciones → Menú lateral (NS9, NS20)', () => {
-  it('dos radios con miniatura y la lista de secciones con sus controles', () => {
+  it('tres radios con miniatura y la lista de secciones con sus controles', () => {
     app.sidebarSections = [{ id: 'dailys' }, { id: 'tasks' }, { id: 'notes', hidden: true }, { id: 'overtime' }];
     const html = renderToStaticMarkup(<SidebarSettings />);
     const plain = text(html);
-    expect(count(html, 'type="radio"')).toBe(2);
+    expect(count(html, 'type="radio"')).toBe(3);
     expect(html).toMatch(/checked="" value="icons"/);
     expect(plain).toContain('Barra de íconos');
     expect(plain).toContain('Lista con nombres');
-    expect(count(html, 'aria-hidden="true" class="sbp')).toBe(2);
+    expect(plain).toContain('Clásico');
+    expect(count(html, 'aria-hidden="true" class="sbp')).toBe(3);
     expect(plain).toContain('Secciones del menú');
     expect(plain).not.toContain('Textos del menú lateral');
     // aria-disabled y no disabled: el botón movido al extremo conserva el foco (specs/devtools §G.3).

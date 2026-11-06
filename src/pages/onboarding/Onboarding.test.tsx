@@ -131,7 +131,7 @@ describe('paso 3, apariencia (OB10, OB11)', () => {
     expect(count(html, 'name="onboarding-theme"')).toBe(8);
     expect(html).toMatch(/name="onboarding-theme" checked=""/);
     expect(text(html)).not.toContain(t('es', 'settings', 'customThemePersonalizedTile'));
-    expect(count(html, 'name="sidebar-style"')).toBe(2);
+    expect(count(html, 'name="sidebar-style"')).toBe(3);
     expect(text(html)).toContain('Menú lateral');
   });
 });

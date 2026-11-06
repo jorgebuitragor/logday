@@ -74,7 +74,7 @@ describe('la entrada Navegación (NS21)', () => {
 
   it('el selector de estilo y el de la pantalla de inicio, tal cual', () => {
     const html = renderToStaticMarkup(<NavigationSettingsTab />);
-    expect(html.split('type="radio"').length - 1).toBe(2);
+    expect(html.split('type="radio"').length - 1).toBe(3);
     expect(html).toContain('aria-haspopup="listbox"');
     expect(html).toContain('aria-expanded="false"');
     expect(text(html)).toContain(t('es', 'settings', 'startupDashboard'));

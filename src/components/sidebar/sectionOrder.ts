@@ -2,8 +2,9 @@
 // el orden y la visibilidad que eligió el usuario, los atajos, lo que cabe
 // y lo que va a "Más". Sin React ni store, para probarla sola.
 
-/** Cómo se dibujan las secciones (NS1). */
-export type SidebarStyle = 'icons' | 'list';
+/** Cómo se dibujan las secciones (NS1). `classic`: la fila de íconos arriba
+ *  del menú, como antes de la navegación nueva (NS23). */
+export type SidebarStyle = 'icons' | 'list' | 'classic';
 
 /** Una sección en el orden guardado (`AppConfig.sidebarSections`). */
 export interface SavedSection {
@@ -27,7 +28,7 @@ export const CORE_SECTION_IDS = ['dailys', 'tasks', 'notes', 'overtime'] as cons
 export const ICON_COLUMN_PX = 44;
 /** Ancho mínimo del menú: con la Barra de íconos, el panel conserva los
  *  160 px de antes (design, Ancho). */
-const MIN_WIDTH: Record<SidebarStyle, number> = { list: 160, icons: 160 + ICON_COLUMN_PX };
+const MIN_WIDTH: Record<SidebarStyle, number> = { list: 160, classic: 160, icons: 160 + ICON_COLUMN_PX };
 export const MAX_SIDEBAR_WIDTH = 420;
 
 export function sidebarMinWidth(style: SidebarStyle): number {
@@ -47,7 +48,7 @@ export function clampSidebarWidth(width: number, style: SidebarStyle): number {
  *  "Textos del menú lateral" (`sidebarLabelsVisible: false`, de antes de la
  *  navegación nueva) quería solo íconos: para esa config, la Barra de íconos. */
 export function parseSidebarStyle(raw: unknown, legacyLabelsVisible?: unknown): SidebarStyle {
-  if (raw === 'list' || raw === 'icons') return raw;
+  if (raw === 'list' || raw === 'icons' || raw === 'classic') return raw;
   return legacyLabelsVisible === false ? 'icons' : DEFAULT_SIDEBAR_STYLE;
 }
 

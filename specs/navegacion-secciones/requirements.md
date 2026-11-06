@@ -27,7 +27,7 @@ La fila actual se retira; no queda como tercer modo.
 
 ### Modos
 
-- NS1. El menú lateral DEBERÁ tener dos estilos de secciones, elegibles en Opciones → Navegación → Menú lateral (NS21): **Lista con nombres** (predeterminado) y **Barra de íconos**. Los dos son variantes de un mismo componente, con los mismos datos, orden, fijado, teclado, "Más" y colapsado.
+- NS1. El menú lateral DEBERÁ tener tres estilos de secciones, elegibles en Opciones → Navegación → Menú lateral (NS21): **Lista con nombres** (predeterminado), **Barra de íconos** y **Clásico** (NS23). Los dos son variantes de un mismo componente, con los mismos datos, orden, fijado, teclado, "Más" y colapsado.
 - NS2. **Barra de íconos:** una columna de 44 px a la izquierda, con un botón de 36×36 px por sección, y a su derecha el panel de la sección activa. El panel lleva como título el nombre de la sección activa y, a la derecha del título, sus acciones y el botón de colapsar.
 - NS3. **Lista con nombres:** arriba del panel, una fila por sección, con ícono y nombre (unos 28 px de alto cada una), con el mismo aspecto que la barra de Opciones.
 - NS4. **Colapsado:** en los dos estilos, el menú colapsado es la misma columna de íconos de la Barra de íconos, sin panel. Debajo de las secciones, como hoy, van las vistas de Tareas cuando Tareas está activa. Abajo quedan fijos el estado de las extensiones (R26), Buscar y Opciones. Las secciones se dibujan desde una sola lista, no repetidas a mano.
@@ -72,7 +72,7 @@ La fila actual se retira; no queda como tercer modo.
 
 ### Selector con previsualización
 
-- NS20. El estilo se elige en un grupo de radios con dos tarjetas. Cada una tiene una miniatura del menú, su nombre y una línea de descripción.
+- NS20. El estilo se elige en un grupo de radios con tres tarjetas. Cada una tiene una miniatura del menú, su nombre y una línea de descripción.
   - La miniatura se dibuja con los tokens del tema activo (sin imágenes).
   - Se anima unos 3 s al pasar el puntero, al recibir el foco y una vez al elegirla; fuera de eso queda quieta.
   - CON `prefers-reduced-motion: reduce` o las animaciones de la app apagadas, la miniatura no se mueve y muestra su fotograma final.
@@ -91,6 +91,12 @@ La fila actual se retira; no queda como tercer modo.
   - Elegirla en Opciones cambia también la vista actual, como la vista de notas.
   - Cambiar de vista mientras se usa la app no la modifica, y la vista actual no se guarda: cada inicio vuelve a la elegida.
   - SI no hay preferencia guardada o no es una de las tres, Tareas abre en la Lista, como antes.
+- NS23. **Clásico** ("Classic"), agregado el 6 nov 2026 a pedido de Jorge para quien aún no se adapta a la navegación nueva. Es la fila de la versión 1.1:
+  - Usa la cabecera de la Lista (logo, Buscar y ocultar). Inicio es el logo, no una celda.
+  - Debajo, las secciones visibles en una cuadrícula de cuatro por fila, en el orden del usuario, con las extensiones con vista a continuación y sin separadora. Cada celda muestra el ícono; el nombre solo aparece en la activa, y todas tienen nombre accesible y tooltip.
+  - Las ocultas van a una celda "Más" con el mismo menú; el clic derecho, el teclado (un solo tab stop, flechas) y los atajos funcionan igual que en los otros estilos.
+  - Colapsado, es la misma columna de íconos que los otros estilos (NS4).
+  - No es el predeterminado: la Lista con nombres lo sigue siendo.
 
 ### Fuera de alcance (por ahora)
 
@@ -101,7 +107,7 @@ La fila actual se retira; no queda como tercer modo.
 
 ## Decisiones (31 oct 2026)
 
-- Jorge eligió A (predeterminado), C y D, y retirar la fila.
+- Jorge eligió A (predeterminado), C y D, y retirar la fila. **Cambio del 6 nov 2026:** la fila vuelve como el estilo Clásico (NS23), opcional.
 - **Cambio del 31 oct 2026:** al probar la app de QA, Jorge pidió que la **Lista con nombres** sea el estilo por defecto. La Barra de íconos queda como alternativa.
 - Las tomó el orquestador, siguiendo al agente de diseño, y Jorge puede cambiarlas:
   - Inicio pasa a ser una entrada propia (NS6);

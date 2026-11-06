@@ -39,8 +39,12 @@ const ICON_IDLE = 'text-[var(--text-hint)] hover:bg-[var(--bg-hover)] hover:text
 const ROW_BASE = `group flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs transition ${FOCUS_RING}`;
 const ROW_ACTIVE = 'bg-indigo-500/15 font-medium text-indigo-400';
 const ROW_IDLE = 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]';
-// El Clásico (NS23): la cuadrícula de la versión 1.1, cuatro por fila, con
-// el nombre solo en la activa.
+// El Clásico (NS23): la fila de la versión 1.1, una sola fila de hasta cinco
+// celdas (con más secciones, cuatro y "Más"), con el nombre solo en la
+// activa y solo si cabe.
+const CLASSIC_SLOTS = 5;
+/** Lo que el nombre de la activa necesita a cada lado dentro de la celda. */
+const LABEL_FIT_MARGIN_PX = 4;
 const CELL_BASE = `flex h-[42px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg transition-[background-color,color] duration-200 ${FOCUS_RING}`;
 const CELL_ACTIVE = 'bg-indigo-500/15 font-medium text-indigo-400';
 const CELL_IDLE = 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]';
@@ -89,7 +93,7 @@ export function SectionNav({ variant, collapsed = false, after, initialCapacity 
     return () => observer.disconnect();
   }, [isColumn, isGrid, wantsSeparator, Boolean(after)]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { shown, more } = splitSections(items, capacity);
+  const { shown, more } = splitSections(items, isGrid ? CLASSIC_SLOTS : capacity);
   const sep = separatorIndex(shown.map((i) => i.isExtension));
   const activeInMore = more.find((i) => i.id === activeSection);
 
@@ -107,6 +111,36 @@ export function SectionNav({ variant, collapsed = false, after, initialCapacity 
   useEffect(() => {
     if (tooltip.tip && !keysKey.split(',').includes(tooltip.tip.id)) tooltip.hide();
   }, [keysKey, tooltip.tip]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── El nombre de la activa en el Clásico ──
+  // Se mide el nombre de la activa contra el ancho de su celda. Si no cabe
+  // ("Horas extra" en cinco celdas angostas), se ve solo el ícono resaltado,
+  // como en la 1.1, y el nombre queda en el tooltip.
+  const [labelFits, setLabelFits] = useState(true);
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    if (!isGrid || !nav) return;
+    const measure = () => {
+      const label = nav.querySelector<HTMLElement>('[data-cell-label="active"]');
+      const cell = label?.closest<HTMLElement>('[data-nav-key]');
+      if (!label || !cell) return;
+      setLabelFits(label.scrollWidth + LABEL_FIT_MARGIN_PX <= cell.clientWidth);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(nav);
+    return () => observer.disconnect();
+  }, [isGrid, keysKey, language, activeSection]);
+  const cellLabel = (label: string, show: boolean) =>
+    show ? (
+      <span
+        aria-hidden
+        data-cell-label="active"
+        className={`whitespace-nowrap text-[10px] leading-tight ${labelFits ? '' : 'h-0 overflow-hidden opacity-0'}`}
+      >
+        {label}
+      </span>
+    ) : null;
 
   const onNavKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') tooltip.hide();
@@ -193,7 +227,7 @@ export function SectionNav({ variant, collapsed = false, after, initialCapacity 
       return (
         <button key={item.id} {...common} title={item.label} aria-label={item.label} className={`${CELL_BASE} ${isActive ? CELL_ACTIVE : CELL_IDLE}`}>
           <item.Icon size={14} className="shrink-0" />
-          {isActive && <span aria-hidden className="max-w-full truncate px-1 text-[10px] leading-tight">{item.label}</span>}
+          {cellLabel(item.label, isActive)}
         </button>
       );
     }
@@ -250,7 +284,7 @@ export function SectionNav({ variant, collapsed = false, after, initialCapacity 
     >
       {isColumn && activeInMore && <span aria-hidden className={`absolute ${collapsed ? '-left-1.5' : '-left-1'} h-5 w-0.5 rounded-r bg-[var(--accent)]`} />}
       <MoreHorizontal size={isColumn ? 18 : 14} className="shrink-0" />
-      {isGrid && activeInMore && <span aria-hidden className="max-w-full truncate px-1 text-[10px] leading-tight">{activeInMore.label}</span>}
+      {isGrid && activeInMore && cellLabel(activeInMore.label, true)}
       {!isColumn && !isGrid && <span className="truncate">{interpolate(t(language, 'sectionNav', 'moreCount'), { n: more.length })}</span>}
     </button>
   );
@@ -316,7 +350,7 @@ export function SectionNav({ variant, collapsed = false, after, initialCapacity 
         ref={navRef}
         aria-label={t(language, 'sectionNav', 'nav')}
         onKeyDown={onNavKeyDown}
-        className="grid shrink-0 grid-cols-4 gap-1 border-b border-[var(--border)] px-2 py-2"
+        className={`grid shrink-0 gap-1 border-b border-[var(--border)] px-2 py-2 ${keys.length > 4 ? 'grid-cols-5' : 'grid-cols-4'}`}
       >
         {sectionButtons}
         {moreButton}

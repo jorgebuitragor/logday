@@ -214,12 +214,15 @@ describe('el menú lateral expandido', () => {
     const html = renderToStaticMarkup(<Sidebar />);
     expect(html).toContain('brand-wordmark');
     expect(html).toContain('grid-cols-4');
+    expect(html).not.toContain('grid-cols-5');
     expect(html).not.toContain('w-11');
     // Cada sección tiene su nombre accesible; el texto visible es solo el de la activa.
     expect(html).toContain('aria-label="Dailys"');
     expect(html).toContain('aria-label="Horas extra"');
     const nav = html.match(/<nav[^>]*grid-cols-4[^>]*>([\s\S]*?)<\/nav>/)![1];
+    // Solo la activa lleva su nombre visible.
     expect(text(nav).trim()).toBe('Tareas');
+    expect(count(nav, 'data-cell-label="active"')).toBe(1);
     // Inicio es el logo de la cabecera, no una celda.
     expect(nav).not.toContain('aria-label="Inicio"');
     // Un solo tab stop: la activa.
@@ -231,10 +234,27 @@ describe('el menú lateral expandido', () => {
     app.sidebarStyle = 'classic';
     app.extensions = { pomodoro: { enabled: true } };
     app.sidebarSections = [{ id: 'dailys' }, { id: 'tasks' }, { id: 'notes', hidden: true }, { id: 'overtime' }, { id: 'ext:pomodoro' }];
-    const nav = renderToStaticMarkup(<Sidebar />).match(/<nav[^>]*grid-cols-4[^>]*>([\s\S]*?)<\/nav>/)![1];
+    const nav = renderToStaticMarkup(<Sidebar />).match(/<nav[^>]*grid-cols-5[^>]*>([\s\S]*?)<\/nav>/)![1];
     expect(nav).toContain('aria-label="Pomodoro"');
     expect(nav).not.toContain('aria-label="Notas"');
     expect(nav).toContain('aria-haspopup="menu"');
+  });
+
+  it('Clásico: una sola fila de hasta cinco; con más secciones, cuatro y "Más"', () => {
+    app.sidebarStyle = 'classic';
+    app.extensions = { pomodoro: { enabled: true } };
+    app.sidebarSections = [{ id: 'dailys' }, { id: 'tasks' }, { id: 'notes' }, { id: 'overtime' }, { id: 'ext:pomodoro' }];
+    const five = renderToStaticMarkup(<Sidebar />).match(/<nav[^>]*grid-cols-5[^>]*>([\s\S]*?)<\/nav>/)![1];
+    expect(count(five, 'data-nav-key=')).toBe(5);
+    expect(five).not.toContain('aria-haspopup="menu"');
+
+    app.extensions = { pomodoro: { enabled: true }, devtools: { enabled: true } };
+    app.sidebarSections = [...app.sidebarSections, { id: 'ext:devtools' }];
+    const six = renderToStaticMarkup(<Sidebar />).match(/<nav[^>]*grid-cols-5[^>]*>([\s\S]*?)<\/nav>/)![1];
+    expect(count(six, 'data-nav-key=')).toBe(5);
+    expect(six).toContain('aria-label="Horas extra"');
+    expect(six).not.toContain('aria-label="Pomodoro"');
+    expect(six).toContain('aria-haspopup="menu"');
   });
 
   it('Lista con nombres: cabecera de siempre, la lista y Opciones al pie', () => {

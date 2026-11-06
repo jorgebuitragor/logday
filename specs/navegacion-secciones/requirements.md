@@ -93,8 +93,9 @@ La fila actual se retira; no queda como tercer modo.
   - SI no hay preferencia guardada o no es una de las tres, Tareas abre en la Lista, como antes.
 - NS23. **Clásico** ("Classic"), agregado el 6 nov 2026 a pedido de Jorge para quien aún no se adapta a la navegación nueva. Es la fila de la versión 1.1:
   - Usa la cabecera de la Lista (logo, Buscar y ocultar). Inicio es el logo, no una celda.
-  - Debajo, las secciones visibles en una cuadrícula de cuatro por fila, en el orden del usuario, con las extensiones con vista a continuación y sin separadora. Cada celda muestra el ícono; el nombre solo aparece en la activa, y todas tienen nombre accesible y tooltip.
-  - Las ocultas van a una celda "Más" con el mismo menú; el clic derecho, el teclado (un solo tab stop, flechas) y los atajos funcionan igual que en los otros estilos.
+  - Debajo, **una sola fila de hasta cinco celdas**, en el orden del usuario, con las extensiones con vista a continuación y sin separadora. Con cinco secciones o menos, se ven todas (cuatro llenan la fila como en la 1.1). Con más, o con alguna oculta, se ven las cuatro primeras y la quinta celda es "Más" (⋯), con el mismo menú. Jorge descartó las dos filas el 6 nov 2026: no se veían bien.
+  - Cada celda muestra el ícono. El nombre aparece solo en la activa y solo si cabe en su celda; si no, se ve solo el ícono resaltado, como en la 1.1. Todas tienen nombre accesible y tooltip.
+  - El clic derecho, el teclado (un solo tab stop, flechas) y los atajos funcionan igual que en los otros estilos.
   - Colapsado, es la misma columna de íconos que los otros estilos (NS4).
   - No es el predeterminado: la Lista con nombres lo sigue siendo.
 

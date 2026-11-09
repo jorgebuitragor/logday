@@ -19,7 +19,10 @@
   misma CSP: la app carga sin violaciones propias, Mermaid y Excalidraw se
   dibujan, la vista dividida conserva colores y no deja iframe ni `onerror`,
   un enlace a un `.app` no abre nada y uno `https` llama a `open_url`.
-- [ ] QA en la app de QA (macOS): arranque con migración de `basePath`,
-  exportar una nota a otra carpeta, importar un respaldo, elegir otra
-  carpeta de datos, Git, captura rápida.
+- [x] QA en la app de QA (macOS, 9 nov 2026): arranque con migración de
+  `basePath`, Mermaid con la CSP, exportar una nota a otra carpeta con el
+  diálogo de Rust, vista dividida sin el iframe, y el enlace a un `.app`
+  que no abre la Calculadora.
+- [ ] QA en la app de QA: importar un respaldo, elegir otra carpeta de
+  datos, Git y captura rápida.
 - [ ] Probar `open_url` en Windows con un enlace que tenga `&`.

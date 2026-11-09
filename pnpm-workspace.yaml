@@ -1,3 +1,25 @@
 allowBuilds:
   core-js: true
   esbuild: true
+
+# Dependencias transitivas con vulnerabilidades corregidas
+# (specs/blindaje-seguridad BS21, auditoría de nov 2026). Quitar cada una
+# cuando el paquete que la trae ya pida una versión corregida.
+overrides:
+  # XSS al pegar HTML en el editor (GHSA-c8x8-7fp4-3x9w), vía @tiptap/pm.
+  prosemirror-view: 1.42.8
+  # DoS cuadráticos al parsear Markdown, vía tiptap-markdown.
+  markdown-it: 14.3.3
+  # Bypass de SAFE_FOR_TEMPLATES e IN_PLACE, vía mermaid y Excalidraw.
+  dompurify: 3.4.17
+  # Prototype pollution en _.unset/_.omit, vía el parser de mermaid.
+  lodash-es: 4.17.23
+  # Bucles infinitos y desbordes, vía Excalidraw y postcss.
+  nanoid@3: 3.3.19
+  # DoS con source maps indexados, en el build (tailwind, postcss).
+  source-map-js: 1.2.2
+  # Una sola copia de cada uno en el bundle: al subir tiptap quedaban dos,
+  # y con dos copias de prosemirror-model partir y envolver nodos falla
+  # (aviso de tiptap). Versiones de hace más de dos semanas.
+  prosemirror-model: 1.25.12
+  prosemirror-transform: 1.12.4

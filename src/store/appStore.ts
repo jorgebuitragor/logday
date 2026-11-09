@@ -30,7 +30,6 @@ import { fillOvertimeTemplate } from '../lib/templates/overtimeTemplate';
 import { base64ToBytes, bytesToBase64 as templateBytesToBase64, LOGDAY_OVERTIME_XLSX_BASE64, logdayOvertimeTemplate } from '../lib/templates/logdayOvertimeXlsx';
 import { buildDailyMessage, customOvertimeTemplatePath, type DailyTemplateChoice, type OvertimeTemplateSource, type TemplatesConfig } from '../lib/templates/choice';
 import { fs, pickFolder, pickFile, saveDialog, SearchResult } from '../lib/invoke';
-import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 import {
   login as syncLogin, refreshToken as refreshTokenRemote, SyncApiError, normalizeServerUrl, syncChangesRemote, SyncChange,
   createTaskRemote, patchTaskRemote, deleteTaskRemote,
@@ -4046,7 +4045,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadOvertimeTemplate: async () => {
     const { configDir, language } = get();
     if (!configDir) return;
-    const picked = await openFileDialog({ multiple: false, filters: [{ name: 'Excel', extensions: ['xlsx'] }] });
+    const picked = await pickFile(false, [{ name: 'Excel', extensions: ['xlsx'] }]);
     if (typeof picked !== 'string') return;
     try {
       // Sin validar (v1): si el archivo no sirve, se avisa al exportar.

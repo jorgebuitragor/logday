@@ -3,8 +3,7 @@ import { FolderOpen, Download, Upload, AlertTriangle, Trash2 } from 'lucide-reac
 import { useAppStore } from '../../store/appStore';
 import { Shortcuts, BackupSettings } from '../../types/config';
 import { t } from '../../lib/i18n';
-import { fs } from '../../lib/invoke';
-import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
+import { fs, pickFile, saveDialog } from '../../lib/invoke';
 import { invoke } from '@tauri-apps/api/core';
 import JSZip from 'jszip';
 import ToggleSwitch from '../shared/ToggleSwitch';
@@ -135,10 +134,7 @@ export function DataSettingsTab() {
   async function handleImport() {
     if (!basePath) return;
     try {
-      const picked = await openDialog({
-        multiple: false,
-        filters: [{ name: 'ZIP', extensions: ['zip'] }],
-      });
+      const picked = await pickFile(false, [{ name: 'ZIP', extensions: ['zip'] }]);
       const filePath = typeof picked === 'string' ? picked : null;
       if (!filePath) return;
 

@@ -2292,6 +2292,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tauri-plugin-websocket",
  "tiny_http",
+ "url",
  "windows-sys 0.59.0",
 ]
 

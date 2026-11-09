@@ -8,9 +8,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Check, CircleAlert, CircleCheck, Copy, CornerDownRight, Download, FileQuestion, History, ShieldCheck, ShieldOff, TriangleAlert, X,
 } from 'lucide-react';
-import { save } from '@tauri-apps/plugin-dialog';
 import { useAppStore } from '../../../store/appStore';
-import { fs } from '../../../lib/invoke';
+import { fs, saveDialog as save } from '../../../lib/invoke';
 import { ICON_BTN, FOCUS_RING } from '../../../components/shared/controlClasses';
 import { StatusItem, Toggle } from '../../../components/shared/FormControls';
 import { HtmlPreview } from '../../../components/shared/HtmlPreview';

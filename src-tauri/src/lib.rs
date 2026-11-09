@@ -1,9 +1,13 @@
 mod extensions;
+mod fs_scope;
 
 use std::fs;
 use std::path::Path;
+use fs_scope::{Access, FsScope};
 use serde::{Deserialize, Serialize};
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, State};
+use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_opener::OpenerExt;
 use tauri::{
     menu::{IsMenuItem, Menu, MenuItem},
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
@@ -164,26 +168,34 @@ fn get_home_dir() -> String {
         .to_string()
 }
 
+// Todos los comandos de archivos pasan por `FsScope` (src/fs_scope.rs,
+// specs/blindaje-seguridad BS10–BS17): solo la carpeta de la app, las
+// carpetas de datos elegidas en un diálogo y los archivos elegidos en un
+// diálogo de abrir o guardar.
+
 /// Reads a file and returns its text content
 #[tauri::command]
-fn read_file(path: String) -> Result<String, String> {
-    fs::read_to_string(&path).map_err(|e| format!("Failed to read {path}: {e}"))
+fn read_file(scope: State<'_, FsScope>, path: String) -> Result<String, String> {
+    let p = scope.check(&path, Access::Read)?;
+    fs::read_to_string(&p).map_err(|e| format!("Failed to read {path}: {e}"))
 }
 
 /// Writes text content to a file (creates parent directories if needed)
 #[tauri::command]
-fn write_file(path: String, content: String) -> Result<(), String> {
-    if let Some(parent) = Path::new(&path).parent() {
+fn write_file(scope: State<'_, FsScope>, path: String, content: String) -> Result<(), String> {
+    let p = scope.check(&path, Access::Write)?;
+    if let Some(parent) = p.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create directory: {e}"))?;
     }
-    fs::write(&path, content).map_err(|e| format!("Failed to write {path}: {e}"))
+    fs::write(&p, content).map_err(|e| format!("Failed to write {path}: {e}"))
 }
 
 /// Lists entries (files and directories) in a given directory
 #[tauri::command]
-fn list_dir(dir: String) -> Result<Vec<FsEntry>, String> {
-    let read = fs::read_dir(&dir).map_err(|e| format!("Failed to read dir {dir}: {e}"))?;
+fn list_dir(scope: State<'_, FsScope>, dir: String) -> Result<Vec<FsEntry>, String> {
+    let d = scope.check(&dir, Access::Read)?;
+    let read = fs::read_dir(&d).map_err(|e| format!("Failed to read dir {dir}: {e}"))?;
     let mut entries: Vec<FsEntry> = read
         .flatten()
         .map(|e| {
@@ -201,40 +213,49 @@ fn list_dir(dir: String) -> Result<Vec<FsEntry>, String> {
 
 /// Creates a directory (and all parent directories)
 #[tauri::command]
-fn create_dir_recursive(dir: String) -> Result<(), String> {
-    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create dir {dir}: {e}"))
+fn create_dir_recursive(scope: State<'_, FsScope>, dir: String) -> Result<(), String> {
+    let d = scope.check(&dir, Access::Write)?;
+    fs::create_dir_all(&d).map_err(|e| format!("Failed to create dir {dir}: {e}"))
 }
 
 /// Deletes a file
 #[tauri::command]
-fn delete_file(path: String) -> Result<(), String> {
-    fs::remove_file(&path).map_err(|e| format!("Failed to delete {path}: {e}"))
+fn delete_file(scope: State<'_, FsScope>, path: String) -> Result<(), String> {
+    let p = scope.check_not_root(&path)?;
+    fs::remove_file(&p).map_err(|e| format!("Failed to delete {path}: {e}"))
 }
 
 /// Renames (moves) a directory
 #[tauri::command]
-fn rename_dir(from: String, to: String) -> Result<(), String> {
-    fs::rename(&from, &to).map_err(|e| format!("Failed to rename {from} to {to}: {e}"))
+fn rename_dir(scope: State<'_, FsScope>, from: String, to: String) -> Result<(), String> {
+    let f = scope.check_not_root(&from)?;
+    let t = scope.check_not_root(&to)?;
+    fs::rename(&f, &t).map_err(|e| format!("Failed to rename {from} to {to}: {e}"))
 }
 
 /// Deletes a directory and all its contents
 #[tauri::command]
-fn delete_dir(path: String) -> Result<(), String> {
-    fs::remove_dir_all(&path).map_err(|e| format!("Failed to delete dir {path}: {e}"))
+fn delete_dir(scope: State<'_, FsScope>, path: String) -> Result<(), String> {
+    let p = scope.check_not_root(&path)?;
+    fs::remove_dir_all(&p).map_err(|e| format!("Failed to delete dir {path}: {e}"))
 }
 
-/// Checks if a path exists
+/// Checks if a path exists. Fuera de las carpetas permitidas responde
+/// `false`: no sirve para sondear el disco.
 #[tauri::command]
-fn path_exists(path: String) -> bool {
-    Path::new(&path).exists()
+fn path_exists(scope: State<'_, FsScope>, path: String) -> bool {
+    scope.check(&path, Access::Read).map(|p| p.exists()).unwrap_or(false)
 }
 
 /// Recursively searches all .md files under base_dir for the given query string
 #[tauri::command]
-fn search_tasks(base_dir: String, query: String) -> Vec<SearchResult> {
+fn search_tasks(scope: State<'_, FsScope>, base_dir: String, query: String) -> Vec<SearchResult> {
+    let Ok(base) = scope.check(&base_dir, Access::Read) else {
+        return Vec::new();
+    };
     let query_lower = query.to_lowercase();
     let mut results = Vec::new();
-    search_recursive(Path::new(&base_dir), &query_lower, &mut results, 0);
+    search_recursive(&base, &query_lower, &mut results, 0);
     results
 }
 
@@ -247,7 +268,10 @@ fn search_recursive(dir: &Path, query: &str, results: &mut Vec<SearchResult>, de
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_dir() {
+        // `file_type()` no sigue enlaces simbólicos: un enlace dentro de la
+        // carpeta de datos no saca la búsqueda fuera de ella.
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        if is_dir {
             // skip hidden dirs
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
@@ -330,9 +354,10 @@ fn write_clipboard(text: String) -> Result<(), String> {
 
 /// Reads a file and returns its content as base64-encoded string
 #[tauri::command]
-fn read_file_binary(path: String) -> Result<String, String> {
+fn read_file_binary(scope: State<'_, FsScope>, path: String) -> Result<String, String> {
     use base64::{engine::general_purpose::STANDARD, Engine};
-    let bytes = fs::read(&path).map_err(|e| format!("Failed to read {path}: {e}"))?;
+    let p = scope.check(&path, Access::Read)?;
+    let bytes = fs::read(&p).map_err(|e| format!("Failed to read {path}: {e}"))?;
     Ok(STANDARD.encode(bytes))
 }
 
@@ -401,25 +426,67 @@ async fn fetch_image_base64(url: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn write_file_binary(path: String, data: String) -> Result<(), String> {
+fn write_file_binary(scope: State<'_, FsScope>, path: String, data: String) -> Result<(), String> {
     use base64::{engine::general_purpose::STANDARD, Engine};
-    if let Some(parent) = Path::new(&path).parent() {
+    let p = scope.check(&path, Access::Write)?;
+    if let Some(parent) = p.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create directory: {e}"))?;
     }
     let bytes = STANDARD.decode(&data).map_err(|e| format!("Failed to decode base64: {e}"))?;
-    fs::write(&path, bytes).map_err(|e| format!("Failed to write {path}: {e}"))
+    fs::write(&p, bytes).map_err(|e| format!("Failed to write {path}: {e}"))
+}
+
+/// Comprueba que los argumentos de `git_run` sean uno de los comandos que
+/// usa la integración Git (src/store/appStore.ts: gitInit, gitCommit,
+/// gitPush, gitFetch, gitPull). Cualquier otra cosa (`-c core.sshCommand=…`,
+/// `--upload-pack=…`, un remoto `ext::`) se rechaza: con eso un script
+/// inyectado ejecutaría comandos (specs/blindaje-seguridad BS18).
+fn git_args_allowed(args: &[String]) -> bool {
+    let a: Vec<&str> = args.iter().map(String::as_str).collect();
+    match a.as_slice() {
+        ["init"] | ["add", "-A"] | ["fetch", "origin"] | ["pull", "origin", "main"] => true,
+        ["push", "--set-upstream", "origin", "main"] => true,
+        ["rev-list", "HEAD..origin/HEAD", "--count"] | ["rev-list", "origin/HEAD..HEAD", "--count"] => true,
+        ["config", "--local", "user.name" | "user.email", _value] => true,
+        ["commit", "-m", _msg] => true,
+        ["remote", "add" | "set-url", "origin", url] => git_remote_allowed(url),
+        _ => false,
+    }
+}
+
+/// Remotos `https://`, `http://`, `ssh://` o `usuario@host:ruta`. Nunca
+/// `ext::` ni `fd::` (ejecutan comandos) ni nada que empiece con `-`.
+fn git_remote_allowed(url: &str) -> bool {
+    let u = url.trim();
+    if u.is_empty() || u.starts_with('-') || u.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return false;
+    }
+    let lower = u.to_ascii_lowercase();
+    if lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("ssh://") {
+        return true;
+    }
+    // Forma corta de SSH: git@github.com:usuario/repo.git
+    match u.split_once(':') {
+        Some((host, path)) => host.contains('@') && !host.contains('/') && !path.is_empty() && !path.starts_with(':'),
+        None => false,
+    }
 }
 
 /// Runs a git subcommand in the given working directory.
 /// Only invokes the `git` binary — never executes arbitrary shell strings.
+/// Solo los comandos de `git_args_allowed` y dentro de una carpeta de datos.
 #[tauri::command]
-fn git_run(cwd: String, args: Vec<String>) -> Result<String, String> {
+fn git_run(scope: State<'_, FsScope>, cwd: String, args: Vec<String>) -> Result<String, String> {
     #[cfg(target_os = "windows")]
     use std::os::windows::process::CommandExt;
 
+    let dir = scope.check_git_cwd(&cwd)?;
+    if !git_args_allowed(&args) {
+        return Err("Comando de git no permitido".to_string());
+    }
     let mut cmd = std::process::Command::new("git");
-    cmd.current_dir(&cwd).args(&args);
+    cmd.current_dir(&dir).args(&args);
     #[cfg(target_os = "windows")]
     {
         // 0x08000000 = CREATE_NO_WINDOW
@@ -433,58 +500,181 @@ fn git_run(cwd: String, args: Vec<String>) -> Result<String, String> {
     }
 }
 
-/// Opens a URL in the default system browser
-#[tauri::command]
-fn open_url(url: String) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(&url)
-            .spawn()
-            .map_err(|e| e.to_string())?;
+/// Esquemas que `open_url` entrega al sistema. Un enlace de una nota con
+/// otro esquema (`file:`, `javascript:`, el de otra app) no se abre.
+const OPEN_URL_SCHEMES: [&str; 4] = ["http", "https", "mailto", "tel"];
+
+/// Valida y normaliza una URL antes de abrirla (specs/blindaje-seguridad BS1).
+fn parse_openable_url(raw: &str) -> Result<String, String> {
+    let raw = raw.trim();
+    // `//host/ruta` (enlace sin esquema) se abre como https.
+    let candidate = if raw.starts_with("//") { format!("https:{raw}") } else { raw.to_string() };
+    let url = url::Url::parse(&candidate).map_err(|_| "Enlace no válido".to_string())?;
+    if !OPEN_URL_SCHEMES.contains(&url.scheme()) {
+        return Err(format!("No se abren enlaces {}:", url.scheme()));
     }
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("cmd")
-            .args(["/c", "start", "", &url])
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(&url)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    Ok(url.as_str().to_string())
 }
 
-/// Opens a file or folder in the system's default file manager
+/// Opens a URL in the default system browser.
+/// Antes usaba `cmd /c start` en Windows: una URL con `&` ejecutaba otros
+/// comandos (specs/blindaje-seguridad BS1). El plugin opener abre con
+/// ShellExecute en Windows, `open` en macOS y `xdg-open` en Linux, sin shell.
 #[tauri::command]
-fn open_in_system(path: String) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(&path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
+fn open_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let url = parse_openable_url(&url)?;
+    app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
+}
+
+/// Extensiones que `open_in_system` abre con su aplicación. El resto
+/// (`.app`, `.command`, `.exe`, `.sh`, `.lnk`…) se muestra en el Finder o
+/// el Explorador sin ejecutarse (specs/blindaje-seguridad BS3).
+const OPENABLE_EXTENSIONS: [&str; 33] = [
+    "md", "markdown", "txt", "log", "csv", "json", "xml", "yaml", "yml", "pdf", "rtf",
+    "png", "jpg", "jpeg", "gif", "webp", "heic", "bmp", "tif", "tiff",
+    "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp",
+    "mp3", "mp4", "mov", "wav",
+];
+
+/// Carpetas que macOS trata como un archivo ejecutable o instalable.
+const BUNDLE_EXTENSIONS: [&str; 10] = [
+    "app", "bundle", "framework", "plugin", "prefpane", "workflow", "saver", "kext", "mpkg", "pkg",
+];
+
+enum OpenAction {
+    Open,
+    Reveal,
+}
+
+fn open_action(path: &Path) -> OpenAction {
+    let ext = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    if path.is_dir() {
+        if BUNDLE_EXTENSIONS.contains(&ext.as_str()) {
+            OpenAction::Reveal
+        } else {
+            OpenAction::Open
+        }
+    } else if OPENABLE_EXTENSIONS.contains(&ext.as_str()) {
+        OpenAction::Open
+    } else {
+        OpenAction::Reveal
     }
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("explorer")
-            .arg(&path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
+}
+
+/// Opens a file or folder in the system's default file manager.
+/// Una carpeta se abre; un documento conocido se abre con su aplicación;
+/// cualquier otra cosa solo se muestra en su carpeta, para que un enlace o
+/// una ruta vinculada nunca lance un programa.
+#[tauri::command]
+fn open_in_system(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.is_absolute() || p.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        return Err("Ruta no válida".to_string());
     }
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(&path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
+    let resolved = p.canonicalize().map_err(|e| format!("No se encontró {path}: {e}"))?;
+    match open_action(&resolved) {
+        OpenAction::Open => app.opener().open_path(resolved.to_string_lossy(), None::<&str>),
+        OpenAction::Reveal => app.opener().reveal_item_in_dir(&resolved),
     }
-    Ok(())
+    .map_err(|e| e.to_string())
+}
+
+/// Filtro de extensiones de un diálogo, como en `@tauri-apps/plugin-dialog`.
+#[derive(Debug, Deserialize)]
+pub struct DialogFilter {
+    pub name: String,
+    pub extensions: Vec<String>,
+}
+
+fn with_filters<R: tauri::Runtime>(
+    mut b: tauri_plugin_dialog::FileDialogBuilder<R>,
+    filters: Option<Vec<DialogFilter>>,
+) -> tauri_plugin_dialog::FileDialogBuilder<R> {
+    for f in filters.unwrap_or_default() {
+        let exts: Vec<&str> = f.extensions.iter().map(String::as_str).collect();
+        b = b.add_filter(f.name, &exts);
+    }
+    b
+}
+
+/// Diálogo de carpeta. La carpeta elegida pasa a ser una carpeta de datos
+/// permitida (BS12): es la única forma de agregar una.
+#[tauri::command]
+async fn fs_pick_folder(window: tauri::Window, scope: State<'_, FsScope>) -> Result<Option<String>, String> {
+    let w = window.clone();
+    let picked = tauri::async_runtime::spawn_blocking(move || w.dialog().file().set_parent(&w).blocking_pick_folder())
+        .await
+        .map_err(|e| e.to_string())?;
+    let Some(fp) = picked else { return Ok(None) };
+    let path = fp.into_path().map_err(|e| e.to_string())?;
+    scope.add_root(&path)?;
+    Ok(Some(path.to_string_lossy().to_string()))
+}
+
+/// Diálogo de abrir archivos. Los elegidos se pueden leer hasta cerrar la
+/// app (BS13).
+#[tauri::command]
+async fn fs_pick_files(
+    window: tauri::Window,
+    scope: State<'_, FsScope>,
+    multiple: bool,
+    filters: Option<Vec<DialogFilter>>,
+) -> Result<Option<Vec<String>>, String> {
+    let w = window.clone();
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        let b = with_filters(w.dialog().file().set_parent(&w), filters);
+        if multiple {
+            b.blocking_pick_files()
+        } else {
+            b.blocking_pick_file().map(|f| vec![f])
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let Some(files) = picked else { return Ok(None) };
+    let mut out = Vec::with_capacity(files.len());
+    for f in files {
+        let path = f.into_path().map_err(|e| e.to_string())?;
+        scope.grant_file(&path)?;
+        out.push(path.to_string_lossy().to_string());
+    }
+    Ok(Some(out))
+}
+
+/// Diálogo de guardar. El archivo elegido se puede escribir hasta cerrar la
+/// app (BS13).
+#[tauri::command]
+async fn fs_save_dialog(
+    window: tauri::Window,
+    scope: State<'_, FsScope>,
+    default_path: Option<String>,
+    filters: Option<Vec<DialogFilter>>,
+) -> Result<Option<String>, String> {
+    let w = window.clone();
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        let mut b = with_filters(w.dialog().file().set_parent(&w), filters);
+        if let Some(name) = default_path {
+            // Como en el plugin de JS: un nombre suelto es el nombre
+            // sugerido; una ruta, carpeta y nombre.
+            let p = Path::new(&name);
+            match (p.parent().filter(|d| !d.as_os_str().is_empty()), p.file_name()) {
+                (Some(dir), Some(file)) => {
+                    b = b.set_directory(dir).set_file_name(file.to_string_lossy());
+                }
+                _ => b = b.set_file_name(name),
+            }
+        }
+        b.blocking_save_file()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let Some(fp) = picked else { return Ok(None) };
+    let path = fp.into_path().map_err(|e| e.to_string())?;
+    scope.grant_file(&path)?;
+    Ok(Some(path.to_string_lossy().to_string()))
 }
 
 pub(crate) const TRAY_ID: &str = "main";
@@ -530,12 +720,17 @@ pub fn run() {
         .manage(extensions::mcp::McpState::default())
         .manage(extensions::quick_capture::QuickCaptureState::default())
         .manage(extensions::pomodoro::PomodoroState::default())
+        .manage(FsScope::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_websocket::init())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            // Carpetas permitidas para los comandos de archivos, antes de
+            // que el webview pida nada (specs/blindaje-seguridad BS10).
+            let app_dir = app.path().app_data_dir()?;
+            app.state::<FsScope>().init(&app_dir);
             // El updater no existe en mobile — se registra acá (no al
             // nivel del builder) siguiendo el patrón oficial del plugin,
             // que necesita el AppHandle ya construido.
@@ -663,6 +858,9 @@ pub fn run() {
             git_run,
             sync_request,
             fetch_url_metadata,
+            fs_pick_folder,
+            fs_pick_files,
+            fs_save_dialog,
             extensions::ext_secret_set,
             extensions::ext_secret_clear,
             extensions::ext_secret_hint,
@@ -707,4 +905,83 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod open_and_git_tests {
+    use super::*;
+
+    fn v(a: &[&str]) -> Vec<String> {
+        a.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn open_url_solo_esquemas_permitidos() {
+        assert!(parse_openable_url("https://ejemplo.com/a?b=1&c=2").is_ok());
+        assert!(parse_openable_url("mailto:ana@ejemplo.com").is_ok());
+        assert_eq!(parse_openable_url("//ejemplo.com/x").unwrap(), "https://ejemplo.com/x");
+        assert!(parse_openable_url("file:///Applications/Calculator.app").is_err());
+        assert!(parse_openable_url("javascript:alert(1)").is_err());
+        assert!(parse_openable_url("otraapp://transfer?x=1").is_err());
+        assert!(parse_openable_url("/Users/ana/x.command").is_err());
+        assert!(parse_openable_url("calc.exe").is_err());
+    }
+
+    #[test]
+    fn open_url_no_deja_caracteres_de_shell_sueltos() {
+        // `&`, `|` y `^` quedan dentro de una URL válida, que se abre con
+        // ShellExecute (sin cmd); las comillas y los espacios se codifican.
+        let u = parse_openable_url("https://ejemplo.com/a&calc.exe|x^y\"z w").unwrap();
+        assert!(u.starts_with("https://ejemplo.com/"));
+        assert!(!u.contains('"'));
+        assert!(!u.contains(' '));
+    }
+
+    #[test]
+    fn git_permite_los_comandos_de_la_integracion() {
+        for a in [
+            v(&["init"]),
+            v(&["add", "-A"]),
+            v(&["commit", "-m", "auto: 2026-11-09 10:00"]),
+            v(&["config", "--local", "user.name", "Ana"]),
+            v(&["remote", "add", "origin", "https://github.com/ana/notas.git"]),
+            v(&["remote", "set-url", "origin", "git@github.com:ana/notas.git"]),
+            v(&["push", "--set-upstream", "origin", "main"]),
+            v(&["fetch", "origin"]),
+            v(&["rev-list", "HEAD..origin/HEAD", "--count"]),
+            v(&["pull", "origin", "main"]),
+        ] {
+            assert!(git_args_allowed(&a), "{a:?}");
+        }
+    }
+
+    #[test]
+    fn git_rechaza_lo_demas() {
+        for a in [
+            v(&["-c", "core.sshCommand=calc", "fetch", "origin"]),
+            v(&["status"]),
+            v(&["config", "--local", "core.fsmonitor", "calc"]),
+            v(&["fetch", "--upload-pack=calc", "origin"]),
+            v(&["remote", "add", "origin", "ext::sh -c calc"]),
+            v(&["remote", "add", "origin", "--upload-pack=x"]),
+            v(&["remote", "add", "origin", "/tmp/repo"]),
+            v(&["commit", "-m", "x", "--no-verify"]),
+        ] {
+            assert!(!git_args_allowed(&a), "{a:?}");
+        }
+    }
+
+    #[test]
+    fn open_in_system_no_ejecuta() {
+        let dir = std::env::temp_dir().join(format!("logday-open-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("Calc.app")).unwrap();
+        fs::write(dir.join("nota.md"), "x").unwrap();
+        fs::write(dir.join("run.command"), "x").unwrap();
+        assert!(matches!(open_action(&dir), OpenAction::Open));
+        assert!(matches!(open_action(&dir.join("nota.md")), OpenAction::Open));
+        assert!(matches!(open_action(&dir.join("Calc.app")), OpenAction::Reveal));
+        assert!(matches!(open_action(&dir.join("run.command")), OpenAction::Reveal));
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

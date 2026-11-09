@@ -1,3 +1,82 @@
+// Lista de los comandos propios de la app (los de `generate_handler!` en
+// src/lib.rs). Declararlos aquí hace que Tauri los trate como permisos:
+// cada ventana solo puede llamar a los que su capability permite
+// (capabilities/*.json, specs/blindaje-seguridad BS19). Sin esta lista,
+// todos los comandos quedaban abiertos a todas las ventanas.
+//
+// Al agregar un comando: sumarlo aquí y en `generate_handler!`, y su
+// `allow-<comando>` (con guiones) en la capability de la ventana que lo usa.
+const COMMANDS: &[&str] = &[
+        "get_app_config_dir",
+        "get_home_dir",
+        "read_file",
+        "write_file",
+        "list_dir",
+        "create_dir_recursive",
+        "delete_file",
+        "rename_dir",
+        "delete_dir",
+        "path_exists",
+        "search_tasks",
+        "open_in_system",
+        "open_url",
+        "write_clipboard",
+        "read_file_binary",
+        "write_file_binary",
+        "fetch_image_base64",
+        "git_run",
+        "sync_request",
+        "fetch_url_metadata",
+        "fs_pick_folder",
+        "fs_pick_files",
+        "fs_save_dialog",
+        "ext_secret_set",
+        "ext_secret_clear",
+        "ext_secret_hint",
+        "team_chat_validate_url",
+        "team_chat_send",
+        "team_chat_google_connect",
+        "team_chat_google_disconnect",
+        "team_chat_google_parse_space",
+        "team_chat_google_send",
+        "google_calendar_connect",
+        "google_calendar_disconnect",
+        "google_calendar_copy_client",
+        "google_calendar_events",
+        "outgoing_webhook_validate_url",
+        "outgoing_webhook_send",
+        "http_client_send",
+        "http_client_cancel",
+        "http_client_reveal_secret",
+        "granola_connect",
+        "granola_disconnect",
+        "granola_call",
+        "openproject_connect",
+        "openproject_disconnect",
+        "openproject_work_packages",
+        "openproject_custom_fields",
+        "openproject_projects",
+        "openproject_work_package",
+        "openproject_statuses",
+        "openproject_update_work_package",
+        "mcp_server_start",
+        "mcp_server_stop",
+        "mcp_reply",
+        "quick_capture_configure",
+        "quick_capture_disable",
+        "quick_capture_hide",
+        "quick_capture_focus",
+        "quick_capture_open_main",
+        "pomodoro_schedule",
+        "pomodoro_pause",
+        "pomodoro_idle",
+        "pomodoro_clear",
+];
+
 fn main() {
-    tauri_build::build()
+    tauri_build::try_build(
+        tauri_build::Attributes::new()
+            .app_manifest(tauri_build::AppManifest::new().commands(COMMANDS)),
+    )
+    .expect("failed to run tauri-build");
 }

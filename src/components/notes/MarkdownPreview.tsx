@@ -4,9 +4,12 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import remarkGemoji from 'remark-gemoji';
 import rehypeRaw from 'rehype-raw';
+import rehypeSanitize from 'rehype-sanitize';
 import { MermaidBlock } from './MermaidBlock';
 import { parseMermaidBlocks } from '../../lib/mermaid';
 import { fs } from '../../lib/invoke';
+import { isExternalHref, notePreviewSchema, rehypeFilterStyle } from '../../lib/markdownSanitize';
+import { useAppStore } from '../../store/appStore';
 import { CODE_LANGUAGE_OPTIONS, normalizeCodeLanguage, tokenizeCodeLine } from '../../lib/codeHighlight';
 
 interface Props {
@@ -41,6 +44,30 @@ function LocalImageRenderer({ src, alt }: { src: string; alt?: string }) {
   return <img src={imageSrc} alt={alt} style={{ maxWidth: '100%', borderRadius: '8px' }} />;
 }
 
+/** Un enlace de la vista dividida: los externos (http, https, mailto, tel)
+ *  van al navegador o la app del sistema; los demás solo pueden ser una
+ *  nota, por id o por título, como en el editor (useLinkPreview). Antes se
+ *  abría cualquier href con `open_in_system`, y un enlace a un `.app` o un
+ *  `.command` lo ejecutaba (specs/blindaje-seguridad BS7). */
+function openPreviewLink(href: string) {
+  if (isExternalHref(href)) {
+    fs.openUrl(href).catch((err) => console.warn('No se pudo abrir el enlace:', err));
+    return;
+  }
+  let target = href;
+  try {
+    target = decodeURIComponent(href);
+  } catch {
+    // href con % sueltos: se busca tal cual.
+  }
+  const { notes, setSection, setActiveNote } = useAppStore.getState();
+  const note = notes.find((n) => n.id === href || n.title.toLowerCase() === target.toLowerCase());
+  if (note) {
+    setSection('notes');
+    setActiveNote(note);
+  }
+}
+
 export function MarkdownPreview({ markdown, className = '', onChangeCodeLanguage, onEditMermaid, onMoveMermaidUp, onMoveMermaidDown, onDuplicateMermaid, onDeleteMermaid }: Props) {
   const mermaidBlocks = parseMermaidBlocks(markdown);
   let mermaidIndex = -1;
@@ -50,7 +77,10 @@ export function MarkdownPreview({ markdown, className = '', onChangeCodeLanguage
     <div className={`md-preview ${className}`.trim()}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkGemoji, remarkBreaks]}
-        rehypePlugins={[rehypeRaw]}
+        // rehype-raw interpreta el HTML que guarda el editor; rehype-sanitize
+        // y el filtro de style dejan solo lo que el editor produce
+        // (specs/blindaje-seguridad BS4–BS6).
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, notePreviewSchema], rehypeFilterStyle]}
         components={{
           p(props) {
             return <p {...props} style={{ whiteSpace: 'pre-wrap' }} />;
@@ -68,9 +98,7 @@ export function MarkdownPreview({ markdown, className = '', onChangeCodeLanguage
                 {...props}
                 onClick={(e) => {
                   e.preventDefault();
-                  if (props.href) {
-                    fs.openInSystem(props.href).catch(err => console.warn('Failed to open link:', err));
-                  }
+                  if (props.href) openPreviewLink(props.href);
                 }}
                 style={{ cursor: 'pointer' }}
               >

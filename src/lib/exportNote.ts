@@ -1,5 +1,4 @@
-import { save } from '@tauri-apps/plugin-dialog';
-import { fs } from './invoke';
+import { fs, saveDialog as save } from './invoke';
 import { Note } from '../types/note';
 import jsPDF from 'jspdf';
 import { renderMermaidPngDataUrl } from './mermaid';

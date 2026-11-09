@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, ArrowDown, ArrowUp, CopyPlus, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { renderMermaidSvg } from '../../lib/mermaid';
+import { sanitizeSvg } from '../../lib/svgSanitize';
 import { usePositionedMenu } from '../../hooks/usePositionedMenu';
 import { useAppStore } from '../../store/appStore';
 import { t } from '../../lib/i18n';
@@ -39,7 +40,7 @@ export function MermaidBlock({ diagramIndex, code, compact = false, onEdit, onHe
     renderMermaidSvg(code)
       .then(({ svg: nextSvg, bindFunctions }) => {
         if (cancelled) return;
-        setSvg(nextSvg);
+        setSvg(sanitizeSvg(nextSvg));
         requestAnimationFrame(() => {
           if (!cancelled && hostRef.current && bindFunctions) {
             bindFunctions(hostRef.current);

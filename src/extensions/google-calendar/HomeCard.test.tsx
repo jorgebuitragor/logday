@@ -28,7 +28,6 @@ vi.mock('@tauri-apps/api/core', () => ({
     return tauri.events;
   },
 }));
-vi.mock('@tauri-apps/plugin-dialog', () => ({ open: async () => null, save: async () => null }));
 
 // react-dom/server lee el estado inicial de los stores (getServerSnapshot):
 // con este `create`, lee el actual.

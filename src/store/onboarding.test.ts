@@ -41,12 +41,14 @@ vi.mock('@tauri-apps/api/core', () => ({
         return env.files.get(args.path);
       case 'list_dir':
         return [];
+      // Los diálogos se abren desde Rust (specs/blindaje-seguridad BS12).
+      case 'fs_pick_folder':
+        return env.picked;
       default:
         return null;
     }
   },
 }));
-vi.mock('@tauri-apps/plugin-dialog', () => ({ open: async () => env.picked, save: async () => null }));
 vi.mock('@tauri-apps/plugin-websocket', () => ({ default: { connect: async () => ({}) } }));
 vi.mock('@tauri-apps/plugin-updater', () => ({ check: async () => null }));
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: async () => '0.0.0' }));

@@ -12,7 +12,10 @@ function ensureMermaid() {
   if (mermaidInitialized) return;
   mermaid.initialize({
     startOnLoad: false,
-    securityLevel: 'loose',
+    // 'strict' codifica el HTML de las etiquetas y desactiva los `click`
+    // con JS; 'loose' los dejaba pasar a un diagrama llegado por sync
+    // (specs/blindaje-seguridad BS8).
+    securityLevel: 'strict',
     theme: 'neutral',
     fontFamily: 'ui-sans-serif, system-ui, sans-serif',
   });

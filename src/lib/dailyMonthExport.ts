@@ -1,6 +1,5 @@
 import jsPDF from 'jspdf';
-import { save } from '@tauri-apps/plugin-dialog';
-import { fs } from './invoke';
+import { fs, saveDialog as save } from './invoke';
 
 function buildDailyMonthPdfBase64(label: string, entries: [string, string][]): string {
   const pdf = new jsPDF({ unit: 'mm', format: 'a4' });

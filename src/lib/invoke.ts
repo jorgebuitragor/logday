@@ -1,5 +1,4 @@
 import { invoke } from '@tauri-apps/api/core';
-import { open as openDialog, save as saveNativeDialog } from '@tauri-apps/plugin-dialog';
 
 export interface FsEntry {
   name: string;
@@ -99,32 +98,43 @@ import {
 
 export { isPermissionGranted, requestPermission, sendNotification };
 
+// ── Diálogos de archivos ─────────────────────────────────────────────────────
+// Se abren desde Rust (fs_pick_folder, fs_pick_files, fs_save_dialog), no con
+// `@tauri-apps/plugin-dialog`: la ruta que elige el usuario es lo único que
+// habilita una carpeta o un archivo fuera de la carpeta de datos para los
+// comandos de archivos (src-tauri/src/fs_scope.rs, specs/blindaje-seguridad
+// BS12–BS13). Un diálogo abierto desde el webview no habilitaría nada.
+
+export interface DialogFilter {
+  name: string;
+  extensions: string[];
+}
+
 /** Opens a native save dialog and returns the selected path */
-export async function saveDialog(opts?: { defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null> {
-  const result = await saveNativeDialog(opts);
-  if (typeof result === 'string') return result;
-  return null;
+export async function saveDialog(opts?: { defaultPath?: string; filters?: DialogFilter[] }): Promise<string | null> {
+  const result = await invoke<string | null>('fs_save_dialog', {
+    defaultPath: opts?.defaultPath ?? null,
+    filters: opts?.filters ?? null,
+  });
+  return typeof result === 'string' ? result : null;
 }
 
 /** Opens a native folder picker dialog and returns the selected path */
 export async function pickFolder(): Promise<string | null> {
-  const result = await openDialog({ directory: true, multiple: false });
-  if (typeof result === 'string') return result;
-  return null;
+  const result = await invoke<string | null>('fs_pick_folder');
+  return typeof result === 'string' ? result : null;
 }
 
 /** Opens a native file picker and returns the selected path(s) */
-export async function pickFile(multiple = false): Promise<string | string[] | null> {
-  const result = await openDialog({ multiple });
-  return result as string | string[] | null;
+export async function pickFile(multiple = false, filters?: DialogFilter[]): Promise<string | string[] | null> {
+  const result = await invoke<string[] | null>('fs_pick_files', { multiple, filters: filters ?? null });
+  if (!result || result.length === 0) return null;
+  return multiple ? result : result[0];
 }
 
 /** Opens a native file picker filtered to markdown/text files; returns array of paths */
 export async function pickMarkdownFiles(): Promise<string[] | null> {
-  const result = await openDialog({
-    multiple: true,
-    filters: [{ name: 'Markdown', extensions: ['md', 'txt'] }],
-  });
+  const result = await pickFile(true, [{ name: 'Markdown', extensions: ['md', 'txt'] }]);
   if (!result) return null;
   return Array.isArray(result) ? result : [result];
 }

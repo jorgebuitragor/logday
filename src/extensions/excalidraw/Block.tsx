@@ -5,6 +5,7 @@ import { t } from '../../lib/i18n';
 import type { NoteBlockProps } from '../types';
 import { setLocalExcalidrawAssets } from './assets';
 import { parseScene } from './scene';
+import { sanitizeSvg } from '../../lib/svgSanitize';
 
 /** El dibujo dentro de la nota: un SVG que se arma con Excalidraw al vuelo
  *  (no se guarda aparte). Clic → editarlo (X2). */
@@ -35,7 +36,7 @@ export default function ExcalidrawBlock({ code, onEdit }: NoteBlockProps) {
         // Tamaño natural, sin agrandar un dibujo pequeño; solo se achica
         // si no cabe (CSS del contenedor).
         el.style.maxHeight = '420px';
-        setSvg(el.outerHTML);
+        setSvg(sanitizeSvg(el.outerHTML));
         setFailed(false);
       })
       .catch(() => { if (alive) setFailed(true); });

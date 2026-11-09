@@ -347,12 +347,12 @@ pub fn http_client_cancel(request_id: String) -> bool;
 | XML o SVG | `formatXml(text, 2)`, con el mismo respaldo |
 | HTML | Texto, resaltado como `xml`. Nunca se dibuja |
 | Otro texto | Tal cual, sin resaltado |
-| `image/png`, `jpeg`, `gif` o `webp` ≤ 5 MB | `<img src="data:…">`. El CSP de la app es `null` (`tauri.conf.json`), así que se permite |
+| `image/png`, `jpeg`, `gif` o `webp` ≤ 5 MB | `<img src="data:…">`. La CSP de la app (`tauri.conf.json`, specs/blindaje-seguridad BS20) permite `img-src data:` |
 | Otro binario | Tipo, tamaño y "Guardar como archivo" |
 
 - El resaltado reusa `CodeText` de `devtools/ui/highlight.tsx`, con la clase `.devtools-code` y los tokens `--syntax-*`. Ya se leen en los 7 temas.
 - Por encima de `HIGHLIGHT_LIMIT` (200 KB) va sin colores. Por encima de 2 MB se muestran solo los primeros 2 MB.
-- Guardar como archivo usa `save()` de `@tauri-apps/plugin-dialog` y `fs.writeBinary` o `fs.writeFile` (`lib/invoke.ts`), como `useImageSaver` en `devtools/ui/CodeImage.tsx`. El nombre por defecto sale del último segmento de la ruta, o "respuesta", con la extensión del tipo.
+- Guardar como archivo usa `saveDialog()` de `lib/invoke.ts` (el diálogo se abre desde Rust y habilita ese archivo, specs/blindaje-seguridad BS13) y `fs.writeBinary` o `fs.writeFile`, como `useImageSaver` en `devtools/ui/CodeImage.tsx`. El nombre por defecto sale del último segmento de la ruta, o "respuesta", con la extensión del tipo.
 
 ### A10. DevTools (retirado el 31 oct 2026)
 

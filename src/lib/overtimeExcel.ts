@@ -362,13 +362,12 @@ export async function generateOvertimeXlsx(
 /*
  * ── Integración con Tauri ────────────────────────────────────────────────────
  *
- * import { save }      from '@tauri-apps/plugin-dialog';
- * import { writeFile } from '@tauri-apps/plugin-fs';
+ * import { saveDialog as save, fs } from './invoke';
  *
  * const bytes = await generateOvertimeXlsx(entries, meta, 'Enero 2026');
  * const path  = await save({
  *   defaultPath: `horas-extras-enero-2026.xlsx`,
  *   filters: [{ name: 'Excel', extensions: ['xlsx'] }],
  * });
- * if (path) await writeFile(path, bytes);
+ * if (path) await fs.writeBinary(path, bytesToBase64(bytes));
  */

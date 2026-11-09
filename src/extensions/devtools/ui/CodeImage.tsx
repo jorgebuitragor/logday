@@ -3,9 +3,8 @@
 // módulos oscuros sobre fondo claro, y atenuarla bajaría el contraste.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown, ImageDown, type LucideIcon } from 'lucide-react';
-import { save } from '@tauri-apps/plugin-dialog';
 import { useAppStore } from '../../../store/appStore';
-import { fs } from '../../../lib/invoke';
+import { fs, saveDialog as save } from '../../../lib/invoke';
 import { useDevtools } from './context';
 import { CopyButton, PanelHeader } from './controls';
 import { FOCUS_RING, SECONDARY_CLS } from './classes';

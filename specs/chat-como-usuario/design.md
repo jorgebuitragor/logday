@@ -39,8 +39,9 @@ escritorio como público, pero igual va al llavero para no dejarlo en
   `google_client_secret` y `google_refresh` (los `secretKeys` del
   registro). No revoca el permiso en Google: para eso está
   "Desconectar".
-- El navegador se abre con el plugin `opener`, no con `open_url`: en
-  Windows, `cmd /c start` partiría la URL de Google en cada `&`.
+- El navegador se abre con el plugin `opener`. Antes `open_url` usaba
+  `cmd /c start` en Windows, que partía la URL de Google en cada `&`;
+  desde specs/blindaje-seguridad (BS1) `open_url` también usa `opener`.
 
 ## Cliente OAuth (opción A)
 

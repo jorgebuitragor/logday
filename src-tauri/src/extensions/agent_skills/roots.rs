@@ -141,6 +141,7 @@ impl Roots {
     pub fn disabled(&self) -> PathBuf {
         self.data.join("disabled")
     }
+    #[allow(dead_code)] // La usan los comandos que cambian skills (fase 2 y 3).
     pub fn staging(&self) -> PathBuf {
         self.data.join("staging")
     }
@@ -185,6 +186,7 @@ pub const ERR_NOT_FOUND: &str = "not_found";
 pub const ERR_EXTERNAL: &str = "external";
 pub const ERR_BINARY: &str = "binary";
 pub const ERR_TOO_LARGE: &str = "too_large";
+#[allow(dead_code)] // La usan los comandos que cambian skills (fase 2 y 3).
 pub const ERR_READ_ONLY: &str = "read_only";
 
 /// Un nombre de archivo o carpeta aceptable: sin separadores, sin `..`,

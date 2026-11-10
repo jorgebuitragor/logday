@@ -22,6 +22,7 @@ use files::{find_skill_md, read_text, read_text_prefix, walk, FileFlags, FileInf
 use roots::{display_path, home, join, resolve_file, resolve_skill, split_relative, Roots, SourceId, ERR_INVALID, ERR_NOT_FOUND};
 use scan::SkillEntry;
 
+#[allow(dead_code)] // La usan los comandos que cambian skills (fase 2 y 3).
 pub const EXTENSION_ID: &str = "agent-skills";
 
 /// Las carpetas de esta instalación.

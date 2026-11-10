@@ -23,6 +23,19 @@ Estado: en progreso.
 - [x] `FsScope` veta además `~/.claude`, `~/.codex` y `~/.agents` (la real y, en depuración, la de pruebas), aunque una carpeta de datos elegida las contenga.
 - [x] Pruebas de vista con `invoke` simulado.
 
+### QA (10 nov 2026)
+
+- [x] La app de QA (`--debug`, identificador `qatareas`) compila con los comandos nuevos: Tauri valida en el build que cada `allow-agent-skills-*` de la capability exista.
+- [x] En el navegador, con el build de producción y Tauri simulado, sobre los datos de una carpeta personal de prueba (`~/Developer/.qa-mocks/agent-skills-home`), se revisaron:
+  - los grupos (Tuyas, De plugins, Sistema y sincronizadas) y las insignias de herramienta;
+  - una skill en las dos herramientas por un enlace, que sale una sola vez;
+  - el punto de riesgo;
+  - el detalle de una skill con hooks, `allowed-tools`, `` !`cmd` ``, scripts y un binario: el `<script>` del cuerpo no se interpreta y la imagen remota no se carga;
+  - la pestaña Archivos, con un script abierto como texto;
+  - un enlace externo, del que solo se muestra la ubicación.
+  - Se corrigió el filtro, que decía "Claude Code" y se partía en dos líneas: ahora dice "Claude".
+- [ ] Probar en la app de QA con la carpeta de prueba (`open -n --env LOGDAY_AGENT_SKILLS_HOME=… "Logday QA Tareas.app"`): queda para Jorge o para cuando haya acceso a la app.
+
 ## Fase 2: gestionar (rama `feature/skills-de-agentes-gestion`)
 
 - [ ] Confirmación nativa desde Rust (SK29) con textos en es y en.

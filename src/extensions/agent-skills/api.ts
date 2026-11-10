@@ -157,6 +157,10 @@ export interface StagedBundle {
 
 export const importPick = (kind: 'folder' | 'zip') => invoke<StagedBundle | null>('agent_skills_import_pick', { kind });
 
+/** Prepara lo soltado en la vista. Rust solo acepta rutas que él mismo
+ *  anotó del evento de soltar; `null` si no hay carpetas ni `.zip`. */
+export const importDropped = (paths: string[]) => invoke<StagedBundle | null>('agent_skills_import_dropped', { paths });
+
 export const readStagedFile = (id: string, rel: string, file: string) => invoke<string>('agent_skills_staged_read', { id, rel, file });
 
 export interface InstallItem {

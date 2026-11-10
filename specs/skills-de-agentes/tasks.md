@@ -91,6 +91,21 @@ En el navegador, con el build de producción y Tauri simulado, que registra lo q
   - "Actualizar", que abre la vista previa con la skill elegida, su nombre, sus herramientas y "Reemplazar", e instala en un solo lote.
 - [ ] Probar en la app de QA real con un token de un repo privado.
 
+## Mejoras de importar e interfaz (rama `feature/skills-de-agentes-interfaz`, 10 nov 2026)
+
+- [x] Soltar carpetas o `.zip` sobre la vista (enmienda de SK14):
+  - Rust anota lo soltado (`record_drop` en `on_window_event`);
+  - el comando `agent_skills_import_dropped` solo acepta esas rutas;
+  - `stage_paths` prepara varias a la vez.
+  - Probado en Rust: carpeta y zip con el mismo nombre (`-2`), y un archivo que no es zip, que se ignora.
+- [x] Inicio de la vista con las cuatro formas de añadir skills, la zona de soltar y "Tuyas con avisos".
+- [x] Filas de dos líneas, recordatorio de arrastrar en el menú Importar, y Borrar aparte en el detalle.
+- [x] QA en el navegador, con el evento de soltar de Tauri simulado:
+  - la capa "Suelta para importar";
+  - al soltar una carpeta, la vista previa con sus archivos (un script incluido);
+  - el inicio, y llegar a una skill con avisos desde ahí.
+- [ ] Probar soltar en la app de QA real, porque el evento de la ventana solo existe ahí.
+
 ## Cierre
 
 - [ ] QA en la app de QA con un `home` de prueba.

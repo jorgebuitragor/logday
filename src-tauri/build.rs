@@ -82,6 +82,7 @@ const COMMANDS: &[&str] = &[
         "agent_skills_set_enabled",
         "agent_skills_share",
         "agent_skills_import_pick",
+        "agent_skills_import_dropped",
         "agent_skills_staged_read",
         "agent_skills_install",
         "agent_skills_discard",

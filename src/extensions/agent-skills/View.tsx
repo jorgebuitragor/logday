@@ -9,7 +9,7 @@ import { useAppStore } from '../../store/appStore';
 import { FOCUS_RING, ICON_BTN, INPUT_CLS, SECONDARY_CLS } from '../../components/shared/controlClasses';
 import { ConfirmDeleteModal } from '../../components/shared/ConfirmDeleteModal';
 import { Spinner } from '../../components/shared/FormControls';
-import { errorCode, importPick, setSkillEnabled, shareSkill, trashSkill, type SkillRef, type StagedBundle, type Tool } from './api';
+import { discardStaged, errorCode, importDropped, importPick, setSkillEnabled, shareSkill, trashSkill, type SkillRef, type StagedBundle, type Tool } from './api';
 import { AGENT_SKILLS_ID, filterItems, groupItems, localeOf, readSettings, takenNames, type SkillGroup, type SkillItem, type ToolFilter } from './model';
 import { useAgentSkills } from './store';
 import { makeTr, trCode, type Tr } from './text';
@@ -20,6 +20,8 @@ import { DeleteSkillModal, trashChoices, type TrashChoice } from './DeleteSkillM
 import { ImportPreview } from './ImportPreview';
 import { RepoDetail, ReposColumn } from './ReposPanel';
 import { ToolBadges } from './ToolBadges';
+import { SkillsHome } from './SkillsHome';
+import { DropOverlay, useSkillDrop } from './drop';
 
 const keyOf = (ref: SkillRef) => `${ref.source}:${ref.id}`;
 
@@ -78,7 +80,8 @@ function SkillActions({ item, tr, run, onEdit, onDelete }: {
           {tr('action.disable')}
         </button>
       )}
-      <button type="button" className={`${SECONDARY_CLS} hover:text-red-400`} onClick={onDelete}>
+      {/* Borrar, aparte y al final: es la que no se deshace desde aquí. */}
+      <button type="button" className={`${SECONDARY_CLS} ml-auto text-red-400 hover:bg-red-500/10`} onClick={onDelete}>
         <Trash2 size={13} aria-hidden />
         {tr('action.delete')}
       </button>
@@ -198,20 +201,36 @@ export default function AgentSkillsView() {
     }
   };
 
-  const startImport = async (kind: 'folder' | 'zip') => {
-    setImportMenu(false);
-    try {
-      const b = await importPick(kind);
-      if (!b) return;
-      if (!b.skills.length) {
-        showToast({ kind: 'error', title: tr('import.noneFound') });
-        return;
+  /** Abre la vista previa con lo preparado, o avisa si no hay skills. */
+  const openBundle = useCallback(
+    async (prepare: () => Promise<StagedBundle | null>, emptyKey: 'import.noneFound' | 'import.dropNothing') => {
+      try {
+        const b = await prepare();
+        if (!b) {
+          if (emptyKey === 'import.dropNothing') showToast({ kind: 'error', title: tr(emptyKey) });
+          return;
+        }
+        if (!b.skills.length) {
+          void discardStaged(b.id).catch(() => undefined);
+          showToast({ kind: 'error', title: tr('import.noneFound') });
+          return;
+        }
+        setTab('installed');
+        setBundle(b);
+      } catch (err) {
+        showToast({ kind: 'error', title: trCode(tr, 'err', errorCode(err), 'err.unknown') });
       }
-      setBundle(b);
-    } catch (err) {
-      showToast({ kind: 'error', title: trCode(tr, 'err', errorCode(err), 'err.unknown') });
-    }
+    },
+    [setTab, showToast, tr],
+  );
+
+  const startImport = (kind: 'folder' | 'zip') => {
+    setImportMenu(false);
+    void openBundle(() => importPick(kind), 'import.noneFound');
   };
+
+  // Soltar una carpeta o un .zip en cualquier parte de la vista (SK14).
+  const dragging = useSkillDrop(!bundle && !newOpen, (paths) => void openBundle(() => importDropped(paths), 'import.dropNothing'));
 
   // Flechas y Enter en la lista (design "Accesibilidad").
   const onListKey = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -258,6 +277,7 @@ export default function AgentSkillsView() {
                 <FileArchive size={13} aria-hidden />
                 {tr('import.zip')}
               </button>
+              <p className="border-t border-[var(--border)] px-2 pb-1 pt-1.5 text-[10px] leading-snug text-[var(--text-hint)]">{tr('import.dropHint')}</p>
             </div>
           )}
         </div>
@@ -331,14 +351,19 @@ export default function AgentSkillsView() {
                             select(it.key);
                           }
                         }}
-                        className={`mx-1.5 flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs ${FOCUS_RING} ${
+                        className={`mx-1.5 flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-xs ${FOCUS_RING} ${
                           it.key === selectedKey ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
                         }`}
                       >
-                        <span className="min-w-0 flex-1 truncate">{it.name}</span>
-                        {it.risky && (
-                          <ShieldAlert size={12} className="shrink-0 text-amber-400" aria-label={tr('riskyAria')} role="img" />
-                        )}
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-1.5">
+                            <span className="truncate font-medium text-[var(--text-primary)]">{it.name}</span>
+                            {it.risky && (
+                              <ShieldAlert size={12} className="shrink-0 text-amber-400" aria-label={tr('riskyAria')} role="img" />
+                            )}
+                          </span>
+                          {it.description && <span className="mt-0.5 block truncate text-[11px] text-[var(--text-hint)]">{it.description}</span>}
+                        </span>
                         <ToolBadges tools={it.entry.tools} tr={tr} compact />
                       </div>
                     ))}
@@ -357,7 +382,8 @@ export default function AgentSkillsView() {
   );
 
   return (
-    <div className="@container/skills flex min-h-0 flex-1">
+    <div className="@container/skills relative flex min-h-0 flex-1">
+      {dragging && <DropOverlay tr={tr} />}
       {/* Ancha: columna y detalle. Angosta: la lista o el detalle. */}
       <nav
         aria-label={tr('navLabel')}
@@ -422,9 +448,9 @@ export default function AgentSkillsView() {
             actions={<SkillActions item={selected} tr={tr} run={run} onEdit={() => setEditing(selected.key)} onDelete={() => askDelete(selected)} />}
           />
         ) : (
-          <div className="flex h-full items-center justify-center p-8 text-center text-xs text-[var(--text-hint)]">
-            {loaded && !error ? tr('pickOne') : null}
-          </div>
+          loaded && !error ? (
+            <SkillsHome items={items} tr={tr} onImport={startImport} onNew={() => setNewOpen(true)} onRepos={() => setTab('repos')} onSelect={select} />
+          ) : null
         )}
       </section>
       <div className="sr-only" aria-live="polite" aria-atomic="true">

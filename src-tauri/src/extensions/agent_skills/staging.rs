@@ -369,6 +369,72 @@ pub fn stage_zip_mapped(roots: &Roots, bytes: &[u8], origin: StagedOrigin, map: 
     or_discard(&dir, b)
 }
 
+/// Prepara varias carpetas y `.zip` soltados a la vez (SK14). Cada uno va
+/// en su propia carpeta dentro de lo preparado (un zip, con el nombre del
+/// archivo sin extensión); los nombres repetidos llevan `-2`, `-3`… Lo que
+/// no es carpeta ni `.zip` se omite. `None` si no queda nada.
+pub fn stage_paths(roots: &Roots, paths: &[PathBuf], label: String) -> Result<Option<StagedBundle>, &'static str> {
+    let items: Vec<&PathBuf> = paths
+        .iter()
+        .filter(|p| {
+            let meta = fs::symlink_metadata(p);
+            let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
+            let is_zip = meta.as_ref().map(|m| m.is_file()).unwrap_or(false)
+                && p.extension().map(|e| e.eq_ignore_ascii_case("zip")).unwrap_or(false);
+            is_dir || is_zip
+        })
+        .collect();
+    if items.is_empty() {
+        return Ok(None);
+    }
+    let kind = if items.len() == 1 && items[0].is_dir() { "folder" } else { "zip" };
+    let origin = StagedOrigin { kind: kind.into(), label, repo: None };
+    let (id, dir) = begin(roots, &origin)?;
+    let content = dir.join(CONTENT_DIR);
+    let mut skipped = Vec::new();
+    let mut used: Vec<String> = Vec::new();
+    let r = (|| -> Result<(), &'static str> {
+        let mut budget = Budget::default();
+        for p in &items {
+            let base = if p.is_dir() {
+                p.file_name().map(|n| n.to_string_lossy().to_string())
+            } else {
+                p.file_stem().map(|n| n.to_string_lossy().to_string())
+            }
+            .unwrap_or_else(|| "skill".into());
+            let mut name = safe_dir_name(&base);
+            let mut n = 2;
+            while used.contains(&name) {
+                name = format!("{}-{n}", safe_dir_name(&base));
+                n += 1;
+            }
+            used.push(name.clone());
+            if p.is_dir() {
+                copy_limited(p, &content.join(&name), &name, 0, &mut budget)?;
+            } else {
+                let size = fs::metadata(p).map_err(|_| ERR_NOT_FOUND)?.len();
+                if size > MAX_BUNDLE_BYTES {
+                    return Err(ERR_TOO_LARGE);
+                }
+                let bytes = fs::read(p).map_err(|_| ERR_NOT_FOUND)?;
+                unzip_limited(&bytes, &content.join(&name), false, &|q| Some(q.to_vec()), &mut skipped)?;
+            }
+        }
+        skipped.extend(budget.skipped);
+        Ok(())
+    })();
+    or_discard(&dir, r)?;
+    let b = bundle(roots, id, origin, skipped);
+    or_discard(&dir, b).map(Some)
+}
+
+/// Un nombre de carpeta sin sorpresas para lo preparado.
+fn safe_dir_name(raw: &str) -> String {
+    let s: String = raw.chars().map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '-' }).collect();
+    let s = s.trim_matches('.').to_string();
+    if s.is_empty() { "skill".into() } else { s }
+}
+
 /// La carpeta de una skill preparada: `rel` validada y, con los enlaces
 /// resueltos, dentro de lo preparado.
 pub fn staged_skill(roots: &Roots, id: &str, rel: &str) -> Result<PathBuf, &'static str> {
@@ -662,5 +728,22 @@ mod tests {
         let kinds: Vec<_> = ch.iter().map(|c| (c.rel.as_str(), c.kind)).collect();
         assert_eq!(kinds, vec![("SKILL.md", ChangeKind::Changed), ("nuevo.md", ChangeKind::Added), ("viejo.md", ChangeKind::Removed)]);
         assert_eq!(ch[0].before.as_deref(), Some(MD));
+    }
+
+    #[test]
+    fn soltar_varias_carpetas_y_zips() {
+        let t = Tmp::new("soltar");
+        let r = t.roots();
+        let a = t.0.join("compartida/revisar");
+        skill(&a, MD);
+        let zip = t.0.join("bajada/revisar.zip");
+        fs::create_dir_all(zip.parent().unwrap()).unwrap();
+        fs::write(&zip, zip_of(&[("SKILL.md", MD.as_bytes())], &[])).unwrap();
+        let otro = t.0.join("nota.txt");
+        fs::write(&otro, "x").unwrap();
+        let b = stage_paths(&r, &[a, zip, otro], "x".into()).unwrap().unwrap();
+        let rels: Vec<_> = b.skills.iter().map(|s| s.rel.as_str()).collect();
+        assert_eq!(rels, vec!["revisar", "revisar-2"]);
+        assert!(stage_paths(&r, &[t.0.join("nota.txt")], "x".into()).unwrap().is_none());
     }
 }

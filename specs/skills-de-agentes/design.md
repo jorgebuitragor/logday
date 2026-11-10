@@ -162,7 +162,11 @@ interface SkillEntry {
   - devuelve `StagedBundle { id, origin, skills: StagedSkill[], skipped: string[] }`.
 - **`StagedSkill`:** `{ rel, dirName, skillMd, files: FileInfo[], fileFlags, hash, sizeBytes }`.
 - **La huella** (`hash`) es el sha256 de la lista ordenada de `(ruta relativa, sha256 del contenido)`. Se calcula al preparar.
-- **`agent_skills_staged_read { id, rel, file }`:** lee un archivo de texto de lo preparado, para la vista previa.
+- **Soltar (enmienda de SK14):**
+  - `on_window_event` anota en `AgentSkillsState.dropped` lo que llega con `DragDropEvent::Drop` a la ventana `main`. Guarda hasta 50 rutas, que valen 2 minutos.
+  - La vista escucha `onDragDropEvent`, como Notas, para mostrar la capa "Suelta para importar". Al soltar llama a `agent_skills_import_dropped { paths }`.
+  - Rust se queda solo con las rutas anotadas, esperando hasta 1,5 s a que llegue su propio evento. Después `staging::stage_paths` prepara cada carpeta o `.zip` en su propia carpeta: un zip va con el nombre del archivo, y los repetidos llevan `-2`.
+- - **`agent_skills_staged_read { id, rel, file }`:** lee un archivo de texto de lo preparado, para la vista previa.
 - **`agent_skills_install { lang, id, items: [{ rel, name, tools, replace, expectedHash }] }`**: instala por lotes, para que importar varias skills pida **un solo** diálogo nativo.
   1. comprueba todas antes de tocar nada: huella (SK18), nombre, topes, ocupado si no viene `replace`, y que no se repita un nombre en el lote;
   2. pide una confirmación nativa con cada nombre, sus herramientas, su destino y el origen, que Rust lee de `staging/<id>/origin.json`;
@@ -275,6 +279,17 @@ Usa el mismo esquema de dos columnas que DevTools, con contenedor `@container`.
   - lista de repos vinculados, con "Abrir", "Buscar actualizaciones" y "Quitar", y un campo "owner/repo o URL";
   - al abrir uno, su catálogo con estado e Instalar / Actualizar / Ver cambios;
   - arriba, el aviso de SK23 si aplica.
+
+### Inicio de la vista y retoques (10 nov 2026)
+
+- **Sin skill elegida**, el detalle muestra un inicio:
+  - título y una línea de qué son las skills, con las cuentas (cuántas hay en el equipo y cuántas son tuyas);
+  - cuatro tarjetas: Importar una carpeta, Importar un .zip, Desde un repo de GitHub y Crear una skill;
+  - una zona punteada que dice que también se puede arrastrar;
+  - la lista "Tuyas con avisos", hasta 5, para revisarlas con un clic.
+- **Las filas de la columna** tienen dos líneas: el nombre y la descripción, cortada.
+- **El menú Importar** recuerda que se puede arrastrar.
+- **En el detalle**, Borrar va aparte, al final y en rojo; las demás acciones van después de "Mostrar en el Finder".
 
 ### Opciones (página propia, R21/R28)
 

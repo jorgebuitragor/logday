@@ -87,6 +87,7 @@
     "allow-agent-skills-set-enabled",
     "allow-agent-skills-share",
     "allow-agent-skills-import-pick",
+    "allow-agent-skills-import-dropped",
     "allow-agent-skills-staged-read",
     "allow-agent-skills-install",
     "allow-agent-skills-discard",

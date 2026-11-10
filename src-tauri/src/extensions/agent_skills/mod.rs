@@ -184,6 +184,27 @@ pub async fn agent_skills_reveal_folder(app: AppHandle, source: String) -> Resul
 #[derive(Default)]
 pub struct AgentSkillsState {
     save_grants: Mutex<HashSet<PathBuf>>,
+    /// Lo que el usuario soltó en la ventana principal, con cuándo. Lo
+    /// anota Rust desde el evento de la ventana: importar lo soltado solo
+    /// acepta estas rutas, así el webview no puede pedir otra (SK14).
+    dropped: Mutex<Vec<(std::time::Instant, PathBuf)>>,
+}
+
+/// Cuánto vale lo soltado para importarlo.
+const DROP_TTL: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Anota lo soltado en la ventana principal (desde `on_window_event`).
+pub fn record_drop(app: &AppHandle, window_label: &str, paths: &[PathBuf]) {
+    if window_label != "main" {
+        return;
+    }
+    let state = app.state::<AgentSkillsState>();
+    let mut d = state.dropped.lock().unwrap_or_else(|e| e.into_inner());
+    let now = std::time::Instant::now();
+    d.retain(|(t, _)| now.duration_since(*t) < DROP_TTL);
+    for p in paths.iter().take(50) {
+        d.push((now, p.clone()));
+    }
 }
 
 /// El usuario dijo que no en el diálogo nativo. La vista no lo muestra
@@ -412,6 +433,51 @@ pub async fn agent_skills_import_pick(app: AppHandle, window: tauri::Window, kin
         }
     })
     .await
+}
+
+/// Prepara lo que el usuario soltó en la vista (carpetas y `.zip`), para
+/// la vista previa (SK14). Solo acepta rutas que Rust anotó del evento de
+/// soltar en los últimos 2 minutos. `None` si no queda nada que importar.
+#[tauri::command]
+pub async fn agent_skills_import_dropped(app: AppHandle, state: State<'_, AgentSkillsState>, paths: Vec<String>) -> Result<Option<StagedBundle>, String> {
+    let r = roots(&app)?;
+    if paths.is_empty() || paths.len() > 50 {
+        return Err(ERR_INVALID.to_string());
+    }
+    // El evento de la ventana y el del webview llegan casi a la vez: si el
+    // de Rust aún no se anotó, se espera un poco.
+    let mut accepted: Vec<PathBuf> = Vec::new();
+    for attempt in 0..15 {
+        // En su propio bloque: el candado no puede cruzar el `await`.
+        accepted = {
+            let d = state.dropped.lock().unwrap_or_else(|e| e.into_inner());
+            let now = std::time::Instant::now();
+            paths
+                .iter()
+                .map(PathBuf::from)
+                .filter(|p| d.iter().any(|(t, q)| q == p && now.duration_since(*t) < DROP_TTL))
+                .collect()
+        };
+        if accepted.len() == paths.len() || attempt == 14 {
+            break;
+        }
+        tokio_sleep(100).await;
+    }
+    if accepted.is_empty() {
+        return Err(ERR_INVALID.to_string());
+    }
+    blocking(move || {
+        let label = match accepted.len() {
+            1 => display_path(&r, &accepted[0]),
+            n => format!("{} (+{})", display_path(&r, &accepted[0]), n - 1),
+        };
+        staging::stage_paths(&r, &accepted, label)
+    })
+    .await
+}
+
+async fn tokio_sleep(ms: u64) {
+    let _ = tauri::async_runtime::spawn_blocking(move || std::thread::sleep(std::time::Duration::from_millis(ms))).await;
 }
 
 /// Un archivo de texto de una skill preparada (vista previa).

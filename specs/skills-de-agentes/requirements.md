@@ -90,6 +90,11 @@ Fuentes:
   - En macOS y Linux, con un enlace simbólico a la carpeta real. Si la real está en Codex, el enlace va en `~/.claude/skills` hacia ella.
   - En Windows, donde crear enlaces exige permisos, con una copia, y así lo dice el botón.
 - SK14. **Importar.** Se PODRÁ importar una carpeta o un `.zip` elegidos en un diálogo nativo. Si contiene varias skills, se elige cuáles. Siempre pasa por la vista previa (SK15).
+  - *Enmienda (10 nov 2026, pedido por Jorge: "que pueda cargar las skills con archivos, de una carpeta que me compartan o un .zip"):*
+    - También se PODRÁN **soltar** una o varias carpetas o `.zip` sobre la vista.
+    - Rust DEBERÁ aceptar solo las rutas que él mismo anotó del evento de soltar de la ventana principal, en los últimos 2 minutos; el webview no puede nombrar otras.
+    - Lo que no sea carpeta ni `.zip` se ignora.
+    - Cada skill se importa con todos sus archivos (`scripts/`, `references/`, `assets/`…), con las reglas de SK16.
 
 ### Vista previa e instalación
 

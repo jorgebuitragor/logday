@@ -73,6 +73,29 @@ filtro de `style` va al final porque `rehype-sanitize` no filtra valores.
   (`spawn_blocking` + `blocking_*`, con la ventana como padre). Del lado JS,
   `pickFolder`, `pickFile` y `saveDialog` de `lib/invoke.ts` los llaman; ya
   no se importa `@tauri-apps/plugin-dialog` en ningún archivo.
+- **Notas soltadas (BS23):** la lista de Notas importa con
+  `importNotesFromPaths` las rutas que le da `onDragDropEvent`. Esas rutas
+  no venían de un diálogo, así que `read_file` las rechazaba y la
+  importación las saltaba en silencio. Ahora `on_window_event` (en
+  `lib.rs`, solo para la ventana `main`) llama a
+  `FsScope::grant_dropped_notes` con las rutas de `DragDropEvent::Drop`:
+  - se guardan en un conjunto aparte (`dropped`) que `check` acepta solo
+    con `Access::Read`; importar copia la nota a la carpeta de datos y
+    nunca toca el original;
+  - el filtro (`.md`/`.txt`, archivo y no carpeta) se aplica a la ruta ya
+    resuelta, así un `nota.md` que es un enlace simbólico a otra cosa no
+    abre nada;
+  - se permite lo soltado en cualquier sección, porque Rust no sabe cuál
+    está a la vista; solo da lectura de archivos que el usuario mismo
+    arrastró;
+  - el orden: Tauri emite `tauri://drag-drop` al webview y después llama a
+    los manejadores de la app en el mismo turno del hilo principal, y
+    `read_file` es un comando síncrono que también corre en ese hilo, así
+    que el permiso siempre llega antes que la lectura.
+  Soltar carpetas en la extensión Skills de agentes (PR logday#76) usa el
+  mismo origen, el evento de la ventana, pero con su propio registro y un
+  comando con vencimiento, porque ahí se copian carpetas enteras; para
+  Notas alcanza con el permiso de lectura.
 - Lo que deja de verse: una imagen enlazada por ruta absoluta fuera de la
   carpeta de datos (`![](/Users/…/x.png)`) en la vista dividida y el PDF.
 
@@ -146,6 +169,13 @@ object-src 'none'; base-uri 'self'; form-action 'none'
 - **Plugin `tauri-plugin-fs` con su scope** en lugar de `fs_scope.rs`: habría
   que reescribir las ~40 llamadas a los comandos propios y su scope se
   amplía desde JS con permisos; el diálogo en Rust da un control más simple.
+- **Soltar notas con eventos HTML5 (`File` + `FileReader`)** en lugar de
+  rutas: Tauri intercepta el arrastre desde el sistema antes de que llegue
+  al webview (`dragDropEnabled`), y apagarlo dejaría a Rust sin saber qué
+  soltó el usuario.
+- **Un comando `notes_import_dropped`** que lea lo soltado desde Rust: más
+  código para el mismo resultado; con el permiso de lectura el flujo de
+  JS no cambia.
 - **Validar las rutas solo en JS**: un script inyectado llama a `invoke`
   directamente; la validación tiene que estar en Rust.
 - **Mermaid en `sandbox`**: dibuja en un iframe aparte y rompe el tamaño

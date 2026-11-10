@@ -20,6 +20,10 @@ const EXTENSION_BLOCK_LANGUAGES = EXTENSIONS.flatMap((def) => (def.noteBlock && 
 
 const ESTIMATED_EMPTY_MENU = { width: 170, height: 90 };
 
+// Lo que se puede importar soltándolo en la lista; la misma regla que Rust
+// usa para permitir la lectura (BS23), sin distinguir mayúsculas.
+const isNoteFile = (p: string) => /\.(md|txt)$/i.test(p);
+
 export function NoteList() {
   const {
     notes,
@@ -125,6 +129,8 @@ export function NoteList() {
 
   // Tauri intercepta el drag de archivos desde el SO antes de que llegue al WebView,
   // por lo que hay que usar onDragDropEvent en lugar de los eventos HTML5.
+  // Rust permite leer los .md/.txt soltados (FsScope::grant_dropped_notes,
+  // specs/blindaje-seguridad BS23); sin eso read_file los rechazaría.
   useEffect(() => {
     if (activeSection !== 'notes') return;
     let cancelled = false;
@@ -134,15 +140,13 @@ export function NoteList() {
       getCurrentWindow().onDragDropEvent((event) => {
         const payload = event.payload as { type: string; paths?: string[] };
         if (payload.type === 'enter') {
-          const hasMd = payload.paths?.some((p) => p.endsWith('.md') || p.endsWith('.txt'));
+          const hasMd = payload.paths?.some(isNoteFile);
           if (hasMd) setIsDragOver(true);
         } else if (payload.type === 'leave') {
           setIsDragOver(false);
         } else if (payload.type === 'drop') {
           setIsDragOver(false);
-          const paths = (payload.paths ?? []).filter(
-            (p) => p.endsWith('.md') || p.endsWith('.txt'),
-          );
+          const paths = (payload.paths ?? []).filter(isNoteFile);
           if (paths.length > 0) {
             setIsImporting(true);
             importNotesFromPaths(paths).finally(() => setIsImporting(false));

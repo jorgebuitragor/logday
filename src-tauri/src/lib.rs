@@ -836,6 +836,18 @@ pub fn run() {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            // Notas soltadas en la ventana principal: Rust las permite (solo
+            // lectura) para que `read_file` las acepte al importarlas, sin
+            // que el webview pueda nombrar otras rutas (specs/blindaje-
+            // seguridad BS23). Tauri avisa al webview y llama a este manejador
+            // en el mismo turno del hilo principal, y `read_file` es un
+            // comando síncrono que corre en ese hilo, así que el permiso ya
+            // está cuando llega la lectura.
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                if window.label() == "main" {
+                    window.app_handle().state::<FsScope>().grant_dropped_notes(paths);
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_app_config_dir,

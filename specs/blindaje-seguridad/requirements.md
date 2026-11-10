@@ -1,6 +1,8 @@
 # Blindaje de seguridad de Desktop: requirements
 
-Estado: implementado, sin probar en Windows.
+Estado: implementado, sin probar en Windows. BS23 (soltar notas) agregado
+el 10 nov 2026: el blindaje había dejado sin efecto arrastrar archivos a
+la lista de Notas.
 
 Origen: auditoría de calidad y seguridad del ecosistema del 9 nov 2026,
 lote 1 (ítems U-01 a U-05 del plan; hallazgos S-01, S-02, S-03, S-13, S-15,
@@ -69,7 +71,8 @@ Este spec cubre el blindaje del lado de Desktop. La validación de `id`,
   los enlaces simbólicos caigan dentro de:
   - la carpeta de la app (`app_data_dir`);
   - una carpeta de datos permitida (BS12);
-  - o un archivo permitido (BS13).
+  - un archivo permitido (BS13);
+  - o, solo para leer, una nota soltada en la ventana (BS23).
   Fuera de eso DEBERÁN responder un error, y `path_exists` DEBERÁ responder
   `false`.
 - BS11. Las carpetas de datos permitidas DEBERÁN guardarse en
@@ -90,6 +93,14 @@ Este spec cubre el blindaje del lado de Desktop. La validación de `id`,
 - BS16. `delete_file`, `delete_dir` y `rename_dir` NO DEBERÁN aplicarse a
   una carpeta de datos entera ni a la carpeta de la app.
 - BS17. `search_tasks` NO DEBERÁ seguir enlaces simbólicos a carpetas.
+- BS23. Cuando el usuario suelte archivos en la ventana principal, cada uno
+  que, después de resolver los enlaces simbólicos, sea un archivo `.md` o
+  `.txt` (sin importar mayúsculas) DEBERÁ quedar permitido **solo para
+  leer** hasta cerrar la app, para que Notas pueda importarlo. Hasta 200
+  por cada vez que se suelta. El permiso lo DEBERÁ dar Rust desde el evento
+  de la ventana (`WindowEvent::DragDrop`); ningún comando DEBERÁ dejar que
+  el webview agregue rutas soltadas. Un archivo soltado NO DEBERÁ poder
+  escribirse, borrarse ni renombrarse.
 
 ## Git
 

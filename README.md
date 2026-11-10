@@ -2,6 +2,8 @@
 
 Aplicación de escritorio de Logday para el trabajo diario: tareas, notas, dailys (registro diario de actividades), calendario y horas extra.
 
+Sitio de Logday: **[logday.dev](https://logday.dev)**, con la presentación del proyecto y las descargas de Desktop.
+
 Es local-first. Los datos son archivos de texto (Markdown y JSON) en una carpeta que eliges tú, y la app funciona completa sin conexión. El sync con [`logday-server`](https://github.com/jorgebuitragor/logday-server) es opcional y sirve para usar los mismos datos desde otro equipo, desde [Logday Web](https://github.com/jorgebuitragor/logday-web) o desde [Logday Mobile](https://github.com/jorgebuitragor/logday-mobile).
 
 Está hecha con Tauri 2 + React 19 + TypeScript. Se publica para macOS (Apple Silicon), Windows y Linux.

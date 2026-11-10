@@ -71,6 +71,11 @@ const COMMANDS: &[&str] = &[
         "pomodoro_pause",
         "pomodoro_idle",
         "pomodoro_clear",
+        "agent_skills_list",
+        "agent_skills_detail",
+        "agent_skills_read_file",
+        "agent_skills_reveal",
+        "agent_skills_reveal_folder",
 ];
 
 fn main() {

@@ -1,4 +1,4 @@
-import { Bot, CalendarDays, ClipboardList, Globe, Hourglass, MessagesSquare, NotebookPen, PenTool, Webhook, Wrench, Zap } from 'lucide-react';
+import { Bot, CalendarDays, ClipboardList, Globe, Hourglass, MessagesSquare, NotebookPen, PenTool, Webhook, WandSparkles, Wrench, Zap } from 'lucide-react';
 import type { ExtensionDefinition, ExtensionId } from './types';
 import { httpClientSecretKeys } from './http-client/secretKeys';
 
@@ -138,6 +138,18 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     // HT22: una clave del llavero por variable secreta.
     dynamicSecretKeys: httpClientSecretKeys,
     load: () => import('./http-client').then((m) => m.default),
+  },
+  {
+    id: 'agent-skills',
+    category: 'tool',
+    // `WandSparkles`: `Sparkles` ya lo usan las novedades y DevTools.
+    icon: WandSparkles,
+    apps: ['desktop'],
+    // SK33: no envía datos de Logday fuera, así que no lleva el aviso de
+    // R6; su descripción explica el riesgo de las skills.
+    view: true,
+    settings: true,
+    load: () => import('./agent-skills').then((m) => m.default),
   },
 ];
 

@@ -731,6 +731,9 @@ pub fn run() {
             // que el webview pida nada (specs/blindaje-seguridad BS10).
             let app_dir = app.path().app_data_dir()?;
             app.state::<FsScope>().init(&app_dir);
+            // Las carpetas de los agentes de IA quedan fuera de los comandos
+            // genéricos de archivos (specs/skills-de-agentes SK27).
+            extensions::agent_skills::protect(app.handle(), &app.state::<FsScope>());
             // El updater no existe en mobile — se registra acá (no al
             // nivel del builder) siguiendo el patrón oficial del plugin,
             // que necesita el AppHandle ya construido.
@@ -902,6 +905,11 @@ pub fn run() {
             extensions::pomodoro::pomodoro_pause,
             extensions::pomodoro::pomodoro_idle,
             extensions::pomodoro::pomodoro_clear,
+            extensions::agent_skills::agent_skills_list,
+            extensions::agent_skills::agent_skills_detail,
+            extensions::agent_skills::agent_skills_read_file,
+            extensions::agent_skills::agent_skills_reveal,
+            extensions::agent_skills::agent_skills_reveal_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

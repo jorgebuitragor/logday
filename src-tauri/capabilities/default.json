@@ -75,6 +75,11 @@
     "allow-pomodoro-schedule",
     "allow-pomodoro-pause",
     "allow-pomodoro-idle",
-    "allow-pomodoro-clear"
+    "allow-pomodoro-clear",
+    "allow-agent-skills-list",
+    "allow-agent-skills-detail",
+    "allow-agent-skills-read-file",
+    "allow-agent-skills-reveal",
+    "allow-agent-skills-reveal-folder"
   ]
 }

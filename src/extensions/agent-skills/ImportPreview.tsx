@@ -24,13 +24,31 @@ export interface ImportRow {
   replace: boolean;
 }
 
-export function initialRows(bundle: StagedBundle): ImportRow[] {
+/** Para instalar o actualizar desde el catálogo de un repo: cuáles se
+ *  eligen, con qué nombre y si reemplazan. */
+export interface ImportPreset {
+  rel: string;
+  /** Sin él, el sugerido (el `name` del frontmatter o la carpeta). */
+  name?: string;
+  replace: boolean;
+  tools?: Tool[];
+}
+
+export function initialRows(bundle: StagedBundle, preset?: ImportPreset[]): ImportRow[] {
   return bundle.skills.map((skill) => {
     const fm = skill.skillMd ? parseSkillMd(skill.skillMd).name : null;
     const name = fm && isPortableName(fm) ? fm : suggestName(skill.dirName);
     const installable = !!skill.hash && !skill.tooLarge;
+    const p = preset?.find((x) => x.rel === skill.rel);
+    if (preset) {
+      return { skill, selected: installable && !!p, name: p?.name ?? name, tools: p?.tools ?? ['claude', 'codex'], replace: p?.replace ?? false };
+    }
     return { skill, selected: installable, name, tools: ['claude', 'codex'], replace: false };
   });
+}
+
+function rows0(bundle: StagedBundle, preset: ImportPreset[]): number {
+  return bundle.skills.findIndex((s) => preset.some((p) => p.rel === s.rel));
 }
 
 export type RowProblem = 'tooLarge' | 'nameInvalid' | 'nameDuplicated' | 'toolsRequired' | 'needsReplace';
@@ -102,16 +120,22 @@ export function ImportPreview({
   tr,
   language,
   onClose,
+  preset,
+  keepStaged = false,
 }: {
   bundle: StagedBundle;
+  preset?: ImportPreset[];
+  /** Lo preparado es el catálogo de un repo: no se borra al cerrar. */
+  keepStaged?: boolean;
   taken: Record<Tool, Set<string>>;
   tr: Tr;
   language: Language;
   /** Con lo instalado, o `null` si se cerró sin instalar. */
   onClose: (installed: SkillRef[] | null) => void;
 }) {
-  const [rows, setRows] = useState<ImportRow[]>(() => initialRows(bundle));
-  const [focus, setFocus] = useState(0);
+  const [rows, setRows] = useState<ImportRow[]>(() => initialRows(bundle, preset));
+  // Con preset, se abre en la primera elegida.
+  const [focus, setFocus] = useState(() => Math.max(0, preset ? rows0(bundle, preset) : 0));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const row = rows[focus];
@@ -127,7 +151,7 @@ export function ImportPreview({
   const update = (i: number, patch: Partial<ImportRow>) => setRows((cur) => cur.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
   const cancel = () => {
-    void discardStaged(bundle.id).catch(() => undefined);
+    if (!keepStaged) void discardStaged(bundle.id).catch(() => undefined);
     onClose(null);
   };
 
@@ -141,8 +165,9 @@ export function ImportPreview({
         bundle.id,
         selected.map((r) => ({ rel: r.skill.rel, name: r.name, tools: r.tools, replace: r.replace, expectedHash: r.skill.hash as string })),
       );
-      // Lo que no se instaló sigue preparado: se borra.
-      void discardStaged(bundle.id).catch(() => undefined);
+      // Lo que no se instaló sigue preparado: se borra (salvo el catálogo
+      // de un repo, que sigue abierto).
+      if (!keepStaged) void discardStaged(bundle.id).catch(() => undefined);
       onClose(done);
     } catch (err) {
       const code = errorCode(err);

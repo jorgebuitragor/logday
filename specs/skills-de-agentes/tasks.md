@@ -62,11 +62,34 @@ En el navegador, con el build de producción y Tauri simulado, que registra lo q
 
 ## Fase 3: repos de GitHub (rama `feature/skills-de-agentes-repos`)
 
-- [ ] `github.rs`: resolver el commit, zipball con redirección comprobada a `codeload.github.com`, descomprimir solo las carpetas de skills y detectar repos de plugins (SK20, SK23, SK25).
-- [ ] `manifest.rs` (`installed.json`), `agent_skills_hash` y `agent_skills_compare`.
-- [ ] Token en el llavero (SK24) y su campo en Opciones.
-- [ ] Pestaña Repos: vincular, catálogo con estados, instalar, buscar actualizaciones y ver cambios con `lineDiff` (que pasa a `src/lib/`).
-- [ ] Pruebas.
+- [x] `github.rs`:
+  - resuelve el commit (sin `ref`, la rama principal) y baja el zipball;
+  - la redirección se sigue a mano, solo a `codeload.github.com` y sin el token;
+  - lee la respuesta con un tope de 50 MB;
+  - busca skills en el índice del zip, descomprime solo esas carpetas y detecta repos de plugins (SK20, SK23, SK25);
+  - los errores son códigos (`network`, `rate_limited`, `unauthorized`, `not_found`, `too_large`).
+- [x] `manifest.rs` (`installed.json`, que solo escribe Rust), `agent_skills_installed` (con la huella actual) y `agent_skills_compare`.
+- [x] Token en el llavero (SK24), con su campo en Opciones y `secretKeys`.
+- [x] Pestaña Repos:
+  - vincular (`owner/repo`, `@rama`, `:carpeta` o la URL);
+  - catálogo con estados (No instalada, Instalada, Actualización disponible, Modificada localmente);
+  - Instalar o Actualizar con la vista previa;
+  - Ver cambios con `lineDiff`;
+  - Buscar actualizaciones, en uno o en todos.
+- [x] Pruebas:
+  - Rust: `find_in_zip`, validación, registro y comparación;
+  - TS: `repos.test.ts`;
+  - prueba de red `#[ignore]` contra `anthropics/skills`, que encontró 19 skills y el aviso de plugins.
+
+### QA (10 nov 2026)
+
+- [x] **Contra GitHub de verdad** (prueba `#[ignore]`): `anthropics/skills`, con la carpeta `skills`, se resolvió a `main`, se bajó y se encontraron 19 skills; se detectó que trae plugins.
+- [x] **En el navegador, con Tauri simulado:**
+  - la pestaña Repos y el catálogo con sus cuatro estados;
+  - el aviso de plugins;
+  - "Ver cambios" con el diff del texto y un archivo que se quita;
+  - "Actualizar", que abre la vista previa con la skill elegida, su nombre, sus herramientas y "Reemplazar", e instala en un solo lote.
+- [ ] Probar en la app de QA real con un token de un repo privado.
 
 ## Cierre
 

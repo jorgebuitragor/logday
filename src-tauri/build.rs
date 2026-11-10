@@ -85,6 +85,9 @@ const COMMANDS: &[&str] = &[
         "agent_skills_staged_read",
         "agent_skills_install",
         "agent_skills_discard",
+        "agent_skills_repo_fetch",
+        "agent_skills_installed",
+        "agent_skills_compare",
 ];
 
 fn main() {

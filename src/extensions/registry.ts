@@ -149,6 +149,8 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     // R6; su descripción explica el riesgo de las skills.
     view: true,
     settings: true,
+    // SK24: el token de GitHub para repos privados.
+    secretKeys: ['github_token'],
     load: () => import('./agent-skills').then((m) => m.default),
   },
 ];

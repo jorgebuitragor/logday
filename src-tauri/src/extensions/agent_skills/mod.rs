@@ -10,6 +10,8 @@
 //! absoluta del webview (SK26).
 
 pub mod files;
+pub mod github;
+pub mod manifest;
 pub mod ops;
 pub mod roots;
 pub mod scan;
@@ -31,7 +33,6 @@ use roots::{display_path, home, join, resolve_file, resolve_skill, split_relativ
 use scan::SkillEntry;
 use staging::{Installed, StagedBundle, StagedOrigin};
 
-#[allow(dead_code)] // La usa el token de GitHub (fase 3).
 pub const EXTENSION_ID: &str = "agent-skills";
 
 /// Las carpetas de esta instalación.
@@ -484,12 +485,27 @@ pub async fn agent_skills_install(app: AppHandle, window: tauri::Window, lang: S
     confirm(&window, &lang, msg, "ok.install").await?;
     blocking(move || {
         let mut done = Vec::new();
+        let mut records = Vec::new();
         for (rel, name, tools, replace, exp) in &plan {
-            done.push(staging::install(&r, &id, rel, name, tools, *replace, exp)?);
+            let inst = staging::install(&r, &id, rel, name, tools, *replace, exp)?;
+            // Lo que viene de un repo se registra (SK21).
+            if let Some(repo) = origin.repo.as_ref().filter(|_| origin.kind == "github") {
+                let s = |k: &str| repo.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                let rec = manifest::InstalledRecord { repo: s("repo"), rel: rel.clone(), sha: s("sha"), hash: inst.hash.clone(), installed_at: now_ms() };
+                records.push((inst.source, inst.id.clone(), rec));
+            }
+            done.push(inst);
+        }
+        if !records.is_empty() {
+            manifest::record(&r, records)?;
         }
         Ok(done)
     })
     .await
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
 /// Borra lo preparado (al cerrar la vista previa sin instalar).
@@ -497,4 +513,37 @@ pub async fn agent_skills_install(app: AppHandle, window: tauri::Window, lang: S
 pub async fn agent_skills_discard(app: AppHandle, id: String) -> Result<(), String> {
     let r = roots(&app)?;
     blocking(move || staging::discard(&r, &id)).await
+}
+
+// ─── Fase 3: repos de GitHub (SK19–SK25) ───
+
+/// Abre un repo de GitHub y prepara sus skills para el catálogo (SK20).
+/// El token, si hay, lo lee Rust del llavero; el webview nunca lo ve
+/// (SK24).
+#[tauri::command]
+pub async fn agent_skills_repo_fetch(app: AppHandle, repo: github::RepoRef) -> Result<github::RepoCatalog, String> {
+    let r = roots(&app)?;
+    repo.validate().map_err(str::to_string)?;
+    let service = super::keychain_service(&app);
+    let token = tauri::async_runtime::spawn_blocking(move || super::read_secret(&service, EXTENSION_ID, "github_token").ok())
+        .await
+        .ok()
+        .flatten()
+        .filter(|t| !t.trim().is_empty());
+    github::fetch(r, repo, token).await.map_err(str::to_string)
+}
+
+/// Lo instalado desde repos, con su huella actual (SK21, SK22).
+#[tauri::command]
+pub async fn agent_skills_installed(app: AppHandle) -> Result<Vec<manifest::InstalledInfo>, String> {
+    let r = roots(&app)?;
+    blocking(move || Ok(manifest::list(&r))).await
+}
+
+/// Lo que cambia entre una skill instalada y lo preparado (SK22).
+#[tauri::command]
+pub async fn agent_skills_compare(app: AppHandle, id: String, rel: String, source: String, skill_id: String) -> Result<Vec<staging::FileChange>, String> {
+    let r = roots(&app)?;
+    let src = self::source(&source)?;
+    blocking(move || staging::compare(&r, &id, &rel, src, &skill_id)).await
 }

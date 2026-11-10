@@ -186,7 +186,7 @@ interface SkillEntry {
 2. `GET https://api.github.com/repos/{o}/{r}/commits/{ref}` con `Accept: application/vnd.github.sha` devuelve el sha.
 3. `GET https://api.github.com/repos/{o}/{r}/zipball/{sha}` **sin seguir redirecciones**. Se lee `Location` y se acepta solo si el host es `codeload.github.com`. Luego se hace `GET` a esa URL sin token, porque la URL ya lleva el permiso temporal.
 4. Se descarga a memoria con un tope de 50 MB.
-5. Se lee el índice del zip y se buscan los `SKILL.md` en las rutas de SK20 (quitando la carpeta raíz `owner-repo-sha/`). Solo se descomprimen esas carpetas, en `staging/<uuid>/`.
+5. Se lee el índice del zip, quitando la carpeta raíz `owner-repo-sha/`, y se buscan las carpetas con `SKILL.md`. Se busca en cualquier carpeta hasta 6 niveles, dentro de la subcarpeta pedida: eso cubre las rutas de SK20 (`skills/`, `skills/.curated/`, `.claude/skills/`, `plugins/*/skills/`…) y repos con otra organización. Se omiten `.git` y `node_modules`, y no se busca dentro de otra skill. Solo se descomprimen esas carpetas, en `staging/<uuid>/`, cada una en su ruta del repo. Una skill en la raíz del repo lleva el nombre del repo.
 6. Si existe `.claude-plugin/marketplace.json` o `.claude-plugin/plugin.json` en la raíz o en `plugins/*/`, se marca `isPluginRepo` (SK23).
 
 - **Validación:** `owner` y `repo` usan `[A-Za-z0-9_.-]{1,100}`. `ref` usa `[A-Za-z0-9_./-]{1,200}`, sin `..`. `path` es una ruta relativa sin `..`.
@@ -203,9 +203,17 @@ interface SkillEntry {
 **Actualizar** (SK22) es instalar con `replace`.
 
 - Antes, la vista arma el diff con `agent_skills_compare { id, rel, source, dir }`. Devuelve, por archivo, `added`, `removed` o `changed`, y para los de texto (hasta 512 KB) los dos textos.
-- La vista los pasa por `lineDiff` (de `src/extensions/devtools/tools/diff.ts`, que se mueve a `src/lib/lineDiff.ts` para compartirlo).
+- La vista los pasa por `lineDiff`, que se importa de `src/extensions/devtools/tools/diff.ts`. Es una función pura; se descartó moverla a `src/lib/` para no tocar DevTools en este PR.
 
-**Token:** se guarda con `ext_secret_set('agent-skills', 'github_token', …)`. `secretKeys: ['github_token']` hace que "Quitar configuración" lo borre.
+**Token:** se guarda con `ext_secret_set('agent-skills', 'github_token', …)` desde Opciones. `secretKeys: ['github_token']` hace que "Quitar configuración" lo borre. Rust lo lee del llavero solo al abrir un repo. Si no hay token o el llavero falla, se sigue sin él.
+
+**El catálogo y lo preparado:**
+
+- El catálogo de cada repo vive en el store de la extensión mientras la app está abierta, con su preparación en disco.
+- Instalar o actualizar desde él abre la misma vista previa de importar, con la skill ya elegida y, para actualizar, con el mismo nombre, las mismas herramientas y "Reemplazar". Esa vista previa no borra lo preparado al cerrarse (`keepStaged`).
+- Lo preparado se borra al volver a revisar el repo, al quitarlo, al desactivar la extensión, o a las 24 h.
+
+**Prueba de red:** `github::tests::repo_publico_de_verdad` es `#[ignore]` y corre contra `anthropics/skills` con `cargo test --lib -- --ignored agent_skills::github`.
 
 ## Interfaz
 

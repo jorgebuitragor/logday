@@ -4,7 +4,7 @@
 // detalle, con "Volver".
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { ChevronDown, ChevronRight, CirclePause, CirclePlay, FileArchive, FolderInput, Import, Pencil, Plus, RefreshCw, Search, Share2, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, CirclePause, CirclePlay, FileArchive, FolderInput, Import, Pencil, Plus, RefreshCw, Search, Share2, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { FOCUS_RING, ICON_BTN, INPUT_CLS, SECONDARY_CLS } from '../../components/shared/controlClasses';
 import { ConfirmDeleteModal } from '../../components/shared/ConfirmDeleteModal';
@@ -18,6 +18,7 @@ import { SkillEditor } from './SkillEditor';
 import { NewSkillModal } from './NewSkillModal';
 import { DeleteSkillModal, trashChoices, type TrashChoice } from './DeleteSkillModal';
 import { ImportPreview } from './ImportPreview';
+import { RepoDetail, ReposColumn } from './ReposPanel';
 import { ToolBadges } from './ToolBadges';
 
 const keyOf = (ref: SkillRef) => `${ref.source}:${ref.id}`;
@@ -99,8 +100,10 @@ export default function AgentSkillsView() {
   );
   const settings = useMemo(() => readSettings(raw), [raw]);
   const tr = useMemo(() => makeTr(language), [language]);
-  const { items, loading, loaded, error, selectedKey, editingKey, select, setEditing, reload } = useAgentSkills(
+  const { items, loading, loaded, error, selectedKey, editingKey, select, setEditing, reload, tab, setTab } = useAgentSkills(
     useShallow((s) => ({
+      tab: s.tab,
+      setTab: s.setTab,
       items: s.items,
       loading: s.loading,
       loaded: s.loaded,
@@ -137,6 +140,9 @@ export default function AgentSkillsView() {
     [groups, settings.collapsed],
   );
   const selected = items.find((it) => it.key === selectedKey) ?? null;
+  const { selectedRepoId, selectRepo } = useAgentSkills(useShallow((s) => ({ selectedRepoId: s.selectedRepoId, selectRepo: s.selectRepo })));
+  // En ventana angosta se ve la lista o el detalle.
+  const detailOpen = tab === 'repos' ? !!selectedRepoId : !!selected;
 
   const setFilter = (toolFilter: ToolFilter) => void update(AGENT_SKILLS_ID, { toolFilter });
   const toggleGroup = (group: SkillGroup) => {
@@ -355,12 +361,45 @@ export default function AgentSkillsView() {
       {/* Ancha: columna y detalle. Angosta: la lista o el detalle. */}
       <nav
         aria-label={tr('navLabel')}
-        className={`w-full shrink-0 flex-col border-[var(--border)] bg-[var(--bg-panel)] @2xl/skills:flex @2xl/skills:w-[280px] @2xl/skills:border-r ${selected ? 'hidden' : 'flex'}`}
+        className={`w-full shrink-0 flex-col border-[var(--border)] bg-[var(--bg-panel)] @2xl/skills:flex @2xl/skills:w-[280px] @2xl/skills:border-r ${detailOpen ? 'hidden' : 'flex'}`}
       >
-        {list}
+        <div role="tablist" aria-label={tr('tabs.label')} className="flex gap-1 border-b border-[var(--border)] px-3 pt-2">
+          {(['installed', 'repos'] as const).map((id) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={tab === id}
+              onClick={() => setTab(id)}
+              className={`-mb-px border-b-2 px-2 py-1.5 text-xs ${FOCUS_RING} ${tab === id ? 'border-indigo-500 text-[var(--text-primary)]' : 'border-transparent text-[var(--text-hint)] hover:text-[var(--text-secondary)]'}`}
+            >
+              {tr(`tabs.${id}`)}
+            </button>
+          ))}
+        </div>
+        {tab === 'repos' ? <ReposColumn tr={tr} /> : list}
       </nav>
-      <section className={`min-w-0 flex-1 overflow-y-auto ${selected ? 'block' : 'hidden @2xl/skills:block'}`} aria-live="off">
-        {selected && editingKey === selected.key ? (
+      <section className={`min-w-0 flex-1 overflow-y-auto ${detailOpen ? 'block' : 'hidden @2xl/skills:block'}`} aria-live="off">
+        {tab === 'repos' ? (
+          <>
+            {/* En ventana angosta, volver a la lista de repos. */}
+            <button type="button" onClick={() => selectRepo(null)} className={`${ICON_BTN} ml-3.5 mt-3 @2xl/skills:hidden`}>
+              <ArrowLeft size={14} aria-hidden />
+              {tr('tabs.repos')}
+            </button>
+            <RepoDetail
+              tr={tr}
+              language={language}
+              taken={taken}
+              onInstalled={(refs) => {
+                void reload();
+                const title = refs.length === 1 ? tr('done.installed') : tr('done.installedN', { n: refs.length });
+                showToast({ kind: 'success', title });
+                announce(title);
+              }}
+            />
+          </>
+        ) : selected && editingKey === selected.key ? (
           <SkillEditor
             item={selected}
             tr={tr}

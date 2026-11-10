@@ -173,6 +173,50 @@ export const installStaged = (lang: string, id: string, items: InstallItem[]) =>
 
 export const discardStaged = (id: string) => invoke<void>('agent_skills_discard', { id });
 
+// ─── Fase 3: repos de GitHub (SK19–SK25) ───
+
+export interface RepoRef {
+  owner: string;
+  repo: string;
+  gitRef?: string | null;
+  path?: string | null;
+}
+
+export interface RepoCatalog {
+  bundle: StagedBundle;
+  sha: string;
+  gitRef: string;
+  /** Trae `.claude-plugin/`: solo se instalan sus skills (SK23). */
+  isPluginRepo: boolean;
+}
+
+export interface InstalledInfo {
+  /** `<fuente>:<id>` de la skill instalada. */
+  key: string;
+  repo: string;
+  rel: string;
+  sha: string;
+  hash: string;
+  installedAt: number;
+  currentHash: string | null;
+}
+
+export type ChangeKind = 'added' | 'removed' | 'changed' | 'same';
+
+export interface FileChange {
+  rel: string;
+  kind: ChangeKind;
+  before: string | null;
+  after: string | null;
+}
+
+export const fetchRepo = (repo: RepoRef) => invoke<RepoCatalog>('agent_skills_repo_fetch', { repo });
+
+export const listInstalled = () => invoke<InstalledInfo[]>('agent_skills_installed');
+
+export const compareStaged = (id: string, rel: string, loc: Loc) =>
+  invoke<FileChange[]>('agent_skills_compare', { id, rel, source: loc.source, skillId: loc.id });
+
 /** Los errores de Rust son un código (`not_found`, `binary`…): se traducen
  *  con `err.<código>` en la sección `agentSkills`. */
 export function errorCode(err: unknown): string {

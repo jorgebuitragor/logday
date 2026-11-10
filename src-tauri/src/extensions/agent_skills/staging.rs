@@ -172,9 +172,15 @@ fn zip_path(raw: &str) -> Option<Vec<String>> {
 }
 
 /// Descomprime un zip con las reglas de SK16. `strip_top` quita la primera
-/// carpeta (los zips de GitHub traen `owner-repo-sha/`). `keep` decide qué
-/// rutas (ya sin esa carpeta) se descomprimen.
-pub fn unzip_limited(bytes: &[u8], to: &Path, strip_top: bool, keep: &dyn Fn(&[String]) -> bool, budget_skipped: &mut Vec<String>) -> Result<(), &'static str> {
+/// carpeta (los zips de GitHub traen `owner-repo-sha/`). `map` decide si una
+/// ruta (ya sin esa carpeta) se descomprime y dónde: `None` la deja fuera.
+pub fn unzip_limited(
+    bytes: &[u8],
+    to: &Path,
+    strip_top: bool,
+    map: &dyn Fn(&[String]) -> Option<Vec<String>>,
+    budget_skipped: &mut Vec<String>,
+) -> Result<(), &'static str> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|_| ERR_ARCHIVE)?;
     let mut budget = Budget::default();
     for i in 0..archive.len() {
@@ -191,9 +197,7 @@ pub fn unzip_limited(bytes: &[u8], to: &Path, strip_top: bool, keep: &dyn Fn(&[S
             }
             parts.remove(0);
         }
-        if !keep(&parts) {
-            continue;
-        }
+        let Some(parts) = map(&parts) else { continue };
         let rel = parts.join("/");
         if parts.len() > MAX_DEPTH + 2 || parts.iter().any(|p| p == ".git") {
             budget.skipped.push(rel);
@@ -334,7 +338,7 @@ pub fn stage_zip(roots: &Roots, bytes: &[u8], zip_name: &str, origin: StagedOrig
     let (id, dir) = begin(roots, &origin)?;
     let mut skipped = Vec::new();
     let content = dir.join(CONTENT_DIR);
-    let r = unzip_limited(bytes, &content, false, &|_| true, &mut skipped);
+    let r = unzip_limited(bytes, &content, false, &|p| Some(p.to_vec()), &mut skipped);
     or_discard(&dir, r)?;
     if find_skill_md(&content).is_some() {
         let stem: String = Path::new(zip_name)
@@ -350,6 +354,17 @@ pub fn stage_zip(roots: &Roots, bytes: &[u8], zip_name: &str, origin: StagedOrig
             .and_then(|_| fs::rename(&tmp, content.join(if stem.is_empty() { "skill".into() } else { stem })));
         or_discard(&dir, r.map_err(|_| ERR_IO))?;
     }
+    let b = bundle(roots, id, origin, skipped);
+    or_discard(&dir, b)
+}
+
+/// Prepara un zip de GitHub (fase 3): solo lo que `map` deja, ya sin la
+/// carpeta `owner-repo-sha/`.
+pub fn stage_zip_mapped(roots: &Roots, bytes: &[u8], origin: StagedOrigin, map: &dyn Fn(&[String]) -> Option<Vec<String>>) -> Result<StagedBundle, &'static str> {
+    let (id, dir) = begin(roots, &origin)?;
+    let mut skipped = Vec::new();
+    let r = unzip_limited(bytes, &dir.join(CONTENT_DIR), true, map, &mut skipped);
+    or_discard(&dir, r)?;
     let b = bundle(roots, id, origin, skipped);
     or_discard(&dir, b)
 }
@@ -380,6 +395,9 @@ pub fn read_staged(roots: &Roots, id: &str, rel: &str, file: &str) -> Result<Str
 pub struct Installed {
     pub source: SourceId,
     pub id: String,
+    /// La huella de lo instalado (para el registro de repos, fase 3).
+    #[serde(skip)]
+    pub hash: String,
 }
 
 /// Comprueba lo que se va a instalar, sin tocar nada: la huella (SK18), el
@@ -432,7 +450,72 @@ pub fn install(roots: &Roots, id: &str, rel: &str, name: &str, tools: &[Tool], r
         link_or_copy(&primary, &link)?;
     }
     let source = if primary.starts_with(roots.claude()) { SourceId::Claude } else { SourceId::Agents };
-    Ok(Installed { source, id: name.to_string() })
+    Ok(Installed { source, id: name.to_string(), hash: expected.to_string() })
+}
+
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ChangeKind {
+    Added,
+    Removed,
+    Changed,
+    Same,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct FileChange {
+    pub rel: String,
+    pub kind: ChangeKind,
+    /// Lo instalado y lo nuevo, si es texto de hasta 512 KB y cambió.
+    pub before: Option<String>,
+    pub after: Option<String>,
+}
+
+const MAX_DIFF_TEXT: u64 = 512 * 1024;
+
+/// Lo que cambia, archivo por archivo, entre una skill instalada y lo
+/// preparado para actualizarla (SK22).
+pub fn compare(roots: &Roots, id: &str, rel: &str, source: SourceId, skill_id: &str) -> Result<Vec<FileChange>, &'static str> {
+    let new_dir = staged_skill(roots, id, rel)?;
+    let old_dir = super::roots::resolve_skill(roots, source, skill_id)?.real;
+    let old = walk(&old_dir);
+    let new = walk(&new_dir);
+    let mut rels: Vec<String> = old.files.iter().chain(new.files.iter()).map(|f| f.rel.clone()).collect();
+    rels.sort();
+    rels.dedup();
+    let text = |dir: &Path, r: &str| -> Option<String> {
+        let p = join(dir, &split_relative(r).ok()?);
+        if fs::symlink_metadata(&p).ok()?.file_type().is_symlink() {
+            return None;
+        }
+        read_text(&p, MAX_DIFF_TEXT).ok()
+    };
+    let bytes = |dir: &Path, r: &str| -> Option<Vec<u8>> {
+        let p = join(dir, &split_relative(r).ok()?);
+        if fs::symlink_metadata(&p).ok()?.file_type().is_symlink() {
+            return None;
+        }
+        fs::read(p).ok()
+    };
+    let mut out = Vec::new();
+    for r in rels {
+        let in_old = old.files.iter().any(|f| f.rel == r);
+        let in_new = new.files.iter().any(|f| f.rel == r);
+        let kind = match (in_old, in_new) {
+            (true, false) => ChangeKind::Removed,
+            (false, true) => ChangeKind::Added,
+            _ if bytes(&old_dir, &r) == bytes(&new_dir, &r) => ChangeKind::Same,
+            _ => ChangeKind::Changed,
+        };
+        let (before, after) = if kind == ChangeKind::Same {
+            (None, None)
+        } else {
+            (if in_old { text(&old_dir, &r) } else { None }, if in_new { text(&new_dir, &r) } else { None })
+        };
+        out.push(FileChange { rel: r, kind, before, after });
+    }
+    Ok(out)
 }
 
 /// Borra lo preparado.
@@ -563,5 +646,21 @@ mod tests {
         // Ids raros.
         assert_eq!(discard(&r, "../../x").unwrap_err(), ERR_INVALID);
         assert_eq!(read_staged(&r, &b.id, "../x", "SKILL.md").unwrap_err(), ERR_INVALID);
+    }
+
+    #[test]
+    fn compara_lo_instalado_con_lo_nuevo() {
+        let t = Tmp::new("comparar");
+        let r = t.roots();
+        skill(&r.claude().join("s"), MD);
+        fs::write(r.claude().join("s/viejo.md"), "x").unwrap();
+        let src = t.0.join("nueva/s");
+        skill(&src, "---\nname: s\ndescription: d2\n---\n");
+        fs::write(src.join("nuevo.md"), "y").unwrap();
+        let b = stage_folder(&r, &src, "x".into()).unwrap();
+        let ch = compare(&r, &b.id, "s", SourceId::Claude, "s").unwrap();
+        let kinds: Vec<_> = ch.iter().map(|c| (c.rel.as_str(), c.kind)).collect();
+        assert_eq!(kinds, vec![("SKILL.md", ChangeKind::Changed), ("nuevo.md", ChangeKind::Added), ("viejo.md", ChangeKind::Removed)]);
+        assert_eq!(ch[0].before.as_deref(), Some(MD));
     }
 }

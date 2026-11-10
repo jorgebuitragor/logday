@@ -14,19 +14,25 @@ interface AgentSkillsStore {
   error: string | null;
   loaded: boolean;
   selectedKey: string | null;
+  /** La skill cuyo SKILL.md se está editando (fase 2). */
+  editingKey: string | null;
   select: (key: string | null) => void;
+  setEditing: (key: string | null) => void;
   reload: () => Promise<void>;
   reset: () => void;
 }
 
-const INITIAL = { items: [], folders: [], loading: false, error: null, loaded: false, selectedKey: null };
+const INITIAL = { items: [], folders: [], loading: false, error: null, loaded: false, selectedKey: null, editingKey: null };
 
 // Una lectura a la vez: si llega otra mientras tanto, se usa la última.
 let generation = 0;
 
 export const agentSkillsApi = createStore<AgentSkillsStore>((set, get) => ({
   ...INITIAL,
-  select: (key) => set({ selectedKey: key }),
+  // Elegir otra skill sale del editor (la vista pregunta antes si hay
+  // cambios sin guardar).
+  select: (key) => set((s) => ({ selectedKey: key, editingKey: s.editingKey === key ? s.editingKey : null })),
+  setEditing: (key) => set({ editingKey: key }),
   reload: async () => {
     const mine = ++generation;
     set({ loading: true });
@@ -43,6 +49,7 @@ export const agentSkillsApi = createStore<AgentSkillsStore>((set, get) => ({
         error: null,
         // Si la elegida ya no está (se borró por fuera), no queda nada elegido.
         selectedKey: selected && items.some((it) => it.key === selected) ? selected : null,
+        editingKey: get().editingKey && items.some((it) => it.key === get().editingKey) ? get().editingKey : null,
       });
     } catch (err) {
       if (mine !== generation) return;

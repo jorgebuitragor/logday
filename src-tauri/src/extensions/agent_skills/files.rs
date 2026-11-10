@@ -211,7 +211,6 @@ pub fn read_text_prefix(path: &Path, max: u64) -> Option<String> {
     })
 }
 
-#[allow(dead_code)] // La usan los comandos que cambian skills (fase 2 y 3).
 pub fn sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
     digest.iter().map(|b| format!("{b:02x}")).collect()
@@ -221,7 +220,6 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 /// `ruta relativa` + sha256 de cada archivo, y de los enlaces su destino.
 /// No depende de fechas ni permisos, así que es la misma en cualquier
 /// equipo para el mismo contenido.
-#[allow(dead_code)] // La usan los comandos que cambian skills (fase 2 y 3).
 pub fn content_hash(dir: &Path) -> Result<String, &'static str> {
     let w = walk(dir);
     if w.flags.truncated {

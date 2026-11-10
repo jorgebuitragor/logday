@@ -720,6 +720,7 @@ pub fn run() {
         .manage(extensions::mcp::McpState::default())
         .manage(extensions::quick_capture::QuickCaptureState::default())
         .manage(extensions::pomodoro::PomodoroState::default())
+        .manage(extensions::agent_skills::AgentSkillsState::default())
         .manage(FsScope::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -910,6 +911,15 @@ pub fn run() {
             extensions::agent_skills::agent_skills_read_file,
             extensions::agent_skills::agent_skills_reveal,
             extensions::agent_skills::agent_skills_reveal_folder,
+            extensions::agent_skills::agent_skills_create,
+            extensions::agent_skills::agent_skills_save,
+            extensions::agent_skills::agent_skills_trash,
+            extensions::agent_skills::agent_skills_set_enabled,
+            extensions::agent_skills::agent_skills_share,
+            extensions::agent_skills::agent_skills_import_pick,
+            extensions::agent_skills::agent_skills_staged_read,
+            extensions::agent_skills::agent_skills_install,
+            extensions::agent_skills::agent_skills_discard,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

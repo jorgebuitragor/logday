@@ -95,6 +95,12 @@ Fuentes:
     - Rust DEBERÁ aceptar solo las rutas que él mismo anotó del evento de soltar de la ventana principal, en los últimos 2 minutos; el webview no puede nombrar otras.
     - Lo que no sea carpeta ni `.zip` se ignora.
     - Cada skill se importa con todos sus archivos (`scripts/`, `references/`, `assets/`…), con las reglas de SK16.
+  - *Enmienda (11 nov 2026, pedido por Jorge):* además de carpetas y `.zip`, se PODRÁN importar, eligiéndolos o soltándolos:
+    - **`.skill`**: es un `.zip` con otra extensión, el formato del empaquetador oficial de skills. Se trata igual que un `.zip`.
+    - **un `.md` suelto**: una skill que es solo su `SKILL.md`. Queda en una carpeta con el `name` de su frontmatter.
+    - Un `.md` que no empiece con un frontmatter con `name` y `description` NO DEBERÁ importarse: al elegirlo se avisa que no es una skill y, al soltarlo junto con otros, va a omitidos. Así una nota cualquiera no se instala como skill.
+    - Un enlace a un archivo no cuenta como `.md` ni como `.zip`: se mira el propio archivo.
+    - SI el `SKILL.md` menciona archivos de `scripts/`, `references/` o `assets/` que no vienen con la skill, la vista previa DEBERÁ avisarlo ("Le faltan archivos").
 - SK38. **Menú del clic derecho** *(pedido por Jorge el 11 nov 2026)*. Al hacer clic derecho sobre una skill de la lista, o con la tecla de menú o Mayús+F10 sobre la fila enfocada, DEBERÁ abrirse un menú con las mismas acciones que el detalle (editar, compartir, activar o desactivar y borrar) más "Mostrar en el Finder". No hace falta elegir la skill antes.
   - Borrar DEBERÁ ir al final y separado, con la misma confirmación de SK11.
   - Una skill que no se puede cambiar (de plugin o del sistema) solo DEBERÁ ofrecer "Mostrar".

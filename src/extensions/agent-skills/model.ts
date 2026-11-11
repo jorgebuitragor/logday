@@ -38,7 +38,7 @@ export function readSettings(raw: Record<string, unknown> | undefined): AgentSki
 
 /** Avisos que salen de los archivos o de la ubicación, además de los del
  *  SKILL.md. */
-export type FileWarning = 'scripts' | 'binaries' | 'symlinks' | 'external' | 'broken' | 'truncated' | 'unreadable';
+export type FileWarning = 'scripts' | 'binaries' | 'symlinks' | 'external' | 'broken' | 'truncated' | 'unreadable' | 'missing-files';
 export type Warning = SkillWarning | FileWarning;
 
 /** Los que ponen el punto de riesgo en la fila: lo que puede hacer que el
@@ -50,7 +50,7 @@ export const RISK_WARNINGS: ReadonlySet<Warning> = new Set<Warning>([
 /** Orden en que se muestran: primero los de riesgo. */
 const WARNING_ORDER: readonly Warning[] = [
   'external', 'broken', 'hooks', 'shell-injection', 'allowed-tools', 'scripts', 'binaries', 'symlinks',
-  'invalid-frontmatter', 'missing-name', 'missing-description', 'name-mismatch', 'name-not-portable', 'truncated', 'unreadable',
+  'invalid-frontmatter', 'missing-name', 'missing-description', 'name-mismatch', 'name-not-portable', 'missing-files', 'truncated', 'unreadable',
 ];
 
 export interface SkillItem {
@@ -80,6 +80,15 @@ export function groupOf(origin: Origin): SkillGroup {
   }
 }
 
+/** Archivos de la skill (`scripts/…`, `references/…`, `assets/…`) que el
+ *  SKILL.md menciona y que no vienen con ella: pasa al importar un `.md`
+ *  suelto de una skill que tenía más archivos (SK14). */
+export function missingFiles(body: string, files: readonly string[]): string[] {
+  const have = new Set(files);
+  const refs = body.match(/\b(?:scripts|references|assets)\/\w[\w.-]*(?:\/\w[\w.-]*)*/g) ?? [];
+  return [...new Set(refs.map((r) => r.replace(/[.]+$/, '')))].filter((r) => !have.has(r) && ![...have].some((f) => f.startsWith(`${r}/`)));
+}
+
 /** Los avisos de una skill (SK7), instalada o preparada para instalar. */
 export function computeWarnings(input: {
   parsed: ParsedSkillMd | null;
@@ -87,6 +96,9 @@ export function computeWarnings(input: {
   fileFlags: FileFlags;
   skillMdTruncated?: boolean;
   location?: 'external' | 'broken' | null;
+  /** Rutas de los archivos que trae, para avisar si el SKILL.md menciona
+   *  alguno que no viene (un `.md` suelto, sobre todo). Solo al importar. */
+  files?: readonly string[];
 }): { warnings: Warning[]; risky: boolean } {
   const warnings = new Set<Warning>();
   if (input.location) warnings.add(input.location);
@@ -97,6 +109,7 @@ export function computeWarnings(input: {
   if (f.binaries) warnings.add('binaries');
   if (f.symlinks) warnings.add('symlinks');
   if (f.truncated || input.skillMdTruncated) warnings.add('truncated');
+  if (input.files && input.parsed && missingFiles(input.parsed.body, input.files).length) warnings.add('missing-files');
   const sorted = WARNING_ORDER.filter((w) => warnings.has(w));
   return { warnings: sorted, risky: sorted.some((w) => RISK_WARNINGS.has(w)) };
 }

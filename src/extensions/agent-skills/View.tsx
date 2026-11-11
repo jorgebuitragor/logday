@@ -4,12 +4,12 @@
 // detalle, con "Volver".
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { ArrowLeft, ChevronDown, ChevronRight, FileArchive, FolderInput, Import, Plus, RefreshCw, Search, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, FileArchive, FileText, FolderInput, Import, Plus, RefreshCw, Search, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { FOCUS_RING, ICON_BTN, INPUT_CLS, SECONDARY_CLS } from '../../components/shared/controlClasses';
 import { ConfirmDeleteModal } from '../../components/shared/ConfirmDeleteModal';
 import { Spinner } from '../../components/shared/FormControls';
-import { discardStaged, errorCode, importDropped, importPick, revealSkill, trashSkill, type SkillRef, type StagedBundle } from './api';
+import { discardStaged, errorCode, importDropped, importPick, revealSkill, trashSkill, type ImportKind, type SkillRef, type StagedBundle } from './api';
 import { AGENT_SKILLS_ID, filterItems, groupItems, localeOf, readSettings, takenNames, type SkillGroup, type SkillItem, type ToolFilter } from './model';
 import { useAgentSkills } from './store';
 import { makeTr, trCode } from './text';
@@ -166,7 +166,8 @@ export default function AgentSkillsView() {
         }
         if (!b.skills.length) {
           void discardStaged(b.id).catch(() => undefined);
-          showToast({ kind: 'error', title: tr('import.noneFound') });
+          // Un .md sin el encabezado de una skill no es lo mismo que "no hay SKILL.md".
+          showToast({ kind: 'error', title: tr(b.origin.kind === 'md' ? 'err.not_skill' : 'import.noneFound') });
           return;
         }
         setTab('installed');
@@ -178,7 +179,7 @@ export default function AgentSkillsView() {
     [setTab, showToast, tr],
   );
 
-  const startImport = (kind: 'folder' | 'zip') => {
+  const startImport = (kind: ImportKind) => {
     setImportMenu(false);
     void openBundle(() => importPick(kind), 'import.noneFound');
   };
@@ -230,6 +231,10 @@ export default function AgentSkillsView() {
               <button role="menuitem" type="button" className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--bg-hover)] ${FOCUS_RING}`} onClick={() => void startImport('zip')}>
                 <FileArchive size={13} aria-hidden />
                 {tr('import.zip')}
+              </button>
+              <button role="menuitem" type="button" className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--bg-hover)] ${FOCUS_RING}`} onClick={() => void startImport('md')}>
+                <FileText size={13} aria-hidden />
+                {tr('import.md')}
               </button>
               <p className="border-t border-[var(--border)] px-2 pb-1 pt-1.5 text-[10px] leading-snug text-[var(--text-hint)]">{tr('import.dropHint')}</p>
             </div>

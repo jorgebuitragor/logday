@@ -57,7 +57,7 @@ describe('vista de Skills de agentes', () => {
     expect(t).toContain('Claude Codex');
     expect(html).toContain('aria-label="Tiene avisos de seguridad"');
     expect(t).toContain('Importar una carpeta');
-    expect(t).toContain('O arrastra aquí una carpeta o un .zip');
+    expect(t).toContain('O arrastra aquí una carpeta, un .zip, un .skill o un SKILL.md');
     // La que tiene avisos aparece para revisarla.
     expect(t).toContain('Tuyas con avisos');
   });

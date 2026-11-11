@@ -141,7 +141,7 @@ export function ImportPreview({
   const row = rows[focus];
   const parsed = useMemo(() => (row?.skill.skillMd ? parseSkillMd(row.skill.skillMd) : null), [row?.skill.skillMd]);
   const { warnings } = useMemo(
-    () => (row ? computeWarnings({ parsed, dirName: row.name, fileFlags: row.skill.fileFlags }) : { warnings: [] }),
+    () => (row ? computeWarnings({ parsed, dirName: row.name, fileFlags: row.skill.fileFlags, files: row.skill.files.map((f) => f.rel) }) : { warnings: [] }),
     [parsed, row],
   );
   const selected = rows.filter((r) => r.selected);

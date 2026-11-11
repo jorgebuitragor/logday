@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterItems, formatSize, groupItems, readSettings, toItem } from './model';
+import { filterItems, formatSize, groupItems, readSettings, toItem, missingFiles, computeWarnings } from './model';
 import { entry } from './testData';
 
 const all = { query: '', tool: 'all' as const, showPlugins: true, showSystem: true };
@@ -65,3 +65,21 @@ describe('lista de skills', () => {
     expect(formatSize(3 * 1024 * 1024, 'en-US')).toBe('3 MB');
   });
 });
+
+describe('archivos que menciona el SKILL.md y no vienen', () => {
+  const body = 'Corre `scripts/run.py` y lee references/guia.md. Usa assets/.';
+  it('avisa de los que faltan', () => {
+    expect(missingFiles(body, ['SKILL.md'])).toEqual(['scripts/run.py', 'references/guia.md']);
+    expect(missingFiles(body, ['SKILL.md', 'scripts/run.py', 'references/guia.md'])).toEqual([]);
+    // Una carpeta mencionada cuenta si viene algo dentro.
+    expect(missingFiles('Mira references/api', ['references/api/a.md'])).toEqual([]);
+  });
+
+  it('solo al importar: sin la lista de archivos no se mira', () => {
+    const parsed = { frontmatter: {}, name: 's', description: 'd', body, hasFrontmatter: true, yamlError: null };
+    const flags = { scripts: false, binaries: false, symlinks: false, executables: false, truncated: false };
+    expect(computeWarnings({ parsed, dirName: 's', fileFlags: flags }).warnings).not.toContain('missing-files');
+    expect(computeWarnings({ parsed, dirName: 's', fileFlags: flags, files: ['SKILL.md'] }).warnings).toContain('missing-files');
+  });
+});
+

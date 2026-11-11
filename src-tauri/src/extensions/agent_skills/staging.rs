@@ -21,6 +21,8 @@ use super::roots::{join, split_relative, Roots, SourceId, Tool, ERR_INVALID, ERR
 
 pub const ERR_ARCHIVE: &str = "bad_archive";
 pub const ERR_HASH: &str = "hash_mismatch";
+/// Un `.md` sin el encabezado de una skill (`name` y `description`).
+pub const ERR_NOT_SKILL: &str = "not_skill";
 
 /// Topes (SK16).
 pub const MAX_FILE: u64 = 5 * 1024 * 1024;
@@ -316,6 +318,82 @@ fn or_discard<T>(dir: &Path, r: Result<T, &'static str>) -> Result<T, &'static s
     r
 }
 
+/// Qué es algo que se quiere importar (SK14). `.skill` es un zip con otra
+/// extensión: lo que genera el empaquetador oficial de skills. Un `.md`
+/// suelto es un `SKILL.md` sin más archivos. Los enlaces no cuentan: se
+/// mira el propio archivo, no a dónde apunta.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ImportKind {
+    Folder,
+    Zip,
+    Markdown,
+}
+
+pub fn import_kind(p: &Path) -> Option<ImportKind> {
+    let meta = fs::symlink_metadata(p).ok()?;
+    if meta.is_dir() {
+        return Some(ImportKind::Folder);
+    }
+    if !meta.is_file() {
+        return None;
+    }
+    match p.extension()?.to_string_lossy().to_ascii_lowercase().as_str() {
+        "zip" | "skill" => Some(ImportKind::Zip),
+        "md" => Some(ImportKind::Markdown),
+        _ => None,
+    }
+}
+
+/// El `name` de un `.md` suelto, si es una skill: empieza con un
+/// frontmatter (`---` … `---`) que tiene `name` no vacío y `description`.
+/// Sin eso es una nota cualquiera y no se importa (SK14).
+pub fn loose_skill_name(text: &str) -> Option<String> {
+    let mut lines = text.trim_start_matches('\u{feff}').lines();
+    if lines.next()?.trim_end() != "---" {
+        return None;
+    }
+    let (mut name, mut description) = (None, false);
+    for line in lines {
+        if line.trim_end() == "---" {
+            return name.filter(|_| description);
+        }
+        if let Some(v) = line.strip_prefix("name:") {
+            let v = v.trim().trim_matches(|c| c == '"' || c == '\'').trim();
+            if !v.is_empty() {
+                name = Some(v.to_string());
+            }
+        } else if line.starts_with("description:") {
+            description = true;
+        }
+    }
+    // Sin el `---` de cierre no hay frontmatter.
+    None
+}
+
+/// Lee un `.md` suelto y devuelve el nombre de su carpeta y el texto.
+fn read_loose_md(src: &Path) -> Result<(String, String), &'static str> {
+    let size = fs::metadata(src).map_err(|_| ERR_NOT_FOUND)?.len();
+    if size > MAX_SKILL_MD {
+        return Err(ERR_TOO_LARGE);
+    }
+    let text = fs::read_to_string(src).map_err(|_| ERR_NOT_SKILL)?;
+    let name = loose_skill_name(&text).ok_or(ERR_NOT_SKILL)?;
+    Ok((safe_dir_name(&name), text))
+}
+
+/// Prepara un `SKILL.md` suelto elegido en un diálogo (SK14): queda en una
+/// carpeta con el `name` de su frontmatter.
+pub fn stage_markdown(roots: &Roots, src: &Path, label: String) -> Result<StagedBundle, &'static str> {
+    let (name, text) = read_loose_md(src)?;
+    let origin = StagedOrigin { kind: "md".into(), label, repo: None };
+    let (id, dir) = begin(roots, &origin)?;
+    let target = dir.join(CONTENT_DIR).join(&name);
+    let r = fs::create_dir_all(&target).and_then(|_| fs::write(target.join("SKILL.md"), text)).map_err(|_| ERR_IO);
+    or_discard(&dir, r)?;
+    let b = bundle(roots, id, origin, Vec::new());
+    or_discard(&dir, b)
+}
+
 /// Prepara una carpeta elegida en un diálogo (SK14).
 pub fn stage_folder(roots: &Roots, src: &Path, label: String) -> Result<StagedBundle, &'static str> {
     let meta = fs::symlink_metadata(src).map_err(|_| ERR_NOT_FOUND)?;
@@ -369,25 +447,21 @@ pub fn stage_zip_mapped(roots: &Roots, bytes: &[u8], origin: StagedOrigin, map: 
     or_discard(&dir, b)
 }
 
-/// Prepara varias carpetas y `.zip` soltados a la vez (SK14). Cada uno va
-/// en su propia carpeta dentro de lo preparado (un zip, con el nombre del
-/// archivo sin extensión); los nombres repetidos llevan `-2`, `-3`… Lo que
-/// no es carpeta ni `.zip` se omite. `None` si no queda nada.
+/// Prepara varias carpetas, `.zip`/`.skill` y `.md` soltados a la vez
+/// (SK14). Cada uno va en su propia carpeta dentro de lo preparado (un zip,
+/// con el nombre del archivo sin extensión; un `.md`, con su `name`); los
+/// nombres repetidos llevan `-2`, `-3`… Lo demás se ignora, y un `.md` que
+/// no es una skill va a omitidos. `None` si no queda nada.
 pub fn stage_paths(roots: &Roots, paths: &[PathBuf], label: String) -> Result<Option<StagedBundle>, &'static str> {
-    let items: Vec<&PathBuf> = paths
-        .iter()
-        .filter(|p| {
-            let meta = fs::symlink_metadata(p);
-            let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
-            let is_zip = meta.as_ref().map(|m| m.is_file()).unwrap_or(false)
-                && p.extension().map(|e| e.eq_ignore_ascii_case("zip")).unwrap_or(false);
-            is_dir || is_zip
-        })
-        .collect();
+    let items: Vec<(&PathBuf, ImportKind)> = paths.iter().filter_map(|p| import_kind(p).map(|k| (p, k))).collect();
     if items.is_empty() {
         return Ok(None);
     }
-    let kind = if items.len() == 1 && items[0].is_dir() { "folder" } else { "zip" };
+    let kind = match items.as_slice() {
+        [(_, ImportKind::Folder)] => "folder",
+        [(_, ImportKind::Markdown)] => "md",
+        _ => "zip",
+    };
     let origin = StagedOrigin { kind: kind.into(), label, repo: None };
     let (id, dir) = begin(roots, &origin)?;
     let content = dir.join(CONTENT_DIR);
@@ -395,11 +469,23 @@ pub fn stage_paths(roots: &Roots, paths: &[PathBuf], label: String) -> Result<Op
     let mut used: Vec<String> = Vec::new();
     let r = (|| -> Result<(), &'static str> {
         let mut budget = Budget::default();
-        for p in &items {
-            let base = if p.is_dir() {
-                p.file_name().map(|n| n.to_string_lossy().to_string())
+        for (p, kind) in &items {
+            // Un `.md` que no es una skill se omite y se dice (SK14).
+            let loose = if *kind == ImportKind::Markdown {
+                match read_loose_md(p) {
+                    Ok(v) => Some(v),
+                    Err(_) => {
+                        skipped.push(p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default());
+                        continue;
+                    }
+                }
             } else {
-                p.file_stem().map(|n| n.to_string_lossy().to_string())
+                None
+            };
+            let base = match (kind, &loose) {
+                (_, Some((name, _))) => Some(name.clone()),
+                (ImportKind::Folder, _) => p.file_name().map(|n| n.to_string_lossy().to_string()),
+                _ => p.file_stem().map(|n| n.to_string_lossy().to_string()),
             }
             .unwrap_or_else(|| "skill".into());
             let mut name = safe_dir_name(&base);
@@ -409,7 +495,10 @@ pub fn stage_paths(roots: &Roots, paths: &[PathBuf], label: String) -> Result<Op
                 n += 1;
             }
             used.push(name.clone());
-            if p.is_dir() {
+            if let Some((_, text)) = &loose {
+                let target = content.join(&name);
+                fs::create_dir_all(&target).and_then(|_| fs::write(target.join("SKILL.md"), text)).map_err(|_| ERR_IO)?;
+            } else if *kind == ImportKind::Folder {
                 copy_limited(p, &content.join(&name), &name, 0, &mut budget)?;
             } else {
                 let size = fs::metadata(p).map_err(|_| ERR_NOT_FOUND)?.len();
@@ -745,5 +834,66 @@ mod tests {
         let rels: Vec<_> = b.skills.iter().map(|s| s.rel.as_str()).collect();
         assert_eq!(rels, vec!["revisar", "revisar-2"]);
         assert!(stage_paths(&r, &[t.0.join("nota.txt")], "x".into()).unwrap().is_none());
+    }
+
+    #[test]
+    fn formatos_que_se_pueden_importar() {
+        let t = Tmp::new("formatos");
+        let dir = t.0.join("carpeta");
+        fs::create_dir_all(&dir).unwrap();
+        for (name, kind) in [("a.zip", Some(ImportKind::Zip)), ("b.SKILL", Some(ImportKind::Zip)), ("c.md", Some(ImportKind::Markdown)), ("d.txt", None)] {
+            fs::write(t.0.join(name), "x").unwrap();
+            assert_eq!(import_kind(&t.0.join(name)), kind, "{name}");
+        }
+        assert_eq!(import_kind(&dir), Some(ImportKind::Folder));
+        #[cfg(unix)]
+        {
+            // Un enlace a un .md no cuenta: se mira el propio archivo.
+            std::os::unix::fs::symlink(t.0.join("c.md"), t.0.join("enlace.md")).unwrap();
+            assert_eq!(import_kind(&t.0.join("enlace.md")), None);
+        }
+    }
+
+    #[test]
+    fn md_suelto_solo_si_tiene_name_y_description() {
+        assert_eq!(loose_skill_name(MD), Some("s".into()));
+        assert_eq!(loose_skill_name("\u{feff}---\nname: \"Mi Skill\"\ndescription: >\n  larga\n---\n"), Some("Mi Skill".into()));
+        assert_eq!(loose_skill_name("# Una nota\n\nTexto"), None);
+        assert_eq!(loose_skill_name("---\nname: s\n---\n"), None);
+        assert_eq!(loose_skill_name("---\ndescription: d\n---\n"), None);
+        assert_eq!(loose_skill_name("---\nname: s\ndescription: d\n"), None);
+    }
+
+    #[test]
+    fn preparar_un_md_suelto() {
+        let t = Tmp::new("md-suelto");
+        let r = t.roots();
+        let md = t.0.join("bajadas/SKILL.md");
+        fs::create_dir_all(md.parent().unwrap()).unwrap();
+        fs::write(&md, "---\nname: revisar-pr\ndescription: d\n---\n# R\n").unwrap();
+        let b = stage_markdown(&r, &md, "x".into()).unwrap();
+        assert_eq!(b.origin.kind, "md");
+        assert_eq!(b.skills.len(), 1);
+        assert_eq!(b.skills[0].rel, "revisar-pr");
+        assert_eq!(b.skills[0].files.iter().map(|f| f.rel.as_str()).collect::<Vec<_>>(), vec!["SKILL.md"]);
+        let nota = t.0.join("nota.md");
+        fs::write(&nota, "# Una nota\n").unwrap();
+        assert_eq!(stage_markdown(&r, &nota, "x".into()).unwrap_err(), ERR_NOT_SKILL);
+    }
+
+    #[test]
+    fn soltar_md_y_skill() {
+        let t = Tmp::new("soltar-md");
+        let r = t.roots();
+        let md = t.0.join("una.md");
+        fs::write(&md, MD).unwrap();
+        let nota = t.0.join("nota.md");
+        fs::write(&nota, "# Una nota\n").unwrap();
+        let pack = t.0.join("otra.skill");
+        fs::write(&pack, zip_of(&[("SKILL.md", MD.as_bytes())], &[])).unwrap();
+        let b = stage_paths(&r, &[md, nota, pack], "x".into()).unwrap().unwrap();
+        let rels: Vec<_> = b.skills.iter().map(|s| s.rel.as_str()).collect();
+        assert_eq!(rels, vec!["otra", "s"]);
+        assert_eq!(b.skipped, vec!["nota.md".to_string()]);
     }
 }

@@ -62,11 +62,63 @@ En el navegador, con el build de producción y Tauri simulado, que registra lo q
 
 ## Fase 3: repos de GitHub (rama `feature/skills-de-agentes-repos`)
 
-- [ ] `github.rs`: resolver el commit, zipball con redirección comprobada a `codeload.github.com`, descomprimir solo las carpetas de skills y detectar repos de plugins (SK20, SK23, SK25).
-- [ ] `manifest.rs` (`installed.json`), `agent_skills_hash` y `agent_skills_compare`.
-- [ ] Token en el llavero (SK24) y su campo en Opciones.
-- [ ] Pestaña Repos: vincular, catálogo con estados, instalar, buscar actualizaciones y ver cambios con `lineDiff` (que pasa a `src/lib/`).
-- [ ] Pruebas.
+- [x] `github.rs`:
+  - resuelve el commit (sin `ref`, la rama principal) y baja el zipball;
+  - la redirección se sigue a mano, solo a `codeload.github.com` y sin el token;
+  - lee la respuesta con un tope de 50 MB;
+  - busca skills en el índice del zip, descomprime solo esas carpetas y detecta repos de plugins (SK20, SK23, SK25);
+  - los errores son códigos (`network`, `rate_limited`, `unauthorized`, `not_found`, `too_large`).
+- [x] `manifest.rs` (`installed.json`, que solo escribe Rust), `agent_skills_installed` (con la huella actual) y `agent_skills_compare`.
+- [x] Token en el llavero (SK24), con su campo en Opciones y `secretKeys`.
+- [x] Pestaña Repos:
+  - vincular (`owner/repo`, `@rama`, `:carpeta` o la URL);
+  - catálogo con estados (No instalada, Instalada, Actualización disponible, Modificada localmente);
+  - Instalar o Actualizar con la vista previa;
+  - Ver cambios con `lineDiff`;
+  - Buscar actualizaciones, en uno o en todos.
+- [x] Pruebas:
+  - Rust: `find_in_zip`, validación, registro y comparación;
+  - TS: `repos.test.ts`;
+  - prueba de red `#[ignore]` contra `anthropics/skills`, que encontró 19 skills y el aviso de plugins.
+
+### QA (10 nov 2026)
+
+- [x] **Contra GitHub de verdad** (prueba `#[ignore]`): `anthropics/skills`, con la carpeta `skills`, se resolvió a `main`, se bajó y se encontraron 19 skills; se detectó que trae plugins.
+- [x] **En el navegador, con Tauri simulado:**
+  - la pestaña Repos y el catálogo con sus cuatro estados;
+  - el aviso de plugins;
+  - "Ver cambios" con el diff del texto y un archivo que se quita;
+  - "Actualizar", que abre la vista previa con la skill elegida, su nombre, sus herramientas y "Reemplazar", e instala en un solo lote.
+- [ ] Probar en la app de QA real con un token de un repo privado.
+
+## Mejoras de importar e interfaz (rama `feature/skills-de-agentes-interfaz`, 10 nov 2026)
+
+- [x] Soltar carpetas o `.zip` sobre la vista (enmienda de SK14):
+  - Rust anota lo soltado (`record_drop` en `on_window_event`);
+  - el comando `agent_skills_import_dropped` solo acepta esas rutas;
+  - `stage_paths` prepara varias a la vez.
+  - Probado en Rust: carpeta y zip con el mismo nombre (`-2`), y un archivo que no es zip, que se ignora.
+- [x] Inicio de la vista con las cuatro formas de añadir skills, la zona de soltar y "Tuyas con avisos".
+- [x] Filas de dos líneas, recordatorio de arrastrar en el menú Importar, y Borrar aparte en el detalle.
+- [x] QA en el navegador, con el evento de soltar de Tauri simulado:
+  - la capa "Suelta para importar";
+  - al soltar una carpeta, la vista previa con sus archivos (un script incluido);
+  - el inicio, y llegar a una skill con avisos desde ahí.
+- [ ] Probar soltar en la app de QA real, porque el evento de la ventana solo existe ahí.
+
+## GitLab y servidores propios (rama `feature/skills-de-agentes-gitlab`, 10 nov 2026)
+
+Jorge pidió vincular repos de GitLab y de servidores propios. Enmienda de SK19, SK22, SK24 y SK25; nuevos SK36 y SK37.
+
+- [x] `servers.rs`: lista permitida (github.com y gitlab.com de serie, propios en `servers.json`), `normalize_host`, claves de token por host.
+- [x] `github.rs` → `remote.rs`: `RepoRef.host`, validación por tipo (grupos en GitLab), resolución y descarga para GitLab y Gitea/Forgejo, redirecciones solo al mismo origen, error `tls`.
+- [x] Comandos `agent_skills_servers`, `agent_skills_server_add` (confirmación nativa) y `agent_skills_server_remove`, en `lib.rs`, `build.rs` y la capability.
+- [x] reqwest con `rustls-tls-native-roots`.
+- [x] `repos.ts`: `parseRepo` con URLs de los tres tipos y host desconocido, `normalizeHost`, `repoKey` con host, `repoWebUrl`.
+- [x] Columna Repos: ofrecer añadir un host desconocido; abrir en el navegador; aviso de plugins con la URL fuera de GitHub.
+- [x] Opciones: "Servidores de repos", con el token de cada uno; `secretKeys` + `dynamicSecretKeys` (`settings.tokenKeys`).
+- [x] Textos es/en que decían solo GitHub.
+- [x] Pruebas: Rust (servidores, claves, URLs, validación; de red contra GitHub, GitLab, Codeberg y un certificado no válido) y TS (`repos.test.ts`).
 
 ## Cierre
 

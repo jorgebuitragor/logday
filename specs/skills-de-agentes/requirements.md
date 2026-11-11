@@ -90,6 +90,11 @@ Fuentes:
   - En macOS y Linux, con un enlace simbólico a la carpeta real. Si la real está en Codex, el enlace va en `~/.claude/skills` hacia ella.
   - En Windows, donde crear enlaces exige permisos, con una copia, y así lo dice el botón.
 - SK14. **Importar.** Se PODRÁ importar una carpeta o un `.zip` elegidos en un diálogo nativo. Si contiene varias skills, se elige cuáles. Siempre pasa por la vista previa (SK15).
+  - *Enmienda (10 nov 2026, pedido por Jorge: "que pueda cargar las skills con archivos, de una carpeta que me compartan o un .zip"):*
+    - También se PODRÁN **soltar** una o varias carpetas o `.zip` sobre la vista.
+    - Rust DEBERÁ aceptar solo las rutas que él mismo anotó del evento de soltar de la ventana principal, en los últimos 2 minutos; el webview no puede nombrar otras.
+    - Lo que no sea carpeta ni `.zip` se ignora.
+    - Cada skill se importa con todos sus archivos (`scripts/`, `references/`, `assets/`…), con las reglas de SK16.
 
 ### Vista previa e instalación
 
@@ -106,22 +111,32 @@ Fuentes:
 - SK17. SI ya existe una skill con el nombre de destino, la instalación DEBERÁ pedir "Reemplazar". La anterior va a la papelera.
 - SK18. Lo que se instala DEBERÁ ser exactamente lo que se previsualizó. Si lo preparado cambió entre la vista previa y la confirmación, la instalación DEBERÁ fallar.
 
-### Repos de GitHub (fase 3)
+### Repos de GitHub, GitLab y servidores propios (fase 3)
 
-- SK19. Se PODRÁ vincular un repo de GitHub con `owner/repo`, una URL de github.com, o eso más una rama o tag y una subcarpeta. Los repos vinculados se guardan en la configuración local de la extensión.
+- SK19. Se PODRÁ vincular un repo con `owner/repo` (GitHub), con la URL del repo en GitHub, GitLab o un servidor propio, o con eso más una rama o tag y una subcarpeta. En GitLab el repo puede estar dentro de grupos y subgrupos (`grupo/subgrupo/repo`). Los repos vinculados se guardan en la configuración local de la extensión. *(Enmienda del 10 nov 2026: antes solo GitHub.)*
 - SK20. Al abrir un repo, Logday DEBERÁ:
   - resolver la rama o el tag (por defecto, la rama principal) a un **commit**;
   - descargar el zip de ese commit;
   - buscar skills (carpetas con `SKILL.md`) en `skills/`, `skills/.curated/`, `skills/.experimental/`, `.claude/skills/`, `.agents/skills/`, `plugins/*/skills/`, la raíz y la subcarpeta pedida;
   - mostrar el catálogo con su estado: No instalada, Instalada, Actualización disponible o Modificada localmente.
 - SK21. Instalar desde un repo DEBERÁ pasar por la vista previa (SK15) y guardar de dónde vino: repo, ruta, commit y huella del contenido.
-- SK22. "Buscar actualizaciones" DEBERÁ ser manual: un botón por repo y uno para todos. Logday NO DEBERÁ consultar GitHub por su cuenta.
+- SK22. "Buscar actualizaciones" DEBERÁ ser manual: un botón por repo y uno para todos. Logday NO DEBERÁ consultar ningún servidor por su cuenta.
   - Para aplicar una actualización DEBERÁ mostrarse antes el cambio de cada archivo (añadido, quitado, cambiado, con el diff del texto).
   - SI la skill se modificó a mano desde que se instaló, DEBERÁ avisarse antes de pisarla.
   - La versión anterior va a la papelera.
 - SK23. SI el repo trae `.claude-plugin/marketplace.json` o `plugin.json`, el catálogo DEBERÁ avisar que solo se instalan las skills: hooks, servidores MCP, comandos y agentes del plugin no. También DEBERÁ sugerir `/plugin marketplace add owner/repo` para instalar el plugin completo.
-- SK24. Para repos privados se PODRÁ guardar un token de GitHub. Va al llavero (`ext:agent-skills:github_token`), el webview nunca lo lee, y solo se envía a `api.github.com`.
-- SK25. Las peticiones DEBERÁN salir desde Rust y solo a `api.github.com` y `codeload.github.com` (R17), con límites de tiempo y tamaño.
+- SK24. Para repos privados se PODRÁ guardar un token por servidor. Va al llavero (`ext:agent-skills:github_token` para GitHub, `gitlab_token` para gitlab.com y `token-<huella del host>` para los propios), el webview nunca lo lee, y solo se envía al servidor al que pertenece.
+- SK25. Las peticiones DEBERÁN salir desde Rust (R17), por `https` y con límites de tiempo y tamaño, solo a:
+  - `api.github.com` y `codeload.github.com` para GitHub;
+  - `gitlab.com` para GitLab;
+  - los servidores propios que el usuario haya añadido (SK36).
+  Una redirección a otro host DEBERÁ rechazarse, salvo la de GitHub a `codeload.github.com`, que se pide sin el token.
+- SK36. Se PODRÁN añadir servidores propios (host y, si hace falta, puerto) de tipo **GitLab** o **Gitea/Forgejo**, desde Opciones o al vincular la URL de un repo en un host desconocido.
+  - Añadir un servidor DEBERÁ confirmarse en un diálogo nativo desde Rust (SK29): si un script del webview pudiera añadirlos, podría hacer que Logday se conecte a cualquier host.
+  - La lista de servidores la guarda Rust en la carpeta de datos de la extensión (vetada al webview, SK27), no en la configuración.
+  - Quitar un servidor no pide confirmación y borra su token.
+  - Se aceptan direcciones de red local o de una VPN (p. ej. Tailscale): un servidor propio suele estar ahí, y solo se llega a los que el usuario añadió.
+- SK37. El certificado del servidor DEBERÁ ser válido para el sistema. No hay opción para aceptar certificados no válidos: un servidor con una CA propia funciona si esa CA está instalada en el llavero del sistema.
 
 ### Seguridad
 

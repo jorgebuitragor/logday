@@ -213,7 +213,6 @@ export function SkillDetail({
       </header>
 
       <div className="flex flex-wrap gap-2">
-        {actions}
         <button
           type="button"
           className={SECONDARY_CLS}
@@ -225,6 +224,7 @@ export function SkillDetail({
           <FolderOpen size={13} aria-hidden />
           {tr(isMac() ? 'reveal' : 'revealOther')}
         </button>
+        {actions}
       </div>
       {revealError && <p className="text-xs text-red-400" role="alert">{trCode(tr, 'err', revealError, 'err.unknown')}</p>}
 

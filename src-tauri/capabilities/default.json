@@ -87,8 +87,15 @@
     "allow-agent-skills-set-enabled",
     "allow-agent-skills-share",
     "allow-agent-skills-import-pick",
+    "allow-agent-skills-import-dropped",
     "allow-agent-skills-staged-read",
     "allow-agent-skills-install",
-    "allow-agent-skills-discard"
+    "allow-agent-skills-discard",
+    "allow-agent-skills-repo-fetch",
+    "allow-agent-skills-installed",
+    "allow-agent-skills-servers",
+    "allow-agent-skills-server-add",
+    "allow-agent-skills-server-remove",
+    "allow-agent-skills-compare"
   ]
 }

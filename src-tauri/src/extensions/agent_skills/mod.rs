@@ -10,9 +10,12 @@
 //! absoluta del webview (SK26).
 
 pub mod files;
+pub mod manifest;
 pub mod ops;
+pub mod remote;
 pub mod roots;
 pub mod scan;
+pub mod servers;
 pub mod staging;
 
 use std::collections::HashSet;
@@ -31,7 +34,6 @@ use roots::{display_path, home, join, resolve_file, resolve_skill, split_relativ
 use scan::SkillEntry;
 use staging::{Installed, StagedBundle, StagedOrigin};
 
-#[allow(dead_code)] // La usa el token de GitHub (fase 3).
 pub const EXTENSION_ID: &str = "agent-skills";
 
 /// Las carpetas de esta instalación.
@@ -183,6 +185,27 @@ pub async fn agent_skills_reveal_folder(app: AppHandle, source: String) -> Resul
 #[derive(Default)]
 pub struct AgentSkillsState {
     save_grants: Mutex<HashSet<PathBuf>>,
+    /// Lo que el usuario soltó en la ventana principal, con cuándo. Lo
+    /// anota Rust desde el evento de la ventana: importar lo soltado solo
+    /// acepta estas rutas, así el webview no puede pedir otra (SK14).
+    dropped: Mutex<Vec<(std::time::Instant, PathBuf)>>,
+}
+
+/// Cuánto vale lo soltado para importarlo.
+const DROP_TTL: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Anota lo soltado en la ventana principal (desde `on_window_event`).
+pub fn record_drop(app: &AppHandle, window_label: &str, paths: &[PathBuf]) {
+    if window_label != "main" {
+        return;
+    }
+    let state = app.state::<AgentSkillsState>();
+    let mut d = state.dropped.lock().unwrap_or_else(|e| e.into_inner());
+    let now = std::time::Instant::now();
+    d.retain(|(t, _)| now.duration_since(*t) < DROP_TTL);
+    for p in paths.iter().take(50) {
+        d.push((now, p.clone()));
+    }
 }
 
 /// El usuario dijo que no en el diálogo nativo. La vista no lo muestra
@@ -199,6 +222,7 @@ fn text(lang: &str, key: &str) -> &'static str {
         "ok.create" => if en { "Create" } else { "Crear" },
         "ok.add" => if en { "Add" } else { "Añadir" },
         "ok.enable" => if en { "Enable" } else { "Activar" },
+        "ok.allow" => if en { "Allow" } else { "Permitir" },
         "cancel" => if en { "Cancel" } else { "Cancelar" },
         "title" => if en { "Logday · Agent skills" } else { "Logday · Skills de agentes" },
         "warning" => if en {
@@ -216,13 +240,18 @@ fn tools_label(lang: &str, tools: &[Tool]) -> String {
 }
 
 /// Pide confirmación en un diálogo nativo, que un script del webview no
-/// puede contestar (SK29). Devuelve `cancelled` si dice que no.
+/// puede contestar (SK29), con el aviso de que las skills ejecutan cosas.
+/// Devuelve `cancelled` si dice que no.
 async fn confirm(window: &tauri::Window, lang: &str, message: String, ok: &str) -> Result<(), String> {
+    confirm_plain(window, lang, format!("{message}\n\n{}", text(lang, "warning")), ok).await
+}
+
+/// Lo mismo, sin el aviso de las skills (para añadir un servidor, SK36).
+async fn confirm_plain(window: &tauri::Window, lang: &str, body: String, ok: &str) -> Result<(), String> {
     let w = window.clone();
     let ok_label = text(lang, ok).to_string();
     let cancel = text(lang, "cancel").to_string();
     let title = text(lang, "title").to_string();
-    let body = format!("{message}\n\n{}", text(lang, "warning"));
     let yes = tauri::async_runtime::spawn_blocking(move || {
         w.dialog()
             .message(body)
@@ -413,6 +442,51 @@ pub async fn agent_skills_import_pick(app: AppHandle, window: tauri::Window, kin
     .await
 }
 
+/// Prepara lo que el usuario soltó en la vista (carpetas y `.zip`), para
+/// la vista previa (SK14). Solo acepta rutas que Rust anotó del evento de
+/// soltar en los últimos 2 minutos. `None` si no queda nada que importar.
+#[tauri::command]
+pub async fn agent_skills_import_dropped(app: AppHandle, state: State<'_, AgentSkillsState>, paths: Vec<String>) -> Result<Option<StagedBundle>, String> {
+    let r = roots(&app)?;
+    if paths.is_empty() || paths.len() > 50 {
+        return Err(ERR_INVALID.to_string());
+    }
+    // El evento de la ventana y el del webview llegan casi a la vez: si el
+    // de Rust aún no se anotó, se espera un poco.
+    let mut accepted: Vec<PathBuf> = Vec::new();
+    for attempt in 0..15 {
+        // En su propio bloque: el candado no puede cruzar el `await`.
+        accepted = {
+            let d = state.dropped.lock().unwrap_or_else(|e| e.into_inner());
+            let now = std::time::Instant::now();
+            paths
+                .iter()
+                .map(PathBuf::from)
+                .filter(|p| d.iter().any(|(t, q)| q == p && now.duration_since(*t) < DROP_TTL))
+                .collect()
+        };
+        if accepted.len() == paths.len() || attempt == 14 {
+            break;
+        }
+        tokio_sleep(100).await;
+    }
+    if accepted.is_empty() {
+        return Err(ERR_INVALID.to_string());
+    }
+    blocking(move || {
+        let label = match accepted.len() {
+            1 => display_path(&r, &accepted[0]),
+            n => format!("{} (+{})", display_path(&r, &accepted[0]), n - 1),
+        };
+        staging::stage_paths(&r, &accepted, label)
+    })
+    .await
+}
+
+async fn tokio_sleep(ms: u64) {
+    let _ = tauri::async_runtime::spawn_blocking(move || std::thread::sleep(std::time::Duration::from_millis(ms))).await;
+}
+
 /// Un archivo de texto de una skill preparada (vista previa).
 #[tauri::command]
 pub async fn agent_skills_staged_read(app: AppHandle, id: String, rel: String, file: String) -> Result<String, String> {
@@ -484,12 +558,27 @@ pub async fn agent_skills_install(app: AppHandle, window: tauri::Window, lang: S
     confirm(&window, &lang, msg, "ok.install").await?;
     blocking(move || {
         let mut done = Vec::new();
+        let mut records = Vec::new();
         for (rel, name, tools, replace, exp) in &plan {
-            done.push(staging::install(&r, &id, rel, name, tools, *replace, exp)?);
+            let inst = staging::install(&r, &id, rel, name, tools, *replace, exp)?;
+            // Lo que viene de un repo se registra (SK21).
+            if let Some(repo) = origin.repo.as_ref() {
+                let s = |k: &str| repo.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                let rec = manifest::InstalledRecord { repo: s("repo"), rel: rel.clone(), sha: s("sha"), hash: inst.hash.clone(), installed_at: now_ms() };
+                records.push((inst.source, inst.id.clone(), rec));
+            }
+            done.push(inst);
+        }
+        if !records.is_empty() {
+            manifest::record(&r, records)?;
         }
         Ok(done)
     })
     .await
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
 /// Borra lo preparado (al cerrar la vista previa sin instalar).
@@ -497,4 +586,96 @@ pub async fn agent_skills_install(app: AppHandle, window: tauri::Window, lang: S
 pub async fn agent_skills_discard(app: AppHandle, id: String) -> Result<(), String> {
     let r = roots(&app)?;
     blocking(move || staging::discard(&r, &id)).await
+}
+
+// ─── Fase 3: repos de GitHub, GitLab y servidores propios (SK19–SK25, SK36) ───
+
+/// Lee un token del llavero. Si no hay o el llavero falla, se sigue sin él.
+async fn read_token(app: &AppHandle, key: String) -> Option<String> {
+    let service = super::keychain_service(app);
+    tauri::async_runtime::spawn_blocking(move || super::read_secret(&service, EXTENSION_ID, &key).ok())
+        .await
+        .ok()
+        .flatten()
+        .filter(|t| !t.trim().is_empty())
+}
+
+/// Abre un repo y prepara sus skills para el catálogo (SK20). Solo de un
+/// servidor de la lista permitida (SK25). El token de ese servidor, si
+/// hay, lo lee Rust del llavero; el webview nunca lo ve (SK24).
+#[tauri::command]
+pub async fn agent_skills_repo_fetch(app: AppHandle, repo: remote::RepoRef) -> Result<remote::RepoCatalog, String> {
+    let r = roots(&app)?;
+    let host = repo.host().to_string();
+    let server = {
+        let r = r.clone();
+        blocking(move || servers::find(&r, &host).ok_or(remote::ERR_UNKNOWN_SERVER)).await?
+    };
+    repo.validate(server.kind).map_err(str::to_string)?;
+    let token = read_token(&app, server.token_key.clone()).await;
+    remote::fetch(r, server, repo, token).await.map_err(str::to_string)
+}
+
+/// Los servidores permitidos: los de serie y los propios (SK36).
+#[tauri::command]
+pub async fn agent_skills_servers(app: AppHandle) -> Result<Vec<servers::Server>, String> {
+    let r = roots(&app)?;
+    blocking(move || Ok(servers::list(&r))).await
+}
+
+/// Añade un servidor propio, con confirmación nativa (SK36): si lo pudiera
+/// añadir un script del webview, Logday se conectaría adonde él quisiera.
+#[tauri::command]
+pub async fn agent_skills_server_add(app: AppHandle, window: tauri::Window, lang: String, host: String, kind: servers::Kind) -> Result<servers::Server, String> {
+    let r = roots(&app)?;
+    let host = servers::normalize_host(&host).ok_or_else(|| ERR_INVALID.to_string())?;
+    if kind == servers::Kind::Github {
+        return Err(ERR_INVALID.to_string());
+    }
+    if let Some(s) = servers::find(&r, &host).filter(|s| s.builtin || s.kind == kind) {
+        return Ok(s);
+    }
+    let msg = if lang == "en" {
+        format!(
+            "Allow Logday to connect to https://{host} ({})?\n\nIt will only be used to download skills from the repos you link from that server, and its token (if you save one) will only be sent there.",
+            kind.label()
+        )
+    } else {
+        format!(
+            "¿Permitir que Logday se conecte a https://{host} ({})?\n\nSolo se usará para bajar las skills de los repos que vincules de ese servidor, y su token (si guardas uno) solo se enviará ahí.",
+            kind.label()
+        )
+    };
+    confirm_plain(&window, &lang, msg, "ok.allow").await?;
+    blocking(move || servers::add(&r, &host, kind)).await
+}
+
+/// Quita un servidor propio y borra su token. No pide confirmación: quita
+/// acceso, no lo da.
+#[tauri::command]
+pub async fn agent_skills_server_remove(app: AppHandle, host: String) -> Result<(), String> {
+    let r = roots(&app)?;
+    let service = super::keychain_service(&app);
+    blocking(move || {
+        if let Some(key) = servers::remove(&r, &host)? {
+            let _ = super::delete_secret(&service, EXTENSION_ID, &key);
+        }
+        Ok(())
+    })
+    .await
+}
+
+/// Lo instalado desde repos, con su huella actual (SK21, SK22).
+#[tauri::command]
+pub async fn agent_skills_installed(app: AppHandle) -> Result<Vec<manifest::InstalledInfo>, String> {
+    let r = roots(&app)?;
+    blocking(move || Ok(manifest::list(&r))).await
+}
+
+/// Lo que cambia entre una skill instalada y lo preparado (SK22).
+#[tauri::command]
+pub async fn agent_skills_compare(app: AppHandle, id: String, rel: String, source: String, skill_id: String) -> Result<Vec<staging::FileChange>, String> {
+    let r = roots(&app)?;
+    let src = self::source(&source)?;
+    blocking(move || staging::compare(&r, &id, &rel, src, &skill_id)).await
 }

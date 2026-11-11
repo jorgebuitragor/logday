@@ -21,7 +21,8 @@ Estado: en progreso.
 | `files.rs` | Árbol de una skill, leer un archivo de texto, huella del contenido. |
 | `ops.rs` | Crear, guardar, papelera, desactivar o activar, compartir (fase 2). |
 | `staging.rs` | Preparar desde una carpeta o un zip, instalar lo preparado (SK15–SK18). |
-| `github.rs` | Resolver un commit, bajar el zip y buscar skills en él (fase 3). |
+| `remote.rs` | Resolver un commit en GitHub, GitLab o Gitea/Forgejo, bajar el zip y buscar skills en él (fase 3; antes `github.rs`). |
+| `servers.rs` | Los servidores a los que se puede conectar y la clave de su token (SK36). |
 | `manifest.rs` | `installed.json`: de dónde vino cada skill instalada desde un repo. |
 
 ## Fuentes (SK1)
@@ -162,7 +163,11 @@ interface SkillEntry {
   - devuelve `StagedBundle { id, origin, skills: StagedSkill[], skipped: string[] }`.
 - **`StagedSkill`:** `{ rel, dirName, skillMd, files: FileInfo[], fileFlags, hash, sizeBytes }`.
 - **La huella** (`hash`) es el sha256 de la lista ordenada de `(ruta relativa, sha256 del contenido)`. Se calcula al preparar.
-- **`agent_skills_staged_read { id, rel, file }`:** lee un archivo de texto de lo preparado, para la vista previa.
+- **Soltar (enmienda de SK14):**
+  - `on_window_event` anota en `AgentSkillsState.dropped` lo que llega con `DragDropEvent::Drop` a la ventana `main`. Guarda hasta 50 rutas, que valen 2 minutos.
+  - La vista escucha `onDragDropEvent`, como Notas, para mostrar la capa "Suelta para importar". Al soltar llama a `agent_skills_import_dropped { paths }`.
+  - Rust se queda solo con las rutas anotadas, esperando hasta 1,5 s a que llegue su propio evento. Después `staging::stage_paths` prepara cada carpeta o `.zip` en su propia carpeta: un zip va con el nombre del archivo, y los repetidos llevan `-2`.
+- - **`agent_skills_staged_read { id, rel, file }`:** lee un archivo de texto de lo preparado, para la vista previa.
 - **`agent_skills_install { lang, id, items: [{ rel, name, tools, replace, expectedHash }] }`**: instala por lotes, para que importar varias skills pida **un solo** diálogo nativo.
   1. comprueba todas antes de tocar nada: huella (SK18), nombre, topes, ocupado si no viene `replace`, y que no se repita un nombre en el lote;
   2. pide una confirmación nativa con cada nombre, sus herramientas, su destino y el origen, que Rust lee de `staging/<id>/origin.json`;
@@ -176,17 +181,17 @@ interface SkillEntry {
   - Los archivos se escriben con permisos `0o644` y las carpetas con `0o755`.
   - Se cuenta el tamaño descomprimido real mientras se escribe, no el que declara el zip, para que una bomba de zip no pase.
 
-## Repos de GitHub (fase 3)
+## Repos de GitHub, GitLab y servidores propios (fase 3)
 
-**Configuración:** `settings.repos: { id, owner, repo, ref?, path? }[]`. `id` es un uuid; las claves se repiten si se vincula dos veces lo mismo.
+**Configuración:** `settings.repos: { id, host?, owner, repo, ref?, path? }[]`. Sin `host` (o `null`), github.com. En GitLab, `owner` puede llevar grupos (`grupo/subgrupo`). `id` es un uuid; las claves se repiten si se vincula dos veces lo mismo.
 
-**`agent_skills_repo_fetch { owner, repo, ref, path }`:**
+**`agent_skills_repo_fetch { host, owner, repo, ref, path }`** (GitHub; GitLab y Gitea en "Servidores" más abajo):
 
 1. Si no hay `ref`: `GET https://api.github.com/repos/{o}/{r}` lee `default_branch`.
 2. `GET https://api.github.com/repos/{o}/{r}/commits/{ref}` con `Accept: application/vnd.github.sha` devuelve el sha.
 3. `GET https://api.github.com/repos/{o}/{r}/zipball/{sha}` **sin seguir redirecciones**. Se lee `Location` y se acepta solo si el host es `codeload.github.com`. Luego se hace `GET` a esa URL sin token, porque la URL ya lleva el permiso temporal.
 4. Se descarga a memoria con un tope de 50 MB.
-5. Se lee el índice del zip y se buscan los `SKILL.md` en las rutas de SK20 (quitando la carpeta raíz `owner-repo-sha/`). Solo se descomprimen esas carpetas, en `staging/<uuid>/`.
+5. Se lee el índice del zip, quitando la carpeta raíz `owner-repo-sha/`, y se buscan las carpetas con `SKILL.md`. Se busca en cualquier carpeta hasta 6 niveles, dentro de la subcarpeta pedida: eso cubre las rutas de SK20 (`skills/`, `skills/.curated/`, `.claude/skills/`, `plugins/*/skills/`…) y repos con otra organización. Se omiten `.git` y `node_modules`, y no se busca dentro de otra skill. Solo se descomprimen esas carpetas, en `staging/<uuid>/`, cada una en su ruta del repo. Una skill en la raíz del repo lleva el nombre del repo.
 6. Si existe `.claude-plugin/marketplace.json` o `.claude-plugin/plugin.json` en la raíz o en `plugins/*/`, se marca `isPluginRepo` (SK23).
 
 - **Validación:** `owner` y `repo` usan `[A-Za-z0-9_.-]{1,100}`. `ref` usa `[A-Za-z0-9_./-]{1,200}`, sin `..`. `path` es una ruta relativa sin `..`.
@@ -203,9 +208,42 @@ interface SkillEntry {
 **Actualizar** (SK22) es instalar con `replace`.
 
 - Antes, la vista arma el diff con `agent_skills_compare { id, rel, source, dir }`. Devuelve, por archivo, `added`, `removed` o `changed`, y para los de texto (hasta 512 KB) los dos textos.
-- La vista los pasa por `lineDiff` (de `src/extensions/devtools/tools/diff.ts`, que se mueve a `src/lib/lineDiff.ts` para compartirlo).
+- La vista los pasa por `lineDiff`, que se importa de `src/extensions/devtools/tools/diff.ts`. Es una función pura; se descartó moverla a `src/lib/` para no tocar DevTools en este PR.
 
-**Token:** se guarda con `ext_secret_set('agent-skills', 'github_token', …)`. `secretKeys: ['github_token']` hace que "Quitar configuración" lo borre.
+**Token:** uno por servidor, con `ext_secret_set('agent-skills', <clave>, …)` desde Opciones. La clave la da Rust en la lista de servidores: `github_token`, `gitlab_token`, o `token-<12 primeros hex del sha256 del host>` para los propios. "Quitar configuración" borra las dos fijas (`secretKeys`) y las propias que la vista anota en `settings.tokenKeys` al guardar un token (`dynamicSecretKeys`, como el cliente HTTP). Quitar un servidor borra su token. Rust lo lee del llavero solo al abrir un repo; si no hay o el llavero falla, se sigue sin él.
+
+### Servidores (SK25, SK36, SK37; enmienda del 10 nov 2026)
+
+`servers.rs` tiene la lista permitida: **github.com** (GitHub) y **gitlab.com** (GitLab) de serie, más los propios en `<datos>/agent-skills/servers.json` (máx. 50), que escribe solo Rust:
+
+- `agent_skills_servers` → `{ host, kind, builtin, tokenKey }[]`.
+- `agent_skills_server_add { lang, host, kind }`: `kind` es `gitlab` o `gitea` (Gitea y Forgejo comparten API); GitHub Enterprise no está soportado. Pide confirmación nativa sin el aviso de las skills, con el host y el tipo escritos por Rust.
+- `agent_skills_server_remove { host }`: sin confirmación; borra el token.
+- **Host:** minúsculas, nombre con al menos un punto o IPv4, puerto opcional; sin esquema, usuario, ruta ni consulta (`normalize_host`, igual que `normalizeHost` en TS). Se aceptan IPs privadas y de VPN.
+
+`agent_skills_repo_fetch` busca el servidor por host (si no está: `server_unknown`), valida el repo para su tipo (grupos solo en GitLab) y descarga con un cliente `https_only`, sin redirecciones automáticas:
+
+| | GitLab (`/api/v4`) | Gitea/Forgejo (`/api/v1`) |
+|---|---|---|
+| Rama principal | `GET projects/{grupo%2Frepo}` → `default_branch` | `GET repos/{o}/{r}` → `default_branch` |
+| Commit | `GET projects/{id}/repository/commits/{ref}` → `id` | `GET repos/{o}/{r}/commits?sha={ref}&limit=1` → `[0].sha` |
+| Zip | `GET projects/{id}/repository/archive.zip?sha={sha}` | `GET repos/{o}/{r}/archive/{sha}.zip` |
+| Token | `PRIVATE-TOKEN` | `Authorization: token …` |
+
+- Una redirección se sigue (hasta 3) solo si es al mismo origen (esquema, host y puerto), con el token porque es el mismo servidor. A otro host es `network`.
+- El zip trae una carpeta raíz (`repo-sha-sha/` en GitLab, `repo/` en Gitea) que `find_in_zip` quita como la de GitHub.
+- La clave del registro (`installed.json`) es `owner/repo` en GitHub, como antes, y `host/owner/repo` en los demás; el origen preparado guarda `kind` (`github`, `gitlab` o `gitea`) y `host`.
+- **TLS (SK37):** reqwest con `rustls-tls-native-roots` además de las raíces de webpki, así que vale una CA propia instalada en el sistema. Un fallo de certificado es `tls`, para decirlo aparte. Esto afecta a todos los clientes HTTP de la app: confían también en las CA del sistema, como un navegador.
+
+**Al vincular** (`parseRepo` en `repos.ts`): `owner/repo[@rama][:carpeta]` es GitHub. Una URL (con `https://` o un host con punto delante) se busca en la lista de servidores y se lee según su tipo: `/tree/<rama>/<carpeta>` (GitHub), `/-/tree/<rama>/<carpeta>` (GitLab), `/src/branch|tag|commit/<rama>/<carpeta>` (Gitea). `@rama:carpeta` también vale al final de una URL. Si el host no está en la lista, la columna ofrece añadirlo como GitLab o como Gitea/Forgejo (diálogo nativo) y luego vincula el repo.
+
+**El catálogo y lo preparado:**
+
+- El catálogo de cada repo vive en el store de la extensión mientras la app está abierta, con su preparación en disco.
+- Instalar o actualizar desde él abre la misma vista previa de importar, con la skill ya elegida y, para actualizar, con el mismo nombre, las mismas herramientas y "Reemplazar". Esa vista previa no borra lo preparado al cerrarse (`keepStaged`).
+- Lo preparado se borra al volver a revisar el repo, al quitarlo, al desactivar la extensión, o a las 24 h.
+
+**Pruebas de red** (`#[ignore]`, `cargo test --lib -- --ignored agent_skills::remote`): `anthropics/skills` en GitHub, un repo público de gitlab.com, `Codeberg/avatars` en codeberg.org como Forgejo, y `self-signed.badssl.com` para el error `tls`.
 
 ## Interfaz
 
@@ -267,6 +305,17 @@ Usa el mismo esquema de dos columnas que DevTools, con contenedor `@container`.
   - lista de repos vinculados, con "Abrir", "Buscar actualizaciones" y "Quitar", y un campo "owner/repo o URL";
   - al abrir uno, su catálogo con estado e Instalar / Actualizar / Ver cambios;
   - arriba, el aviso de SK23 si aplica.
+
+### Inicio de la vista y retoques (10 nov 2026)
+
+- **Sin skill elegida**, el detalle muestra un inicio:
+  - título y una línea de qué son las skills, con las cuentas (cuántas hay en el equipo y cuántas son tuyas);
+  - cuatro tarjetas: Importar una carpeta, Importar un .zip, Desde un repo de GitHub y Crear una skill;
+  - una zona punteada que dice que también se puede arrastrar;
+  - la lista "Tuyas con avisos", hasta 5, para revisarlas con un clic.
+- **Las filas de la columna** tienen dos líneas: el nombre y la descripción, cortada.
+- **El menú Importar** recuerda que se puede arrastrar.
+- **En el detalle**, Borrar va aparte, al final y en rojo; las demás acciones van después de "Mostrar en el Finder".
 
 ### Opciones (página propia, R21/R28)
 

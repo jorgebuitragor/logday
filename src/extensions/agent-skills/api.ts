@@ -133,7 +133,7 @@ export const shareSkill = (lang: string, loc: Loc, to: Tool) =>
   invoke<void>('agent_skills_share', { lang, source: loc.source, id: loc.id, to });
 
 export interface StagedOrigin {
-  kind: 'folder' | 'zip' | 'github';
+  kind: 'folder' | 'zip' | ServerKind;
   label: string;
 }
 
@@ -157,6 +157,10 @@ export interface StagedBundle {
 
 export const importPick = (kind: 'folder' | 'zip') => invoke<StagedBundle | null>('agent_skills_import_pick', { kind });
 
+/** Prepara lo soltado en la vista. Rust solo acepta rutas que él mismo
+ *  anotó del evento de soltar; `null` si no hay carpetas ni `.zip`. */
+export const importDropped = (paths: string[]) => invoke<StagedBundle | null>('agent_skills_import_dropped', { paths });
+
 export const readStagedFile = (id: string, rel: string, file: string) => invoke<string>('agent_skills_staged_read', { id, rel, file });
 
 export interface InstallItem {
@@ -172,6 +176,72 @@ export const installStaged = (lang: string, id: string, items: InstallItem[]) =>
   invoke<SkillRef[]>('agent_skills_install', { lang, id, items });
 
 export const discardStaged = (id: string) => invoke<void>('agent_skills_discard', { id });
+
+// ─── Fase 3: repos de GitHub, GitLab y servidores propios (SK19–SK25, SK36) ───
+
+export type ServerKind = 'github' | 'gitlab' | 'gitea';
+
+/** Un servidor al que Logday puede conectarse (de serie o añadido). */
+export interface ServerInfo {
+  host: string;
+  kind: ServerKind;
+  builtin: boolean;
+  /** Su clave en el llavero (`ext:agent-skills:<clave>`). */
+  tokenKey: string;
+}
+
+export interface RepoRef {
+  /** El servidor; sin él (o `null`), github.com. */
+  host?: string | null;
+  /** En GitLab puede llevar grupos: `grupo/subgrupo`. */
+  owner: string;
+  repo: string;
+  gitRef?: string | null;
+  path?: string | null;
+}
+
+export interface RepoCatalog {
+  bundle: StagedBundle;
+  sha: string;
+  gitRef: string;
+  /** Trae `.claude-plugin/`: solo se instalan sus skills (SK23). */
+  isPluginRepo: boolean;
+}
+
+export interface InstalledInfo {
+  /** `<fuente>:<id>` de la skill instalada. */
+  key: string;
+  repo: string;
+  rel: string;
+  sha: string;
+  hash: string;
+  installedAt: number;
+  currentHash: string | null;
+}
+
+export type ChangeKind = 'added' | 'removed' | 'changed' | 'same';
+
+export interface FileChange {
+  rel: string;
+  kind: ChangeKind;
+  before: string | null;
+  after: string | null;
+}
+
+export const fetchRepo = (repo: RepoRef) => invoke<RepoCatalog>('agent_skills_repo_fetch', { repo });
+
+export const listInstalled = () => invoke<InstalledInfo[]>('agent_skills_installed');
+
+export const listServers = () => invoke<ServerInfo[]>('agent_skills_servers');
+
+/** Pide confirmación en un diálogo nativo (SK36); `cancelled` si dice que no. */
+export const addServer = (lang: string, host: string, kind: Exclude<ServerKind, 'github'>) =>
+  invoke<ServerInfo>('agent_skills_server_add', { lang, host, kind });
+
+export const removeServer = (host: string) => invoke<void>('agent_skills_server_remove', { host });
+
+export const compareStaged = (id: string, rel: string, loc: Loc) =>
+  invoke<FileChange[]>('agent_skills_compare', { id, rel, source: loc.source, skillId: loc.id });
 
 /** Los errores de Rust son un código (`not_found`, `binary`…): se traducen
  *  con `err.<código>` en la sección `agentSkills`. */

@@ -7,7 +7,7 @@ import { skillTemplate } from './template';
 import { checkNewSkill } from './NewSkillModal';
 import { initialRows, rowProblem } from './ImportPreview';
 import { trashChoices } from './DeleteSkillModal';
-import { shareTarget } from './View';
+import { shareTarget } from './actions';
 import { entry } from './testData';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));

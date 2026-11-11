@@ -95,6 +95,11 @@ Fuentes:
     - Rust DEBERÁ aceptar solo las rutas que él mismo anotó del evento de soltar de la ventana principal, en los últimos 2 minutos; el webview no puede nombrar otras.
     - Lo que no sea carpeta ni `.zip` se ignora.
     - Cada skill se importa con todos sus archivos (`scripts/`, `references/`, `assets/`…), con las reglas de SK16.
+- SK38. **Menú del clic derecho** *(pedido por Jorge el 11 nov 2026)*. Al hacer clic derecho sobre una skill de la lista, o con la tecla de menú o Mayús+F10 sobre la fila enfocada, DEBERÁ abrirse un menú con las mismas acciones que el detalle (editar, compartir, activar o desactivar y borrar) más "Mostrar en el Finder". No hace falta elegir la skill antes.
+  - Borrar DEBERÁ ir al final y separado, con la misma confirmación de SK11.
+  - Una skill que no se puede cambiar (de plugin o del sistema) solo DEBERÁ ofrecer "Mostrar".
+  - Se usa con flechas, Inicio y Fin; Escape o un clic fuera lo cierran y el foco vuelve a la fila.
+- SK39. La skill y el repo elegidos DEBERÁN distinguirse del hover: fondo de acento y una barra a la izquierda, como en la lista de horas extra.
 
 ### Vista previa e instalación
 

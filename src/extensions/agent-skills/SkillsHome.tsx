@@ -1,7 +1,7 @@
 // Inicio de la vista, cuando no hay una skill elegida: las formas de añadir
 // skills a la vista (carpeta, .zip, nueva, GitHub), dónde soltar, y las
 // que tienen avisos para revisarlas.
-import type { ReactNode } from 'react';
+import type { ReactNode, CSSProperties } from 'react';
 import { FileArchive, FileText, FolderInput, GitBranch, Plus, ShieldAlert, Upload } from 'lucide-react';
 import { FOCUS_RING } from '../../components/shared/controlClasses';
 import type { SkillItem } from './model';
@@ -9,14 +9,15 @@ import { ToolBadges } from './ToolBadges';
 import type { Tr } from './text';
 import type { ImportKind } from './api';
 
-function ActionCard({ icon, title, help, onClick }: { icon: ReactNode; title: string; help: string; onClick: () => void }) {
+function ActionCard({ icon, title, help, onClick, index }: { icon: ReactNode; title: string; help: string; onClick: () => void; index: number }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-start gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] p-3 text-left transition hover:border-indigo-500/60 hover:bg-[var(--bg-hover)] ${FOCUS_RING}`}
+      style={{ '--skl-delay': `${60 + index * 40}ms` } as CSSProperties}
+      className={`skl-card skl-card-in flex items-start gap-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] p-3 text-left hover:border-indigo-500/60 hover:bg-[var(--bg-hover)] ${FOCUS_RING}`}
     >
-      <span className="mt-0.5 rounded-lg bg-indigo-500/10 p-1.5 text-indigo-400">{icon}</span>
+      <span className="skl-card-icon mt-0.5 rounded-lg bg-indigo-500/10 p-1.5 text-indigo-400">{icon}</span>
       <span className="min-w-0">
         <span className="block text-sm font-medium text-[var(--text-primary)]">{title}</span>
         <span className="mt-0.5 block text-xs leading-snug text-[var(--text-hint)]">{help}</span>
@@ -53,13 +54,13 @@ export function SkillsHome({
       <section aria-labelledby="agent-skills-home-add" className="space-y-2">
         <h3 id="agent-skills-home-add" className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-hint)]">{tr('home.add')}</h3>
         <div className="grid gap-2 @lg/skills:grid-cols-2">
-          <ActionCard icon={<FolderInput size={16} aria-hidden />} title={tr('home.folder')} help={tr('home.folderHelp')} onClick={() => onImport('folder')} />
-          <ActionCard icon={<FileArchive size={16} aria-hidden />} title={tr('home.zip')} help={tr('home.zipHelp')} onClick={() => onImport('zip')} />
-          <ActionCard icon={<FileText size={16} aria-hidden />} title={tr('home.md')} help={tr('home.mdHelp')} onClick={() => onImport('md')} />
-          <ActionCard icon={<GitBranch size={16} aria-hidden />} title={tr('home.github')} help={tr('home.githubHelp')} onClick={onRepos} />
-          <ActionCard icon={<Plus size={16} aria-hidden />} title={tr('home.new')} help={tr('home.newHelp')} onClick={onNew} />
+          <ActionCard icon={<FolderInput size={16} aria-hidden />} title={tr('home.folder')} help={tr('home.folderHelp')} onClick={() => onImport('folder')} index={0} />
+          <ActionCard icon={<FileArchive size={16} aria-hidden />} title={tr('home.zip')} help={tr('home.zipHelp')} onClick={() => onImport('zip')} index={1} />
+          <ActionCard icon={<FileText size={16} aria-hidden />} title={tr('home.md')} help={tr('home.mdHelp')} onClick={() => onImport('md')} index={2} />
+          <ActionCard icon={<GitBranch size={16} aria-hidden />} title={tr('home.github')} help={tr('home.githubHelp')} onClick={onRepos} index={3} />
+          <ActionCard icon={<Plus size={16} aria-hidden />} title={tr('home.new')} help={tr('home.newHelp')} onClick={onNew} index={4} />
         </div>
-        <div className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--border-card)] px-4 py-5 text-xs text-[var(--text-hint)]">
+        <div className="skl-card-in flex items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--border-card)] px-4 py-5 text-xs text-[var(--text-hint)]" style={{ '--skl-delay': '280ms' } as CSSProperties}>
           <Upload size={14} aria-hidden />
           {tr('home.drop')}
         </div>

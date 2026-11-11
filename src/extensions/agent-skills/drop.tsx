@@ -45,8 +45,8 @@ export function useSkillDrop(enabled: boolean, onDrop: (paths: string[]) => void
 
 export function DropOverlay({ tr }: { tr: Tr }) {
   return (
-    <div className="pointer-events-none absolute inset-2 z-20 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-indigo-500 bg-[var(--bg-panel)]/90 text-center backdrop-blur-sm">
-      <Upload size={28} className="text-indigo-400" aria-hidden />
+    <div className="skl-overlay-in pointer-events-none absolute inset-2 z-20 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-indigo-500 bg-[var(--bg-panel)]/90 text-center backdrop-blur-sm">
+      <Upload size={28} className="skl-float text-indigo-400" aria-hidden />
       <p className="text-sm font-medium text-[var(--text-primary)]">{tr('drop.title')}</p>
       <p className="text-xs text-[var(--text-hint)]">{tr('drop.help')}</p>
     </div>

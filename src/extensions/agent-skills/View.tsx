@@ -2,9 +2,9 @@
 // columna con el buscador, el filtro por herramienta y los grupos, y el
 // detalle de la elegida. En una ventana angosta se ve la lista o el
 // detalle, con "Volver".
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { ArrowLeft, ChevronDown, ChevronRight, FileArchive, FileText, FolderInput, Import, Plus, RefreshCw, Search, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ChevronRight, FileArchive, FileText, FolderInput, Import, Plus, RefreshCw, Search, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { FOCUS_RING, ICON_BTN, INPUT_CLS, SECONDARY_CLS } from '../../components/shared/controlClasses';
 import { ConfirmDeleteModal } from '../../components/shared/ConfirmDeleteModal';
@@ -59,6 +59,28 @@ export default function AgentSkillsView() {
   const [query, setQuery] = useState('');
   const [newOpen, setNewOpen] = useState(false);
   const [importMenu, setImportMenu] = useState(false);
+  const importButtonRef = useRef<HTMLButtonElement>(null);
+  const importMenuRef = useRef<HTMLDivElement>(null);
+  // El menú Importar se cierra con un clic fuera o con Escape, como los
+  // demás menús de la app; antes solo se cerraba eligiendo una opción.
+  useEffect(() => {
+    if (!importMenu) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!importMenuRef.current?.contains(t) && !importButtonRef.current?.contains(t)) setImportMenu(false);
+    };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setImportMenu(false);
+      importButtonRef.current?.focus();
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [importMenu]);
   const [bundle, setBundle] = useState<StagedBundle | null>(null);
   const [deleting, setDeleting] = useState<SkillItem | null>(null);
   const [menu, setMenu] = useState<{ item: SkillItem; anchor: SkillMenuAnchor } | null>(null);
@@ -85,6 +107,7 @@ export default function AgentSkillsView() {
   const { selectedRepoId, selectRepo } = useAgentSkills(useShallow((s) => ({ selectedRepoId: s.selectedRepoId, selectRepo: s.selectRepo })));
   // En ventana angosta se ve la lista o el detalle.
   const detailOpen = tab === 'repos' ? !!selectedRepoId : !!selected;
+  const detailKey = tab === 'repos' ? `repo:${selectedRepoId ?? ''}` : selected ? `${selected.key}:${editingKey === selected.key ? 'edit' : 'view'}` : 'home';
 
   const setFilter = (toolFilter: ToolFilter) => void update(AGENT_SKILLS_ID, { toolFilter });
   const toggleGroup = (group: SkillGroup) => {
@@ -213,6 +236,7 @@ export default function AgentSkillsView() {
             className={`${SECONDARY_CLS} flex-1 justify-center`}
             aria-haspopup="menu"
             aria-expanded={importMenu}
+            ref={importButtonRef}
             onClick={() => setImportMenu((v) => !v)}
           >
             <Import size={13} aria-hidden />
@@ -221,8 +245,8 @@ export default function AgentSkillsView() {
           {importMenu && (
             <div
               role="menu"
-              className="absolute right-0 top-full z-10 mt-1 w-48 rounded-lg border border-[var(--border-card)] bg-[var(--bg-elevated)] p-1 shadow-xl"
-              onKeyDown={(e) => e.key === 'Escape' && setImportMenu(false)}
+              ref={importMenuRef}
+              className="skl-pop skl-pop-right absolute right-0 top-full z-10 mt-1 w-48 rounded-lg border border-[var(--border-card)] bg-[var(--bg-elevated)] p-1 shadow-xl"
             >
               <button role="menuitem" type="button" autoFocus className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--bg-hover)] ${FOCUS_RING}`} onClick={() => void startImport('folder')}>
                 <FolderInput size={13} aria-hidden />
@@ -280,7 +304,6 @@ export default function AgentSkillsView() {
         ) : (
           groups.map((g) => {
             const collapsed = settings.collapsed.includes(g.group);
-            const Chevron = collapsed ? ChevronRight : ChevronDown;
             return (
               // Cada grupo es un bloque: línea arriba (salvo el primero) y encabezado
               // fijo al desplazar, para saber siempre en qué grupo se está.
@@ -296,7 +319,7 @@ export default function AgentSkillsView() {
                   onClick={() => toggleGroup(g.group)}
                   className={`sticky top-0 z-[1] flex w-full items-center gap-1.5 bg-[var(--bg-panel)] px-3 pb-1.5 pt-2.5 text-left text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)] hover:text-[var(--text-primary)] ${FOCUS_RING}`}
                 >
-                  <Chevron size={12} className="text-[var(--text-hint)]" aria-hidden />
+                  <ChevronRight size={12} className={`skl-chevron text-[var(--text-hint)] ${collapsed ? '' : 'rotate-90'}`} aria-hidden />
                   {tr(`group.${g.group}`)}
                   <span className="ml-auto rounded-full bg-[var(--bg-hover)] px-1.5 py-px font-medium tracking-normal tabular-nums text-[var(--text-hint)]">
                     {g.items.length}
@@ -304,10 +327,11 @@ export default function AgentSkillsView() {
                 </button>
                 {!collapsed && (
                   <div role="listbox" aria-labelledby={`agent-skills-group-${g.group}`} className="pb-1.5">
-                    {g.items.map((it) => (
+                    {g.items.map((it, i) => (
                       <div
                         key={it.key}
                         role="option"
+                        style={{ '--skl-delay': `${Math.min(i, 12) * 20}ms` } as CSSProperties}
                         tabIndex={it.key === selectedKey || (!selectedKey && it === visible[0]) ? 0 : -1}
                         aria-selected={it.key === selectedKey}
                         data-key={it.key}
@@ -327,7 +351,7 @@ export default function AgentSkillsView() {
                             openMenu(it, { x: r.left + 16, y: r.bottom });
                           }
                         }}
-                        className={`mx-1.5 flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-xs ${FOCUS_RING} ${
+                        className={`skl-row-in mx-1.5 flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-xs transition-[background-color,box-shadow] duration-150 ${FOCUS_RING} ${
                           it.key === selectedKey ? SELECTED_ROW : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
                         }`}
                       >
@@ -373,7 +397,7 @@ export default function AgentSkillsView() {
               role="tab"
               aria-selected={tab === id}
               onClick={() => setTab(id)}
-              className={`-mb-px border-b-2 px-2 py-1.5 text-xs ${FOCUS_RING} ${tab === id ? 'border-indigo-500 text-[var(--text-primary)]' : 'border-transparent text-[var(--text-hint)] hover:text-[var(--text-secondary)]'}`}
+              className={`-mb-px border-b-2 px-2 py-1.5 text-xs transition-colors duration-150 ${FOCUS_RING} ${tab === id ? 'border-indigo-500 text-[var(--text-primary)]' : 'border-transparent text-[var(--text-hint)] hover:text-[var(--text-secondary)]'}`}
             >
               {tr(`tabs.${id}`)}
             </button>
@@ -382,6 +406,8 @@ export default function AgentSkillsView() {
         {tab === 'repos' ? <ReposColumn tr={tr} language={language} /> : list}
       </nav>
       <section className={`min-w-0 flex-1 overflow-y-auto ${detailOpen ? 'block' : 'hidden @2xl/skills:block'}`} aria-live="off">
+        {/* La clave cambia con lo que se muestra, para que entre animado. */}
+        <div key={detailKey} className="skl-detail-in h-full">
         {tab === 'repos' ? (
           <>
             {/* En ventana angosta, volver a la lista de repos. */}
@@ -428,6 +454,7 @@ export default function AgentSkillsView() {
             <SkillsHome items={items} tr={tr} onImport={startImport} onNew={() => setNewOpen(true)} onRepos={() => setTab('repos')} onSelect={select} />
           ) : null
         )}
+        </div>
       </section>
       <div className="sr-only" aria-live="polite" aria-atomic="true">
         {live}

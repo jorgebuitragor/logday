@@ -411,7 +411,7 @@ export default function AgentSkillsView() {
             </button>
           ))}
         </div>
-        {tab === 'repos' ? <ReposColumn tr={tr} /> : list}
+        {tab === 'repos' ? <ReposColumn tr={tr} language={language} /> : list}
       </nav>
       <section className={`min-w-0 flex-1 overflow-y-auto ${detailOpen ? 'block' : 'hidden @2xl/skills:block'}`} aria-live="off">
         {tab === 'repos' ? (

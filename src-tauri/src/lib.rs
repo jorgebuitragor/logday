@@ -928,6 +928,9 @@ pub fn run() {
             extensions::agent_skills::agent_skills_discard,
             extensions::agent_skills::agent_skills_repo_fetch,
             extensions::agent_skills::agent_skills_installed,
+            extensions::agent_skills::agent_skills_servers,
+            extensions::agent_skills::agent_skills_server_add,
+            extensions::agent_skills::agent_skills_server_remove,
             extensions::agent_skills::agent_skills_compare,
         ])
         .run(tauri::generate_context!())

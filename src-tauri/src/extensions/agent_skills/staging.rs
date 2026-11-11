@@ -41,11 +41,11 @@ const CONTENT_DIR: &str = "content";
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct StagedOrigin {
-    /// `folder`, `zip` o `github`.
+    /// `folder`, `zip`, o el tipo del servidor del repo: `github`, `gitlab` o `gitea`.
     pub kind: String,
     /// Para mostrar: la ruta (`~/…`) o `owner/repo@sha`.
     pub label: String,
-    /// Solo de GitHub (fase 3).
+    /// Solo de un repo (fase 3).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<serde_json::Value>,
 }

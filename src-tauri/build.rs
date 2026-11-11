@@ -88,6 +88,9 @@ const COMMANDS: &[&str] = &[
         "agent_skills_discard",
         "agent_skills_repo_fetch",
         "agent_skills_installed",
+        "agent_skills_servers",
+        "agent_skills_server_add",
+        "agent_skills_server_remove",
         "agent_skills_compare",
 ];
 

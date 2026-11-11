@@ -3,9 +3,9 @@
 // sesiones (filtros) va en `extensions['agent-skills'].settings`.
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
-import { discardStaged, errorCode, fetchRepo, listInstalled, listSkills, type FolderInfo, type InstalledInfo, type RepoCatalog } from './api';
+import { discardStaged, errorCode, fetchRepo, listInstalled, listServers, listSkills, type FolderInfo, type InstalledInfo, type RepoCatalog, type ServerInfo } from './api';
 import { toItem, type SkillItem } from './model';
-import type { LinkedRepo } from './repos';
+import { BUILTIN_SERVERS, type LinkedRepo } from './repos';
 
 /** El catálogo abierto de un repo (fase 3). */
 export interface CatalogState {
@@ -40,6 +40,9 @@ interface AgentSkillsStore {
   /** Abre o vuelve a revisar un repo (SK22: solo cuando se pide). */
   fetchCatalog: (repo: LinkedRepo) => Promise<void>;
   dropCatalog: (id: string) => void;
+  /** Los servidores permitidos (SK36), leídos de Rust. */
+  servers: ServerInfo[];
+  loadServers: () => Promise<void>;
   reload: () => Promise<void>;
   reset: () => void;
 }
@@ -56,6 +59,7 @@ const INITIAL = {
   selectedRepoId: null,
   catalogs: {} as Record<string, CatalogState>,
   installed: [] as InstalledInfo[],
+  servers: BUILTIN_SERVERS,
 };
 
 /** Lo preparado de un catálogo vive en disco hasta que se reemplaza o se
@@ -92,6 +96,13 @@ export const agentSkillsApi = createStore<AgentSkillsStore>((set, get) => ({
       set({ catalogs: { ...get().catalogs, [repo.id]: { loading: false, catalog, error: null, checkedAt: Date.now() } } });
     } catch (err) {
       set({ catalogs: { ...get().catalogs, [repo.id]: { loading: false, catalog: prev?.catalog ?? null, error: errorCode(err), checkedAt: prev?.checkedAt ?? null } } });
+    }
+  },
+  loadServers: async () => {
+    try {
+      set({ servers: await listServers() });
+    } catch {
+      // Sin la lista, quedan los de serie.
     }
   },
   dropCatalog: (id) => {

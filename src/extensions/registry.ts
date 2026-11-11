@@ -1,6 +1,7 @@
 import { Bot, CalendarDays, ClipboardList, Globe, Hourglass, MessagesSquare, NotebookPen, PenTool, Webhook, WandSparkles, Wrench, Zap } from 'lucide-react';
 import type { ExtensionDefinition, ExtensionId } from './types';
 import { httpClientSecretKeys } from './http-client/secretKeys';
+import { agentSkillsSecretKeys } from './agent-skills/secretKeys';
 
 /** Extensiones que implementa Desktop (R4). Solo metadatos: el código de
  *  cada una se carga con `import()` cuando se activa (R16). Los textos
@@ -149,8 +150,9 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     // R6; su descripción explica el riesgo de las skills.
     view: true,
     settings: true,
-    // SK24: el token de GitHub para repos privados.
-    secretKeys: ['github_token'],
+    // SK24: los tokens de GitHub, gitlab.com y los servidores propios.
+    secretKeys: ['github_token', 'gitlab_token'],
+    dynamicSecretKeys: agentSkillsSecretKeys,
     load: () => import('./agent-skills').then((m) => m.default),
   },
 ];

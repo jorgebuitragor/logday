@@ -720,6 +720,7 @@ pub fn run() {
         .manage(extensions::mcp::McpState::default())
         .manage(extensions::quick_capture::QuickCaptureState::default())
         .manage(extensions::pomodoro::PomodoroState::default())
+        .manage(extensions::agent_skills::AgentSkillsState::default())
         .manage(FsScope::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -731,6 +732,9 @@ pub fn run() {
             // que el webview pida nada (specs/blindaje-seguridad BS10).
             let app_dir = app.path().app_data_dir()?;
             app.state::<FsScope>().init(&app_dir);
+            // Las carpetas de los agentes de IA quedan fuera de los comandos
+            // genéricos de archivos (specs/skills-de-agentes SK27).
+            extensions::agent_skills::protect(app.handle(), &app.state::<FsScope>());
             // El updater no existe en mobile — se registra acá (no al
             // nivel del builder) siguiendo el patrón oficial del plugin,
             // que necesita el AppHandle ya construido.
@@ -836,6 +840,20 @@ pub fn run() {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            // Lo soltado en la ventana principal. Notas: Rust permite leer
+            // los .md/.txt soltados para que `read_file` los acepte al
+            // importarlos (specs/blindaje-seguridad BS23); Tauri avisa al
+            // webview y llama a este manejador en el mismo turno del hilo
+            // principal, y `read_file` es síncrono y corre en ese hilo, así
+            // que el permiso ya está cuando llega la lectura. Skills: se
+            // anota lo soltado para importarlo sin que el webview nombre
+            // rutas (specs/skills-de-agentes SK14).
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                if window.label() == "main" {
+                    window.app_handle().state::<FsScope>().grant_dropped_notes(paths);
+                }
+                extensions::agent_skills::record_drop(window.app_handle(), window.label(), paths);
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_app_config_dir,
@@ -902,6 +920,27 @@ pub fn run() {
             extensions::pomodoro::pomodoro_pause,
             extensions::pomodoro::pomodoro_idle,
             extensions::pomodoro::pomodoro_clear,
+            extensions::agent_skills::agent_skills_list,
+            extensions::agent_skills::agent_skills_detail,
+            extensions::agent_skills::agent_skills_read_file,
+            extensions::agent_skills::agent_skills_reveal,
+            extensions::agent_skills::agent_skills_reveal_folder,
+            extensions::agent_skills::agent_skills_create,
+            extensions::agent_skills::agent_skills_save,
+            extensions::agent_skills::agent_skills_trash,
+            extensions::agent_skills::agent_skills_set_enabled,
+            extensions::agent_skills::agent_skills_share,
+            extensions::agent_skills::agent_skills_import_pick,
+            extensions::agent_skills::agent_skills_import_dropped,
+            extensions::agent_skills::agent_skills_staged_read,
+            extensions::agent_skills::agent_skills_install,
+            extensions::agent_skills::agent_skills_discard,
+            extensions::agent_skills::agent_skills_repo_fetch,
+            extensions::agent_skills::agent_skills_installed,
+            extensions::agent_skills::agent_skills_servers,
+            extensions::agent_skills::agent_skills_server_add,
+            extensions::agent_skills::agent_skills_server_remove,
+            extensions::agent_skills::agent_skills_compare,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

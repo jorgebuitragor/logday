@@ -2,7 +2,7 @@ import type { ComponentType } from 'react';
 import type { LucideIcon } from 'lucide-react';
 
 /** Mismo id en Desktop, Web y Mobile (specs/extensiones/design.md). */
-export type ExtensionId = 'team-chat' | 'mcp' | 'google-calendar' | 'outgoing-webhook' | 'granola' | 'openproject' | 'excalidraw' | 'quick-capture' | 'devtools' | 'pomodoro' | 'http-client';
+export type ExtensionId = 'team-chat' | 'mcp' | 'google-calendar' | 'outgoing-webhook' | 'granola' | 'openproject' | 'excalidraw' | 'quick-capture' | 'devtools' | 'pomodoro' | 'http-client' | 'agent-skills';
 
 export type ExtensionCategory = 'integration' | 'tool';
 export type LogdayApp = 'desktop' | 'web' | 'mobile';

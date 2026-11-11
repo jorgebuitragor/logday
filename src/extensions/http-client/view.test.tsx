@@ -156,7 +156,7 @@ describe('una sección propia en el menú lateral (HT33, R11, NS7)', () => {
     const def = getExtension('http-client');
     expect(def?.view).toBe(true);
     expect(def?.icon.displayName ?? def?.icon.name).toMatch(/Globe/);
-    expect(EXTENSIONS.filter((d) => d.view).map((d) => d.id)).toEqual(['devtools', 'pomodoro', 'http-client']);
+    expect(EXTENSIONS.filter((d) => d.view).map((d) => d.id)).toEqual(['devtools', 'pomodoro', 'http-client', 'agent-skills']);
   });
 
   it('su sección vale con la extensión activa y, apagada, vuelve a Inicio (R13)', () => {

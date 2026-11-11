@@ -18,7 +18,7 @@ import { SkillEditor } from './SkillEditor';
 import { NewSkillModal } from './NewSkillModal';
 import { DeleteSkillModal, trashChoices, type TrashChoice } from './DeleteSkillModal';
 import { ImportPreview } from './ImportPreview';
-import { RepoDetail, ReposColumn } from './ReposPanel';
+import { RepoDetail, ReposColumn, SELECTED_ROW } from './ReposPanel';
 import { ToolBadges } from './ToolBadges';
 import { SkillsHome } from './SkillsHome';
 import { DropOverlay, useSkillDrop } from './drop';
@@ -360,7 +360,7 @@ export default function AgentSkillsView() {
                           }
                         }}
                         className={`mx-1.5 flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-xs ${FOCUS_RING} ${
-                          it.key === selectedKey ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                          it.key === selectedKey ? SELECTED_ROW : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
                         }`}
                       >
                         <span className="min-w-0 flex-1">

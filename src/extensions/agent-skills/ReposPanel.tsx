@@ -20,6 +20,10 @@ import { ImportPreview, type ImportPreset } from './ImportPreview';
 import { SkillModal } from './SkillModal';
 import { trCode, dateTime, type Tr } from './text';
 
+/** Fila elegida en las listas de Skills (skills y repos): fondo de acento y
+ *  barra a la izquierda, para que no se confunda con el hover. */
+export const SELECTED_ROW = 'bg-[var(--accent-soft)] text-[var(--text-primary)] shadow-[inset_2px_0_0_var(--accent)]';
+
 /** Un texto por su clave completa (`repos.invalid`, `err.<código>`), o el
  *  genérico si no existe. */
 function trKey(tr: Tr, key: string): string {
@@ -188,7 +192,7 @@ export function ReposColumn({ tr, language }: { tr: Tr; language: Language }) {
                       }
                     }}
                     className={`flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs ${FOCUS_RING} ${
-                      selectedRepoId === r.id ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                      selectedRepoId === r.id ? SELECTED_ROW : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
                     }`}
                   >
                     <GitBranch size={12} className="shrink-0 text-[var(--text-hint)]" aria-hidden />

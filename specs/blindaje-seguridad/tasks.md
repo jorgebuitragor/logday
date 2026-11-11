@@ -23,6 +23,15 @@
   `basePath`, Mermaid con la CSP, exportar una nota a otra carpeta con el
   diálogo de Rust, vista dividida sin el iframe, y el enlace a un `.app`
   que no abre la Calculadora.
+- [x] Soltar notas `.md`/`.txt` en la lista de Notas: permiso de solo
+  lectura desde `on_window_event` y pruebas en `fs_scope.rs` (BS23).
+- [x] QA de BS23 en el navegador (10 nov 2026), con el build de producción
+  y un Tauri simulado que imita `FsScope`: sin el permiso, soltar no
+  importa nada y no avisa (lo que pasaba en `develop`); con el permiso se
+  importan un `.md` y un `.TXT`, se ignora un `.pem` y el original no se
+  toca.
+- [ ] QA de BS23 en la app de QA: soltar desde Finder en la vista de lista
+  de Notas. (En la vista de árbol no hay soltar, desde antes del blindaje.)
 - [ ] QA en la app de QA: importar un respaldo, elegir otra carpeta de
   datos, Git y captura rápida.
 - [ ] Probar `open_url` en Windows con un enlace que tenga `&`.

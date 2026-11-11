@@ -840,9 +840,18 @@ pub fn run() {
                 api.prevent_close();
                 let _ = window.hide();
             }
-            // Lo soltado en la ventana, para importar skills sin que el
-            // webview pueda nombrar rutas (specs/skills-de-agentes SK14).
+            // Lo soltado en la ventana principal. Notas: Rust permite leer
+            // los .md/.txt soltados para que `read_file` los acepte al
+            // importarlos (specs/blindaje-seguridad BS23); Tauri avisa al
+            // webview y llama a este manejador en el mismo turno del hilo
+            // principal, y `read_file` es síncrono y corre en ese hilo, así
+            // que el permiso ya está cuando llega la lectura. Skills: se
+            // anota lo soltado para importarlo sin que el webview nombre
+            // rutas (specs/skills-de-agentes SK14).
             if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                if window.label() == "main" {
+                    window.app_handle().state::<FsScope>().grant_dropped_notes(paths);
+                }
                 extensions::agent_skills::record_drop(window.app_handle(), window.label(), paths);
             }
         })

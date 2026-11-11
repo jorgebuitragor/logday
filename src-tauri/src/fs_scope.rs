@@ -12,7 +12,11 @@
 //!   puede escribir, así que solo un diálogo abierto desde Rust agrega una;
 //! - un **archivo** que el usuario eligió en un diálogo de abrir o guardar,
 //!   solo durante esta sesión (exportaciones, importar un respaldo, una
-//!   plantilla de Excel).
+//!   plantilla de Excel);
+//! - un `.md` o `.txt` que el usuario **soltó** en la ventana principal,
+//!   solo para leerlo y solo durante esta sesión (importar notas
+//!   arrastrándolas, BS23). Lo anota Rust desde el evento de la ventana, no
+//!   el webview.
 //!
 //! Además, dentro de las raíces no se puede escribir en una carpeta `.git`
 //! (sus hooks y su `config` ejecutan código al correr `git_run`), ni borrar
@@ -50,12 +54,28 @@ struct Inner {
     roots: Vec<PathBuf>,
     /// Archivos sueltos elegidos en un diálogo (solo esta sesión).
     files: HashSet<PathBuf>,
+    /// Notas soltadas en la ventana: solo lectura, solo esta sesión.
+    dropped: HashSet<PathBuf>,
     /// Carpetas vetadas aunque caigan dentro de la app o de una raíz
     /// (specs/skills-de-agentes SK27): la de datos de la extensión Skills
     /// de agentes y las de los agentes (`~/.claude`, `~/.codex`,
     /// `~/.agents`). Escribir ahí es darle órdenes a un agente que ejecuta
     /// comandos; solo los comandos propios de esa extensión las tocan.
     denied: Vec<PathBuf>,
+}
+
+/// Cuántos archivos de un mismo soltar se aceptan como notas. Importar más
+/// de una vez no tiene sentido y así el conjunto no crece sin límite.
+pub const MAX_DROPPED_NOTES: usize = 200;
+
+/// Si una ruta ya resuelta es algo que Notas puede importar: un archivo
+/// (no una carpeta) con extensión `.md` o `.txt`.
+fn is_note_file(resolved: &Path) -> bool {
+    let ext_ok = resolved
+        .extension()
+        .map(|e| e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("txt"))
+        .unwrap_or(false);
+    ext_ok && resolved.is_file()
 }
 
 #[derive(Default)]
@@ -215,6 +235,25 @@ impl FsScope {
         Ok(())
     }
 
+    /// Permite leer los `.md` y `.txt` que el usuario soltó en la ventana
+    /// principal, hasta cerrar la app (BS23). Lo llama Rust desde
+    /// `on_window_event`, nunca un comando: así el webview no puede nombrar
+    /// rutas. Se mira la ruta ya resuelta, de modo que un `nota.md` que es
+    /// un enlace simbólico a `~/.ssh/id_rsa` no cuenta. Devuelve cuántos
+    /// archivos quedaron permitidos.
+    pub fn grant_dropped_notes(&self, paths: &[PathBuf]) -> usize {
+        let mut granted = 0;
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        for p in paths.iter().take(MAX_DROPPED_NOTES) {
+            let Ok(resolved) = resolve(&p.to_string_lossy()) else { continue };
+            if is_note_file(&resolved) {
+                inner.dropped.insert(resolved);
+                granted += 1;
+            }
+        }
+        granted
+    }
+
     /// Comprueba una ruta y la devuelve resuelta. `Write` incluye crear,
     /// borrar y renombrar.
     pub fn check(&self, path: &str, access: Access) -> Result<PathBuf, String> {
@@ -224,6 +263,11 @@ impl FsScope {
             return Err(denied(path));
         }
         if inner.files.contains(&resolved) {
+            return Ok(resolved);
+        }
+        // Lo soltado solo se lee: importar copia la nota a la carpeta de
+        // datos, nunca escribe ni borra el original.
+        if access == Access::Read && inner.dropped.contains(&resolved) {
             return Ok(resolved);
         }
         if let Some(app_dir) = &inner.app_dir {
@@ -380,6 +424,78 @@ mod tests {
         assert!(s.check(&export.to_string_lossy(), Access::Write).is_ok());
         // Otro archivo de la misma carpeta sigue fuera.
         assert!(s.check(&t.s("Descargas/otro.zip"), Access::Read).is_err());
+    }
+
+    #[test]
+    fn notas_soltadas_se_pueden_leer_pero_no_escribir() {
+        let t = Tmp::new("soltar");
+        let s = scope_with_root(&t);
+        fs::create_dir_all(t.0.join("Escritorio")).unwrap();
+        let md = t.0.join("Escritorio/idea.md");
+        let txt = t.0.join("Escritorio/lista.TXT");
+        fs::write(&md, "# Idea").unwrap();
+        fs::write(&txt, "uno").unwrap();
+        assert!(s.check(&md.to_string_lossy(), Access::Read).is_err());
+
+        assert_eq!(s.grant_dropped_notes(&[md.clone(), txt.clone()]), 2);
+        assert!(s.check(&md.to_string_lossy(), Access::Read).is_ok());
+        assert!(s.check(&txt.to_string_lossy(), Access::Read).is_ok());
+        // Solo lectura: ni escribir, ni borrar.
+        assert!(s.check(&md.to_string_lossy(), Access::Write).is_err());
+        assert!(s.check_not_root(&md.to_string_lossy()).is_err());
+        // Otro archivo de la misma carpeta sigue fuera.
+        fs::write(t.0.join("Escritorio/otra.md"), "x").unwrap();
+        assert!(s.check(&t.s("Escritorio/otra.md"), Access::Read).is_err());
+    }
+
+    #[test]
+    fn soltar_ignora_lo_que_no_es_una_nota() {
+        let t = Tmp::new("soltar-otros");
+        let s = scope_with_root(&t);
+        fs::create_dir_all(t.0.join("x/carpeta.md")).unwrap();
+        fs::write(t.0.join("x/clave.pem"), "secreto").unwrap();
+        fs::write(t.0.join("x/sin-extension"), "x").unwrap();
+        let paths = vec![
+            t.0.join("x/carpeta.md"),
+            t.0.join("x/clave.pem"),
+            t.0.join("x/sin-extension"),
+            t.0.join("x/no-existe.md"),
+            PathBuf::from("relativa.md"),
+        ];
+        assert_eq!(s.grant_dropped_notes(&paths), 0);
+        assert!(s.check(&t.s("x/clave.pem"), Access::Read).is_err());
+        assert!(s.check(&t.s("x/carpeta.md"), Access::Read).is_err());
+    }
+
+    #[test]
+    fn soltar_un_enlace_md_a_otro_archivo_no_lo_permite() {
+        #[cfg(unix)]
+        {
+            let t = Tmp::new("soltar-symlink");
+            let s = scope_with_root(&t);
+            fs::create_dir_all(t.0.join("secreto")).unwrap();
+            fs::write(t.0.join("secreto/id_rsa"), "clave").unwrap();
+            std::os::unix::fs::symlink(t.0.join("secreto/id_rsa"), t.0.join("nota.md")).unwrap();
+            assert_eq!(s.grant_dropped_notes(&[t.0.join("nota.md")]), 0);
+            assert!(s.check(&t.s("nota.md"), Access::Read).is_err());
+            assert!(s.check(&t.s("secreto/id_rsa"), Access::Read).is_err());
+        }
+    }
+
+    #[test]
+    fn soltar_tiene_un_tope_por_evento() {
+        let t = Tmp::new("soltar-tope");
+        let s = scope_with_root(&t);
+        fs::create_dir_all(t.0.join("muchas")).unwrap();
+        let paths: Vec<PathBuf> = (0..MAX_DROPPED_NOTES + 5)
+            .map(|i| {
+                let p = t.0.join(format!("muchas/{i}.md"));
+                fs::write(&p, "x").unwrap();
+                p
+            })
+            .collect();
+        assert_eq!(s.grant_dropped_notes(&paths), MAX_DROPPED_NOTES);
+        assert!(s.check(&paths[MAX_DROPPED_NOTES].to_string_lossy(), Access::Read).is_err());
     }
 
     #[test]

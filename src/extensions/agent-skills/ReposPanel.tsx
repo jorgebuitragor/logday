@@ -1,23 +1,31 @@
 // Pestaña Repos (specs/skills-de-agentes, fase 3): la columna con los repos
-// de GitHub vinculados y el catálogo del elegido, con el estado de cada
-// skill, Instalar, Actualizar y Ver cambios. A GitHub solo se va cuando el
-// usuario abre un repo o pulsa "Buscar actualizaciones" (SK22).
-import { useMemo, useState } from 'react';
+// vinculados (GitHub, GitLab o un servidor propio) y el catálogo del
+// elegido, con el estado de cada skill, Instalar, Actualizar y Ver cambios.
+// A un servidor solo se va cuando el usuario abre un repo o pulsa "Buscar
+// actualizaciones" (SK22).
+import { useEffect, useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { Diff, Download, ExternalLink, GitBranch, Plus, RefreshCw, Trash2, TriangleAlert } from 'lucide-react';
+import { Diff, Download, ExternalLink, GitBranch, Plus, RefreshCw, Server, Trash2, TriangleAlert } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { CHIP, FOCUS_RING, ICON_BTN, INPUT_CLS, SECONDARY_CLS } from '../../components/shared/controlClasses';
 import { Spinner } from '../../components/shared/FormControls';
 import { fs } from '../../lib/invoke';
 import type { Language } from '../../lib/i18n';
 import { lineDiff } from '../devtools/tools/diff';
-import { compareStaged, errorCode, type FileChange, type SkillRef, type Tool } from './api';
+import { addServer, compareStaged, errorCode, type FileChange, type ServerInfo, type SkillRef, type Tool } from './api';
 import { AGENT_SKILLS_ID } from './model';
-import { catalogEntries, parseRepoInput, readRepos, repoLabel, sameRepo, type CatalogEntry, type LinkedRepo } from './repos';
+import { catalogEntries, GITHUB_HOST, parseRepo, readRepos, repoLabel, repoWebUrl, sameRepo, type CatalogEntry, type LinkedRepo } from './repos';
 import { useAgentSkills } from './store';
 import { ImportPreview, type ImportPreset } from './ImportPreview';
 import { SkillModal } from './SkillModal';
 import { trCode, dateTime, type Tr } from './text';
+
+/** Un texto por su clave completa (`repos.invalid`, `err.<código>`), o el
+ *  genérico si no existe. */
+function trKey(tr: Tr, key: string): string {
+  const text = tr(key as Parameters<Tr>[0]);
+  return text === key ? tr('err.unknown') : text;
+}
 
 function newId(): string {
   return `r_${Math.random().toString(36).slice(2, 10)}`;
@@ -31,9 +39,9 @@ export function useLinkedRepos() {
 }
 
 /** La columna de la pestaña Repos. */
-export function ReposColumn({ tr }: { tr: Tr }) {
+export function ReposColumn({ tr, language }: { tr: Tr; language: Language }) {
   const { repos, save } = useLinkedRepos();
-  const { catalogs, installed, selectedRepoId, selectRepo, fetchCatalog, dropCatalog } = useAgentSkills(
+  const { catalogs, installed, selectedRepoId, selectRepo, fetchCatalog, dropCatalog, servers, loadServers } = useAgentSkills(
     useShallow((s) => ({
       catalogs: s.catalogs,
       installed: s.installed,
@@ -41,18 +49,32 @@ export function ReposColumn({ tr }: { tr: Tr }) {
       selectRepo: s.selectRepo,
       fetchCatalog: s.fetchCatalog,
       dropCatalog: s.dropCatalog,
+      servers: s.servers,
+      loadServers: s.loadServers,
     })),
   );
   const [input, setInput] = useState('');
   const [error, setError] = useState<string | null>(null);
+  /** La URL es de un host que no está en la lista: se ofrece añadirlo. */
+  const [unknownHost, setUnknownHost] = useState<string | null>(null);
   const [checkingAll, setCheckingAll] = useState(false);
 
-  const add = () => {
-    const ref = parseRepoInput(input);
-    if (!ref) {
-      setError('repos.invalid');
+  useEffect(() => {
+    void loadServers();
+  }, [loadServers]);
+
+  const add = (list: ServerInfo[] = servers) => {
+    const parsed = parseRepo(input, list);
+    if (!parsed.ok) {
+      if (parsed.reason === 'unknownHost') {
+        setUnknownHost(parsed.host);
+        setError(null);
+      } else {
+        setError('repos.invalid');
+      }
       return;
     }
+    const ref = parsed.repo;
     const existing = repos.find((r) => sameRepo(r, ref));
     if (existing) {
       selectRepo(existing.id);
@@ -63,6 +85,7 @@ export function ReposColumn({ tr }: { tr: Tr }) {
     save([...repos, linked]);
     setInput('');
     setError(null);
+    setUnknownHost(null);
     selectRepo(linked.id);
     void fetchCatalog(linked);
   };
@@ -73,9 +96,24 @@ export function ReposColumn({ tr }: { tr: Tr }) {
     if (selectedRepoId === r.id) selectRepo(null);
   };
 
+  /** Añadir el host como servidor propio pide confirmación nativa (SK36). */
+  const allowHost = async (kind: 'gitlab' | 'gitea') => {
+    if (!unknownHost) return;
+    setError(null);
+    try {
+      const server = await addServer(language, unknownHost, kind);
+      await loadServers();
+      setUnknownHost(null);
+      add([...servers.filter((s) => s.host !== server.host), server]);
+    } catch (err) {
+      const code = errorCode(err);
+      if (code !== 'cancelled') setError(`err.${code}`);
+    }
+  };
+
   const checkAll = async () => {
     setCheckingAll(true);
-    // Uno tras otro: GitHub limita las peticiones sin token.
+    // Uno tras otro: los servidores limitan las peticiones sin token.
     for (const r of repos) await fetchCatalog(r);
     setCheckingAll(false);
   };
@@ -97,6 +135,7 @@ export function ReposColumn({ tr }: { tr: Tr }) {
               onChange={(e) => {
                 setInput(e.target.value);
                 setError(null);
+                setUnknownHost(null);
               }}
               placeholder="anthropics/skills"
               spellCheck={false}
@@ -108,7 +147,20 @@ export function ReposColumn({ tr }: { tr: Tr }) {
             </button>
           </div>
         </label>
-        {error && <p className="text-[11px] text-red-400" role="alert">{tr(error as Parameters<Tr>[0])}</p>}
+        {error && <p className="text-[11px] text-red-400" role="alert">{trKey(tr, error)}</p>}
+        {unknownHost && (
+          <div className="space-y-1.5 rounded-lg border border-[var(--border-card)] bg-[var(--bg-surface)] p-2 text-[11px]" role="group" aria-label={tr('repos.unknownHostAria')}>
+            <p className="flex items-start gap-1.5 text-[var(--text-secondary)]">
+              <Server size={12} className="mt-px shrink-0 text-[var(--text-hint)]" aria-hidden />
+              <span>{tr('repos.unknownHost', { host: unknownHost })}</span>
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              <button type="button" className={SECONDARY_CLS} onClick={() => void allowHost('gitlab')}>{tr('server.kind.gitlab')}</button>
+              <button type="button" className={SECONDARY_CLS} onClick={() => void allowHost('gitea')}>{tr('server.kind.gitea')}</button>
+              <button type="button" className={SECONDARY_CLS} onClick={() => setUnknownHost(null)}>{tr('cancel')}</button>
+            </div>
+          </div>
+        )}
       </form>
       <div className="min-h-0 flex-1 overflow-y-auto py-1">
         {repos.length === 0 ? (
@@ -251,9 +303,9 @@ export function RepoDetail({ tr, language, taken, onInstalled }: { tr: Tr; langu
           <button
             type="button"
             className={ICON_BTN}
-            aria-label={tr('repos.openOnGithub')}
-            title={tr('repos.openOnGithub')}
-            onClick={() => void fs.openUrl(`https://github.com/${repo.owner}/${repo.repo}`).catch(() => undefined)}
+            aria-label={tr('repos.openInBrowser')}
+            title={tr('repos.openInBrowser')}
+            onClick={() => void fs.openUrl(repoWebUrl(repo)).catch(() => undefined)}
           >
             <ExternalLink size={13} aria-hidden />
           </button>
@@ -275,7 +327,7 @@ export function RepoDetail({ tr, language, taken, onInstalled }: { tr: Tr; langu
       {catalog?.isPluginRepo && (
         <p className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-[var(--text-primary)]">
           <TriangleAlert size={14} className="mt-px shrink-0 text-amber-400" aria-hidden />
-          <span>{tr('repos.pluginWarning', { repo: `${repo.owner}/${repo.repo}` })}</span>
+          <span>{tr('repos.pluginWarning', { repo: !repo.host || repo.host === GITHUB_HOST ? `${repo.owner}/${repo.repo}` : `${repoWebUrl(repo)}.git` })}</span>
         </p>
       )}
 

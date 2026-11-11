@@ -840,6 +840,11 @@ pub fn run() {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            // Lo soltado en la ventana, para importar skills sin que el
+            // webview pueda nombrar rutas (specs/skills-de-agentes SK14).
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                extensions::agent_skills::record_drop(window.app_handle(), window.label(), paths);
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_app_config_dir,
@@ -917,11 +922,15 @@ pub fn run() {
             extensions::agent_skills::agent_skills_set_enabled,
             extensions::agent_skills::agent_skills_share,
             extensions::agent_skills::agent_skills_import_pick,
+            extensions::agent_skills::agent_skills_import_dropped,
             extensions::agent_skills::agent_skills_staged_read,
             extensions::agent_skills::agent_skills_install,
             extensions::agent_skills::agent_skills_discard,
             extensions::agent_skills::agent_skills_repo_fetch,
             extensions::agent_skills::agent_skills_installed,
+            extensions::agent_skills::agent_skills_servers,
+            extensions::agent_skills::agent_skills_server_add,
+            extensions::agent_skills::agent_skills_server_remove,
             extensions::agent_skills::agent_skills_compare,
         ])
         .run(tauri::generate_context!())

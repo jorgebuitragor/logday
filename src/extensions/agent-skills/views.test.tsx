@@ -53,7 +53,10 @@ describe('vista de Skills de agentes', () => {
     expect(t).toContain('logday');
     expect(t).toContain('Claude Codex');
     expect(html).toContain('aria-label="Tiene avisos de seguridad"');
-    expect(t).toContain('Elige una skill para ver qué trae.');
+    expect(t).toContain('Importar una carpeta');
+    expect(t).toContain('O arrastra aquí una carpeta o un .zip');
+    // La que tiene avisos aparece para revisarla.
+    expect(t).toContain('Tuyas con avisos');
   });
 
   it('con filtros guardados, oculta lo que no toca', () => {
@@ -84,7 +87,9 @@ describe('vista de Skills de agentes', () => {
 
   it('sin skills', () => {
     useAgentSkills.setState({ items: [] });
-    expect(text(renderToStaticMarkup(<View />))).toContain('No hay skills en las carpetas');
+    const t = text(renderToStaticMarkup(<View />));
+    expect(t).toContain('No hay skills en las carpetas');
+    expect(t).toContain('Crear una skill');
   });
 
   it('Opciones: carpetas que se revisan y si existen', () => {

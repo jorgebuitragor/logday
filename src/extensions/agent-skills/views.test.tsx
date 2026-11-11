@@ -7,6 +7,9 @@ import { toItem } from './model';
 import { agentSkillsApi, useAgentSkills } from './store';
 import { entry } from './testData';
 import View from './View';
+import { skillActions } from './actions';
+import { SkillContextMenu } from './SkillContextMenu';
+import { makeTr } from './text';
 import Settings from './Settings';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => ({ skills: [], folders: [] })) }));
@@ -54,7 +57,7 @@ describe('vista de Skills de agentes', () => {
     expect(t).toContain('Claude Codex');
     expect(html).toContain('aria-label="Tiene avisos de seguridad"');
     expect(t).toContain('Importar una carpeta');
-    expect(t).toContain('O arrastra aquí una carpeta o un .zip');
+    expect(t).toContain('O arrastra aquí una carpeta, un .zip, un .skill o un SKILL.md');
     // La que tiene avisos aparece para revisarla.
     expect(t).toContain('Tuyas con avisos');
   });
@@ -103,5 +106,51 @@ describe('vista de Skills de agentes', () => {
     expect(t).toContain('~/.claude/skills');
     expect(t).toContain('~/.agents/skills · no existe');
     expect(t).toContain('Skills de plugins');
+  });
+
+  it('la skill elegida se distingue del hover', () => {
+    useAgentSkills.setState({ selectedKey: ITEMS[0].key });
+    const html = renderToStaticMarkup(<View />);
+    const row = html.match(/<div[^>]*aria-selected="true"[^>]*>/)?.[0] ?? '';
+    expect(row).toContain('bg-[var(--accent-soft)]');
+    expect(row).toContain('aria-haspopup="menu"');
+  });
+});
+
+describe('menú del clic derecho en una skill', () => {
+  const tr = makeTr('es');
+  const noop = () => {};
+  const opts = { tr, language: 'es' as const, run: noop, onEdit: noop, onDelete: noop };
+
+  it('una skill propia: editar, compartir, desactivar y borrar al final', () => {
+    const own = toItem(entry({ dirName: 'logday' }));
+    expect(skillActions(own, opts).map((a) => a.id)).toEqual(['edit', 'share', 'disable', 'delete']);
+    expect(skillActions(own, opts).slice(-1)[0].danger).toBe(true);
+  });
+
+  it('una desactivada se puede activar; una de plugin no tiene acciones', () => {
+    const off = toItem(entry({ dirName: 'vieja', origin: 'disabled', tools: ['claude', 'codex'] }));
+    expect(skillActions(off, opts).map((a) => a.id)).toEqual(['edit', 'enable', 'delete']);
+    expect(skillActions(toItem(entry({ dirName: 'pdf', origin: 'plugin', editable: false })), opts)).toEqual([]);
+  });
+
+  it('pinta las acciones, "Mostrar" y borrar aparte', () => {
+    const own = toItem(entry({ dirName: 'logday' }));
+    const html = renderToStaticMarkup(
+      <SkillContextMenu anchor={{ x: 10, y: 10 }} name="logday" actions={skillActions(own, opts)} tr={tr} onReveal={noop} onClose={noop} />,
+    );
+    const t = text(html);
+    expect(html).toContain('role="menu"');
+    expect(html).toContain('aria-label="Acciones de logday"');
+    expect(t).toMatch(/Editar .*Desactivar .*Mostrar .*Borrar/);
+    expect(html.match(/role="separator"/g)?.length).toBe(2);
+  });
+
+  it('una de plugin solo ofrece mostrarla', () => {
+    const html = renderToStaticMarkup(
+      <SkillContextMenu anchor={{ x: 10, y: 10 }} name="pdf" actions={[]} tr={tr} onReveal={noop} onClose={noop} />,
+    );
+    expect(html.match(/role="menuitem"/g)?.length).toBe(1);
+    expect(html).not.toContain('role="separator"');
   });
 });

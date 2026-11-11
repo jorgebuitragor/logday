@@ -2,11 +2,12 @@
 // skills a la vista (carpeta, .zip, nueva, GitHub), dónde soltar, y las
 // que tienen avisos para revisarlas.
 import type { ReactNode } from 'react';
-import { FileArchive, FolderInput, GitBranch, Plus, ShieldAlert, Upload } from 'lucide-react';
+import { FileArchive, FileText, FolderInput, GitBranch, Plus, ShieldAlert, Upload } from 'lucide-react';
 import { FOCUS_RING } from '../../components/shared/controlClasses';
 import type { SkillItem } from './model';
 import { ToolBadges } from './ToolBadges';
 import type { Tr } from './text';
+import type { ImportKind } from './api';
 
 function ActionCard({ icon, title, help, onClick }: { icon: ReactNode; title: string; help: string; onClick: () => void }) {
   return (
@@ -34,7 +35,7 @@ export function SkillsHome({
 }: {
   items: SkillItem[];
   tr: Tr;
-  onImport: (kind: 'folder' | 'zip') => void;
+  onImport: (kind: ImportKind) => void;
   onNew: () => void;
   onRepos: () => void;
   onSelect: (key: string) => void;
@@ -54,6 +55,7 @@ export function SkillsHome({
         <div className="grid gap-2 @lg/skills:grid-cols-2">
           <ActionCard icon={<FolderInput size={16} aria-hidden />} title={tr('home.folder')} help={tr('home.folderHelp')} onClick={() => onImport('folder')} />
           <ActionCard icon={<FileArchive size={16} aria-hidden />} title={tr('home.zip')} help={tr('home.zipHelp')} onClick={() => onImport('zip')} />
+          <ActionCard icon={<FileText size={16} aria-hidden />} title={tr('home.md')} help={tr('home.mdHelp')} onClick={() => onImport('md')} />
           <ActionCard icon={<GitBranch size={16} aria-hidden />} title={tr('home.github')} help={tr('home.githubHelp')} onClick={onRepos} />
           <ActionCard icon={<Plus size={16} aria-hidden />} title={tr('home.new')} help={tr('home.newHelp')} onClick={onNew} />
         </div>

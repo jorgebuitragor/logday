@@ -402,23 +402,25 @@ pub async fn agent_skills_share(app: AppHandle, window: tauri::Window, lang: Str
     blocking(move || ops::share(&r, src, &id, tool).map(|_| ())).await
 }
 
-/// Elige una carpeta o un `.zip` en un diálogo nativo y lo prepara para la
-/// vista previa (SK14, SK15). `None` si se cancela el diálogo.
+/// Elige una carpeta, un `.zip`/`.skill` o un `SKILL.md` suelto en un
+/// diálogo nativo y lo prepara para la vista previa (SK14, SK15). `None`
+/// si se cancela el diálogo.
 #[tauri::command]
 pub async fn agent_skills_import_pick(app: AppHandle, window: tauri::Window, kind: String) -> Result<Option<StagedBundle>, String> {
     let r = roots(&app)?;
-    let zip = match kind.as_str() {
-        "zip" => true,
-        "folder" => false,
+    let kind = match kind.as_str() {
+        "zip" => staging::ImportKind::Zip,
+        "folder" => staging::ImportKind::Folder,
+        "md" => staging::ImportKind::Markdown,
         _ => return Err(ERR_INVALID.to_string()),
     };
     let w = window.clone();
     let picked = tauri::async_runtime::spawn_blocking(move || {
         let d = w.dialog().file().set_parent(&w);
-        if zip {
-            d.add_filter("zip", &["zip"]).blocking_pick_file()
-        } else {
-            d.blocking_pick_folder()
+        match kind {
+            staging::ImportKind::Zip => d.add_filter("zip, skill", &["zip", "skill"]).blocking_pick_file(),
+            staging::ImportKind::Markdown => d.add_filter("SKILL.md", &["md"]).blocking_pick_file(),
+            staging::ImportKind::Folder => d.blocking_pick_folder(),
         }
     })
     .await
@@ -427,7 +429,9 @@ pub async fn agent_skills_import_pick(app: AppHandle, window: tauri::Window, kin
     let path = fp.into_path().map_err(|_| ERR_INVALID.to_string())?;
     blocking(move || {
         let label = display_path(&r, &path);
-        if zip {
+        if kind == staging::ImportKind::Markdown {
+            staging::stage_markdown(&r, &path, label).map(Some)
+        } else if kind == staging::ImportKind::Zip {
             let meta = std::fs::metadata(&path).map_err(|_| ERR_NOT_FOUND)?;
             if meta.len() > staging::MAX_BUNDLE_BYTES {
                 return Err(roots::ERR_TOO_LARGE);
@@ -442,7 +446,8 @@ pub async fn agent_skills_import_pick(app: AppHandle, window: tauri::Window, kin
     .await
 }
 
-/// Prepara lo que el usuario soltó en la vista (carpetas y `.zip`), para
+/// Prepara lo que el usuario soltó en la vista (carpetas, `.zip`/`.skill` y
+/// `.md`), para
 /// la vista previa (SK14). Solo acepta rutas que Rust anotó del evento de
 /// soltar en los últimos 2 minutos. `None` si no queda nada que importar.
 #[tauri::command]

@@ -133,7 +133,7 @@ export const shareSkill = (lang: string, loc: Loc, to: Tool) =>
   invoke<void>('agent_skills_share', { lang, source: loc.source, id: loc.id, to });
 
 export interface StagedOrigin {
-  kind: 'folder' | 'zip' | ServerKind;
+  kind: 'folder' | 'zip' | 'md' | ServerKind;
   label: string;
 }
 
@@ -155,7 +155,9 @@ export interface StagedBundle {
   skipped: string[];
 }
 
-export const importPick = (kind: 'folder' | 'zip') => invoke<StagedBundle | null>('agent_skills_import_pick', { kind });
+export type ImportKind = 'folder' | 'zip' | 'md';
+
+export const importPick = (kind: ImportKind) => invoke<StagedBundle | null>('agent_skills_import_pick', { kind });
 
 /** Prepara lo soltado en la vista. Rust solo acepta rutas que él mismo
  *  anotó del evento de soltar; `null` si no hay carpetas ni `.zip`. */

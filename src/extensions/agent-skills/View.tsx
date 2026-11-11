@@ -4,90 +4,28 @@
 // detalle, con "Volver".
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { ArrowLeft, ChevronDown, ChevronRight, CirclePause, CirclePlay, FileArchive, FolderInput, Import, Pencil, Plus, RefreshCw, Search, Share2, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, FileArchive, FileText, FolderInput, Import, Plus, RefreshCw, Search, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { FOCUS_RING, ICON_BTN, INPUT_CLS, SECONDARY_CLS } from '../../components/shared/controlClasses';
 import { ConfirmDeleteModal } from '../../components/shared/ConfirmDeleteModal';
 import { Spinner } from '../../components/shared/FormControls';
-import { discardStaged, errorCode, importDropped, importPick, setSkillEnabled, shareSkill, trashSkill, type SkillRef, type StagedBundle, type Tool } from './api';
+import { discardStaged, errorCode, importDropped, importPick, revealSkill, trashSkill, type ImportKind, type SkillRef, type StagedBundle } from './api';
 import { AGENT_SKILLS_ID, filterItems, groupItems, localeOf, readSettings, takenNames, type SkillGroup, type SkillItem, type ToolFilter } from './model';
 import { useAgentSkills } from './store';
-import { makeTr, trCode, type Tr } from './text';
+import { makeTr, trCode } from './text';
 import { SkillDetail } from './SkillDetail';
 import { SkillEditor } from './SkillEditor';
 import { NewSkillModal } from './NewSkillModal';
 import { DeleteSkillModal, trashChoices, type TrashChoice } from './DeleteSkillModal';
 import { ImportPreview } from './ImportPreview';
-import { RepoDetail, ReposColumn } from './ReposPanel';
+import { RepoDetail, ReposColumn, SELECTED_ROW } from './ReposPanel';
 import { ToolBadges } from './ToolBadges';
 import { SkillsHome } from './SkillsHome';
+import { SkillContextMenu, type SkillMenuAnchor } from './SkillContextMenu';
+import { SkillActions, skillActions } from './actions';
 import { DropOverlay, useSkillDrop } from './drop';
 
 const keyOf = (ref: SkillRef) => `${ref.source}:${ref.id}`;
-
-/** La otra herramienta a la que se puede añadir una skill propia (SK13). */
-export function shareTarget(item: SkillItem): Tool | null {
-  if (item.entry.origin !== 'own' || item.entry.tools.length !== 1) return null;
-  return item.entry.tools[0] === 'claude' ? 'codex' : 'claude';
-}
-
-function SkillActions({ item, tr, run, onEdit, onDelete }: {
-  item: SkillItem;
-  tr: Tr;
-  run: (action: () => Promise<unknown>, done: string, select?: string | null) => void;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  const language = useAppStore((s) => s.language);
-  const e = item.entry;
-  if (!e.editable) return null;
-  const target = shareTarget(item);
-  const disabled = e.origin === 'disabled';
-  return (
-    <>
-      {!e.primary.isLink && e.skillMd !== null && (
-        <button type="button" className={SECONDARY_CLS} onClick={onEdit}>
-          <Pencil size={13} aria-hidden />
-          {tr('action.edit')}
-        </button>
-      )}
-      {target && (
-        <button type="button" className={SECONDARY_CLS} onClick={() => run(() => shareSkill(language, e.primary, target), tr('done.shared', { tool: tr(`tool.${target}`) }))}>
-          <Share2 size={13} aria-hidden />
-          {tr(`action.shareTo.${target}`)}
-        </button>
-      )}
-      {disabled ? (
-        <button
-          type="button"
-          className={SECONDARY_CLS}
-          onClick={() => {
-            // Vuelve con la clave de su fuente de origen.
-            const [src, name] = e.primary.id.split('/');
-            run(() => setSkillEnabled(language, e.primary, true), tr('done.enabled'), `${src}:${name}`);
-          }}
-        >
-          <CirclePlay size={13} aria-hidden />
-          {tr('action.enable')}
-        </button>
-      ) : (
-        <button
-          type="button"
-          className={SECONDARY_CLS}
-          onClick={() => run(() => setSkillEnabled(language, e.primary, false), tr('done.disabled'), `disabled:${e.primary.source}/${e.primary.id}`)}
-        >
-          <CirclePause size={13} aria-hidden />
-          {tr('action.disable')}
-        </button>
-      )}
-      {/* Borrar, aparte y al final: es la que no se deshace desde aquí. */}
-      <button type="button" className={`${SECONDARY_CLS} ml-auto text-red-400 hover:bg-red-500/10`} onClick={onDelete}>
-        <Trash2 size={13} aria-hidden />
-        {tr('action.delete')}
-      </button>
-    </>
-  );
-}
 
 const TOOL_FILTERS: ToolFilter[] = ['all', 'claude', 'codex'];
 
@@ -123,6 +61,7 @@ export default function AgentSkillsView() {
   const [importMenu, setImportMenu] = useState(false);
   const [bundle, setBundle] = useState<StagedBundle | null>(null);
   const [deleting, setDeleting] = useState<SkillItem | null>(null);
+  const [menu, setMenu] = useState<{ item: SkillItem; anchor: SkillMenuAnchor } | null>(null);
   const taken = useMemo(() => takenNames(items), [items]);
   const [live, setLive] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
@@ -201,6 +140,21 @@ export default function AgentSkillsView() {
     }
   };
 
+  const actionsFor = (item: SkillItem) =>
+    skillActions(item, {
+      tr,
+      language,
+      run,
+      onEdit: () => {
+        select(item.key);
+        setEditing(item.key);
+      },
+      onDelete: () => askDelete(item),
+    });
+
+  /** Clic derecho, o la tecla de menú / Mayús+F10 sobre la fila enfocada. */
+  const openMenu = (item: SkillItem, anchor: SkillMenuAnchor) => setMenu({ item, anchor: { ...anchor } });
+
   /** Abre la vista previa con lo preparado, o avisa si no hay skills. */
   const openBundle = useCallback(
     async (prepare: () => Promise<StagedBundle | null>, emptyKey: 'import.noneFound' | 'import.dropNothing') => {
@@ -212,7 +166,8 @@ export default function AgentSkillsView() {
         }
         if (!b.skills.length) {
           void discardStaged(b.id).catch(() => undefined);
-          showToast({ kind: 'error', title: tr('import.noneFound') });
+          // Un .md sin el encabezado de una skill no es lo mismo que "no hay SKILL.md".
+          showToast({ kind: 'error', title: tr(b.origin.kind === 'md' ? 'err.not_skill' : 'import.noneFound') });
           return;
         }
         setTab('installed');
@@ -224,7 +179,7 @@ export default function AgentSkillsView() {
     [setTab, showToast, tr],
   );
 
-  const startImport = (kind: 'folder' | 'zip') => {
+  const startImport = (kind: ImportKind) => {
     setImportMenu(false);
     void openBundle(() => importPick(kind), 'import.noneFound');
   };
@@ -276,6 +231,10 @@ export default function AgentSkillsView() {
               <button role="menuitem" type="button" className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--bg-hover)] ${FOCUS_RING}`} onClick={() => void startImport('zip')}>
                 <FileArchive size={13} aria-hidden />
                 {tr('import.zip')}
+              </button>
+              <button role="menuitem" type="button" className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--bg-hover)] ${FOCUS_RING}`} onClick={() => void startImport('md')}>
+                <FileText size={13} aria-hidden />
+                {tr('import.md')}
               </button>
               <p className="border-t border-[var(--border)] px-2 pb-1 pt-1.5 text-[10px] leading-snug text-[var(--text-hint)]">{tr('import.dropHint')}</p>
             </div>
@@ -353,14 +312,23 @@ export default function AgentSkillsView() {
                         aria-selected={it.key === selectedKey}
                         data-key={it.key}
                         onClick={() => select(it.key)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          openMenu(it, { x: e.clientX, y: e.clientY });
+                        }}
+                        aria-haspopup="menu"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
                             select(it.key);
+                          } else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+                            e.preventDefault();
+                            const r = e.currentTarget.getBoundingClientRect();
+                            openMenu(it, { x: r.left + 16, y: r.bottom });
                           }
                         }}
                         className={`mx-1.5 flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-xs ${FOCUS_RING} ${
-                          it.key === selectedKey ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                          it.key === selectedKey ? SELECTED_ROW : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
                         }`}
                       >
                         <span className="min-w-0 flex-1">
@@ -453,7 +421,7 @@ export default function AgentSkillsView() {
             tr={tr}
             language={language}
             onBack={() => select(null)}
-            actions={<SkillActions item={selected} tr={tr} run={run} onEdit={() => setEditing(selected.key)} onDelete={() => askDelete(selected)} />}
+            actions={<SkillActions actions={actionsFor(selected)} />}
           />
         ) : (
           loaded && !error ? (
@@ -495,6 +463,23 @@ export default function AgentSkillsView() {
             const title = installed.length === 1 ? tr('done.installed') : tr('done.installedN', { n: installed.length });
             showToast({ kind: 'success', title });
             announce(title);
+          }}
+        />
+      )}
+      {menu && (
+        <SkillContextMenu
+          anchor={menu.anchor}
+          name={menu.item.name}
+          actions={actionsFor(menu.item)}
+          tr={tr}
+          onReveal={() => {
+            revealSkill(menu.item.entry.primary).catch((err) => showToast({ kind: 'error', title: trCode(tr, 'err', errorCode(err), 'err.unknown') }));
+          }}
+          onClose={() => {
+            const key = menu.item.key;
+            setMenu(null);
+            // El foco vuelve a la fila, como al cerrar un menú nativo.
+            listRef.current?.querySelector<HTMLElement>(`[data-key="${CSS.escape(key)}"]`)?.focus();
           }}
         />
       )}

@@ -7,6 +7,7 @@
 //! del panel Entornos del Cliente HTTP (`http_client_reveal_secret`,
 //! specs/cliente-http HT77), solo para sus variables y por un clic.
 
+pub mod agent_skills;
 pub mod google_calendar;
 pub mod google_oauth;
 pub mod granola;

@@ -720,6 +720,7 @@ pub fn run() {
         .manage(extensions::mcp::McpState::default())
         .manage(extensions::quick_capture::QuickCaptureState::default())
         .manage(extensions::pomodoro::PomodoroState::default())
+        .manage(extensions::agent_skills::AgentSkillsState::default())
         .manage(FsScope::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -731,6 +732,9 @@ pub fn run() {
             // que el webview pida nada (specs/blindaje-seguridad BS10).
             let app_dir = app.path().app_data_dir()?;
             app.state::<FsScope>().init(&app_dir);
+            // Las carpetas de los agentes de IA quedan fuera de los comandos
+            // genéricos de archivos (specs/skills-de-agentes SK27).
+            extensions::agent_skills::protect(app.handle(), &app.state::<FsScope>());
             // El updater no existe en mobile — se registra acá (no al
             // nivel del builder) siguiendo el patrón oficial del plugin,
             // que necesita el AppHandle ya construido.
@@ -902,6 +906,20 @@ pub fn run() {
             extensions::pomodoro::pomodoro_pause,
             extensions::pomodoro::pomodoro_idle,
             extensions::pomodoro::pomodoro_clear,
+            extensions::agent_skills::agent_skills_list,
+            extensions::agent_skills::agent_skills_detail,
+            extensions::agent_skills::agent_skills_read_file,
+            extensions::agent_skills::agent_skills_reveal,
+            extensions::agent_skills::agent_skills_reveal_folder,
+            extensions::agent_skills::agent_skills_create,
+            extensions::agent_skills::agent_skills_save,
+            extensions::agent_skills::agent_skills_trash,
+            extensions::agent_skills::agent_skills_set_enabled,
+            extensions::agent_skills::agent_skills_share,
+            extensions::agent_skills::agent_skills_import_pick,
+            extensions::agent_skills::agent_skills_staged_read,
+            extensions::agent_skills::agent_skills_install,
+            extensions::agent_skills::agent_skills_discard,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

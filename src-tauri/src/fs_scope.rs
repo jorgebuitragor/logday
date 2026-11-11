@@ -17,6 +17,10 @@
 //! Además, dentro de las raíces no se puede escribir en una carpeta `.git`
 //! (sus hooks y su `config` ejecutan código al correr `git_run`), ni borrar
 //! o renombrar una raíz entera.
+//!
+//! Y hay carpetas vetadas aunque caigan dentro de lo anterior
+//! (specs/skills-de-agentes SK27): `<app>/agent-skills` y las de los
+//! agentes de IA (`deny`).
 
 use std::collections::HashSet;
 use std::fs;
@@ -28,6 +32,10 @@ use serde::{Deserialize, Serialize};
 /// Archivo donde se guardan las raíces elegidas por el usuario, dentro de
 /// `app_data_dir`. Protegido contra escritura desde el webview.
 pub const SCOPE_FILE: &str = "fs-scope.json";
+
+/// Carpeta de datos de la extensión Skills de agentes, dentro de la app
+/// (specs/skills-de-agentes, design "Carpeta de datos").
+pub const AGENT_SKILLS_DIR: &str = "agent-skills";
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct StoredScope {
@@ -42,6 +50,12 @@ struct Inner {
     roots: Vec<PathBuf>,
     /// Archivos sueltos elegidos en un diálogo (solo esta sesión).
     files: HashSet<PathBuf>,
+    /// Carpetas vetadas aunque caigan dentro de la app o de una raíz
+    /// (specs/skills-de-agentes SK27): la de datos de la extensión Skills
+    /// de agentes y las de los agentes (`~/.claude`, `~/.codex`,
+    /// `~/.agents`). Escribir ahí es darle órdenes a un agente que ejecuta
+    /// comandos; solo los comandos propios de esa extensión las tocan.
+    denied: Vec<PathBuf>,
 }
 
 #[derive(Default)]
@@ -143,6 +157,11 @@ impl FsScope {
             }
         }
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if let Ok(own) = resolve(&app_dir.join(AGENT_SKILLS_DIR).to_string_lossy()) {
+            if !inner.denied.contains(&own) {
+                inner.denied.push(own);
+            }
+        }
         inner.app_dir = Some(app_dir);
         inner.roots = roots;
         drop(inner);
@@ -162,6 +181,18 @@ impl FsScope {
         drop(inner);
         let json = serde_json::to_string_pretty(&stored).map_err(|e| e.to_string())?;
         fs::write(app_dir.join(SCOPE_FILE), json).map_err(|e| e.to_string())
+    }
+
+    /// Veta una carpeta (y todo lo de dentro) para los comandos genéricos de
+    /// archivos, aunque caiga dentro de la app o de una raíz (SK27). No
+    /// tiene que existir.
+    pub fn deny(&self, dir: &Path) {
+        if let Ok(resolved) = resolve(&dir.to_string_lossy()) {
+            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            if !inner.denied.contains(&resolved) {
+                inner.denied.push(resolved);
+            }
+        }
     }
 
     /// Agrega una raíz elegida por el usuario en un diálogo de carpeta.
@@ -189,6 +220,9 @@ impl FsScope {
     pub fn check(&self, path: &str, access: Access) -> Result<PathBuf, String> {
         let resolved = resolve(path)?;
         let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.denied.iter().any(|d| resolved.starts_with(d)) {
+            return Err(denied(path));
+        }
         if inner.files.contains(&resolved) {
             return Ok(resolved);
         }
@@ -227,6 +261,9 @@ impl FsScope {
     pub fn check_git_cwd(&self, path: &str) -> Result<PathBuf, String> {
         let resolved = resolve(path)?;
         let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.denied.iter().any(|d| resolved.starts_with(d)) {
+            return Err(denied(path));
+        }
         if inner.roots.iter().any(|r| resolved.starts_with(r)) {
             return Ok(resolved);
         }
@@ -273,6 +310,21 @@ mod tests {
         assert!(s.check(&t.s("data/notes/a.md"), Access::Write).is_ok());
         assert!(s.check(&t.s("data/projects/x/nuevo/b.md"), Access::Write).is_ok());
         assert!(s.check(&t.s("app/config.json"), Access::Write).is_ok());
+    }
+
+    #[test]
+    fn veta_la_carpeta_de_skills_y_las_de_los_agentes() {
+        let t = Tmp::new("vetadas");
+        let s = scope_with_root(&t);
+        assert!(s.check(&t.s("app/agent-skills/staging/x/SKILL.md"), Access::Read).is_err());
+        assert!(s.check(&t.s("app/agent-skills"), Access::Write).is_err());
+        assert!(s.check(&t.s("app/config.json"), Access::Read).is_ok());
+        // Aunque el usuario haya elegido como carpeta de datos una que
+        // contiene la de un agente.
+        s.deny(&t.0.join("data/.claude"));
+        assert!(s.check(&t.s("data/.claude/settings.json"), Access::Write).is_err());
+        assert!(s.check(&t.s("data/.claude/skills/x/SKILL.md"), Access::Read).is_err());
+        assert!(s.check(&t.s("data/notes/a.md"), Access::Write).is_ok());
     }
 
     #[test]

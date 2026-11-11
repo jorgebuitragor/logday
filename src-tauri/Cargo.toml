@@ -48,6 +48,11 @@ tiny_http = "0.12"
 # llegaban por otras dependencias.
 sha2 = "0.10"
 getrandom = "0.2"
+# Skills de agentes (specs/skills-de-agentes): leer los .zip que se
+# importan (solo lectura, deflate) y mandar a la papelera del sistema.
+# Versiones publicadas hace más de dos semanas, como en el blindaje.
+zip = { version = "=9.1.2", default-features = false, features = ["deflate"] }
+trash = "=5.2.9"
 
 # Llavero del sistema para los secretos de las extensiones
 # (specs/extensiones/design.md). keyring 3 no trae ningún almacén por

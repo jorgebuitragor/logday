@@ -106,6 +106,8 @@ Fuentes:
   - Una skill que no se puede cambiar (de plugin o del sistema) solo DEBERÁ ofrecer "Mostrar".
   - Se usa con flechas, Inicio y Fin; Escape o un clic fuera lo cierran y el foco vuelve a la fila.
 - SK39. La skill y el repo elegidos DEBERÁN distinguirse del hover: fondo de acento y una barra a la izquierda, como en la lista de horas extra.
+- SK40. *(Pedido por Jorge el 11 nov 2026.)* La vista PODRÁ tener movimiento sutil: filas que entran escalonadas, el detalle que entra al cambiar de skill, tarjetas de Inicio con un leve alzado, menús que aparecen y la flecha de cada grupo que gira. Solo `opacity` y `transform`, de menos de 300 ms. DEBERÁ quedarse quieta con "Reducir movimiento" del sistema o con las animaciones de la app apagadas.
+- SK41. El menú Importar DEBERÁ cerrarse con un clic fuera o con Escape (el foco vuelve al botón), como los demás menús de la app.
 
 ### Vista previa e instalación
 

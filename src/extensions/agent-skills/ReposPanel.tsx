@@ -3,7 +3,7 @@
 // elegido, con el estado de cada skill, Instalar, Actualizar y Ver cambios.
 // A un servidor solo se va cuando el usuario abre un repo o pulsa "Buscar
 // actualizaciones" (SK22).
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Diff, Download, ExternalLink, GitBranch, Plus, RefreshCw, Server, Trash2, TriangleAlert } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
@@ -171,11 +171,11 @@ export function ReposColumn({ tr, language }: { tr: Tr; language: Language }) {
           <p className="p-3 text-xs text-[var(--text-hint)]">{tr('repos.empty')}</p>
         ) : (
           <ul role="listbox" aria-label={tr('repos.listLabel')}>
-            {repos.map((r) => {
+            {repos.map((r, i) => {
               const c = catalogs[r.id];
               const updates = c?.catalog ? catalogEntries(r, c.catalog.bundle.skills, installed).filter((e) => e.status === 'update').length : 0;
               return (
-                <li key={r.id} className="group mx-1.5 flex items-center">
+                <li key={r.id} className="skl-row-in group mx-1.5 flex items-center" style={{ '--skl-delay': `${Math.min(i, 12) * 20}ms` } as CSSProperties}>
                   <div
                     role="option"
                     tabIndex={0}
@@ -191,7 +191,7 @@ export function ReposColumn({ tr, language }: { tr: Tr; language: Language }) {
                         if (!c) void fetchCatalog(r);
                       }
                     }}
-                    className={`flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs ${FOCUS_RING} ${
+                    className={`flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-[background-color,box-shadow] duration-150 ${FOCUS_RING} ${
                       selectedRepoId === r.id ? SELECTED_ROW : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
                     }`}
                   >

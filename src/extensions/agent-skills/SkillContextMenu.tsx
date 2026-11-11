@@ -62,7 +62,7 @@ export function SkillContextMenu({ anchor, name, actions, tr, onReveal, onClose 
       }}
       role="menu"
       aria-label={tr('contextMenuAria', { name })}
-      className="fixed z-50 min-w-[200px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-xl"
+      className="skl-pop skl-pop-left fixed z-50 min-w-[200px] rounded-xl border border-[var(--border-card)] bg-[var(--bg-elevated)] py-1 shadow-xl"
       style={menu.style}
       onMouseDown={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}

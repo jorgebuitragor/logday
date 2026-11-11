@@ -1,17 +1,19 @@
 // Detalle de una skill (specs/skills-de-agentes SK6–SK8): cabecera, avisos,
 // acciones y las pestañas SKILL.md, Archivos y Ubicaciones. Lee el árbol y
 // el SKILL.md completo al elegirla; los archivos, al abrirlos.
-import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, File, FileCode2, FileWarning, FolderOpen, Link2, ShieldAlert, TriangleAlert } from 'lucide-react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { ArrowLeft, File, FileCode2, FileWarning, FolderOpen, Link2 } from 'lucide-react';
 import type { Language } from '../../lib/i18n';
 import { CHIP, FOCUS_RING, ICON_BTN, PANEL_TITLE, SECONDARY_CLS } from '../../components/shared/controlClasses';
 import { Spinner } from '../../components/shared/FormControls';
 import { errorCode, readSkillFile, revealSkill, skillDetail, type FileInfo, type SkillDetail as Detail, type SkillLocation } from './api';
-import { formatSize, localeOf, RISK_WARNINGS, type SkillItem, type Warning } from './model';
-import { frontmatterValue, parseSkillMd } from './skillMd';
+import { formatSize, localeOf, type SkillItem } from './model';
+import { parseSkillMd } from './skillMd';
 import { SkillMarkdown } from './SkillMarkdown';
 import { dateTime, isMac, trCode, type Tr } from './text';
 import { ToolBadges } from './ToolBadges';
+import { WarningList } from './WarningList';
+import { FrontmatterTable } from './FrontmatterTable';
 
 type Tab = 'skill' | 'files' | 'locations';
 
@@ -34,44 +36,6 @@ function manageHint(item: SkillItem, tr: Tr): string | null {
   if (e.origin === 'admin') return tr('manage.admin');
   if (e.origin === 'external') return tr('manage.external');
   return null;
-}
-
-function WarningList({ warnings, tr }: { warnings: Warning[]; tr: Tr }) {
-  if (!warnings.length) return null;
-  return (
-    <ul className="space-y-1.5" aria-label={tr('warningsLabel')}>
-      {warnings.map((w) => {
-        const risky = RISK_WARNINGS.has(w);
-        const Icon = risky ? ShieldAlert : TriangleAlert;
-        return (
-          <li key={w} className="flex items-start gap-2 text-xs">
-            <Icon size={14} className={`mt-px shrink-0 ${risky ? 'text-amber-400' : 'text-[var(--text-hint)]'}`} aria-hidden />
-            <span>
-              <span className="font-medium text-[var(--text-primary)]">{trCode(tr, 'warn', w, 'warn.unknown')}</span>
-              <span className="text-[var(--text-secondary)]"> — {trCode(tr, 'warnHelp', w, 'warn.unknown')}</span>
-            </span>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-function FrontmatterTable({ fm, tr }: { fm: Record<string, unknown>; tr: Tr }) {
-  const rows = Object.entries(fm);
-  if (!rows.length) return null;
-  return (
-    <table className="w-full border-collapse text-xs" aria-label={tr('frontmatterLabel')}>
-      <tbody>
-        {rows.map(([k, v]) => (
-          <tr key={k} className="border-b border-[var(--border)] align-top last:border-0">
-            <th scope="row" className="w-40 py-1.5 pr-3 text-left font-mono font-normal text-[var(--text-hint)]">{k}</th>
-            <td className="whitespace-pre-wrap break-words py-1.5 text-[var(--text-primary)]">{frontmatterValue(v)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
 }
 
 function fileIcon(f: FileInfo) {
@@ -178,7 +142,20 @@ function LocationsTab({ item, tr }: { item: SkillItem; tr: Tr }) {
   );
 }
 
-export function SkillDetail({ item, tr, language, onBack }: { item: SkillItem; tr: Tr; language: Language; onBack?: () => void }) {
+export function SkillDetail({
+  item,
+  tr,
+  language,
+  onBack,
+  actions,
+}: {
+  item: SkillItem;
+  tr: Tr;
+  language: Language;
+  onBack?: () => void;
+  /** Los botones que cambian la skill (fase 2): los pone la vista. */
+  actions?: ReactNode;
+}) {
   const e = item.entry;
   const readable = e.origin !== 'external';
   const [tab, setTab] = useState<Tab>(readable ? 'skill' : 'locations');
@@ -236,6 +213,7 @@ export function SkillDetail({ item, tr, language, onBack }: { item: SkillItem; t
       </header>
 
       <div className="flex flex-wrap gap-2">
+        {actions}
         <button
           type="button"
           className={SECONDARY_CLS}

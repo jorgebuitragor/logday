@@ -38,11 +38,27 @@ Estado: en progreso.
 
 ## Fase 2: gestionar (rama `feature/skills-de-agentes-gestion`)
 
-- [ ] Confirmación nativa desde Rust (SK29) con textos en es y en.
-- [ ] Crear (SK9), guardar con `expectedHash` (SK10), papelera con el crate `trash` (SK11), desactivar o activar (SK12) y compartir (SK13).
-- [ ] Preparar desde una carpeta o un zip (crate `zip`), reglas y topes (SK16), instalar con huella (SK18) y reemplazar (SK17). Limpieza de `staging/` al arrancar.
-- [ ] Vista: editor, modal de Nueva skill, diálogo de borrar con "solo de esta herramienta" o "de todas", Importar y vista previa.
-- [ ] Pruebas de Rust y de TS.
+- [x] Confirmación nativa desde Rust (SK29) con textos en es y en, y "una vez por skill y sesión" al guardar (`AgentSkillsState`).
+- [x] `ops.rs`: crear (SK9), guardar con huella (SK10), papelera con el crate `trash` y NSFileManager en macOS (SK11), desactivar y activar con enlaces (SK12), compartir (SK13). Sin bits de ejecución.
+- [x] `staging.rs`: preparar desde una carpeta o un zip (crate `zip`, solo deflate). Rechaza zip-slip, enlaces y `.git`, cuenta lo descomprimido de verdad y quita los bits de ejecución (SK16). Instala por lotes con huella (SK18) y reemplaza a la papelera (SK17). Lo de más de 24 h se limpia al arrancar.
+- [x] Vista: Nueva skill (modal), Importar (menú), editor del SKILL.md, acciones del detalle (Editar, Añadir a la otra herramienta, Desactivar o Activar, Borrar), diálogo de borrar con "solo de esta herramienta" o "de todas", y vista previa de instalación.
+- [x] Pruebas de Rust (ops y staging) y de TS (`gestion.test.ts`).
+
+### QA (10 nov 2026)
+
+En el navegador, con el build de producción y Tauri simulado, que registra lo que en Rust pide el diálogo nativo, se revisó:
+
+- **Borrar** una skill que está en las dos herramientas: el diálogo ofrece "Quitar solo de Codex" o "Borrar de todas". Con la primera, queda solo en Claude Code y aparece "Añadir a Codex".
+- **Editar:** el aviso de `` !`…` `` sale en vivo, se guarda y el editor se cierra.
+- **Importar un .zip:**
+  - la vista previa muestra los omitidos, los avisos, el SKILL.md y los archivos;
+  - marca en rojo la que ya existe hasta elegir "Reemplazar";
+  - "Instalar 2" manda un solo lote.
+- **Nueva skill:** valida el nombre mientras se escribe; al crear, abre el editor con la plantilla.
+- **Arreglos:**
+  - las listas del SKILL.md no mostraban viñetas ni números;
+  - la etiqueta del nombre en la vista previa quedaba pegada al campo.
+- [ ] Probar en la app de QA real: los diálogos nativos, la papelera de macOS y los enlaces simbólicos de verdad. Las pruebas de Rust cubren la lógica de disco.
 
 ## Fase 3: repos de GitHub (rama `feature/skills-de-agentes-repos`)
 

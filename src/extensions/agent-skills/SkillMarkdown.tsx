@@ -14,7 +14,7 @@ const OPENABLE = /^(https?:|mailto:)/i;
 
 export function SkillMarkdown({ markdown, imageLabel }: { markdown: string; imageLabel: (alt: string) => string }) {
   return (
-    <div className="md-preview text-sm">
+    <div className="md-preview text-sm [&_ol]:list-decimal [&_ul]:list-disc">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeSanitize]}

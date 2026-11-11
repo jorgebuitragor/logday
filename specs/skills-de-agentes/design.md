@@ -163,12 +163,12 @@ interface SkillEntry {
 - **`StagedSkill`:** `{ rel, dirName, skillMd, files: FileInfo[], fileFlags, hash, sizeBytes }`.
 - **La huella** (`hash`) es el sha256 de la lista ordenada de `(ruta relativa, sha256 del contenido)`. Se calcula al preparar.
 - **`agent_skills_staged_read { id, rel, file }`:** lee un archivo de texto de lo preparado, para la vista previa.
-- **`agent_skills_install { lang, id, rel, name, tools, replace, expectedHash, from? }`**
-  1. recalcula la huella y la compara (SK18);
-  2. pide confirmación nativa ("Instalar «name» en Claude Code y Codex desde <origen>");
-  3. si existe y no viene `replace`, devuelve `occupied`; si viene, la anterior va a la papelera (SK17);
+- **`agent_skills_install { lang, id, items: [{ rel, name, tools, replace, expectedHash }] }`**: instala por lotes, para que importar varias skills pida **un solo** diálogo nativo.
+  1. comprueba todas antes de tocar nada: huella (SK18), nombre, topes, ocupado si no viene `replace`, y que no se repita un nombre en el lote;
+  2. pide una confirmación nativa con cada nombre, sus herramientas, su destino y el origen, que Rust lee de `staging/<id>/origin.json`;
+  3. con `replace`, lo que había con ese nombre en las herramientas elegidas sale: los enlaces se quitan y las carpetas van a la papelera (SK17);
   4. mueve lo preparado al destino y, si son las dos herramientas, crea el enlace;
-  5. si `from` es un repo, escribe en `installed.json`.
+  5. si `from` es un repo, escribe en `installed.json` (fase 3).
 - **`agent_skills_discard { id }`:** borra lo preparado.
 - **Zip:** el crate `zip` (solo lectura, `deflate`).
   - Se rechazan los nombres con `..`, absolutos o con `\`.
@@ -256,8 +256,9 @@ Usa el mismo esquema de dos columnas que DevTools, con contenedor `@container`.
   - **Markdown:** se renderiza con `react-markdown` + `remark-gfm` + `rehype-sanitize` con el esquema por defecto, sin `rehype-raw`.
     - Las imágenes no se cargan: se ve su texto alternativo, porque cargarlas le diría a un tercero que se abrió la skill.
     - Los enlaces http(s) van por `open_url`.
-- **Editar** abre un editor de texto plano a pantalla de la vista, con monoespaciada, Guardar, Cancelar y los avisos del frontmatter en vivo. Guardar puede pedir el diálogo nativo.
+- **Editar** abre un editor de texto plano en el lugar del detalle: monoespaciada, Guardar (también ⌘S), Cancelar (pregunta si hay cambios) y los avisos del frontmatter en vivo. Guardar puede pedir el diálogo nativo. Si el archivo cambió en disco, ofrece "Cargar el de disco" o "Guardar el mío igual". Un `SKILL.md` de más de 256 KB no se edita aquí.
 - **Nueva skill** es un modal con nombre (validado mientras se escribe), descripción y herramientas (casillas Claude Code y Codex, las dos marcadas). Crea con la plantilla y abre el editor.
+- **Importar** es un menú con "Carpeta…" y "Archivo .zip…", junto a "Nueva skill", arriba de la columna. Si no se encuentra ningún `SKILL.md`, se avisa y no se abre la vista previa.
 - **Vista previa de instalación** es un modal grande:
   - si hay varias skills, a la izquierda la lista de las preparadas, con casillas;
   - a la derecha, la de la fila elegida: avisos, SKILL.md, archivos, nombre de destino editable y herramientas;

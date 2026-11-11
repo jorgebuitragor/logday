@@ -1,7 +1,7 @@
 // Lo que la vista hace con la lista que devuelve Rust (specs/skills-de-
 // agentes SK5, SK7): el nombre y la descripción del frontmatter, los
 // avisos, los grupos, la búsqueda y los filtros. Puro y probado.
-import type { Origin, SkillEntry, Tool } from './api';
+import type { FileFlags, Origin, SkillEntry, Tool } from './api';
 import { parseSkillMd, skillMdWarnings, type ParsedSkillMd, type SkillWarning } from './skillMd';
 
 export const AGENT_SKILLS_ID = 'agent-skills';
@@ -80,28 +80,75 @@ export function groupOf(origin: Origin): SkillGroup {
   }
 }
 
-export function toItem(entry: SkillEntry): SkillItem {
-  const parsed = entry.skillMd !== null ? parseSkillMd(entry.skillMd) : null;
+/** Los avisos de una skill (SK7), instalada o preparada para instalar. */
+export function computeWarnings(input: {
+  parsed: ParsedSkillMd | null;
+  dirName: string;
+  fileFlags: FileFlags;
+  skillMdTruncated?: boolean;
+  location?: 'external' | 'broken' | null;
+}): { warnings: Warning[]; risky: boolean } {
   const warnings = new Set<Warning>();
-  if (entry.origin === 'external') warnings.add(entry.primary.broken ? 'broken' : 'external');
-  else if (!parsed) warnings.add('unreadable');
-  if (parsed) for (const w of skillMdWarnings(parsed, entry.dirName)) warnings.add(w);
-  const f = entry.fileFlags;
+  if (input.location) warnings.add(input.location);
+  else if (!input.parsed) warnings.add('unreadable');
+  if (input.parsed) for (const w of skillMdWarnings(input.parsed, input.dirName)) warnings.add(w);
+  const f = input.fileFlags;
   if (f.scripts || f.executables) warnings.add('scripts');
   if (f.binaries) warnings.add('binaries');
   if (f.symlinks) warnings.add('symlinks');
-  if (f.truncated || entry.skillMdTruncated) warnings.add('truncated');
+  if (f.truncated || input.skillMdTruncated) warnings.add('truncated');
   const sorted = WARNING_ORDER.filter((w) => warnings.has(w));
+  return { warnings: sorted, risky: sorted.some((w) => RISK_WARNINGS.has(w)) };
+}
+
+export function toItem(entry: SkillEntry): SkillItem {
+  const parsed = entry.skillMd !== null ? parseSkillMd(entry.skillMd) : null;
+  const { warnings, risky } = computeWarnings({
+    parsed,
+    dirName: entry.dirName,
+    fileFlags: entry.fileFlags,
+    skillMdTruncated: entry.skillMdTruncated,
+    location: entry.origin === 'external' ? (entry.primary.broken ? 'broken' : 'external') : null,
+  });
   return {
     entry,
     key: entry.key,
     name: parsed?.name ?? entry.dirName,
     description: parsed?.description ?? '',
     parsed,
-    warnings: sorted,
-    risky: sorted.some((w) => RISK_WARNINGS.has(w)),
+    warnings,
+    risky,
     group: groupOf(entry.origin),
   };
+}
+
+/** Las carpetas ocupadas por herramienta, para avisar antes de crear o
+ *  instalar (Rust lo vuelve a comprobar). Cuentan las propias y las
+ *  desactivadas, que volverían al mismo nombre. */
+export function takenNames(items: readonly SkillItem[]): Record<Tool, Set<string>> {
+  const out: Record<Tool, Set<string>> = { claude: new Set(), codex: new Set() };
+  for (const it of items) {
+    for (const loc of it.entry.locations) {
+      if (loc.source === 'claude' || loc.source === 'agents' || loc.source === 'codex') {
+        out[loc.tool].add(loc.id);
+      } else if (loc.source === 'disabled') {
+        const name = loc.id.split('/')[1];
+        if (name) out[loc.tool].add(name);
+      }
+    }
+  }
+  return out;
+}
+
+/** Un nombre de carpeta portable a partir de otro (para la vista previa
+ *  de importar): minúsculas, sin tildes, con guiones. */
+export function suggestName(raw: string): string {
+  return fold(raw)
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-')
+    .slice(0, 64)
+    .replace(/-+$/, '');
 }
 
 /** Para buscar sin tildes ni mayúsculas. */

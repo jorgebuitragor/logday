@@ -75,6 +75,27 @@
     "allow-pomodoro-schedule",
     "allow-pomodoro-pause",
     "allow-pomodoro-idle",
-    "allow-pomodoro-clear"
+    "allow-pomodoro-clear",
+    "allow-agent-skills-list",
+    "allow-agent-skills-detail",
+    "allow-agent-skills-read-file",
+    "allow-agent-skills-reveal",
+    "allow-agent-skills-reveal-folder",
+    "allow-agent-skills-create",
+    "allow-agent-skills-save",
+    "allow-agent-skills-trash",
+    "allow-agent-skills-set-enabled",
+    "allow-agent-skills-share",
+    "allow-agent-skills-import-pick",
+    "allow-agent-skills-import-dropped",
+    "allow-agent-skills-staged-read",
+    "allow-agent-skills-install",
+    "allow-agent-skills-discard",
+    "allow-agent-skills-repo-fetch",
+    "allow-agent-skills-installed",
+    "allow-agent-skills-servers",
+    "allow-agent-skills-server-add",
+    "allow-agent-skills-server-remove",
+    "allow-agent-skills-compare"
   ]
 }

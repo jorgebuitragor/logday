@@ -1,6 +1,7 @@
-import { Bot, CalendarDays, ClipboardList, Globe, Hourglass, MessagesSquare, NotebookPen, PenTool, Webhook, Wrench, Zap } from 'lucide-react';
+import { Bot, CalendarDays, ClipboardList, Globe, Hourglass, MessagesSquare, NotebookPen, PenTool, Webhook, WandSparkles, Wrench, Zap } from 'lucide-react';
 import type { ExtensionDefinition, ExtensionId } from './types';
 import { httpClientSecretKeys } from './http-client/secretKeys';
+import { agentSkillsSecretKeys } from './agent-skills/secretKeys';
 
 /** Extensiones que implementa Desktop (R4). Solo metadatos: el código de
  *  cada una se carga con `import()` cuando se activa (R16). Los textos
@@ -138,6 +139,21 @@ export const EXTENSIONS: readonly ExtensionDefinition[] = [
     // HT22: una clave del llavero por variable secreta.
     dynamicSecretKeys: httpClientSecretKeys,
     load: () => import('./http-client').then((m) => m.default),
+  },
+  {
+    id: 'agent-skills',
+    category: 'tool',
+    // `WandSparkles`: `Sparkles` ya lo usan las novedades y DevTools.
+    icon: WandSparkles,
+    apps: ['desktop'],
+    // SK33: no envía datos de Logday fuera, así que no lleva el aviso de
+    // R6; su descripción explica el riesgo de las skills.
+    view: true,
+    settings: true,
+    // SK24: los tokens de GitHub, gitlab.com y los servidores propios.
+    secretKeys: ['github_token', 'gitlab_token'],
+    dynamicSecretKeys: agentSkillsSecretKeys,
+    load: () => import('./agent-skills').then((m) => m.default),
   },
 ];
 

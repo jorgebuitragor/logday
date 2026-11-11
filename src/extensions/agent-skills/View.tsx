@@ -323,20 +323,28 @@ export default function AgentSkillsView() {
             const collapsed = settings.collapsed.includes(g.group);
             const Chevron = collapsed ? ChevronRight : ChevronDown;
             return (
-              <section key={g.group} aria-labelledby={`agent-skills-group-${g.group}`}>
+              // Cada grupo es un bloque: línea arriba (salvo el primero) y encabezado
+              // fijo al desplazar, para saber siempre en qué grupo se está.
+              <section
+                key={g.group}
+                aria-labelledby={`agent-skills-group-${g.group}`}
+                className="border-t border-[var(--border)] first:border-t-0 [&:not(:first-child)]:mt-1.5"
+              >
                 <button
                   type="button"
                   id={`agent-skills-group-${g.group}`}
                   aria-expanded={!collapsed}
                   onClick={() => toggleGroup(g.group)}
-                  className={`flex w-full items-center gap-1 px-3 pb-1 pt-2 text-left text-[10px] font-semibold uppercase tracking-widest text-[var(--text-hint)] hover:text-[var(--text-secondary)] ${FOCUS_RING}`}
+                  className={`sticky top-0 z-[1] flex w-full items-center gap-1.5 bg-[var(--bg-panel)] px-3 pb-1.5 pt-2.5 text-left text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)] hover:text-[var(--text-primary)] ${FOCUS_RING}`}
                 >
-                  <Chevron size={12} aria-hidden />
+                  <Chevron size={12} className="text-[var(--text-hint)]" aria-hidden />
                   {tr(`group.${g.group}`)}
-                  <span className="ml-auto font-normal tabular-nums">{g.items.length}</span>
+                  <span className="ml-auto rounded-full bg-[var(--bg-hover)] px-1.5 py-px font-medium tracking-normal tabular-nums text-[var(--text-hint)]">
+                    {g.items.length}
+                  </span>
                 </button>
                 {!collapsed && (
-                  <div role="listbox" aria-labelledby={`agent-skills-group-${g.group}`}>
+                  <div role="listbox" aria-labelledby={`agent-skills-group-${g.group}`} className="pb-1.5">
                     {g.items.map((it) => (
                       <div
                         key={it.key}

@@ -10,11 +10,12 @@
 //! absoluta del webview (SK26).
 
 pub mod files;
-pub mod github;
 pub mod manifest;
 pub mod ops;
+pub mod remote;
 pub mod roots;
 pub mod scan;
+pub mod servers;
 pub mod staging;
 
 use std::collections::HashSet;
@@ -221,6 +222,7 @@ fn text(lang: &str, key: &str) -> &'static str {
         "ok.create" => if en { "Create" } else { "Crear" },
         "ok.add" => if en { "Add" } else { "Añadir" },
         "ok.enable" => if en { "Enable" } else { "Activar" },
+        "ok.allow" => if en { "Allow" } else { "Permitir" },
         "cancel" => if en { "Cancel" } else { "Cancelar" },
         "title" => if en { "Logday · Agent skills" } else { "Logday · Skills de agentes" },
         "warning" => if en {
@@ -238,13 +240,18 @@ fn tools_label(lang: &str, tools: &[Tool]) -> String {
 }
 
 /// Pide confirmación en un diálogo nativo, que un script del webview no
-/// puede contestar (SK29). Devuelve `cancelled` si dice que no.
+/// puede contestar (SK29), con el aviso de que las skills ejecutan cosas.
+/// Devuelve `cancelled` si dice que no.
 async fn confirm(window: &tauri::Window, lang: &str, message: String, ok: &str) -> Result<(), String> {
+    confirm_plain(window, lang, format!("{message}\n\n{}", text(lang, "warning")), ok).await
+}
+
+/// Lo mismo, sin el aviso de las skills (para añadir un servidor, SK36).
+async fn confirm_plain(window: &tauri::Window, lang: &str, body: String, ok: &str) -> Result<(), String> {
     let w = window.clone();
     let ok_label = text(lang, ok).to_string();
     let cancel = text(lang, "cancel").to_string();
     let title = text(lang, "title").to_string();
-    let body = format!("{message}\n\n{}", text(lang, "warning"));
     let yes = tauri::async_runtime::spawn_blocking(move || {
         w.dialog()
             .message(body)
@@ -555,7 +562,7 @@ pub async fn agent_skills_install(app: AppHandle, window: tauri::Window, lang: S
         for (rel, name, tools, replace, exp) in &plan {
             let inst = staging::install(&r, &id, rel, name, tools, *replace, exp)?;
             // Lo que viene de un repo se registra (SK21).
-            if let Some(repo) = origin.repo.as_ref().filter(|_| origin.kind == "github") {
+            if let Some(repo) = origin.repo.as_ref() {
                 let s = |k: &str| repo.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
                 let rec = manifest::InstalledRecord { repo: s("repo"), rel: rel.clone(), sha: s("sha"), hash: inst.hash.clone(), installed_at: now_ms() };
                 records.push((inst.source, inst.id.clone(), rec));
@@ -581,22 +588,81 @@ pub async fn agent_skills_discard(app: AppHandle, id: String) -> Result<(), Stri
     blocking(move || staging::discard(&r, &id)).await
 }
 
-// ─── Fase 3: repos de GitHub (SK19–SK25) ───
+// ─── Fase 3: repos de GitHub, GitLab y servidores propios (SK19–SK25, SK36) ───
 
-/// Abre un repo de GitHub y prepara sus skills para el catálogo (SK20).
-/// El token, si hay, lo lee Rust del llavero; el webview nunca lo ve
-/// (SK24).
-#[tauri::command]
-pub async fn agent_skills_repo_fetch(app: AppHandle, repo: github::RepoRef) -> Result<github::RepoCatalog, String> {
-    let r = roots(&app)?;
-    repo.validate().map_err(str::to_string)?;
-    let service = super::keychain_service(&app);
-    let token = tauri::async_runtime::spawn_blocking(move || super::read_secret(&service, EXTENSION_ID, "github_token").ok())
+/// Lee un token del llavero. Si no hay o el llavero falla, se sigue sin él.
+async fn read_token(app: &AppHandle, key: String) -> Option<String> {
+    let service = super::keychain_service(app);
+    tauri::async_runtime::spawn_blocking(move || super::read_secret(&service, EXTENSION_ID, &key).ok())
         .await
         .ok()
         .flatten()
-        .filter(|t| !t.trim().is_empty());
-    github::fetch(r, repo, token).await.map_err(str::to_string)
+        .filter(|t| !t.trim().is_empty())
+}
+
+/// Abre un repo y prepara sus skills para el catálogo (SK20). Solo de un
+/// servidor de la lista permitida (SK25). El token de ese servidor, si
+/// hay, lo lee Rust del llavero; el webview nunca lo ve (SK24).
+#[tauri::command]
+pub async fn agent_skills_repo_fetch(app: AppHandle, repo: remote::RepoRef) -> Result<remote::RepoCatalog, String> {
+    let r = roots(&app)?;
+    let host = repo.host().to_string();
+    let server = {
+        let r = r.clone();
+        blocking(move || servers::find(&r, &host).ok_or(remote::ERR_UNKNOWN_SERVER)).await?
+    };
+    repo.validate(server.kind).map_err(str::to_string)?;
+    let token = read_token(&app, server.token_key.clone()).await;
+    remote::fetch(r, server, repo, token).await.map_err(str::to_string)
+}
+
+/// Los servidores permitidos: los de serie y los propios (SK36).
+#[tauri::command]
+pub async fn agent_skills_servers(app: AppHandle) -> Result<Vec<servers::Server>, String> {
+    let r = roots(&app)?;
+    blocking(move || Ok(servers::list(&r))).await
+}
+
+/// Añade un servidor propio, con confirmación nativa (SK36): si lo pudiera
+/// añadir un script del webview, Logday se conectaría adonde él quisiera.
+#[tauri::command]
+pub async fn agent_skills_server_add(app: AppHandle, window: tauri::Window, lang: String, host: String, kind: servers::Kind) -> Result<servers::Server, String> {
+    let r = roots(&app)?;
+    let host = servers::normalize_host(&host).ok_or_else(|| ERR_INVALID.to_string())?;
+    if kind == servers::Kind::Github {
+        return Err(ERR_INVALID.to_string());
+    }
+    if let Some(s) = servers::find(&r, &host).filter(|s| s.builtin || s.kind == kind) {
+        return Ok(s);
+    }
+    let msg = if lang == "en" {
+        format!(
+            "Allow Logday to connect to https://{host} ({})?\n\nIt will only be used to download skills from the repos you link from that server, and its token (if you save one) will only be sent there.",
+            kind.label()
+        )
+    } else {
+        format!(
+            "¿Permitir que Logday se conecte a https://{host} ({})?\n\nSolo se usará para bajar las skills de los repos que vincules de ese servidor, y su token (si guardas uno) solo se enviará ahí.",
+            kind.label()
+        )
+    };
+    confirm_plain(&window, &lang, msg, "ok.allow").await?;
+    blocking(move || servers::add(&r, &host, kind)).await
+}
+
+/// Quita un servidor propio y borra su token. No pide confirmación: quita
+/// acceso, no lo da.
+#[tauri::command]
+pub async fn agent_skills_server_remove(app: AppHandle, host: String) -> Result<(), String> {
+    let r = roots(&app)?;
+    let service = super::keychain_service(&app);
+    blocking(move || {
+        if let Some(key) = servers::remove(&r, &host)? {
+            let _ = super::delete_secret(&service, EXTENSION_ID, &key);
+        }
+        Ok(())
+    })
+    .await
 }
 
 /// Lo instalado desde repos, con su huella actual (SK21, SK22).

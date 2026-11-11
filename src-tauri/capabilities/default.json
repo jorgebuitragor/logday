@@ -93,6 +93,9 @@
     "allow-agent-skills-discard",
     "allow-agent-skills-repo-fetch",
     "allow-agent-skills-installed",
+    "allow-agent-skills-servers",
+    "allow-agent-skills-server-add",
+    "allow-agent-skills-server-remove",
     "allow-agent-skills-compare"
   ]
 }

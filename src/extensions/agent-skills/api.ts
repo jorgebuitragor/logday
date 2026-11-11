@@ -133,7 +133,7 @@ export const shareSkill = (lang: string, loc: Loc, to: Tool) =>
   invoke<void>('agent_skills_share', { lang, source: loc.source, id: loc.id, to });
 
 export interface StagedOrigin {
-  kind: 'folder' | 'zip' | 'github';
+  kind: 'folder' | 'zip' | ServerKind;
   label: string;
 }
 
@@ -177,9 +177,23 @@ export const installStaged = (lang: string, id: string, items: InstallItem[]) =>
 
 export const discardStaged = (id: string) => invoke<void>('agent_skills_discard', { id });
 
-// ─── Fase 3: repos de GitHub (SK19–SK25) ───
+// ─── Fase 3: repos de GitHub, GitLab y servidores propios (SK19–SK25, SK36) ───
+
+export type ServerKind = 'github' | 'gitlab' | 'gitea';
+
+/** Un servidor al que Logday puede conectarse (de serie o añadido). */
+export interface ServerInfo {
+  host: string;
+  kind: ServerKind;
+  builtin: boolean;
+  /** Su clave en el llavero (`ext:agent-skills:<clave>`). */
+  tokenKey: string;
+}
 
 export interface RepoRef {
+  /** El servidor; sin él (o `null`), github.com. */
+  host?: string | null;
+  /** En GitLab puede llevar grupos: `grupo/subgrupo`. */
   owner: string;
   repo: string;
   gitRef?: string | null;
@@ -217,6 +231,14 @@ export interface FileChange {
 export const fetchRepo = (repo: RepoRef) => invoke<RepoCatalog>('agent_skills_repo_fetch', { repo });
 
 export const listInstalled = () => invoke<InstalledInfo[]>('agent_skills_installed');
+
+export const listServers = () => invoke<ServerInfo[]>('agent_skills_servers');
+
+/** Pide confirmación en un diálogo nativo (SK36); `cancelled` si dice que no. */
+export const addServer = (lang: string, host: string, kind: Exclude<ServerKind, 'github'>) =>
+  invoke<ServerInfo>('agent_skills_server_add', { lang, host, kind });
+
+export const removeServer = (host: string) => invoke<void>('agent_skills_server_remove', { host });
 
 export const compareStaged = (id: string, rel: string, loc: Loc) =>
   invoke<FileChange[]>('agent_skills_compare', { id, rel, source: loc.source, skillId: loc.id });

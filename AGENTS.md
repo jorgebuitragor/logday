@@ -31,7 +31,7 @@ Gitflow: `release/x.y.z` desde `develop`; subir la versión en `package.json`, `
 
 Después de publicarlo:
 
-- Cambiar la versión en la tabla "Descargar" del `README.md`. Los nombres de los instaladores llevan la versión, así que esos enlaces directos no se actualizan solos.
+- Cambiar la versión en la tabla de descargas de los dos README: "Download" en `README.md` (inglés, el que GitHub muestra en la portada) y "Descargar" en `README.es.md`. Los nombres de los instaladores llevan la versión, así que esos enlaces directos no se actualizan solos.
 - Redesplegar la landing (`logday-site`) para que sus enlaces de descarga queden al día sin depender de su script.
 
 ## Convenciones

@@ -25,7 +25,7 @@
 </p>
 
 <p align="center">
-  <a href="https://logday.dev"><img src="docs/readme/un-dia-en-logday.webp" width="900" alt="Animación de Logday Desktop: una tarea capturada en una línea, el daily que arma el mensaje para el equipo y las horas extra con su desglose. Al lado, el archivo Markdown que se escribe a la par y la sincronización con tu servidor."></a>
+  <a href="https://logday.dev"><picture><source media="(prefers-color-scheme: light)" srcset="docs/readme/un-dia-en-logday-claro.webp"><img src="docs/readme/un-dia-en-logday-oscuro.webp" width="900" alt="Animación de Logday Desktop: una tarea capturada en una línea, el daily que arma el mensaje para el equipo y las horas extra con su desglose. Al lado, el archivo Markdown que se escribe a la par y la sincronización con tu servidor."></picture></a>
 </p>
 
 Este repositorio es **Logday Desktop**, la app de escritorio, y la puerta de entrada al proyecto. La presentación completa está en **[logday.dev](https://logday.dev)** ([en inglés](https://logday.dev/en/)).
@@ -68,7 +68,7 @@ La app avisa cuando sale una versión nueva y se actualiza sola, así que da igu
   </tr>
 </table>
 
-Las capturas usan datos de demostración. Cada una se ve en el tema de tu GitHub (claro u oscuro).
+La animación y las capturas usan datos de demostración, y se ven en el tema de tu GitHub (claro u oscuro).
 
 ## El ecosistema
 

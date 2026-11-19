@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Logday">
+  <rect width="1024" height="1024" rx="240" fill="#6366f1"/>
+  <path d="M302 216h306l144 128v432a32 32 0 0 1-32 32H302a32 32 0 0 1-32-32V248a32 32 0 0 1 32-32z" fill="#fff"/>
+  <path d="M608 216v128h144z" fill="#dcdcfc"/>
+  <path d="M320 576h65l46-137 73 196 200-235" fill="none" stroke="#6366f1" stroke-width="42" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,12 +1,97 @@
-# Logday Desktop
+<p align="center">
+  <a href="https://logday.dev"><img src="docs/readme/logo.svg" width="84" height="84" alt="Logday"></a>
+</p>
 
-Aplicación de escritorio de Logday para el trabajo diario: tareas, notas, dailys (registro diario de actividades), calendario y horas extra.
+<h1 align="center">Logday</h1>
 
-Sitio de Logday: **[logday.dev](https://logday.dev)**, con la presentación del proyecto y las descargas de Desktop.
+<p align="center">
+  <strong>Tu día de trabajo, en archivos que son tuyos.</strong><br>
+  Tareas, notas, dailys y horas extra en Markdown, en una carpeta que eliges tú.<br>
+  Funciona sin conexión y, si quieres, se sincroniza con tu propio servidor.
+</p>
 
-Es local-first. Los datos son archivos de texto (Markdown y JSON) en una carpeta que eliges tú, y la app funciona completa sin conexión. El sync con [`logday-server`](https://github.com/jorgebuitragor/logday-server) es opcional y sirve para usar los mismos datos desde otro equipo, desde [Logday Web](https://github.com/jorgebuitragor/logday-web) o desde [Logday Mobile](https://github.com/jorgebuitragor/logday-mobile).
+<p align="center">
+  <a href="https://github.com/jorgebuitragor/logday/releases/latest"><img src="https://img.shields.io/github/v/release/jorgebuitragor/logday?label=versi%C3%B3n&color=4f46e5" alt="Última versión"></a>
+  <img src="https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-22222a" alt="macOS, Windows y Linux">
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/licencia-AGPL--3.0-22222a" alt="Licencia AGPL-3.0"></a>
+</p>
 
-Está hecha con Tauri 2 + React 19 + TypeScript. Se publica para macOS (Apple Silicon), Windows y Linux.
+<p align="center">
+  <a href="https://logday.dev"><strong>logday.dev</strong></a> ·
+  <a href="#descargar">Descargar</a> ·
+  <a href="#qué-incluye">Funciones</a> ·
+  <a href="#el-ecosistema">Ecosistema</a> ·
+  <a href="https://logday.dev/en/">English</a>
+</p>
+
+<p align="center">
+  <a href="https://logday.dev"><img src="docs/readme/un-dia-en-logday.webp" width="900" alt="Animación de Logday Desktop: una tarea capturada en una línea, el daily que arma el mensaje para el equipo y las horas extra con su desglose. Al lado, el archivo Markdown que se escribe a la par y la sincronización con tu servidor."></a>
+</p>
+
+Este repositorio es **Logday Desktop**, la app de escritorio, y la puerta de entrada al proyecto. La presentación completa está en **[logday.dev](https://logday.dev)** ([en inglés](https://logday.dev/en/)).
+
+## Descargar
+
+**[Descargar la última versión](https://github.com/jorgebuitragor/logday/releases/latest)**, o entra a [logday.dev](https://logday.dev/#descargar), que reconoce tu sistema y te da el archivo correcto.
+
+<!-- Enlaces de la versión actual. Se actualizan en cada release (AGENTS.md, "Releases"). -->
+| Sistema | Requisitos | Descarga directa (v1.3.0) |
+|---|---|---|
+| macOS | Mac con Apple Silicon (M1 o posterior) | [`.dmg`](https://github.com/jorgebuitragor/logday/releases/download/v1.3.0/Logday_1.3.0_aarch64.dmg) |
+| Windows | Windows 10 u 11, de 64 bits | [Instalador `.exe`](https://github.com/jorgebuitragor/logday/releases/download/v1.3.0/Logday_1.3.0_x64-setup.exe) · [`.msi`](https://github.com/jorgebuitragor/logday/releases/download/v1.3.0/Logday_1.3.0_x64_en-US.msi) |
+| Linux | x86_64 | [`.AppImage`](https://github.com/jorgebuitragor/logday/releases/download/v1.3.0/Logday_1.3.0_amd64.AppImage) · [`.deb`](https://github.com/jorgebuitragor/logday/releases/download/v1.3.0/Logday_1.3.0_amd64.deb) · [`.rpm`](https://github.com/jorgebuitragor/logday/releases/download/v1.3.0/Logday-1.3.0-1.x86_64.rpm) |
+
+La app avisa cuando sale una versión nueva y se actualiza sola, así que da igual si descargas una versión anterior. Las notas de cada versión están en [Releases](https://github.com/jorgebuitragor/logday/releases).
+
+**La primera vez que la abres:**
+
+- **macOS:** la app está firmada pero no notarizada por Apple, así que macOS no la deja abrir la primera vez. Ve a Ajustes del Sistema → Privacidad y seguridad y pulsa **Abrir igualmente**.
+- **Windows:** si SmartScreen muestra "Windows protegió su PC", pulsa **Más información** → **Ejecutar de todas formas**.
+- **Linux:** al `.AppImage` hay que darle permiso de ejecución (`chmod +x Logday_*.AppImage`).
+
+## Qué es Logday
+
+- **Tus archivos.** Cada tarea, nota y daily es un archivo de texto (Markdown y JSON) en una carpeta que eliges tú. Puedes abrirlos con cualquier editor, versionarlos con Git o respaldarlos como quieras.
+- **Sin conexión.** La app funciona completa sin internet y sin cuenta.
+- **Tu servidor, si lo quieres.** No hay un Logday en la nube: el sync es con un servidor que alojas tú o tu organización.
+- **Hecho para el trabajo diario.** Además de tareas y notas, anota lo que hiciste cada día, arma el mensaje para la reunión diaria y calcula las horas extra.
+- **Software libre**, con licencia [AGPL-3.0](./LICENSE).
+
+<table>
+  <tr>
+    <td width="50%"><picture><source media="(prefers-color-scheme: light)" srcset="docs/readme/kanban-claro.webp"><img src="docs/readme/kanban-oscuro.webp" alt="Tareas en Kanban: por hacer, en progreso y hechas, con proyectos, tags y progreso."></picture><p align="center"><b>Tareas</b>: lista, Kanban y calendario</p></td>
+    <td width="50%"><picture><source media="(prefers-color-scheme: light)" srcset="docs/readme/notas-claro.webp"><img src="docs/readme/notas-oscuro.webp" alt="Una nota abierta con una lista de pendientes y un diagrama Mermaid."></picture><p align="center"><b>Notas</b>: editor enriquecido, guardado en Markdown</p></td>
+  </tr>
+  <tr>
+    <td width="50%"><picture><source media="(prefers-color-scheme: light)" srcset="docs/readme/dailys-claro.webp"><img src="docs/readme/dailys-oscuro.webp" alt="Dailys: las actividades de ayer y de hoy y la vista previa del mensaje para el equipo."></picture><p align="center"><b>Dailys</b>: el mensaje para tu equipo, listo</p></td>
+    <td width="50%"><picture><source media="(prefers-color-scheme: light)" srcset="docs/readme/inicio-claro.webp"><img src="docs/readme/inicio-oscuro.webp" alt="Inicio: tareas para hoy, actividad reciente y la semana."></picture><p align="center"><b>Inicio</b>: el día de un vistazo</p></td>
+  </tr>
+</table>
+
+Las capturas usan datos de demostración. Cada una se ve en el tema de tu GitHub (claro u oscuro).
+
+## El ecosistema
+
+Logday son cuatro piezas que comparten el mismo modelo de datos y el mismo protocolo de sync. Puedes usar solo Desktop o todas juntas.
+
+| Pieza | Qué es | Estado |
+|---|---|---|
+| **Logday Desktop** (este repo) | La app más completa, para macOS, Windows y Linux. Hecha con Tauri. | [Disponible](#descargar) |
+| [Logday Web](https://github.com/jorgebuitragor/logday-web) | Tus datos desde el navegador. La sirve tu propio servidor, en `/app`. | Incluida en el servidor |
+| [Logday Mobile](https://github.com/jorgebuitragor/logday-mobile) | Android e iOS, con el mismo sync. | En desarrollo |
+| [logday-server](https://github.com/jorgebuitragor/logday-server) | El servidor de sync que alojas tú: un binario en Go, multiusuario, con panel de administración. | [Imagen Docker](https://github.com/jorgebuitragor/logday-server#readme) |
+
+Para tener tu propio servidor basta un contenedor:
+
+```bash
+docker run -d --name logday -p 8080:8080 \
+  -e JWT_SECRET="$(openssl rand -base64 32)" \
+  -e DATABASE_PATH=/data/logday.db \
+  -v logday-data:/data \
+  ghcr.io/jorgebuitragor/logday-server:latest
+```
+
+En producción va detrás de HTTPS. El paso a paso está en el [README del servidor](https://github.com/jorgebuitragor/logday-server#readme).
 
 ## Qué incluye
 
@@ -62,6 +147,8 @@ La app trabaja sobre la carpeta base que eliges al empezar:
 La configuración de la app (`config.json`, con la carpeta base y las preferencias) vive en el directorio de datos de Tauri. Las preferencias de interfaz son de cada equipo y no se sincronizan.
 
 ## Desarrollo
+
+Está hecha con Tauri 2 + React 19 + TypeScript.
 
 Requisitos:
 

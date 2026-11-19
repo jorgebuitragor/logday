@@ -29,6 +29,11 @@ No abrir ni modificar la app instalada de Jorge (`com.jorgebuitrago.logday`) ni 
 
 Gitflow: `release/x.y.z` desde `develop`; subir la versión en `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` y `src-tauri/Cargo.lock`; merge `--no-ff` a `main` con tag anotado `vX.Y.Z`, y de vuelta a `develop`. El mensaje del tag (primera línea: título; el resto, markdown) es lo que la app muestra en "Novedades". El tag dispara `.github/workflows/release.yml`, que deja un Release en borrador; publicarlo hace que el actualizador lo ofrezca a todos los usuarios.
 
+Después de publicarlo:
+
+- Cambiar la versión en la tabla "Descargar" del `README.md`. Los nombres de los instaladores llevan la versión, así que esos enlaces directos no se actualizan solos.
+- Redesplegar la landing (`logday-site`) para que sus enlaces de descarga queden al día sin depender de su script.
+
 ## Convenciones
 
 - Textos de UI en `src/lib/i18n.ts` (es y en), en español con tú, nunca voseo.
